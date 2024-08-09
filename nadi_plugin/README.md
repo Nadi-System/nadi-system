@@ -22,17 +22,17 @@ crate-type = ["cdylib"]
 [dependencies]
 anyhow = "1.0.86"
 nadi_core = "0.2.0"
-nadi_functions = "0.1.0"
+nadi_plugin = "0.1.0"
 ```
 
 `src/lib.rs`:
 ```rust
-use nadi_functions::nadi_plugin;
+use nadi_plugin::nadi_plugin;
 
 #[nadi_plugin]
 mod example {
     use nadi_core::{attributes::AsValue, Network, NodeInner};
-    use nadi_functions::nadi_func;
+    use nadi_plugin::nadi_func;
 
     /// Print the given attr of the node as string.
     ///
