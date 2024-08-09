@@ -1,0 +1,20 @@
+[package]
+name = "nadi_plugin"
+version = "0.1.0"
+edition = "2021"
+description = "Macro library to write plugins for nadi_system using nadi_core"
+repository = "https://github.com/Nadi-System/nadi_plugin"
+license = "GPL-3.0-only"
+readme = "README.md"
+keywords = ["river", "timeseries", "water-system", "macro"]
+categories = ["data-structures", "science", "science::geo", "visualization"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0.86"
+quote = "1.0.36"
+syn = {version="2.0.72", features=["full"]}
