@@ -1,134 +1,142 @@
-use crate::node::Node;
-use anyhow::Context;
-use itertools::Itertools;
-use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, Write};
-use std::path::Path;
-use std::str::FromStr;
-use string_template_plus::Template;
+use abi_stable::{
+    std_types::{RString, RVec, Tuple2, Tuple4},
+    StableAbi,
+};
+use cairo::Context;
 
-/// Formats to export the table into
-pub enum TableFormat {
-    LaTeX,
-    Delimited(char),
-    JSON,
+#[repr(C)]
+#[derive(StableAbi, Clone)]
+pub struct NetworkPlot {
+    nodes: RVec<NodePlot>,
+    headers: RVec<RString>,
+    edges: RVec<Tuple2<usize, usize>>,
+    settings: NetworkPlotSettings,
 }
 
-/// Tables are data types with headers and the value template. Tables
-/// can be rendered/exported into CSV, JSON, and LaTeX format. Other
-/// formats can be added later. Although tables are not exposed to the
-/// plugin system, functions to export different table formats can be
-/// written as a network function.
-///
-/// A Table file contains the table definition with each line with
-/// [`Column`] definition for one column.
-///
-/// A sample Table file showing two columns, left aligned name for
-/// station in title case, and right aligned 7Q10 column with float
-/// value of 2 digits after decimal:
-///
-///     <Name: {_stn:case(title)}
-///     >7Q10: {nat_7q10:f(2)}
-///
-/// The template system that tables use is the same as the one used
-/// throughout the program (refer [`string_template_plus::Template`]).
-pub struct Table {
-    columns: Vec<Column>,
-}
-
-impl Table {
-    pub fn from_file<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
-        let file = File::open(path.as_ref())?;
-        let reader_lines = BufReader::new(file).lines();
-        Ok(Self {
-            columns: reader_lines
-                .map(|line| line.unwrap().trim().to_string())
-                .filter(|line| !line.starts_with('#') && !line.is_empty())
-                .map(|l| Column::from_str(&l))
-                .collect::<Result<Vec<Column>, anyhow::Error>>()?,
-        })
-    }
-
-    pub fn to_file<P: AsRef<Path>>(
-        &self,
-        nodes: Vec<&Node>,
-        path: P,
-        format: TableFormat,
-    ) -> anyhow::Result<()> {
-        match format {
-            TableFormat::Delimited(sep) => self.to_delimited(nodes, path, sep),
-            TableFormat::JSON => self.to_json(nodes, path),
-            TableFormat::LaTeX => self.to_latex(nodes, path),
+impl NetworkPlot {
+    pub fn get_width_height(&self, ctx: &Context) -> NetworkPlotArea {
+        let max_lev = self.nodes.iter().map(|n| n.level).max().unwrap_or_default();
+        let node_count = self.nodes.len();
+        let height = (node_count - 1) as f64 * self.settings.dely + self.settings.offy * 2.0;
+        let columns: Vec<f64> = self
+            .headers
+            .iter()
+            .enumerate()
+            .map(|(i, h)| {
+                let colwidth = match ctx.text_extents(h) {
+                    Ok(e) => e.width(),
+                    Err(_) => 0.0,
+                };
+                // get max width from all the text in the given columns
+                self.nodes
+                    .iter()
+                    .filter_map(|n| ctx.text_extents(&n.labels[i]).ok())
+                    .map(|e| e.width())
+                    .fold(colwidth, f64::max)
+            })
+            .collect();
+        let graph_width = (max_lev - 1) as f64 * self.settings.delx;
+        let width = graph_width
+            + columns.iter().sum::<f64>()
+            + columns.len() as f64 * self.settings.colsep
+            + self.settings.offy * 2.0;
+        let stops: Vec<f64> = (0..columns.len())
+            .map(|i| {
+                graph_width
+                    + self.settings.colsep * (i + 1) as f64
+                    + columns[0..i].iter().sum::<f64>()
+            })
+            .collect();
+        NetworkPlotArea {
+            height,
+            width,
+            stops: stops.into(),
         }
     }
+}
 
-    pub fn to_delimited<P: AsRef<Path>>(
-        &self,
-        nodes: Vec<&Node>,
-        path: P,
-        sep: char,
-    ) -> anyhow::Result<()> {
-        let file = File::create(path)?;
-        let mut writer = BufWriter::new(file);
-        writeln!(writer, "{}", self.headers().join(&sep.to_string()))?;
-        for node in nodes {
-            writeln!(
-                writer,
-                "{}",
-                self.templates()
-                    .map(|t| node.borrow().render(t))
-                    .collect::<anyhow::Result<Vec<String>>>()?
-                    .join(&sep.to_string())
-            )?;
+#[repr(C)]
+#[derive(StableAbi, Clone)]
+pub struct NetworkPlotArea {
+    /// height of the area required to plot this
+    height: f64,
+    /// width of the area required to plot this
+    width: f64,
+    /// stops to start each column in the headers
+    stops: RVec<f64>,
+}
+
+#[repr(C)]
+#[derive(StableAbi, Clone)]
+pub struct NetworkPlotSettings {
+    delx: f64,
+    dely: f64,
+    offx: f64,
+    offy: f64,
+    colsep: f64,
+}
+
+impl Default for NetworkPlotSettings {
+    fn default() -> Self {
+        Self {
+            delx: 20.0,
+            dely: 20.0,
+            offx: 10.0,
+            offy: 10.0,
+            colsep: 40.0,
         }
-        Ok(())
-    }
-    pub fn to_latex<P: AsRef<Path>>(&self, nodes: Vec<&Node>, path: P) -> anyhow::Result<()> {
-        todo!()
-    }
-    pub fn to_json<P: AsRef<Path>>(&self, nodes: Vec<&Node>, path: P) -> anyhow::Result<()> {
-        todo!()
-    }
-
-    pub fn headers(&self) -> impl Iterator<Item = &str> {
-        self.columns.iter().map(|c| c.header.as_str())
-    }
-    pub fn templates(&self) -> impl Iterator<Item = &Template> {
-        self.columns.iter().map(|c| &c.template)
     }
 }
 
-pub struct Column {
-    align: ColumnAlign,
-    header: String,
-    template: Template,
+#[repr(C)]
+#[derive(StableAbi, Clone)]
+pub struct NodePlot {
+    index: usize,
+    level: usize,
+    /// rendered labels for each column
+    labels: RVec<RString>,
+    /// textwidth when the above labels are rendered
+    colwidth: RVec<f64>,
+    url: RString,
+    size: u64,
+    shape: NodeShape,
+    color: Tuple4<u8, u8, u8, u8>,
 }
 
-#[derive(Default)]
+#[repr(C)]
+#[derive(StableAbi, Debug, Default, Clone, PartialEq)]
+pub enum NodeShape {
+    #[default]
+    Square,
+    Rectangle(f64),
+    Circle,
+    Triangle,
+    Ellipse(f64),
+}
+
+#[repr(C)]
+#[derive(StableAbi, Debug, Default, Clone, PartialEq)]
 pub enum ColumnAlign {
     Left,
+    Right,
     #[default]
     Center,
-    Right,
 }
 
-impl FromStr for Column {
-    type Err = anyhow::Error;
+#[repr(C)]
+#[derive(StableAbi, Debug, Default, Clone, PartialEq)]
+pub struct Column {
+    align: ColumnAlign,
+    header: RString,
+    template: RString,
+}
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let (head, templ) = s
-            .split_once(':')
-            .context("Header should have a template followed")?;
-        let (align, head) = match head.chars().next().context("Empty Template Not allowed")? {
-            '<' => (ColumnAlign::Left, &head[1..]),
-            '>' => (ColumnAlign::Right, &head[1..]),
-            _ => (ColumnAlign::Center, head),
-        };
-
-        Ok(Self {
-            align,
-            header: head.to_string(),
-            template: Template::parse_template(templ.trim())?,
-        })
+impl Column {
+    pub fn new(header: &str, template: &str, align: Option<ColumnAlign>) -> Self {
+        Self {
+            align: align.unwrap_or_default(),
+            header: header.into(),
+            template: template.into(),
+        }
     }
 }

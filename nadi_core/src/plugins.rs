@@ -1,57 +1,72 @@
-/// This is the signature of the functions that plugins should
-/// provide, for dealing with node or network
-///
-/// An example plugin is given for rust and C.
-pub type Function<T> = extern "C" fn(*mut T, *mut FunctionCtx);
+use std::path::Path;
 
-pub struct FunctionCtx {
-    args: Vec<toml::Value>,
-    kwargs: toml::Table,
-    result: anyhow::Result<()>,
+use crate::attrs::AttrMap;
+use crate::functions::NadiFunctions;
+use crate::parser::parse_network;
+use crate::{new_node, Attribute, Network, NodeInner};
+use crate::{Node, StrPath};
+use abi_stable::library::LibraryError;
+use abi_stable::std_types::{RSlice, RStr};
+use abi_stable::{declare_root_module_statics, package_version_strings};
+use abi_stable::{
+    external_types::RMutex,
+    library::RootModule,
+    sabi_trait,
+    sabi_types::version::VersionStrings,
+    std_types::{
+        RArc, RBox, RHashMap,
+        ROption::{self, RNone, RSome},
+        RString, RVec,
+    },
+    StableAbi,
+};
+
+#[repr(C)]
+#[derive(StableAbi)]
+#[sabi(kind(Prefix))]
+pub struct NadiExternalPlugin {
+    pub register_functions: extern "C" fn(&mut NadiFunctions),
+    pub plugin_name: extern "C" fn() -> RString,
 }
 
-impl Default for FunctionCtx {
-    fn default() -> Self {
-        Self {
-            args: vec![],
-            kwargs: toml::Table::new(),
-            result: Ok(()),
-        }
+pub trait NadiPlugin {
+    fn register(&self, func: &mut NadiFunctions);
+    fn name(&self) -> RString;
+}
+
+impl NadiPlugin for NadiExternalPlugin_Ref {
+    fn register(&self, func: &mut NadiFunctions) {
+        self.register_functions().unwrap()(func);
+    }
+    fn name(&self) -> RString {
+        self.plugin_name().unwrap()()
     }
 }
 
-impl FunctionCtx {
-    pub fn new() -> Self {
-        Self::default()
-    }
+impl RootModule for NadiExternalPlugin_Ref {
+    // The name of the dynamic library
+    const BASE_NAME: &'static str = "nadi_plugins";
+    // The name of the library for logging and similars
+    const NAME: &'static str = "nadi_plugins";
+    // The version of this plugin's crate
+    const VERSION_STRINGS: VersionStrings = package_version_strings!();
 
-    pub fn with_args(mut self, args: Vec<toml::Value>) -> Self {
-        self.args = args.clone();
-        args.into_iter()
-            .filter_map(|a| a.as_table().cloned())
-            .for_each(|t| {
-                self.kwargs.extend(t);
-            });
-        self
-    }
+    // Implements the `Rootule::root_module_statics` function, which is the
+    // only required implementation for the `Rootule` trait.
+    declare_root_module_statics! {NadiExternalPlugin_Ref}
+}
 
-    pub fn arg(&self, ind: usize) -> Option<&toml::Value> {
-        self.args.get(ind)
-    }
+pub fn load_library(path: &Path) -> Result<NadiExternalPlugin_Ref, LibraryError> {
+    check_library(path)?;
+    abi_stable::library::lib_header_from_path(path)
+        .and_then(|x| x.init_root_module::<NadiExternalPlugin_Ref>())
+    // the following returns the first one on repeat call
+    // NadiExternalPlugin_Ref::load_from_file(path)
+}
 
-    pub fn kwarg(&self, name: &str) -> Option<&toml::Value> {
-        self.kwargs.get(name)
-    }
-
-    pub fn args_count(&self) -> usize {
-        self.args.len()
-    }
-
-    pub fn set_error(&mut self, err: anyhow::Error) {
-        self.result = Err(err);
-    }
-
-    pub fn error(&self) -> Option<String> {
-        self.result.as_ref().err().map(|e| e.to_string())
-    }
+fn check_library(path: &Path) -> Result<(), LibraryError> {
+    let raw_library = abi_stable::library::RawLibrary::load_at(path)?;
+    unsafe { abi_stable::library::lib_header_from_raw_library(&raw_library) }
+        .and_then(|x| x.check_layout::<NadiExternalPlugin_Ref>())?;
+    Ok(())
 }
