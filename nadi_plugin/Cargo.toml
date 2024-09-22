@@ -1,8 +1,8 @@
 [package]
 name = "nadi_plugin"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
-description = "Macro library to write plugins for nadi_system using nadi_core"
+description = "Macro library to write plugins for nadi system using nadi_core"
 repository = "https://github.com/Nadi-System/nadi_plugin"
 license = "GPL-3.0-only"
 readme = "README.md"
@@ -15,6 +15,9 @@ categories = ["data-structures", "science", "science::geo", "visualization"]
 proc-macro = true
 
 [dependencies]
+convert_case = "0.6.0"
+itertools = "0.13.0"
+prettyplease = "0.2.22"
 proc-macro2 = "1.0.86"
 quote = "1.0.36"
 syn = {version="2.0.72", features=["full"]}
