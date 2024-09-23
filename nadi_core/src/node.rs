@@ -135,6 +135,13 @@ impl NodeInner {
         self.timeseries.get(name)
     }
 
+    pub fn try_ts(&self, name: &str) -> Result<&TimeSeries, String> {
+        self.timeseries.get(name).ok_or(format!(
+            "Node `{}` does not have timeseries `{name}`",
+            self.name
+        ))
+    }
+
     pub fn ts_all(&self) -> &RHashMap<RString, TimeSeries> {
         &self.timeseries
     }

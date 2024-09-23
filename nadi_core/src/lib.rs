@@ -1,6 +1,3 @@
-#![allow(unused)]
-#![allow(dead_code)]
-
 pub mod attrs;
 pub mod functions;
 pub mod network;

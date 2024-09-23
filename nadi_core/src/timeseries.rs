@@ -60,6 +60,13 @@ impl TimeSeries {
         FromTimeSeries::from_ts_mut(&mut self.values)
     }
 
+    pub fn try_values<'a, T: FromTimeSeries<'a>>(&'a self) -> Result<&'a [T], String> {
+        FromTimeSeries::try_from_ts(&self.values)
+    }
+    pub fn try_values_mut<'a, T: FromTimeSeries<'a>>(&'a mut self) -> Result<&'a mut [T], String> {
+        FromTimeSeries::try_from_ts_mut(&mut self.values)
+    }
+
     pub fn values_type(&self) -> &str {
         self.values.type_name()
     }
@@ -90,6 +97,10 @@ impl TimeSeriesValues {
             Self::DateTimes(v) => v.len(),
             Self::Attributes(v) => v.len(),
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn type_name(&self) -> &str {
