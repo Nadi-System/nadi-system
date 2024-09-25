@@ -1,23 +1,20 @@
-use std::fmt::{format, Arguments};
-
 use crate::attrs::{AttrMap, FromAttributeRelaxed};
-use crate::parser::parse_network;
-use crate::plugins::{load_library, NadiExternalPlugin_Ref, NadiPlugin};
-use crate::{new_node, AttrSlice, Attribute, FromAttribute, Network, NodeInner};
-use crate::{Node, StrPath};
-use abi_stable::std_types::{RSlice, RStr, Tuple2};
+
+use crate::plugins::{load_library, NadiPlugin};
+use crate::StrPath;
+use crate::{AttrSlice, Attribute, FromAttribute, Network, NodeInner};
+use abi_stable::std_types::Tuple2;
 use abi_stable::{
-    external_types::RMutex,
     library::RootModule,
     sabi_trait,
     std_types::{
-        RArc, RBox, RErr, RHashMap, ROk,
+        RBox, RErr, RHashMap, ROk,
         ROption::{self, RNone, RSome},
         RResult, RString, RVec,
     },
     StableAbi,
 };
-use colored::{ColoredString, Colorize};
+use colored::Colorize;
 mod attrs;
 mod debug;
 mod render;
@@ -46,7 +43,7 @@ impl FunctionRet {
 }
 
 impl From<()> for FunctionRet {
-    fn from(value: ()) -> Self {
+    fn from(_value: ()) -> Self {
         Self::None
     }
 }
@@ -223,12 +220,12 @@ impl NadiFunctions {
                     }
                     Ok(())
                 }
-                None => Err(format!("Node Function {} not found", func.name).into()),
+                None => Err(format!("Node Function {} not found", func.name)),
             },
             FunctionType::Network => match self.network.get(&func.name) {
                 // todo use returned attribute value
                 Some(f) => f.call(net, func.ctx()).res().map(|_| ()),
-                None => Err(format!("Network Function {} not found", func.name).into()),
+                None => Err(format!("Network Function {} not found", func.name)),
             },
         }
     }
@@ -371,7 +368,7 @@ impl FunctionCall {
             .iter()
             .map(|Tuple2(k, v)| format!("{}={}", k.to_string().blue(), v.to_colored_string()))
             .collect();
-        args_str.extend(kwargs_str.into_iter());
+        args_str.extend(kwargs_str);
         format!(
             "{} {}({})",
             self.r#type.to_colored_string(),

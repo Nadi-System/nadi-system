@@ -1,16 +1,15 @@
 use crate::parser::attrs::attr_file;
 use anyhow::Context;
-use colored::{ColoredString, Colorize};
-use std::fmt::format;
+use colored::Colorize;
+
 use std::path::PathBuf;
 use string_template_plus::Template;
 
 use abi_stable::{
-    external_types::RMutex,
     std_types::{
-        RArc, RHashMap,
-        ROption::{self, RNone, RSome},
-        RResult, RSlice, RStr, RString, RVec, Tuple2,
+        RHashMap,
+        ROption::{self},
+        RSlice, RStr, RString, RVec, Tuple2,
     },
     StableAbi,
 };
@@ -35,8 +34,8 @@ impl Default for Attribute {
     }
 }
 
-impl Attribute {
-    pub fn to_string(&self) -> String {
+impl ToString for Attribute {
+    fn to_string(&self) -> String {
         match self {
             Self::Bool(v) => format!("{v:?}"),
             Self::String(v) => format!("{v:?}"),
@@ -49,7 +48,9 @@ impl Attribute {
             Self::Table(v) => format!("{v:?}"),
         }
     }
+}
 
+impl Attribute {
     pub fn to_colored_string(&self) -> String {
         match self {
             Self::Bool(v) => format!("{v:?}").magenta().to_string(),
@@ -181,7 +182,7 @@ macro_rules! impl_from_attr {
 pub fn type_name<P>() -> String {
     // function returns the full path, but we'll only use the last
     let org = std::any::type_name::<P>();
-    let mut parts = org.split(&[',', '(', ')', '<', '>']);
+    let parts = org.split(&[',', '(', ')', '<', '>']);
     let mut name = String::new();
     let mut offset = 0;
     for part in parts {
@@ -362,7 +363,7 @@ impl DateTime {
         }
     }
 
-    pub fn plus(&self, seconds: i64) -> DateTime {
+    pub fn plus(&self, _seconds: i64) -> DateTime {
         todo!()
     }
 
@@ -408,7 +409,7 @@ impl Date {
     }
 
     pub fn from_timestamp(seconds: i64) -> Self {
-        let days = seconds / 86_400 + 719_163;
+        let _days = seconds / 86_400 + 719_163;
         todo!()
     }
 
@@ -462,7 +463,7 @@ impl Time {
     }
 
     pub fn seconds_from_midnight(&self) -> u32 {
-        ((self.hour as u32 * 60 + self.min as u32) * 60 + self.sec as u32)
+        (self.hour as u32 * 60 + self.min as u32) * 60 + self.sec as u32
     }
 
     pub fn from_seconds_from_midnight(secs: u32) -> Self {
@@ -491,7 +492,7 @@ pub fn parse_attr_file(txt: &str) -> anyhow::Result<AttrMap> {
     let (rest, (grp, grp_attrs, parts)) = attr_file(txt)
             .map_err(|e| anyhow::Error::msg(e.to_string()))// .map_err(|e| e.to_owned())
 	?;
-    if rest != "" {
+    if !rest.is_empty() {
         println!("{rest}");
         return Err(anyhow::Error::msg("Cannot parse the attr file completely."));
     }
@@ -513,7 +514,7 @@ pub fn parse_attr_file(txt: &str) -> anyhow::Result<AttrMap> {
     }
 
     for (k, v) in grp_attrs {
-        curr_map.insert(k.into(), v);
+        curr_map.insert(k, v);
     }
 
     for (grp, grp_attrs) in parts {
@@ -524,7 +525,7 @@ pub fn parse_attr_file(txt: &str) -> anyhow::Result<AttrMap> {
             curr_map = curr_map.get_mut(g).unwrap().get_mut_table().unwrap();
         }
         for (k, v) in grp_attrs {
-            curr_map.insert(k.into(), v);
+            curr_map.insert(k, v);
         }
     }
     Ok(attrs)

@@ -1,21 +1,20 @@
 use crate::attrs::{Date, DateTime, Time};
-use crate::functions::KeyVal;
+
 use crate::parser::string::parse_string;
-use crate::parser::{identifier, sp, ws, Res};
-use crate::{AttrMap, Attribute};
+use crate::parser::{identifier, sp, Res};
+use crate::Attribute;
 use abi_stable::std_types::RString;
-use nom::bytes::complete::take_while1;
-use nom::character::complete::{digit0, digit1};
-use nom::character::is_digit;
+
+use nom::character::complete::digit1;
+
 use nom::{
     branch::alt,
-    bytes::complete::{is_not, tag, take, take_while},
-    character::complete::{alpha1, alphanumeric1, char, multispace0, one_of},
+    bytes::complete::{tag, take},
+    character::complete::{char, one_of},
     combinator::{all_consuming, cut, map, map_res, opt, recognize, value},
-    error::{context, convert_error, ParseError},
-    multi::{many0, many0_count, many1, separated_list1},
-    number,
-    sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
+    error::{context, convert_error},
+    multi::{many0, many1, separated_list1},
+    sequence::{delimited, preceded, separated_pair, terminated, tuple},
 };
 
 fn attr_bool(txt: &str) -> Res<&str, Attribute> {
@@ -47,7 +46,7 @@ fn attr_int(txt: &str) -> Res<&str, Attribute> {
     )(txt)?;
     Ok((
         rest,
-        Attribute::Integer(i.replace("_", "").parse().unwrap()),
+        Attribute::Integer(i.replace('_', "").parse().unwrap()),
     ))
 }
 
@@ -68,7 +67,7 @@ pub fn parse_f64(txt: &str) -> Res<&str, f64> {
                     tuple((one_of("eE"), attr_int)),
                 ))),
             )),
-            |v| v.replace("_", "").parse().unwrap(),
+            |v| v.replace('_', "").parse().unwrap(),
         ),
     )(txt)
 }
@@ -179,11 +178,7 @@ fn attr_table(txt: &str) -> Res<&str, Attribute> {
             preceded(sp, tag("}")),
         ),
     )(txt)?;
-    let tbl = lst
-        .unwrap_or_default()
-        .into_iter()
-        .map(|(k, v)| (k, v))
-        .collect();
+    let tbl = lst.unwrap_or_default().into_iter().collect();
     Ok((rest, Attribute::Table(tbl)))
 }
 
@@ -248,12 +243,12 @@ pub fn parse_attr_complete(
     ),
     String,
 > {
-    let (rest, val) = match attr_file(txt) {
+    let (_rest, val) = match attr_file(txt) {
         Ok(v) => v,
         Err(e) => {
             let er = match e {
                 nom::Err::Error(er) | nom::Err::Failure(er) => er,
-                nom::Err::Incomplete(er) => panic!("shouldn't happen"),
+                nom::Err::Incomplete(_er) => panic!("shouldn't happen"),
             };
             return Err(convert_error(txt, er));
         }

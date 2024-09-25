@@ -1,21 +1,13 @@
-use crate::attrs::{Date, DateTime, Time};
-use crate::functions::KeyVal;
-use crate::parser::string::parse_string;
-use crate::parser::{identifier, sp, ws, Res};
+use crate::parser::{sp, Res};
 use crate::table::{Column, ColumnAlign, NodeShape};
-use abi_stable::std_types::RString;
-use nom::bytes::complete::{take_till, take_until, take_while1};
-use nom::character::complete::{digit0, digit1};
-use nom::character::is_digit;
+
+use nom::bytes::complete::take_till;
+
 use nom::{
     branch::alt,
-    bytes::complete::{is_not, tag, take, take_while},
-    character::complete::{alpha1, alphanumeric1, char, multispace0, one_of},
-    combinator::{map, map_res, opt, recognize, value},
-    error::ParseError,
-    multi::{many0, many0_count, many1, separated_list1},
-    number,
-    sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
+    bytes::complete::{is_not, tag},
+    combinator::{opt, value},
+    sequence::{delimited, preceded, separated_pair, tuple},
 };
 
 use super::attrs::parse_f64;

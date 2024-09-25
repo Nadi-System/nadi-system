@@ -1,21 +1,19 @@
 use abi_stable::std_types::{RDuration, Tuple2};
 use anyhow::Context;
-use colored::{ColoredString, Colorize};
+use colored::Colorize;
 use std::collections::HashMap;
-use std::fmt::{format, Debug};
-use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::fmt::Debug;
+
 use std::path::Path;
 
 use crate::attrs::AttrMap;
 use crate::functions::Propagation;
+use crate::new_node;
 use crate::parser::parse_network;
-use crate::{new_node, Attribute};
 use crate::{Node, NodeInner};
 use abi_stable::{
-    external_types::RMutex,
     std_types::{
-        RArc, RHashMap,
+        RHashMap,
         ROption::{self, RNone, RSome},
         RString, RVec,
     },
@@ -147,12 +145,8 @@ impl Network {
 
     pub fn nodes_propagation(&self, prop: &Propagation) -> Vec<Node> {
         match prop {
-            Propagation::Sequential | Propagation::InputsFirst => {
-                self.nodes().map(|n| n.clone()).collect()
-            }
-            Propagation::Inverse | Propagation::OutputFirst => {
-                self.nodes_rev().map(|n| n.clone()).collect()
-            }
+            Propagation::Sequential | Propagation::InputsFirst => self.nodes().cloned().collect(),
+            Propagation::Inverse | Propagation::OutputFirst => self.nodes_rev().cloned().collect(),
             // // since it is already ordered, we don't need to do this
             // Propagation::InputsFirst => {
             //     let mut all_nodes: Vec<&Node> = self.nodes().collect();
@@ -174,18 +168,18 @@ impl Network {
             //     nodes
             // }
             Propagation::List(n) => n.iter().map(|n| self.nodes_map[n].clone()).collect(),
-            Propagation::Path(p) => todo!(),
+            Propagation::Path(_p) => todo!(),
         }
     }
 
     pub fn calc_order(&mut self) {
-        let mut all_nodes: Vec<RString> = self.nodes.to_vec();
-        let mut order_queue: Vec<RString> = Vec::with_capacity(self.nodes.len());
+        let _all_nodes: Vec<RString> = self.nodes.to_vec();
+        let _order_queue: Vec<RString> = Vec::with_capacity(self.nodes.len());
 
         let mut orders = HashMap::<String, u64>::with_capacity(self.nodes.len());
 
         fn get_set_ord(node: &NodeInner, orders: &mut HashMap<String, u64>) -> u64 {
-            orders.get(node.name()).map(|v| *v).unwrap_or_else(|| {
+            orders.get(node.name()).copied().unwrap_or_else(|| {
                 let mut ord = 1;
                 for i in node.inputs() {
                     ord += get_set_ord(
@@ -269,7 +263,7 @@ impl Network {
             node.lock().set_level(level);
             node.lock().order_inputs();
             let node = node.lock();
-            let mut inps = node.inputs();
+            let inps = node.inputs();
             if !inps.is_empty() {
                 recc_set(&inps[0], level);
             }

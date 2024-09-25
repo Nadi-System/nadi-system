@@ -1,21 +1,10 @@
 use crate::{
     attrs::{type_name, Date, DateTime, Time},
-    parser::attrs::attr_file,
     Attribute,
 };
-use anyhow::Context;
-use colored::{ColoredString, Colorize};
-use std::fmt::format;
-use std::path::PathBuf;
-use string_template_plus::Template;
 
 use abi_stable::{
-    external_types::RMutex,
-    std_types::{
-        RArc, RHashMap,
-        ROption::{self, RNone, RSome},
-        RResult, RSlice, RSliceMut, RStr, RString, RVec, Tuple2,
-    },
+    std_types::{RString, RVec},
     StableAbi,
 };
 
@@ -112,7 +101,7 @@ impl TimeSeriesValues {
             Self::Dates(_) => "Date",
             Self::Times(_) => "Time",
             Self::DateTimes(_) => "DateTime",
-            Self::Attributes(v) => "Attributes",
+            Self::Attributes(_v) => "Attributes",
         }
     }
 }
@@ -126,7 +115,7 @@ pub trait FromTimeSeries<'a>: Sized {
             value.type_name(),
             type_name::<Self>()
         );
-        FromTimeSeries::from_ts(value).ok_or_else(|| ermsg)
+        FromTimeSeries::from_ts(value).ok_or(ermsg)
     }
     fn try_from_ts_mut(value: &'a mut TimeSeriesValues) -> Result<&'a mut [Self], String> {
         let ermsg = format!(
@@ -134,7 +123,7 @@ pub trait FromTimeSeries<'a>: Sized {
             value.type_name(),
             type_name::<Self>()
         );
-        FromTimeSeries::from_ts_mut(value).ok_or_else(|| ermsg)
+        FromTimeSeries::from_ts_mut(value).ok_or(ermsg)
     }
 }
 

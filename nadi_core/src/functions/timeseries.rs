@@ -6,11 +6,11 @@ mod timeseries {
     use crate::{
         attrs::{Date, DateTime, Time},
         timeseries::{TimeSeries, TimeSeriesValues},
-        AttrMap, AttrSlice, Attribute, Network, NodeInner,
+        Attribute, NodeInner,
     };
-    use abi_stable::std_types::{ROption, RString, Tuple2};
-    use colored::Colorize;
-    use nadi_plugin::{network_func, node_func};
+    use abi_stable::std_types::{ROption, RString};
+
+    use nadi_plugin::node_func;
 
     /// Print the list of available timeseries for the node
     /// # Arguments
@@ -33,11 +33,11 @@ mod timeseries {
     fn show_ts(
         node: &mut NodeInner,
         name: String,
-        header: bool,
+        _header: bool,
     ) -> Result<ROption<Attribute>, RString> {
         if let Some(ts) = node.ts(&name) {
             if let Some(values) = ts.values::<f64>() {
-                let start = ts.start();
+                let _start = ts.start();
                 for v in values {
                     println!("{v}");
                 }

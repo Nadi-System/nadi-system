@@ -1,15 +1,15 @@
 use crate::network::StrPath;
 use crate::parser::string::parse_string;
-use crate::parser::{sp, ws, Res};
+use crate::parser::{sp, Res};
 use abi_stable::std_types::RString;
 use nom::{
     branch::alt,
-    bytes::complete::{is_not, tag, take_while},
-    character::complete::{alpha1, alphanumeric1, char, multispace0, one_of},
-    combinator::{all_consuming, map, opt, recognize, value},
-    error::{context, convert_error, ParseError},
-    multi::{many0, many0_count, many1, separated_list1},
-    sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
+    bytes::complete::tag,
+    character::complete::{alpha1, alphanumeric1},
+    combinator::{all_consuming, map, opt, recognize},
+    error::{context, convert_error},
+    multi::{many0, many0_count},
+    sequence::{pair, preceded, separated_pair, terminated},
 };
 
 fn node_name(input: &str) -> Res<&str, RString> {
@@ -53,12 +53,12 @@ pub fn parse_network(txt: &str) -> Res<&str, Vec<StrPath>> {
 }
 
 pub fn parse_network_complete(txt: &str) -> Result<Vec<StrPath>, String> {
-    let (rest, val) = match parse_network(txt) {
+    let (_rest, val) = match parse_network(txt) {
         Ok(v) => v,
         Err(e) => {
             let er = match e {
                 nom::Err::Error(er) | nom::Err::Failure(er) => er,
-                nom::Err::Incomplete(er) => panic!("shouldn't happen"),
+                nom::Err::Incomplete(_er) => panic!("shouldn't happen"),
             };
             return Err(convert_error(txt, er));
         }

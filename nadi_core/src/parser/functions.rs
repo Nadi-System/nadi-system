@@ -1,24 +1,19 @@
-use std::collections::HashMap;
-
 use crate::functions::{FunctionArg, FunctionCall, FunctionType, KeyVal, Propagation};
 use crate::parser::attrs::{attr_any, attr_key_val};
 use crate::parser::string::parse_string;
-use crate::parser::{eol, identifier, node_path, sp, ws, Res};
-use crate::Attribute;
-use abi_stable::std_types::{RHashMap, RString, RVec};
-use nom::bytes::complete::take_while1;
-use nom::character::complete::digit1;
-use nom::character::is_digit;
-use nom::error::{convert_error, VerboseError};
+use crate::parser::{eol, identifier, node_path, sp, Res};
+
+use abi_stable::std_types::{RString, RVec};
+
+use nom::error::convert_error;
 use nom::{
     branch::alt,
-    bytes::complete::{is_not, tag, take, take_while},
-    character::complete::{alpha1, alphanumeric1, char, multispace0, one_of},
-    combinator::{all_consuming, map, map_res, opt, recognize, value},
-    error::{context, ParseError},
-    error_node_position, error_position,
-    multi::{many0, many0_count, many1, separated_list1},
-    sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
+    bytes::complete::tag,
+    character::complete::multispace0,
+    combinator::{all_consuming, map, opt, value},
+    error::context,
+    multi::{many0, separated_list1},
+    sequence::{delimited, preceded, terminated, tuple},
 };
 
 fn parse_arg(txt: &str) -> Res<&str, FunctionArg> {
@@ -29,10 +24,7 @@ fn parse_arg(txt: &str) -> Res<&str, FunctionArg> {
             // kwarg before arg as "key"=val will parse "key" string and
             // error out.
             map(attr_key_val, |(k, v)| {
-                FunctionArg::KwArg(KeyVal {
-                    key: k.into(),
-                    val: v,
-                })
+                FunctionArg::KwArg(KeyVal { key: k, val: v })
             }),
             map(attr_any, FunctionArg::Arg),
         )),
@@ -134,12 +126,12 @@ pub fn parse_script(txt: &str) -> Res<&str, Vec<FunctionCall>> {
 }
 
 pub fn parse_script_complete(txt: &str) -> Result<Vec<FunctionCall>, String> {
-    let (rest, val) = match parse_script(txt) {
+    let (_rest, val) = match parse_script(txt) {
         Ok(v) => v,
         Err(e) => {
             let er = match e {
                 nom::Err::Error(er) | nom::Err::Failure(er) => er,
-                nom::Err::Incomplete(er) => panic!("shouldn't happen"),
+                nom::Err::Incomplete(_er) => panic!("shouldn't happen"),
             };
             return Err(convert_error(txt, er));
         }

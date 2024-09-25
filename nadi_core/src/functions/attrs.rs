@@ -1,25 +1,14 @@
 // This mod is kept as an example to how the functions are written
 // without the macros. Any additional functions are recommended to be
 // written using the macros provided by nadi_plugin crate
-use crate::functions::{FunctionRet, NadiFunctions, NetworkFunction, NodeFunction};
+use crate::functions::{FunctionRet, NadiFunctions, NodeFunction};
 use crate::plugins::NadiPlugin;
-use crate::{return_on_err, AttrMap, AttrSlice, Attribute, FromAttribute, NodeInner};
-use abi_stable::sabi_trait::{TD_CanDowncast, TD_Opaque};
-use abi_stable::std_types::RResult::{self, RErr, ROk};
-use abi_stable::std_types::{RSlice, RStr, Tuple2};
-use abi_stable::{declare_root_module_statics, package_version_strings};
-use abi_stable::{
-    external_types::RMutex,
-    library::RootModule,
-    sabi_trait,
-    sabi_types::version::VersionStrings,
-    std_types::{
-        RArc, RBox, RHashMap,
-        ROption::{self, RNone, RSome},
-        RString, RVec,
-    },
-    StableAbi,
-};
+use crate::{return_on_err, AttrSlice, FromAttribute, NodeInner};
+use abi_stable::sabi_trait::TD_CanDowncast;
+
+use abi_stable::std_types::Tuple2;
+
+use abi_stable::std_types::RString;
 use nadi_plugin::node_func;
 use string_template_plus::Template;
 
@@ -105,7 +94,7 @@ impl NodeFunction for PrintAllAttrs {
 fn print_attrs(node: &mut NodeInner, #[args] attrs: AttrSlice) -> FunctionRet {
     let attrs = return_on_err!(attrs
         .iter()
-        .map(|a| String::try_from_attr(a))
+        .map(String::try_from_attr)
         .collect::<Result<Vec<String>, String>>());
 
     for a in attrs {
