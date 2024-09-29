@@ -48,7 +48,7 @@ impl NodeFunction for LoadAttrs {
             Some(Err(e)) => return FunctionRet::Error(e.into()),
             None => return FunctionRet::Error("Text template not given".into()),
         };
-        let filepath = match node.render(templ) {
+        let filepath = match node.render(&templ) {
             Ok(f) => f,
             Err(e) => return FunctionRet::Error(e.to_string().into()),
         };

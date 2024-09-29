@@ -8,11 +8,12 @@ use string_template_plus::Template;
 use abi_stable::{
     std_types::{
         RHashMap,
-        ROption::{self},
+        ROption::{self, RNone},
         RSlice, RStr, RString, RVec, Tuple2,
     },
     StableAbi,
 };
+use chrono::{Datelike, Timelike};
 
 #[repr(C)]
 #[derive(StableAbi, Clone, PartialEq, Debug)]
@@ -348,9 +349,23 @@ pub struct DateTime {
     pub offset: ROption<Offset>,
 }
 
-impl ToString for DateTime {
-    fn to_string(&self) -> String {
-        format!("{} {}", self.date.to_string(), self.time.to_string())
+impl std::fmt::Display for DateTime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.date.to_string(), self.time.to_string())
+    }
+}
+
+impl From<chrono::NaiveDateTime> for DateTime {
+    fn from(value: chrono::NaiveDateTime) -> Self {
+        Date::from(value.date()).with_time(Time::from(value.time()))
+    }
+}
+
+impl Into<chrono::NaiveDateTime> for DateTime {
+    fn into(self) -> chrono::NaiveDateTime {
+        let d: chrono::NaiveDate = self.date.into();
+        let t: chrono::NaiveTime = self.time.into();
+        chrono::NaiveDateTime::new(d, t)
     }
 }
 
@@ -363,15 +378,20 @@ impl DateTime {
         }
     }
 
-    pub fn plus(&self, _seconds: i64) -> DateTime {
-        todo!()
+    pub fn plus(&self, seconds: i64) -> Self {
+        Self::from_timestamp(self.timestamp() + seconds)
     }
 
     pub fn timestamp(&self) -> i64 {
-        let ce_day = self.date.days_from_ce();
-        let seconds = self.time.seconds_from_midnight() as i64;
-        // jan 1 1970 is 719_163 days from 31 dec 1 bce
-        (ce_day - 719_163) * 86_400 + seconds
+        Into::<chrono::NaiveDateTime>::into(self.clone()).timestamp()
+        // let ce_day = self.date.days_from_ce();
+        // let seconds = self.time.seconds_since_midnight() as i64;
+        // (ce_day - UNIX_EPOCH_DAY) * 86_400 + seconds
+    }
+
+    // Copied and checks removed from: chrono/datetime/mod.rs
+    pub fn from_timestamp(secs: i64) -> DateTime {
+        DateTime::from(chrono::NaiveDateTime::from_timestamp(secs, 0))
     }
 }
 
@@ -383,9 +403,22 @@ pub struct Date {
     pub day: u8,
 }
 
-impl ToString for Date {
-    fn to_string(&self) -> String {
-        format!("{}-{}-{}", self.year, self.month, self.day)
+impl std::fmt::Display for Date {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:02}-{:02}-{:02}", self.year, self.month, self.day)
+    }
+}
+
+impl From<chrono::NaiveDate> for Date {
+    fn from(value: chrono::NaiveDate) -> Self {
+        Self::new(value.year() as u16, value.month() as u8, value.day() as u8)
+    }
+}
+
+impl Into<chrono::NaiveDate> for Date {
+    fn into(self) -> chrono::NaiveDate {
+        chrono::NaiveDate::from_ymd_opt(self.year as i32, self.month as u32, self.day as u32)
+            .expect("should be valid date")
     }
 }
 
@@ -395,22 +428,19 @@ impl Date {
         Self { year, month, day }
     }
 
-    pub fn days_from_ce(&self) -> i64 {
-        let mut year = self.year as i64 - 1;
-        let mut ndays = 0;
-        if year < 0 {
-            let excess = 1 + (-year) / 400;
-            year += excess * 400;
-            ndays -= excess * 146_097;
+    pub fn with_time(self, time: Time) -> DateTime {
+        DateTime {
+            date: self,
+            time,
+            offset: RNone,
         }
-        let div_100 = year / 100;
-        ndays += ((year * 1461) >> 2) - div_100 + (div_100 >> 2);
-        ndays + self.doy() as i64
     }
 
-    pub fn from_timestamp(seconds: i64) -> Self {
-        let _days = seconds / 86_400 + 719_163;
-        todo!()
+    pub fn plus(self, days: i32) -> Self {
+        let d: chrono::NaiveDate = self.into();
+        chrono::NaiveDate::from_num_days_from_ce_opt(d.num_days_from_ce() + days)
+            .unwrap()
+            .into()
     }
 
     pub fn doy(&self) -> u8 {
@@ -445,9 +475,32 @@ pub struct Time {
     pub nanosecond: u32,
 }
 
-impl ToString for Time {
-    fn to_string(&self) -> String {
-        format!("{}:{}:{}", self.hour, self.min, self.sec)
+impl std::fmt::Display for Time {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:02}:{:02}:{:02}", self.hour, self.min, self.sec)
+    }
+}
+
+impl From<chrono::NaiveTime> for Time {
+    fn from(value: chrono::NaiveTime) -> Self {
+        Self::new(
+            value.hour() as u8,
+            value.minute() as u8,
+            value.second() as u8,
+            value.nanosecond(),
+        )
+    }
+}
+
+impl Into<chrono::NaiveTime> for Time {
+    fn into(self) -> chrono::NaiveTime {
+        chrono::NaiveTime::from_hms_nano_opt(
+            self.hour as u32,
+            self.min as u32,
+            self.sec as u32,
+            self.nanosecond,
+        )
+        .expect("should be valid time")
     }
 }
 
@@ -462,11 +515,11 @@ impl Time {
         }
     }
 
-    pub fn seconds_from_midnight(&self) -> u32 {
+    pub fn seconds_since_midnight(&self) -> u32 {
         (self.hour as u32 * 60 + self.min as u32) * 60 + self.sec as u32
     }
 
-    pub fn from_seconds_from_midnight(secs: u32) -> Self {
+    pub fn from_seconds_since_midnight(secs: u32) -> Self {
         let sec = secs % 60;
         let mins = (secs - sec) / 60;
         let min = mins % 60;

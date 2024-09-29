@@ -36,7 +36,7 @@ mod render {
         order: Option<TestVal>,
         #[relaxed] another: Option<f64>,
     ) -> Result<String, String> {
-        let text = node.render(template).map_err(|e| e.to_string())?;
+        let text = node.render(&template).map_err(|e| e.to_string())?;
         println!("render={text:?} safe={safe:?} another={another:?} order={order:?}");
         Ok(text)
     }

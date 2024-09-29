@@ -29,22 +29,29 @@ mod timeseries {
     /// Print the given timeseries values in csv format
     /// # Arguments
     /// - `name` - name
-    #[node_func(header = true)]
+    #[node_func(header = true, hide_time = false)]
     fn show_ts(
         node: &mut NodeInner,
         name: String,
-        _header: bool,
+        header: bool,
+        hide_time: bool,
     ) -> Result<ROption<Attribute>, RString> {
         if let Some(ts) = node.ts(&name) {
-            if let Some(values) = ts.values::<f64>() {
-                let _start = ts.start();
-                for v in values {
-                    println!("{v}");
+            if let Some(values) = ts.values::<bool>() {
+                if header {
+                    println!("time,{name}");
+                }
+                for (t, v) in ts.times().zip(values.iter()) {
+                    if hide_time {
+                        println!("{},{v}", t.date);
+                    } else {
+                        println!("{},{v}", t);
+                    }
                 }
                 println!();
             } else {
                 return Err(format!(
-                    "Timeseries is `{}` not float in node `{}`",
+                    "Timeseries is `{}` not Attribute in node `{}`",
                     ts.values_type(),
                     node.name()
                 )

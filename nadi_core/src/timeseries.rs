@@ -38,8 +38,15 @@ impl TimeSeries {
         self.start.plus(self.step * index as i64)
     }
 
+    pub fn times<'a>(&'a self) -> impl Iterator<Item = DateTime> + 'a {
+        let start = self.start.timestamp();
+        (0..self.values.len())
+            .map(move |s| start + s as i64 * self.step)
+            .map(DateTime::from_timestamp)
+    }
+
     pub fn end(&self) -> DateTime {
-        todo!()
+        self.start.plus(self.step * self.values.len() as i64)
     }
 
     pub fn values<'a, T: FromTimeSeries<'a>>(&'a self) -> Option<&'a [T]> {

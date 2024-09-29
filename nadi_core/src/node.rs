@@ -115,6 +115,10 @@ impl NodeInner {
         self.order = order
     }
 
+    // pub fn extend_attr(&mut self, attrs: &AttrMap) {
+    //     self.attributes.extend(attrs);
+    // }
+
     pub fn set_attr(&mut self, name: &str, val: Attribute) {
         self.attributes.insert(name.into(), val);
     }
@@ -175,7 +179,7 @@ impl NodeInner {
         self.output = RNone;
     }
 
-    pub fn render(&self, template: Template) -> anyhow::Result<String> {
+    pub fn render(&self, template: &Template) -> anyhow::Result<String> {
         let mut op = RenderOptions::default();
         let used_vars = template.parts().iter().flat_map(|p| p.variables());
         for var in used_vars {

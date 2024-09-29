@@ -20,6 +20,8 @@ string-template-plus = "0.4.3"
 nadi_plugin = {version = "0.3.0", path="../nadi_plugin"}
 use = "0.0.1-pre.0"
 colored = "2.1.0"
+chrono = "0.4.38"
+subprocess = "0.2.9"
 
 [dev-dependencies]
 rstest = "0.22.0"

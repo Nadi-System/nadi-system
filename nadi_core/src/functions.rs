@@ -5,7 +5,6 @@ use crate::StrPath;
 use crate::{AttrSlice, Attribute, FromAttribute, Network, NodeInner};
 use abi_stable::std_types::Tuple2;
 use abi_stable::{
-    library::RootModule,
     sabi_trait,
     std_types::{
         RBox, RErr, RHashMap, ROk,
@@ -16,6 +15,7 @@ use abi_stable::{
 };
 use colored::Colorize;
 mod attrs;
+mod command;
 mod debug;
 mod render;
 mod timeseries;
@@ -100,19 +100,6 @@ where
     }
 }
 
-impl<T, S> From<Result<T, S>> for FunctionRet
-where
-    FunctionRet: From<T>,
-    RString: From<S>,
-{
-    fn from(value: Result<T, S>) -> Self {
-        match value {
-            Ok(v) => Self::from(v),
-            Err(e) => Self::Error(RString::from(e)),
-        }
-    }
-}
-
 impl<T, S> From<RResult<T, S>> for FunctionRet
 where
     FunctionRet: From<T>,
@@ -122,6 +109,21 @@ where
         match value {
             ROk(v) => Self::from(v),
             RErr(e) => Self::Error(RString::from(e)),
+        }
+    }
+}
+
+// Since we have String error message, anything that can be string can
+// be used. It should cover anything that impl Error as well
+impl<T, S> From<Result<T, S>> for FunctionRet
+where
+    FunctionRet: From<T>,
+    S: ToString,
+{
+    fn from(value: Result<T, S>) -> Self {
+        match value {
+            Ok(v) => Self::from(v),
+            Err(e) => Self::Error(RString::from(e.to_string())),
         }
     }
 }
@@ -172,6 +174,7 @@ impl NadiFunctions {
         attrs::AttrsMod {}.register(&mut funcs);
         debug::DebugMod {}.register(&mut funcs);
         timeseries::TimeseriesMod {}.register(&mut funcs);
+        command::CommandMod {}.register(&mut funcs);
         funcs.load_plugins().unwrap();
         funcs
     }
