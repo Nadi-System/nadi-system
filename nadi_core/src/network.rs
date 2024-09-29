@@ -121,6 +121,10 @@ impl Network {
         self.nodes.iter().map(|n| &self.nodes_map[n])
     }
 
+    pub fn node_names(&self) -> impl Iterator<Item = &str> {
+        self.nodes.iter().map(|n| n.as_str())
+    }
+
     pub fn nodes_rev(&self) -> impl Iterator<Item = &Node> {
         self.nodes.iter().rev().map(|n| &self.nodes_map[n])
     }

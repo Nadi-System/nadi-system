@@ -65,6 +65,17 @@ fn node_list(txt: &str) -> Res<&str, RVec<RString>> {
     Ok((rest, lst.into()))
 }
 
+pub fn node_list_or_path(txt: &str) -> Res<&str, Propagation> {
+    delimited(
+        preceded(sp, tag("[")),
+        alt((
+            map(node_path, Propagation::Path),
+            map(node_list, Propagation::List),
+        )),
+        preceded(sp, tag("]")),
+    )(txt)
+}
+
 fn propagation(txt: &str) -> Res<&str, Propagation> {
     context(
         "propagation",
@@ -73,14 +84,7 @@ fn propagation(txt: &str) -> Res<&str, Propagation> {
             value(Propagation::Inverse, tag(".inverse")),
             value(Propagation::InputsFirst, tag(".inputsfirst")),
             value(Propagation::OutputFirst, tag(".outputfirst")),
-            delimited(
-                preceded(sp, tag("[")),
-                alt((
-                    map(node_path, Propagation::Path),
-                    map(node_list, Propagation::List),
-                )),
-                preceded(sp, tag("]")),
-            ),
+            node_list_or_path,
         )),
     )(txt)
 }

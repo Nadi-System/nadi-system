@@ -22,6 +22,7 @@ use = "0.0.1-pre.0"
 colored = "2.1.0"
 chrono = "0.4.38"
 subprocess = "0.2.9"
+number_range = "0.3.2"
 
 [dev-dependencies]
 rstest = "0.22.0"
