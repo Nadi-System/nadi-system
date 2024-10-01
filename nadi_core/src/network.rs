@@ -3,10 +3,11 @@ use anyhow::Context;
 use colored::Colorize;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use string_template_plus::{Render, RenderOptions, Template};
 
 use std::path::Path;
 
-use crate::attrs::AttrMap;
+use crate::attrs::{AttrMap, Attribute};
 use crate::functions::Propagation;
 use crate::new_node;
 use crate::parser::parse_network;
@@ -280,6 +281,34 @@ impl Network {
         if let RSome(output) = &self.outlet {
             recc_set(output, 0);
         }
+    }
+
+    pub fn set_attr(&mut self, name: &str, val: Attribute) {
+        self.attributes.insert(name.into(), val);
+    }
+
+    pub fn attr(&self, name: &str) -> Option<&Attribute> {
+        self.attributes.get(name)
+    }
+
+    pub fn attrs(&self) -> &AttrMap {
+        &self.attributes
+    }
+
+    pub fn render(&self, template: &Template) -> anyhow::Result<String> {
+        let mut op = RenderOptions::default();
+        let used_vars = template.parts().iter().flat_map(|p| p.variables());
+        for var in used_vars {
+            if let Some(val) = self.attr(var) {
+                op.variables.insert(var.to_string(), val.to_string());
+            }
+            if let Some(val) = var.strip_prefix('_') {
+                if let Some(Attribute::String(s)) = self.attr(val) {
+                    op.variables.insert(var.to_string(), s.to_string());
+                }
+            }
+        }
+        template.render(&op)
     }
 }
 

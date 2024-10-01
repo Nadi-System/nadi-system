@@ -15,6 +15,7 @@ use abi_stable::{
 };
 use colored::Colorize;
 mod attrs;
+mod attrs2;
 mod command;
 mod debug;
 mod render;
@@ -172,6 +173,7 @@ impl NadiFunctions {
         // NadiPlugin trait within functions
         render::RenderMod {}.register(&mut funcs);
         attrs::AttrsMod {}.register(&mut funcs);
+        attrs2::Attrs2Mod {}.register(&mut funcs);
         debug::DebugMod {}.register(&mut funcs);
         timeseries::TimeseriesMod {}.register(&mut funcs);
         command::CommandMod {}.register(&mut funcs);
@@ -186,12 +188,23 @@ impl NadiFunctions {
     }
 
     pub fn load_plugins(&mut self) -> anyhow::Result<()> {
-        for path in std::fs::read_dir("plugins")? {
-            let lib = load_library(&path?.path())?;
-            println!("Loading: {}", lib.name());
-            lib.register(self);
+        // TODO plugins path from env var
+        if let Ok(dir) = std::fs::read_dir("plugins") {
+            for path in dir {
+                let lib = load_library(&path?.path())?;
+                // println!("Loading: {}", lib.name());
+                lib.register(self);
+            }
         }
         Ok(())
+    }
+
+    pub fn node_functions(&self) -> &RHashMap<RString, NodeFunctionBox> {
+        &self.node
+    }
+
+    pub fn network_functions(&self) -> &RHashMap<RString, NetworkFunctionBox> {
+        &self.network
     }
 
     pub fn list_functions(&self) {
