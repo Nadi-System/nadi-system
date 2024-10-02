@@ -100,7 +100,7 @@ fn function_type(txt: &str) -> Res<&str, FunctionType> {
     context(
         "tasks type",
         preceded(
-            sp,
+            tuple((sp, opt(tag("!")))), // temp ignore !
             alt((
                 value(FunctionType::Network, preceded(sp, tag("network"))),
                 node_task_type,
@@ -130,7 +130,8 @@ pub fn parse_script(txt: &str) -> Res<&str, Vec<FunctionCall>> {
 }
 
 pub fn parse_script_complete(txt: &str) -> Result<Vec<FunctionCall>, String> {
-    let (_rest, val) = match parse_script(txt) {
+    // let's add the final line end as the file are likely to miss them
+    let (_rest, val) = match parse_script(&format!("{}\n", txt)) {
         Ok(v) => v,
         Err(e) => {
             let er = match e {

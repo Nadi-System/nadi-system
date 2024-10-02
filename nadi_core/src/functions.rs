@@ -17,6 +17,7 @@ use colored::Colorize;
 mod attrs;
 mod attrs2;
 mod command;
+mod connections;
 mod debug;
 mod render;
 mod timeseries;
@@ -177,6 +178,7 @@ impl NadiFunctions {
         debug::DebugMod {}.register(&mut funcs);
         timeseries::TimeseriesMod {}.register(&mut funcs);
         command::CommandMod {}.register(&mut funcs);
+        connections::ConnectionsMod {}.register(&mut funcs);
         funcs.load_plugins().unwrap();
         funcs
     }
@@ -189,12 +191,18 @@ impl NadiFunctions {
 
     pub fn load_plugins(&mut self) -> anyhow::Result<()> {
         // TODO plugins path from env var
-        if let Ok(dir) = std::fs::read_dir("plugins") {
-            for path in dir {
-                let lib = load_library(&path?.path())?;
-                // println!("Loading: {}", lib.name());
-                lib.register(self);
+        if let Ok(plugin_dirs) = std::env::var("NADI_PLUGIN_DIRS") {
+            for pdir in plugin_dirs.split(':') {
+                if let Ok(dir) = std::fs::read_dir(pdir) {
+                    for path in dir {
+                        let lib = load_library(&path?.path())?;
+                        // println!("Loading: {}", lib.name());
+                        lib.register(self);
+                    }
+                }
             }
+        } else {
+            eprintln!("WARN: Environmental variable NADI_PLUGIN_DIRS is not set.");
         }
         Ok(())
     }

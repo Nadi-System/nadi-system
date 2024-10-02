@@ -89,7 +89,7 @@ impl NodeFunction for PrintAllAttrs {
     }
 }
 
-/// Print the given node attributes
+/// Print the given node attributes if present
 #[node_func]
 fn print_attrs(node: &mut NodeInner, #[args] attrs: AttrSlice) -> FunctionRet {
     let attrs = return_on_err!(attrs
