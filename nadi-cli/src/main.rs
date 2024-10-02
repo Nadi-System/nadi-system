@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{io::Read, path::PathBuf};
 
 use clap::{Parser, ValueEnum};
 use nadi_core::{functions::NadiFunctions, Network};
@@ -31,8 +31,14 @@ struct CliArgs {
     /// connections file
     #[arg(short, long)]
     network: Option<PathBuf>,
-    /// Tasks file to run
+    #[arg(short, long)]
+    /// Run given string as tasks
+    task: Option<String>,
+    /// Tasks file to run; if `--stdin` is also provided runs this before stdin
     tasks: Option<PathBuf>,
+    /// Use stdin for the tasks; reads the whole stdin before execution
+    #[arg(short, long, action)]
+    stdin: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -58,28 +64,43 @@ fn main() -> anyhow::Result<()> {
                 }
             }
         }
-    } else if let Some(tasks) = args.tasks {
-        let txt = std::fs::read_to_string(tasks)?;
-        let script = nadi_core::parser::functions::parse_script_complete(&txt)
+    } else {
+        if let Some(ref tasks) = args.tasks {
+            let txt = std::fs::read_to_string(tasks)?;
+            execute_tasks(&functions, &txt, &args)?;
+        }
+        if let Some(ref txt) = args.task {
+            execute_tasks(&functions, txt, &args)?;
+        }
+        if args.stdin {
+            let mut txt = String::new();
+            std::io::stdin().read_to_string(&mut txt)?;
+            execute_tasks(&functions, &txt, &args)?;
+        }
+    }
+    Ok(())
+}
+
+fn execute_tasks(functions: &NadiFunctions, txt: &str, args: &CliArgs) -> anyhow::Result<()> {
+    let script =
+        nadi_core::parser::functions::parse_script_complete(&txt).map_err(anyhow::Error::msg)?;
+    if args.print_tasks {
+        for fc in &script {
+            println!("{}", fc.to_colored_string());
+        }
+    }
+
+    let mut net = if let Some(ref net) = args.network {
+        Network::from_file(net)?
+    } else {
+        // if network not given start with empty network
+        Network::default()
+    };
+    eprintln!("** Running {} Script **", script.len());
+    for fc in &script {
+        functions
+            .execute(fc, &mut net)
             .map_err(anyhow::Error::msg)?;
-
-        if args.print_tasks {
-            for fc in &script {
-                println!("{}", fc.to_colored_string());
-            }
-        }
-
-        if let Some(net) = args.network {
-            let mut net = Network::from_file(net)?;
-            println!("** Running {} Script **", script.len());
-            for fc in &script {
-                functions
-                    .execute(fc, &mut net)
-                    .map_err(anyhow::Error::msg)?;
-            }
-        } else {
-            return Err(anyhow::Error::msg("Network file not given"));
-        }
     }
     Ok(())
 }

@@ -621,6 +621,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
+name = "nadi"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "nadi_core",
+]
+
+[[package]]
 name = "nadi_core"
 version = "0.3.1"
 dependencies = [
@@ -647,15 +656,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.77",
-]
-
-[[package]]
-name = "nadi_system"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "nadi_core",
 ]
 
 [[package]]
