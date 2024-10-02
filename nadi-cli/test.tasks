@@ -1,0 +1,20 @@
+# node dummy_ts(name="tss", start=2012-01-02, value=true)
+# network save_graphviz("/tmp/test.gz", node_attr="label=\\\"Node [{INDEX}]: {_NAME}\\\"", global_attrs="node [shape=rectangle]")
+# network fancy_print()
+# node print_node()
+# node show_ts("tss", header=true, hide_time = true)
+# node command("echo 'nadi:var:testvar = {NAME}'", verbose = false)
+# node command("echo 'hi {NAME}'", verbose = true, echo = true)
+# network parallel("echo 'hi {NAME}'", echo = true)
+# network plot_timeseries(
+# 	"/home/gaurav/work/orise/sustainable-rivers/data/{_NAME}/daily.csv",
+# 	"date",
+# 	"flow",
+# 	"/tmp/test.gv",
+# 	skip_missing=true,
+# 	config = {
+# 		csv = true,
+#  		preamble="unset ytics\nunset yrange\n set xrange [\"1900-01-01\":\"2025-12-31\"]\n unset xlabel"
+# 	}
+# )
+network render("test.template", "/tmp/rendered.md")
