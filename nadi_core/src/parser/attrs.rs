@@ -399,7 +399,7 @@ mod tests {
     #[case("x_name=12\nx_100yr_name=12.245", vec![("x_name", Attribute::Integer(12)), ("x_100yr_name", Attribute::Float(12.245))], "")]
     #[case("\"some flag\"=true\n # comment\nx_name=12", vec![("some flag", Attribute::Bool(true)), ("x_name", Attribute::Integer(12))], "")]
     #[case("# comment \n# comment 2 \n# comment 3 \n# comment 3\n\"some flag\"=true\nx_name=12", vec![("some flag", Attribute::Bool(true)), ("x_name", Attribute::Integer(12))], "")]
-    #[case("\"some flag\"=true\n # comment # comment 2\nx_name=12", vec![("some flag", Attribute::Bool(true)), ("x_name", Attribute::Integer(12))], "")]
+    #[case("\"some flag\"=true\n # comment # comment 2\n\nx_name=12", vec![("some flag", Attribute::Bool(true)), ("x_name", Attribute::Integer(12))], "")]
     #[case("x=12:21", vec![("x", Attribute::Time(Time::new(12,21, 0,0)))], "")]
     #[case("x=12:21", vec![("x", Attribute::Time(Time::new(12,21, 0,0)))], "")]
     fn attr_group_test(

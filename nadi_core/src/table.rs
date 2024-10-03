@@ -1,8 +1,13 @@
+use std::{path::Path, str::FromStr};
+
 use abi_stable::{
     std_types::{RString, RVec, Tuple2, Tuple4},
     StableAbi,
 };
 use cairo::Context;
+use string_template_plus::Template;
+
+use crate::Network;
 
 #[repr(C)]
 #[derive(StableAbi, Clone)]
@@ -138,5 +143,73 @@ impl Column {
             header: header.into(),
             template: template.into(),
         }
+    }
+}
+
+#[repr(C)]
+#[derive(StableAbi, Debug, Default, Clone, PartialEq)]
+pub struct Table {
+    columns: RVec<Column>,
+}
+
+impl FromStr for Table {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let cols = crate::parser::table::parse_table_complete(s).map_err(anyhow::Error::msg)?;
+        Ok(Self {
+            columns: cols.into(),
+        })
+    }
+}
+
+impl Table {
+    pub fn from_file<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
+        let contents = std::fs::read_to_string(path)?;
+        Self::from_str(&contents)
+    }
+
+    pub fn render_contents(&self, net: &Network) -> Result<Vec<Vec<String>>, anyhow::Error> {
+        let templates = self
+            .columns
+            .iter()
+            .map(|c| Template::parse_template(&c.template))
+            .collect::<Result<Vec<Template>, anyhow::Error>>()?;
+
+        net.nodes()
+            .map(|n| {
+                let n = n.lock();
+                templates
+                    .iter()
+                    .map(|t| n.render(t))
+                    .collect::<Result<Vec<String>, anyhow::Error>>()
+            })
+            .collect()
+    }
+
+    pub fn render_markdown(&self, net: &Network) -> anyhow::Result<String> {
+        let headers: Vec<&str> = self.columns.iter().map(|c| c.header.as_str()).collect();
+        let contents = self.render_contents(net)?;
+        let col_widths: Vec<usize> = headers
+            .iter()
+            .enumerate()
+            .map(|(i, h)| {
+                contents
+                    .iter()
+                    .map(|row| row[i].len())
+                    .chain([h.len()])
+                    .max()
+                    .unwrap_or(1)
+            })
+            .collect();
+        let mut table = String::new();
+        for (c, w) in headers.iter().zip(&col_widths) {
+            table.push_str(&format!("{:1$} |", c, w));
+        }
+        for row in contents {
+            for (c, w) in row.iter().zip(&col_widths) {
+                table.push_str(&format!("{:1$} |", c, w));
+            }
+        }
+        Ok(table)
     }
 }

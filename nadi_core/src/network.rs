@@ -37,7 +37,7 @@ use abi_stable::{
 /// system.
 ///
 /// Here is an example network file,
-///
+/// ```network
 ///     cannelton -> newburgh
 ///     newburgh -> evansville
 ///     evansville -> "jt-myers"
@@ -45,7 +45,7 @@ use abi_stable::{
 ///     "old-shawneetown" -> golconda
 ///     markland -> mcalpine
 ///     golconda -> smithland
-///
+/// ```
 /// The basic form of network file can contain a connection per line,
 /// the node names can either be identifier (alphanumeric+_) or a
 /// quoted string (similar to [DOT format (graphviz

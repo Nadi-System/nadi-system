@@ -110,7 +110,7 @@ fn help_task(txt: &str) -> Res<&str, FunctionType> {
 
 fn function_type(txt: &str) -> Res<&str, FunctionType> {
     context(
-        "tasks type",
+        "task type",
         preceded(
             sp,
             alt((
@@ -138,6 +138,7 @@ pub fn parse_function(txt: &str) -> Res<&str, FunctionCall> {
 pub fn parse_script(txt: &str) -> Res<&str, Vec<FunctionCall>> {
     context(
         "tasks script",
+        // this might have caused the error
         all_consuming(terminated(preceded(sp, many0(parse_function)), sp)),
     )(txt)
 }
@@ -160,8 +161,8 @@ pub fn parse_script_complete(txt: &str) -> Result<Vec<FunctionCall>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::attrs::Attribute;
     use crate::attrs::Date;
-    use abi_stable::std_types::RHashMap;
     use rstest::rstest;
 
     #[rstest]
@@ -243,5 +244,14 @@ network debug(\"test.table\", \"/tmp/test.tex\", true, radius=0.2, offset=1.4)
         let (rest, n) = parse_script(txt).unwrap();
         assert_eq!(rest, reminder);
         assert_eq!(n, value);
+    }
+
+    #[rstest]
+    #[case("node func")]
+    #[case("node func(12")]
+    #[case("noder func(12)")]
+    #[case("#sth \n\n netwrok func(12)")]
+    fn parse_script_test_error(#[case] txt: &str) {
+        assert!(parse_script(txt).is_err());
     }
 }

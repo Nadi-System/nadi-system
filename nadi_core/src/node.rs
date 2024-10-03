@@ -38,12 +38,13 @@ pub fn new_node(index: usize, name: &str) -> Node {
 ///
 /// Here is an example node attribute file. Here we have string,
 /// float, int and boolean values.
-///
+/// ```toml
 ///     stn="smithland"
 ///     nat_7q10=12335.94850131619
 ///     orsanco_7q10=16900
 ///     lock=true
 ///     ...
+/// ```
 ///    
 #[repr(C)]
 #[derive(StableAbi, Default, Clone)]

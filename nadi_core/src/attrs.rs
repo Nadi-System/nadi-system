@@ -587,7 +587,6 @@ pub fn parse_attr_file(txt: &str) -> anyhow::Result<AttrMap> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use abi_stable::std_types::RHashMap;
     use rstest::rstest;
 
     #[rstest]
@@ -599,7 +598,7 @@ mod tests {
         assert!(i64::from_attr(&Attribute::Bool(false)).is_none());
         let val: i64 = FromAttribute::from_attr(&Attribute::Integer(2)).unwrap();
         assert_eq!(val, 2);
-        let val: bool = FromAttribute::from_attr(&Attribute::Bool(true)).unwrap();
+        let _: bool = FromAttribute::from_attr(&Attribute::Bool(true)).unwrap();
 
         let val: (i64, bool) = FromAttribute::from_attr(&Attribute::Array(
             vec![Attribute::Integer(2), Attribute::Bool(true)].into(),

@@ -119,7 +119,7 @@ mod tests {
     #[case("A ->B", vec![("A", "B")])]
     #[case("name -> other", vec![("name", "other")])]
     #[case("\"name-is\" -> other_one", vec![("name-is", "other_one")])]
-    #[case("# test \"name is not\"->something\n\"name is\"\n->\nsomething", vec![("name is", "something")])]
+    #[case("# test \"name is not\"->something\n\n\"name is\"\n->\nsomething", vec![("name is", "something")])]
     #[case("\"name is\"\n->\nsomething# test \"name is not\"->something", vec![("name is", "something")])]
     #[case("\"name-is\" -> other_one\n#test -> other\n\"name is\"\n->\nsomething", vec![("name-is", "other_one"), ("name is", "something")])]
     fn parse_network_test(#[case] txt: &str, #[case] path: Vec<(&str, &str)>) {
