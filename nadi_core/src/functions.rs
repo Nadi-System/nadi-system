@@ -251,6 +251,38 @@ impl NadiFunctions {
                 Some(f) => f.call(net, func.ctx()).res().map(|_| ()),
                 None => Err(format!("Network Function {} not found", func.name)),
             },
+            FunctionType::Help => {
+                let mut found = false;
+                if let Some(help) = self.help_node(&func.name) {
+                    println!("{}: {}\n{}", "== Node Function".blue(), func.name, help);
+                    found = true;
+                }
+                if let Some(help) = self.help_network(&func.name) {
+                    println!("{}: {}\n{}", "== Network Function".blue(), func.name, help);
+                    found = true;
+                }
+                if found {
+                    Ok(())
+                } else {
+                    Err(format!("Function {} not found", func.name))
+                }
+            }
+            FunctionType::HelpNode => {
+                if let Some(help) = self.help_node(&func.name) {
+                    println!("{}: {}\n{}", "== Node Function".blue(), func.name, help);
+                    Ok(())
+                } else {
+                    Err(format!("Node Function {} not found", func.name))
+                }
+            }
+            FunctionType::HelpNetwork => {
+                if let Some(help) = self.help_network(&func.name) {
+                    println!("{}: {}\n{}", "== Network Function".blue(), func.name, help);
+                    Ok(())
+                } else {
+                    Err(format!("Network Function {} not found", func.name))
+                }
+            }
         }
     }
 
@@ -408,6 +440,9 @@ pub enum FunctionType {
     Node(Propagation),
     #[default]
     Network,
+    Help,
+    HelpNode,
+    HelpNetwork,
 }
 
 impl ToString for FunctionType {
@@ -415,6 +450,9 @@ impl ToString for FunctionType {
         match self {
             Self::Node(p) => format!("{}.{}", "node", p.to_string()),
             Self::Network => "network".to_string(),
+            Self::Help => "help".to_string(),
+            Self::HelpNode => "help.node".to_string(),
+            Self::HelpNetwork => "help.network".to_string(),
         }
     }
 }
@@ -424,6 +462,9 @@ impl FunctionType {
         match self {
             Self::Node(p) => format!("{}.{}", "node".red(), p.to_colored_string()),
             Self::Network => "network".red().to_string(),
+            Self::Help => "help".blue().to_string(),
+            Self::HelpNode => format!("{}.{}", "help".blue(), "node".red()),
+            Self::HelpNetwork => format!("{}.{}", "help".blue(), "network".red()),
         }
     }
 }

@@ -96,11 +96,23 @@ fn node_task_type(txt: &str) -> Res<&str, FunctionType> {
     )(txt)
 }
 
+fn help_task(txt: &str) -> Res<&str, FunctionType> {
+    preceded(
+        sp,
+        alt((
+            value(FunctionType::HelpNode, tag("help.node")),
+            value(FunctionType::HelpNetwork, tag("help.network")),
+            // help has to come after the two, else it'll take this and fail
+            value(FunctionType::Help, tag("help")),
+        )),
+    )(txt)
+}
+
 fn function_type(txt: &str) -> Res<&str, FunctionType> {
     context(
         "tasks type",
         preceded(
-            tuple((sp, opt(tag("!")))), // temp ignore !
+            sp,
             alt((
                 value(FunctionType::Network, preceded(sp, tag("network"))),
                 node_task_type,
@@ -108,6 +120,7 @@ fn function_type(txt: &str) -> Res<&str, FunctionType> {
                     FunctionType::Node(Propagation::Sequential),
                     preceded(sp, tag("node")),
                 ),
+                help_task,
             )),
         ),
     )(txt)

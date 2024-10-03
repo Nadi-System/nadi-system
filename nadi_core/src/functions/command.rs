@@ -143,4 +143,48 @@ mod command {
 
         Ok(())
     }
+
+    /** Run the given template as a shell command.
+
+    Run any command in the shell. The standard output of the command
+    will be consumed and if there are lines starting with `nadi:var:`
+    and followed by `key=val` pairs, it'll be read as new attributes
+    to that node.
+
+    # Arguments:
+    - cmd: String Command template to run
+    - verbose: bool Show the rendered version of command
+    - echo: bool Echo the stdin from the command
+        */
+    #[network_func(verbose = true, echo = true)]
+    fn command(net: &mut Network, cmd: Template, verbose: bool, echo: bool) -> anyhow::Result<()> {
+        let cmd = net.render(&cmd)?;
+        if verbose {
+            println!("$ {cmd}");
+        }
+        let output = Exec::shell(cmd).stream_stdout()?;
+        let buf = std::io::BufReader::new(output);
+        for line in buf.lines() {
+            let l = line?;
+            if l.starts_with("nadi:var:") {
+                let var = &l["nadi:var:".len()..];
+                let (res, (k, v)) = nadi_core::parser::attrs::attr_key_val(var)
+                    .map_err(|e| anyhow::Error::msg(e.to_string()))?;
+                match net.attr(&k) {
+                    Some(vold) => {
+                        if !(vold == &v) {
+                            println!("{k}={} -> {}", vold.to_string(), v.to_string())
+                        }
+                    }
+                    None => println!("{k}={}", v.to_string()),
+                };
+                net.set_attr(&k, v);
+            } else {
+                if echo {
+                    println!("{}", l);
+                }
+            }
+        }
+        Ok(())
+    }
 }
