@@ -109,11 +109,13 @@ impl NodeInner {
     }
 
     pub fn set_level(&mut self, level: u64) {
-        self.level = level
+        self.level = level;
+        self.set_attr("LEVEL", Attribute::Integer(level as i64));
     }
 
     pub fn set_order(&mut self, order: u64) {
-        self.order = order
+        self.order = order;
+        self.set_attr("ORDER", Attribute::Integer(order as i64));
     }
 
     // pub fn extend_attr(&mut self, attrs: &AttrMap) {

@@ -20,6 +20,7 @@ mod command;
 mod connections;
 mod debug;
 mod render;
+mod table;
 mod timeseries;
 
 /// Return values for Nadi Functions
@@ -179,6 +180,7 @@ impl NadiFunctions {
         timeseries::TimeseriesMod {}.register(&mut funcs);
         command::CommandMod {}.register(&mut funcs);
         connections::ConnectionsMod {}.register(&mut funcs);
+        table::TableMod {}.register(&mut funcs);
         funcs.load_plugins().unwrap();
         funcs
     }

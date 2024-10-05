@@ -310,6 +310,64 @@ impl Network {
         }
         template.render(&op)
     }
+
+    pub fn connections_utf8(&self) -> Vec<String> {
+        self.nodes()
+            .map(|node| {
+                let node = node.lock();
+                let level = node.level();
+                let par_level = node.output().map(|n| n.lock().level()).unwrap_or(level);
+                let merge = level != par_level;
+
+                let mut line = String::new();
+                for _ in 0..level {
+                    line.push_str("  │");
+                }
+                if level != par_level {
+                    line.pop();
+                    if node.inputs().is_empty() {
+                        line.push_str("├──");
+                    } else {
+                        line.push_str("├──┐");
+                    }
+                } else {
+                    if node.inputs().is_empty() {
+                        line.push_str("  ╵");
+                    } else if node.output().is_none() {
+                        line.push_str("  ╷");
+                    } else {
+                        line.push_str("  │");
+                    }
+                }
+                line
+            })
+            .collect()
+    }
+
+    pub fn connections_ascii(&self) -> Vec<String> {
+        self.nodes()
+            .map(|node| {
+                let node = node.lock();
+                let level = node.level();
+                let par_level = node.output().map(|n| n.lock().level()).unwrap_or(level);
+                let merge = level != par_level;
+
+                let mut line = String::new();
+                for _ in 0..level {
+                    line.push_str("  |");
+                }
+                if level != par_level {
+                    line.pop();
+                    line.push_str("|--*");
+                // this is never needed as the first child is put in the same level
+                // line.push_str("`--*");
+                } else {
+                    line.push_str("  *");
+                }
+                line
+            })
+            .collect()
+    }
 }
 
 #[repr(C)]

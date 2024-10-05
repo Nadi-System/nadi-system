@@ -7,7 +7,7 @@ use abi_stable::{
 use cairo::Context;
 use string_template_plus::Template;
 
-use crate::Network;
+use crate::{Network, Node};
 
 #[repr(C)]
 #[derive(StableAbi, Clone)]
@@ -128,6 +128,20 @@ pub enum ColumnAlign {
     Center,
 }
 
+impl std::fmt::Display for ColumnAlign {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Left => '<',
+                Self::Right => '>',
+                Self::Center => '^',
+            }
+        )
+    }
+}
+
 #[repr(C)]
 #[derive(StableAbi, Debug, Default, Clone, PartialEq)]
 pub struct Column {
@@ -168,27 +182,55 @@ impl Table {
         Self::from_str(&contents)
     }
 
-    pub fn render_contents(&self, net: &Network) -> Result<Vec<Vec<String>>, anyhow::Error> {
+    pub fn render_contents(
+        &self,
+        net: &Network,
+        conn: bool,
+    ) -> Result<Vec<Vec<String>>, anyhow::Error> {
         let templates = self
             .columns
             .iter()
             .map(|c| Template::parse_template(&c.template))
             .collect::<Result<Vec<Template>, anyhow::Error>>()?;
 
-        net.nodes()
-            .map(|n| {
-                let n = n.lock();
-                templates
-                    .iter()
-                    .map(|t| n.render(t))
-                    .collect::<Result<Vec<String>, anyhow::Error>>()
-            })
-            .collect()
+        if conn {
+            net.nodes()
+                .zip(net.connections_utf8())
+                .map(|(n, c)| {
+                    let n = n.lock();
+                    let mut row = templates
+                        .iter()
+                        .map(|t| n.render(t))
+                        .collect::<Result<Vec<String>, anyhow::Error>>()?;
+                    row.insert(0, c);
+                    Ok(row)
+                })
+                .collect()
+        } else {
+            net.nodes()
+                .map(|n| {
+                    let n = n.lock();
+                    let mut row = templates
+                        .iter()
+                        .map(|t| n.render(t))
+                        .collect::<Result<Vec<String>, anyhow::Error>>()?;
+                    Ok(row)
+                })
+                .collect()
+        }
     }
 
-    pub fn render_markdown(&self, net: &Network) -> anyhow::Result<String> {
-        let headers: Vec<&str> = self.columns.iter().map(|c| c.header.as_str()).collect();
-        let contents = self.render_contents(net)?;
+    pub fn render_markdown(&self, net: &Network, conn: Option<String>) -> anyhow::Result<String> {
+        let mut headers: Vec<&str> = self.columns.iter().map(|c| c.header.as_str()).collect();
+        if let Some(c) = &conn {
+            headers.insert(0, c);
+        }
+        let mut alignments: Vec<&ColumnAlign> = self.columns.iter().map(|c| &c.align).collect();
+        if conn.is_some() {
+            // conn needs to be left align for the ascii diagram to work
+            alignments.insert(0, &ColumnAlign::Left);
+        }
+        let contents = self.render_contents(net, conn.is_some())?;
         let col_widths: Vec<usize> = headers
             .iter()
             .enumerate()
@@ -201,15 +243,40 @@ impl Table {
                     .unwrap_or(1)
             })
             .collect();
+
         let mut table = String::new();
-        for (c, w) in headers.iter().zip(&col_widths) {
-            table.push_str(&format!("{:1$} |", c, w));
+        table.push('|');
+        for ((c, w), a) in headers.iter().zip(&col_widths).zip(&alignments) {
+            table.push_str(&align_fmt_fn(c, a, w));
+            table.push('|');
         }
+        table.push('\n');
+        table.push('|');
+        for (w, a) in col_widths.iter().zip(&alignments) {
+            let (pre, post) = match a {
+                ColumnAlign::Left => (':', '-'),
+                ColumnAlign::Right => ('-', ':'),
+                ColumnAlign::Center => (':', ':'),
+            };
+            table.push_str(&format!("{pre}{:->1$}{post}|", "", w));
+        }
+        table.push('\n');
         for row in contents {
-            for (c, w) in row.iter().zip(&col_widths) {
-                table.push_str(&format!("{:1$} |", c, w));
+            table.push('|');
+            for ((c, w), a) in row.iter().zip(&col_widths).zip(&alignments) {
+                table.push_str(&align_fmt_fn(c, a, w));
+                table.push('|');
             }
+            table.push('\n');
         }
         Ok(table)
+    }
+}
+
+fn align_fmt_fn(col: &str, align: &ColumnAlign, width: &usize) -> String {
+    match align {
+        ColumnAlign::Left => format!(" {:<1$} ", col, width),
+        ColumnAlign::Right => format!(" {:>1$} ", col, width),
+        ColumnAlign::Center => format!(" {:^1$} ", col, width),
     }
 }

@@ -24,4 +24,25 @@ mod debug {
         println!("Args: {args:?}");
         println!("KwArgs: {kwargs:?}");
     }
+
+    /// Echo the string to stdout or stderr
+    #[network_func(error = false, newline = true)]
+    fn echo(_net: &mut Network, line: String, error: bool, newline: bool) {
+        match (error, newline) {
+            (false, false) => print!("{line}"),
+            (false, true) => println!("{line}"),
+            (true, false) => eprint!("{line}"),
+            (true, true) => eprintln!("{line}"),
+        }
+    }
+
+    /// Echo the ----8<---- line for clipping sytax
+    #[network_func(error = false)]
+    fn clip(_net: &mut Network, error: bool) {
+        if error {
+            eprintln!("----8<----");
+        } else {
+            println!("----8<----");
+        }
+    }
 }
