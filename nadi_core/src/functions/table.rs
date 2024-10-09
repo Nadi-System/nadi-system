@@ -3,9 +3,8 @@ use nadi_plugin::nadi_internal_plugin;
 #[nadi_internal_plugin]
 mod table {
     use crate::table::Table;
-    use crate::{Network};
-    
-    
+    use crate::Network;
+
     use nadi_plugin::network_func;
     use std::io::Write;
     use std::path::PathBuf;

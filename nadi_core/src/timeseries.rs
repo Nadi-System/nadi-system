@@ -4,54 +4,80 @@ use crate::{
 };
 
 use abi_stable::{
-    std_types::{RString, RVec},
+    external_types::RMutex,
+    std_types::{RArc, RString, RVec},
     StableAbi,
 };
 
+pub type TimeLine = RArc<RMutex<TimeLineInner>>;
+
 #[repr(C)]
 #[derive(StableAbi, Clone, PartialEq, Debug)]
-pub struct TimeSeries {
-    start: DateTime,
+pub struct TimeLineInner {
+    /// timestamp of the start datetime
+    start: i64,
+    /// timestamp of the end datetime
+    end: i64,
     /// step in seconds
     step: i64,
-    values: TimeSeriesValues,
+    /// is regular timeseries or not
+    _regular: bool,
+    /// values in string format so that we don't have to deal with time
+    str_values: RVec<RString>,
+    /// format string used in the str_values,
+    datetimefmt: RString,
 }
 
-impl TimeSeries {
-    pub fn new(start: DateTime, step: i64, values: TimeSeriesValues) -> Self {
-        Self {
-            start,
-            step,
-            values,
-        }
+impl<'a> TimeLineInner {
+    pub fn start(&self) -> i64 {
+        self.start
     }
 
-    pub fn start(&self) -> &DateTime {
-        &self.start
+    pub fn end(&self) -> i64 {
+        self.end
     }
 
     pub fn step(&self) -> i64 {
         self.step
     }
 
-    pub fn time(&self, index: usize) -> DateTime {
-        self.start.plus(self.step * index as i64)
+    pub fn str_values(&'a self) -> impl Iterator<Item = &'a str> {
+        self.str_values.iter().map(|s| s.as_str())
     }
 
-    pub fn times<'a>(&'a self) -> impl Iterator<Item = DateTime> + 'a {
-        let start = self.start.timestamp();
-        (0..self.values.len())
-            .map(move |s| start + s as i64 * self.step)
-            .map(DateTime::from_timestamp)
+    pub fn datetimefmt(&'a self) -> &'a str {
+        self.datetimefmt.as_str()
+    }
+}
+
+#[repr(C)]
+#[derive(StableAbi, Clone)]
+pub struct TimeSeries {
+    timeline: TimeLine,
+    values: TimeSeriesValues,
+}
+
+impl TimeSeries {
+    pub fn new(timeline: TimeLine, values: TimeSeriesValues) -> Self {
+        Self { timeline, values }
     }
 
-    pub fn end(&self) -> DateTime {
-        self.start.plus(self.step * self.values.len() as i64)
+    pub fn start(&self) -> i64 {
+        self.timeline.lock().start()
+    }
+
+    pub fn step(&self) -> i64 {
+        self.timeline.lock().step()
+    }
+
+    pub fn timeline(&self) -> &TimeLine {
+        &self.timeline
     }
 
     pub fn values<'a, T: FromTimeSeries<'a>>(&'a self) -> Option<&'a [T]> {
         FromTimeSeries::from_ts(&self.values)
     }
+
     pub fn values_mut<'a, T: FromTimeSeries<'a>>(&'a mut self) -> Option<&'a mut [T]> {
         FromTimeSeries::from_ts_mut(&mut self.values)
     }

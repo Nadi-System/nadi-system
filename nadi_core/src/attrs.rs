@@ -13,7 +13,6 @@ use abi_stable::{
     },
     StableAbi,
 };
-use chrono::{Datelike, Timelike};
 
 #[repr(C)]
 #[derive(StableAbi, Clone, PartialEq, Debug)]
@@ -355,20 +354,6 @@ impl std::fmt::Display for DateTime {
     }
 }
 
-impl From<chrono::NaiveDateTime> for DateTime {
-    fn from(value: chrono::NaiveDateTime) -> Self {
-        Date::from(value.date()).with_time(Time::from(value.time()))
-    }
-}
-
-impl Into<chrono::NaiveDateTime> for DateTime {
-    fn into(self) -> chrono::NaiveDateTime {
-        let d: chrono::NaiveDate = self.date.into();
-        let t: chrono::NaiveTime = self.time.into();
-        chrono::NaiveDateTime::new(d, t)
-    }
-}
-
 impl DateTime {
     pub fn new(date: Date, time: Time, offset: Option<Offset>) -> Self {
         Self {
@@ -376,22 +361,6 @@ impl DateTime {
             time,
             offset: offset.into(),
         }
-    }
-
-    pub fn plus(&self, seconds: i64) -> Self {
-        Self::from_timestamp(self.timestamp() + seconds)
-    }
-
-    pub fn timestamp(&self) -> i64 {
-        Into::<chrono::NaiveDateTime>::into(self.clone()).timestamp()
-        // let ce_day = self.date.days_from_ce();
-        // let seconds = self.time.seconds_since_midnight() as i64;
-        // (ce_day - UNIX_EPOCH_DAY) * 86_400 + seconds
-    }
-
-    // Copied and checks removed from: chrono/datetime/mod.rs
-    pub fn from_timestamp(secs: i64) -> DateTime {
-        DateTime::from(chrono::NaiveDateTime::from_timestamp(secs, 0))
     }
 }
 
@@ -409,19 +378,6 @@ impl std::fmt::Display for Date {
     }
 }
 
-impl From<chrono::NaiveDate> for Date {
-    fn from(value: chrono::NaiveDate) -> Self {
-        Self::new(value.year() as u16, value.month() as u8, value.day() as u8)
-    }
-}
-
-impl Into<chrono::NaiveDate> for Date {
-    fn into(self) -> chrono::NaiveDate {
-        chrono::NaiveDate::from_ymd_opt(self.year as i32, self.month as u32, self.day as u32)
-            .expect("should be valid date")
-    }
-}
-
 impl Date {
     pub fn new(year: u16, month: u8, day: u8) -> Self {
         // TODO check valid dates
@@ -434,13 +390,6 @@ impl Date {
             time,
             offset: RNone,
         }
-    }
-
-    pub fn plus(self, days: i32) -> Self {
-        let d: chrono::NaiveDate = self.into();
-        chrono::NaiveDate::from_num_days_from_ce_opt(d.num_days_from_ce() + days)
-            .unwrap()
-            .into()
     }
 
     pub fn doy(&self) -> u8 {
@@ -478,29 +427,6 @@ pub struct Time {
 impl std::fmt::Display for Time {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:02}:{:02}:{:02}", self.hour, self.min, self.sec)
-    }
-}
-
-impl From<chrono::NaiveTime> for Time {
-    fn from(value: chrono::NaiveTime) -> Self {
-        Self::new(
-            value.hour() as u8,
-            value.minute() as u8,
-            value.second() as u8,
-            value.nanosecond(),
-        )
-    }
-}
-
-impl Into<chrono::NaiveTime> for Time {
-    fn into(self) -> chrono::NaiveTime {
-        chrono::NaiveTime::from_hms_nano_opt(
-            self.hour as u32,
-            self.min as u32,
-            self.sec as u32,
-            self.nanosecond,
-        )
-        .expect("should be valid time")
     }
 }
 

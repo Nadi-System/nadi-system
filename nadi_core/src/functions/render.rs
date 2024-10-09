@@ -63,12 +63,12 @@ mod render_utils {
     use crate::{functions::Propagation, Network};
     use anyhow::{Context, Error};
     use number_range::NumberRangeOptions;
-    
+
     use std::fs::File;
     use std::io::{BufRead, BufReader};
     use std::io::{BufWriter, Write};
     use std::path::{Path, PathBuf};
-    use string_template_plus::{Render, Template};
+    use string_template_plus::Template;
 
     pub enum RenderFileContentsType {
         Include(PathBuf, String),
@@ -159,7 +159,7 @@ mod render_utils {
             Ok(filecontents)
         }
 
-        fn snippet(templ: &str, batch: Propagation) -> Result<Self, Error> {
+        fn _snippet(templ: &str, batch: Propagation) -> Result<Self, Error> {
             Ok(Self {
                 contents: vec![RenderFileContentsType::Snippet(
                     Template::parse_template(templ)?,

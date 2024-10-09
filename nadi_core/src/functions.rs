@@ -21,7 +21,7 @@ mod connections;
 mod debug;
 mod render;
 mod table;
-mod timeseries;
+// mod timeseries;
 
 /// Return values for Nadi Functions
 #[repr(C)]
@@ -177,7 +177,7 @@ impl NadiFunctions {
         attrs::AttrsMod {}.register(&mut funcs);
         attrs2::Attrs2Mod {}.register(&mut funcs);
         debug::DebugMod {}.register(&mut funcs);
-        timeseries::TimeseriesMod {}.register(&mut funcs);
+        // timeseries::TimeseriesMod {}.register(&mut funcs);
         command::CommandMod {}.register(&mut funcs);
         connections::ConnectionsMod {}.register(&mut funcs);
         table::TableMod {}.register(&mut funcs);

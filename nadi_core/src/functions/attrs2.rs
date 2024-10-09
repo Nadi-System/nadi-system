@@ -5,7 +5,7 @@ mod attrs2 {
     use crate::{AttrMap, FromAttribute, Network, NodeInner};
     use abi_stable::std_types::Tuple2;
     use nadi_plugin::{network_func, node_func};
-    
+
     use string_template_plus::Template;
 
     /// Set node attributes
