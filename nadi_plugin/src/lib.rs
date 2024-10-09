@@ -1,8 +1,12 @@
+//! Procedural Macros for plugin development for NADI system.
+//!
+//! Do not use this library by itself, it should be reexported from
+//! [`nadi_core`] crate
 use convert_case::{Case, Casing};
 use std::collections::HashMap;
 
 use proc_macro::TokenStream;
-use quote::{format_ident, quote, ToTokens};
+use quote::{format_ident, quote, quote_spanned, ToTokens};
 use syn::{
     parse_macro_input, punctuated::Punctuated, token::Comma, Attribute, Expr, FnArg, Ident, ItemFn,
     ItemMod, Lit, MetaNameValue, Type,
@@ -66,6 +70,7 @@ fn nadi_func(args: TokenStream, item: TokenStream, node: bool) -> TokenStream {
         .skip(1) // skip first argument, which is probably node or network
         .map(get_fn_arg)
         .collect();
+    let warnings = check_args_kwargs_order(&func_args, &default_args);
 
     let func_struct_name = nadi_struct_name(&item.sig.ident, if node { "Node" } else { "Network" });
 
@@ -85,6 +90,8 @@ fn nadi_func(args: TokenStream, item: TokenStream, node: bool) -> TokenStream {
     let clean_func = clean_function(&item);
 
     quote! {
+    #warnings
+
         #[derive(Debug)]
         pub struct #func_struct_name;
 
@@ -101,6 +108,39 @@ fn nadi_func(args: TokenStream, item: TokenStream, node: bool) -> TokenStream {
         }
     }
     .into()
+}
+
+fn check_args_kwargs_order(
+    args: &[(&Ident, &Type, FuncArgType, bool)],
+    default_args: &HashMap<Ident, Expr>,
+) -> proc_macro2::TokenStream {
+    let mut warnings: Vec<proc_macro2::TokenStream> = default_args
+        .keys()
+        .filter_map(|id| {
+            if !args.iter().any(|a| a.0 == id) {
+                Some(quote_spanned! {
+                id.span() =>
+                    compile_error!("Argument not in the inner function");
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+    let mut flag = false;
+    for (a, t, _, _) in args {
+        if type_is_opt(t) {
+            flag = true;
+        } else if default_args.contains_key(a) {
+            flag = true;
+        } else if flag {
+            warnings.push(quote_spanned! {
+                a.span()=> compile_error!("Positional argument after default argument(s)");
+            });
+        }
+    }
+
+    quote! { #(#warnings)* }
 }
 
 /// Clean the function of function argument attributes like #[args], ...
@@ -142,6 +182,20 @@ fn get_fn_arg(arg: &FnArg) -> (&Ident, &Type, FuncArgType, bool) {
         }
         _ => panic!("Invalid Argument Type for Nadi function"),
     }
+}
+
+// HACK ignoring the path and assuming anything::Option is Option
+fn type_is_opt(ty: &Type) -> bool {
+    ty.to_token_stream()
+        .to_string()
+        .split('<')
+        .next()
+        .unwrap_or_default()
+        .split("::")
+        .last()
+        .unwrap_or_default()
+        .trim()
+        == "Option"
 }
 
 /// this will be on the top level of the mod, will have access to all
@@ -320,18 +374,7 @@ fn get_call_func(
                     );
                 }
             };
-            // HACK again ignoring the path and assuming anything::Option is Option
-            let isopt = ty
-                .to_token_stream()
-                .to_string()
-                .split('<')
-                .next()
-                .unwrap_or_default()
-                .split("::")
-                .last()
-                .unwrap_or_default()
-                .trim()
-                == "Option";
+            let isopt = type_is_opt(ty);
             let patterns = if isopt {
 
                 quote! {
