@@ -14,7 +14,6 @@ categories = ["data-structures", "science", "science::geo", "visualization"]
 [dependencies]
 abi_stable = "0.11.3"
 anyhow = "1.0.86"
-cairo-rs = { version = "0.20.1", features = ["pdf", "png", "svg"] }
 nom = "7.1.3"
 string-template-plus = "0.4.3"
 nadi_plugin = {version = "0.3.0", path="../nadi_plugin"}

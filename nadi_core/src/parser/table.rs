@@ -1,5 +1,5 @@
 use crate::parser::{sp, Res};
-use crate::table::{Column, ColumnAlign, NodeShape};
+use crate::table::{Column, ColumnAlign};
 
 use nom::bytes::complete::{take_till, take_until};
 
@@ -14,42 +14,6 @@ use nom::{
 };
 
 use super::attrs::parse_f64;
-
-fn node_shape_val(txt: &str) -> Res<&str, NodeShape> {
-    let (rest, (shape, val)) = preceded(
-        sp,
-        tuple((
-            // rectangle needs to be before rect, otherwise it'll
-            // exit after matching rect
-            alt((tag("rectangle"), tag("rect"), tag("ellipse"))),
-            opt(delimited(tag("("), parse_f64, tag(")"))),
-        )),
-    )(txt)?;
-    let val = val.unwrap_or(1.5);
-    Ok((
-        rest,
-        match shape {
-            "rect" | "rectangle" => NodeShape::Rectangle(val),
-            "ellipse" => NodeShape::Ellipse(val),
-            _ => panic!("should only match rectangle and ellipse"),
-        },
-    ))
-}
-
-fn node_shape(txt: &str) -> Res<&str, NodeShape> {
-    context(
-        "node shape",
-        preceded(
-            sp,
-            alt((
-                value(NodeShape::Square, alt((tag("square"), tag("box")))),
-                value(NodeShape::Circle, tag("circle")),
-                value(NodeShape::Triangle, tag("triangle")),
-                node_shape_val,
-            )),
-        ),
-    )(txt)
-}
 
 fn column_align(txt: &str) -> Res<&str, ColumnAlign> {
     preceded(
