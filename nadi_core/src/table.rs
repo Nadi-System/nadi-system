@@ -145,9 +145,9 @@ impl std::fmt::Display for ColumnAlign {
 #[repr(C)]
 #[derive(StableAbi, Debug, Default, Clone, PartialEq)]
 pub struct Column {
-    align: ColumnAlign,
-    header: RString,
-    template: RString,
+    pub align: ColumnAlign,
+    pub header: RString,
+    pub template: RString,
 }
 
 impl Column {
@@ -163,7 +163,7 @@ impl Column {
 #[repr(C)]
 #[derive(StableAbi, Debug, Default, Clone, PartialEq)]
 pub struct Table {
-    columns: RVec<Column>,
+    pub columns: RVec<Column>,
 }
 
 impl FromStr for Table {

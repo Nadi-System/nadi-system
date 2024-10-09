@@ -173,8 +173,36 @@ impl Network {
             //     nodes
             // }
             Propagation::List(n) => n.iter().map(|n| self.nodes_map[n].clone()).collect(),
-            Propagation::Path(_p) => todo!(),
+            Propagation::Path(p) => self.nodes_path(&p).unwrap_or_default(),
         }
+    }
+
+    pub fn nodes_path(&self, path: &StrPath) -> Option<Vec<Node>> {
+        let start = self.node_by_name(path.start.as_str())?;
+        let end = self.node_by_name(path.end.as_str())?;
+        // we'll assume the network is indexed based on order, small
+        // indices are closer to outlet
+        let (start, end) = if start.lock().index() > end.lock().index() {
+            (start, end)
+        } else {
+            (end, start)
+        };
+        let mut curr = start.clone();
+        let mut path_nodes = vec![];
+        let end_name = self.nodes[end.lock().index()].as_str();
+        loop {
+            path_nodes.push(curr.clone());
+            if curr.lock().name() == end_name {
+                break;
+            }
+            let tmp = if let RSome(o) = curr.lock().output() {
+                o.clone()
+            } else {
+                return None;
+            };
+            curr = tmp;
+        }
+        Some(path_nodes)
     }
 
     pub fn calc_order(&mut self) {
