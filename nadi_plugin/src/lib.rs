@@ -59,7 +59,7 @@ fn nadi_func(args: TokenStream, item: TokenStream, node: bool) -> TokenStream {
         .inputs
         .first()
         .expect("Needs at least one parameter");
-    let func_args: Vec<(&Ident, &Type, FuncArgType)> = item
+    let func_args: Vec<(&Ident, &Type, FuncArgType, bool)> = item
         .sig
         .inputs
         .iter()
@@ -72,7 +72,14 @@ fn nadi_func(args: TokenStream, item: TokenStream, node: bool) -> TokenStream {
     let name_func = get_name_func(&item);
     let code_func = get_code_func(&item);
     let help_func = get_help_func(&item, &default_args);
-    let call_func = get_call_func(&item, arg0, &func_args, &default_args, &func_struct_name);
+    let call_func = get_call_func(
+        &item,
+        arg0,
+        node,
+        &func_args,
+        &default_args,
+        &func_struct_name,
+    );
     let impl_trait = nadi_func_impl(node);
 
     let clean_func = clean_function(&item);
@@ -114,7 +121,7 @@ fn clean_function(func: &ItemFn) -> ItemFn {
     func
 }
 
-fn get_fn_arg(arg: &FnArg) -> (&Ident, &Type, FuncArgType) {
+fn get_fn_arg(arg: &FnArg) -> (&Ident, &Type, FuncArgType, bool) {
     match arg {
         syn::FnArg::Typed(arg) => {
             let t: FuncArgType = FUNC_ARG_ATTRS
@@ -123,8 +130,12 @@ fn get_fn_arg(arg: &FnArg) -> (&Ident, &Type, FuncArgType) {
                 .map(|a| a.1)
                 .next()
                 .unwrap_or_default();
+            let is_ref = match arg.ty.as_ref() {
+                Type::Reference(_) => true,
+                _ => false,
+            };
             match arg.pat.as_ref() {
-                syn::Pat::Ident(i) => (&i.ident, arg.ty.as_ref(), t),
+                syn::Pat::Ident(i) => (&i.ident, arg.ty.as_ref(), t, is_ref),
                 _ => panic!("Invalid Argument Type for Nadi function"),
             }
         }
@@ -267,14 +278,15 @@ fn get_code_func(item: &ItemFn) -> proc_macro2::TokenStream {
 fn get_call_func(
     item: &ItemFn,
     arg0: &FnArg,
-    args: &[(&Ident, &Type, FuncArgType)],
+    node: bool,
+    args: &[(&Ident, &Type, FuncArgType, bool)],
     defaults: &HashMap<Ident, Expr>,
     func_struct_name: &Ident,
 ) -> proc_macro2::TokenStream {
     let extract_args: Vec<proc_macro2::TokenStream> = args
         .iter()
         .enumerate()
-        .map(|(i, (arg, ty, at))| {
+        .map(|(i, (arg, ty, at, is_ref))| {
 	    let arg_name = arg.to_string();
 	    let ty_name = ty.to_token_stream().to_string();
 
@@ -284,60 +296,93 @@ fn get_call_func(
                 }
             } else {
                 quote! {
-		    return ::nadi_core::functions::FunctionRet::Error(format!("Argument {} ({} [{}]) is required", #i + 1, #arg_name, #ty_name).into());
+		    return ::abi_stable::std_types::RResult::RErr(format!("Argument {} ({} [{}]) is required", #i + 1, #arg_name, #ty_name).into());
                 }
             };
 	    // HACK again ignoring the path and assuming anything::Option is Option
 	    let isopt = ty.to_token_stream().to_string().split('<').next().unwrap_or_default().split("::").last().unwrap_or_default().trim() == "Option";
 	    let patterns = if isopt {quote!{
 		Some(Ok(v)) => Some(v),
-		Some(Err(e)) => return ::nadi_core::functions::FunctionRet::Error(e.into()),
+		Some(Err(e)) => return ::abi_stable::std_types::RResult::RErr(e.into()),
 		None => None,
 	    }
 	    } else { quote!{
 		Some(Ok(v)) => v,
-		Some(Err(e)) => return ::nadi_core::functions::FunctionRet::Error(e.into()),
+		Some(Err(e)) => return ::abi_stable::std_types::RResult::RErr(e.into()),
 		None => {#def},
 	    }
 	    };
-	    match at {
-		FuncArgType::Arg =>
-		    quote!{
-			let #arg : #ty = match ctx.arg_kwarg(#i, #arg_name) {
-			    #patterns
-			};
-		    },
-		FuncArgType::Relaxed =>
-		    quote!{
-			let #arg : #ty = match ctx.arg_kwarg_relaxed(#i, #arg_name) {
-			    #patterns
-			};
-		    },
-		FuncArgType::Args => quote! {
+	    let arg_func = match at {
+		FuncArgType::Arg => quote!{ ctx.arg_kwarg },
+		FuncArgType::Relaxed => quote!{ ctx.arg_kwarg_relaxed },
+		FuncArgType::Args => return quote! {
 		    let #arg: #ty = ctx.args().into();
 		},
-		FuncArgType::KwArgs => quote! {
+		FuncArgType::KwArgs => return quote! {
 		    let #arg: #ty = ctx.kwargs().into();
 		},
+	    };
+	    if *is_ref {
+		let arg_o = format_ident!("{}_o", arg);
+		quote! {
+		    let #arg_o = match #arg_func (#i, #arg_name) {
+			#patterns
+		    };
+		    let #arg : #ty = & #arg_o;
+		}
+	    } else {
+		quote!{
+		    let #arg : #ty = match #arg_func (#i, #arg_name) {
+			#patterns
+		    };
+		}
 	    }
         })
         .collect();
     let args_n: Vec<proc_macro2::TokenStream> = args
         .iter()
-        .map(|(arg, _, _)| arg.into_token_stream())
+        .map(|(arg, _, _, _)| arg.into_token_stream())
         .collect();
     let func_name = &item.sig.ident;
     let arg0_name = get_fn_arg(arg0).0;
 
-    quote! {
-    fn call(&self, #arg0, ctx: &::nadi_core::functions::FunctionCtx)
-        -> ::nadi_core::functions::FunctionRet {
-        #(#extract_args)*
+    if node {
+        quote! {
+            fn call(&self,
+            nodes: ::abi_stable::std_types::RSlice<::nadi_core::node::Node>,
+            ctx: &::nadi_core::functions::FunctionCtx)
+                -> ::abi_stable::std_types::RResult<(), ::abi_stable::std_types::RString>
+            {
 
-        ::nadi_core::functions::FunctionRet::from(
-            #func_struct_name :: #func_name(#arg0_name, #(#args_n),*)
-        )
-    }
+        #(#extract_args)*
+        for #arg0_name in nodes {
+            if let ::nadi_core::functions::FunctionRet::Error(e) = ::nadi_core::functions::FunctionRet::from(
+                #func_struct_name :: #func_name(&mut #arg0_name .lock(), #(#args_n),*)
+            ) {
+        return ::abi_stable::std_types::RResult::RErr(e);
+        }
+        }
+        ::abi_stable::std_types::ROk(())
+            }
+        }
+    } else {
+        quote! {
+                        fn call(&self,
+                        #arg0_name : &mut ::nadi_core::network::Network,
+                        ctx: &::nadi_core::functions::FunctionCtx)
+                            -> ::abi_stable::std_types::RResult<(), ::abi_stable::std_types::RString> {
+
+                    #(#extract_args)*
+            if let ::nadi_core::functions::FunctionRet::Error(e) = ::nadi_core::functions::FunctionRet::from(
+                            #func_struct_name :: #func_name(#arg0_name, #(#args_n),*)
+
+                        ) {
+                    ::abi_stable::std_types::RResult::RErr(e)
+            } else {
+            ::abi_stable::std_types::RResult::ROk(())
+        }
+                        }
+                    }
     }
 }
 
@@ -349,7 +394,7 @@ fn get_help_func(item: &ItemFn, default_args: &HashMap<Ident, Expr>) -> proc_mac
         .sig
         .inputs
         .iter()
-        .skip(1) // skip first argument, which is probably node or network
+        .skip(1) // skip first argument, which should be node or network
         .map(|a| match a {
             syn::FnArg::Typed(a) => {
                 // args and kwargs function signature
