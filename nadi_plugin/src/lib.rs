@@ -24,13 +24,13 @@ fn nadi_func_impl(node: bool) -> proc_macro2::TokenStream {
     }
 }
 
-/// use it on node function
+/// register this function as a node function on nadi plugin
 #[proc_macro_attribute]
 pub fn node_func(args: TokenStream, item: TokenStream) -> TokenStream {
     nadi_func(args, item, true)
 }
 
-/// use it on network function
+/// register this function as a network function on nadi plugin
 #[proc_macro_attribute]
 pub fn network_func(args: TokenStream, item: TokenStream) -> TokenStream {
     nadi_func(args, item, false)
@@ -198,15 +198,31 @@ fn type_is_opt(ty: &Type) -> bool {
         == "Option"
 }
 
-/// this will be on the top level of the mod, will have access to all
-/// the functions so it can see all functions and register them
+/// Register the plugin for NADI system. This should be on the top
+/// level of the `mod`, with access to all the functions so it can
+/// register them
+///
+/// # Example Use:
+/// ```rust
+/// #[nadi_plugin::nadi_plugin]
+/// mod plugin_name {
+///     #[nadi_plugin::node_func]
+///     fn do_something(node: &mut NodeInner) {
+///     // do something here
+///     }
+/// }
+/// ```
+///
+/// Only one instance of `mod` should be exported as plugin for
+/// external plugins compiled to cdynlib.
 #[proc_macro_attribute]
 pub fn nadi_plugin(args: TokenStream, item: TokenStream) -> TokenStream {
     nadi_export_plugin(args, item, true)
 }
 
-/// this will be on the top level of the mod, will have access to all
-/// the functions so it can see all functions and register them
+/// Register the `mod` as an internal plugin, only to be used on
+/// plugins compiled in `nadi_core` crate. This should also be in the
+/// top of the `mod` definition so it can see all the functions.
 #[proc_macro_attribute]
 pub fn nadi_internal_plugin(args: TokenStream, item: TokenStream) -> TokenStream {
     nadi_export_plugin(args, item, false)
