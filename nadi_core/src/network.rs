@@ -345,7 +345,7 @@ impl Network {
                 let node = node.lock();
                 let level = node.level();
                 let par_level = node.output().map(|n| n.lock().level()).unwrap_or(level);
-                let merge = level != par_level;
+                let _merge = level != par_level;
 
                 let mut line = String::new();
                 for _ in 0..level {
@@ -378,7 +378,7 @@ impl Network {
                 let node = node.lock();
                 let level = node.level();
                 let par_level = node.output().map(|n| n.lock().level()).unwrap_or(level);
-                let merge = level != par_level;
+                let _merge = level != par_level;
 
                 let mut line = String::new();
                 for _ in 0..level {

@@ -13,8 +13,6 @@ use nom::{
     sequence::{delimited, preceded, separated_pair, terminated, tuple},
 };
 
-use super::attrs::parse_f64;
-
 fn column_align(txt: &str) -> Res<&str, ColumnAlign> {
     preceded(
         sp,
@@ -73,21 +71,6 @@ pub fn parse_table_complete(txt: &str) -> Result<Vec<Column>, String> {
 mod tests {
     use super::*;
     use rstest::rstest;
-
-    #[rstest]
-    #[case("box", NodeShape::Square, "")]
-    #[case("square", NodeShape::Square, "")]
-    #[case("circle", NodeShape::Circle, "")]
-    #[case("triangle", NodeShape::Triangle, "")]
-    #[case("rectangle", NodeShape::Rectangle(1.5), "")]
-    #[case("ellipse", NodeShape::Ellipse(1.5), "")]
-    #[case("rectangle(0.5)", NodeShape::Rectangle(0.5), "")]
-    #[case("ellipse(2.0)", NodeShape::Ellipse(2.0), "")]
-    fn node_shape_test(#[case] txt: &str, #[case] value: NodeShape, #[case] reminder: &str) {
-        let (rest, n) = node_shape(txt).unwrap();
-        assert_eq!(rest, reminder);
-        assert_eq!(n, value);
-    }
 
     #[rstest]
     #[case(

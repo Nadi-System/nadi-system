@@ -2,7 +2,7 @@ use nadi_plugin::nadi_internal_plugin;
 
 #[nadi_internal_plugin]
 mod render {
-    use crate::{Attribute, FromAttribute, Network, NodeInner};
+    use crate::{Network, NodeInner};
     use nadi_plugin::{network_func, node_func};
     use std::path::PathBuf;
     use string_template_plus::Template;
@@ -63,12 +63,12 @@ mod render_utils {
     use crate::{functions::Propagation, Network};
     use anyhow::{Context, Error};
     use number_range::NumberRangeOptions;
-    use std::collections::{HashMap, HashSet};
+    
     use std::fs::File;
     use std::io::{BufRead, BufReader};
     use std::io::{BufWriter, Write};
     use std::path::{Path, PathBuf};
-    use string_template_plus::{Render, RenderOptions, Template};
+    use string_template_plus::{Render, Template};
 
     pub enum RenderFileContentsType {
         Include(PathBuf, String),

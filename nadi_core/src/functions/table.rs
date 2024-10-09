@@ -3,9 +3,9 @@ use nadi_plugin::nadi_internal_plugin;
 #[nadi_internal_plugin]
 mod table {
     use crate::table::Table;
-    use crate::{AttrMap, AttrSlice, Attribute, Network};
-    use abi_stable::std_types::Tuple2;
-    use colored::Colorize;
+    use crate::{Network};
+    
+    
     use nadi_plugin::network_func;
     use std::io::Write;
     use std::path::PathBuf;

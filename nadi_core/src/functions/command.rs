@@ -41,7 +41,7 @@ mod command {
             let l = line?;
             if l.starts_with("nadi:var:") {
                 let var = &l["nadi:var:".len()..];
-                let (res, (k, v)) = nadi_core::parser::attrs::attr_key_val(var)
+                let (_res, (k, v)) = nadi_core::parser::attrs::attr_key_val(var)
                     .map_err(|e| anyhow::Error::msg(e.to_string()))?;
                 match node.attr(&k) {
                     Some(vold) => {
@@ -72,11 +72,11 @@ mod command {
     Run any command in the shell. The standard output of the command will
         be ignored. Use the node function `command` for more control.
         */
-    #[network_func(workers = 4, verbose = true, echo = true)]
+    #[network_func(_workers = 4, verbose = true, echo = true)]
     fn parallel(
         net: &mut Network,
         cmd: Template,
-        workers: i64,
+        _workers: i64,
         verbose: bool,
         echo: bool,
     ) -> anyhow::Result<()> {
@@ -119,7 +119,7 @@ mod command {
             let mut node = net.node(i).unwrap().lock();
             let name = node.name();
 
-            let (res, (k, v)) = match nadi_core::parser::attrs::attr_key_val(&var) {
+            let (_res, (k, v)) = match nadi_core::parser::attrs::attr_key_val(&var) {
                 Ok(v) => v,
                 Err(e) => {
                     eprintln!("{:?}", e);
@@ -168,7 +168,7 @@ mod command {
             let l = line?;
             if l.starts_with("nadi:var:") {
                 let var = &l["nadi:var:".len()..];
-                let (res, (k, v)) = nadi_core::parser::attrs::attr_key_val(var)
+                let (_res, (k, v)) = nadi_core::parser::attrs::attr_key_val(var)
                     .map_err(|e| anyhow::Error::msg(e.to_string()))?;
                 match net.attr(&k) {
                     Some(vold) => {

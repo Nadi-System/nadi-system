@@ -1,12 +1,12 @@
 use std::{path::Path, str::FromStr};
 
 use abi_stable::{
-    std_types::{RString, RVec, Tuple2, Tuple4},
+    std_types::{RString, RVec},
     StableAbi,
 };
 use string_template_plus::Template;
 
-use crate::{Network, Node};
+use crate::{Network};
 
 #[repr(C)]
 #[derive(StableAbi, Debug, Default, Clone, PartialEq)]
@@ -99,7 +99,7 @@ impl Table {
             net.nodes()
                 .map(|n| {
                     let n = n.lock();
-                    let mut row = templates
+                    let row = templates
                         .iter()
                         .map(|t| n.render(t))
                         .collect::<Result<Vec<String>, anyhow::Error>>()?;
