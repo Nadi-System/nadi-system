@@ -83,21 +83,22 @@ fn nadi_func(args: TokenStream, item: TokenStream, node: bool) -> TokenStream {
     let impl_trait = nadi_func_impl(node);
 
     let clean_func = clean_function(&item);
+
     quote! {
         #[derive(Debug)]
         pub struct #func_struct_name;
 
         impl #impl_trait for #func_struct_name {
-                #name_func
-        #code_func
-        #help_func
+            #name_func
+            #code_func
+            #help_func
 
             #call_func
         }
 
         impl  #func_struct_name {
-                #clean_func
-            }
+            #clean_func
+        }
     }
     .into()
 }
@@ -165,38 +166,51 @@ fn nadi_export_plugin(_args: TokenStream, item: TokenStream, external: bool) -> 
     let name_mod = nadi_struct_name(name, "Mod");
     let node_funcs = get_nadi_functions(&item, "node_func");
     let network_funcs = get_nadi_functions(&item, "network_func");
-    let regis_node_funcs = node_funcs.iter().map(|n| nadi_struct_name(n, "Node")).map(|n| {
-        quote! {
-            nf.register_node_function(::nadi_core::functions::NodeFunction_TO::from_value(#n, ::abi_stable::sabi_trait::TD_CanDowncast));
-        }
-    });
+    let regis_node_funcs = node_funcs
+        .iter()
+        .map(|n| nadi_struct_name(n, "Node"))
+        .map(|n| {
+            quote! {
+                    nf.register_node_function(
+                        ::nadi_core::functions::NodeFunction_TO::from_value(
+                #n,
+                ::nadi_core::abi_stable::sabi_trait::TD_CanDowncast
+                        )
+            );
+                }
+        });
 
     let regis_network_funcs = network_funcs
         .iter()
         .map(|n| nadi_struct_name(n, "Network"))
         .map(|n| {
             quote! {
-		nf.register_network_function(::nadi_core::functions::NetworkFunction_TO::from_value(#n, ::abi_stable::sabi_trait::TD_CanDowncast));
-            }
+            nf.register_network_function(
+                        ::nadi_core::functions::NetworkFunction_TO::from_value(
+                            #n,
+                            ::nadi_core::abi_stable::sabi_trait::TD_CanDowncast
+                        )
+                    );
+                }
         });
 
     if external {
         quote! {
-            #[::abi_stable::export_root_module]
+            #[::nadi_core::abi_stable::export_root_module]
             pub fn get_library() -> ::nadi_core::plugins::NadiExternalPlugin_Ref {
-        ::abi_stable::prefix_type::PrefixTypeTrait::leak_into_prefix(
-        ::nadi_core::plugins::NadiExternalPlugin {
+        ::nadi_core::abi_stable::prefix_type::PrefixTypeTrait::leak_into_prefix(
+            ::nadi_core::plugins::NadiExternalPlugin {
             register_functions,
             plugin_name,
-        })
+            })
             }
 
-            #[::abi_stable::sabi_extern_fn]
-            fn plugin_name() -> ::abi_stable::std_types::RString {
+            #[::nadi_core::abi_stable::sabi_extern_fn]
+            fn plugin_name() -> ::nadi_core::abi_stable::std_types::RString {
                 #name_s .into()
             }
 
-            #[::abi_stable::sabi_extern_fn]
+            #[::nadi_core::abi_stable::sabi_extern_fn]
             fn register_functions(nf: &mut ::nadi_core::functions::NadiFunctions) {
 
                 #(#regis_node_funcs)*
@@ -212,19 +226,19 @@ fn nadi_export_plugin(_args: TokenStream, item: TokenStream, external: bool) -> 
         quote! {
             pub struct #name_mod;
 
-        impl ::nadi_core::plugins::NadiPlugin for #name_mod {
-            fn name(&self) -> ::abi_stable::std_types::RString {
-                #name_s .into()
-            }
-            fn register(&self, nf: &mut ::nadi_core::functions::NadiFunctions) {
-
-                #(#regis_node_funcs)*
-
-                #(#regis_network_funcs)*
-            }
+            impl ::nadi_core::plugins::NadiPlugin for #name_mod {
+        fn name(&self) -> ::nadi_core::abi_stable::std_types::RString {
+                    #name_s .into()
         }
+        fn register(&self, nf: &mut ::nadi_core::functions::NadiFunctions) {
 
-        use #name::*;
+                    #(#regis_node_funcs)*
+
+                    #(#regis_network_funcs)*
+        }
+            }
+
+            use #name::*;
 
             #item
         }
@@ -261,18 +275,21 @@ fn get_nadi_functions<'a>(item: &'a ItemMod, funct: &'_ str) -> Vec<&'a Ident> {
 
 fn get_name_func(item: &ItemFn) -> proc_macro2::TokenStream {
     let func_name = item.sig.ident.to_string();
+
     quote! {
-            fn name(&self) -> ::abi_stable::std_types::RString {
-    #func_name .into()
-            }}
+        fn name(&self) -> ::nadi_core::abi_stable::std_types::RString {
+            #func_name .into()
+        }
+    }
 }
 
 fn get_code_func(item: &ItemFn) -> proc_macro2::TokenStream {
     let func_code = prettyplease::unparse(&syn::parse2(item.to_token_stream()).unwrap());
+
     quote! {
-            fn code(&self) -> ::abi_stable::std_types::RString {
+    fn code(&self) -> ::nadi_core::abi_stable::std_types::RString {
     #func_code .into()
-            }}
+    }}
 }
 
 fn get_call_func(
@@ -287,56 +304,80 @@ fn get_call_func(
         .iter()
         .enumerate()
         .map(|(i, (arg, ty, at, is_ref))| {
-	    let arg_name = arg.to_string();
-	    let ty_name = ty.to_token_stream().to_string();
+            let arg_name = arg.to_string();
+            let ty_name = ty.to_token_stream().to_string();
 
             let def = if let Some(val) = defaults.get(arg) {
+
                 quote! {
-                #ty :: from ( #val )
+                    #ty :: from ( #val )
                 }
             } else {
+
                 quote! {
-		    return ::abi_stable::std_types::RResult::RErr(format!("Argument {} ({} [{}]) is required", #i + 1, #arg_name, #ty_name).into());
+                    return ::nadi_core::abi_stable::std_types::RResult::RErr(
+			format!("Argument {} ({} [{}]) is required", #i + 1, #arg_name, #ty_name).into()
+                    );
                 }
             };
-	    // HACK again ignoring the path and assuming anything::Option is Option
-	    let isopt = ty.to_token_stream().to_string().split('<').next().unwrap_or_default().split("::").last().unwrap_or_default().trim() == "Option";
-	    let patterns = if isopt {quote!{
-		Some(Ok(v)) => Some(v),
-		Some(Err(e)) => return ::abi_stable::std_types::RResult::RErr(e.into()),
-		None => None,
-	    }
-	    } else { quote!{
-		Some(Ok(v)) => v,
-		Some(Err(e)) => return ::abi_stable::std_types::RResult::RErr(e.into()),
-		None => {#def},
-	    }
-	    };
-	    let arg_func = match at {
-		FuncArgType::Arg => quote!{ ctx.arg_kwarg },
-		FuncArgType::Relaxed => quote!{ ctx.arg_kwarg_relaxed },
-		FuncArgType::Args => return quote! {
-		    let #arg: #ty = ctx.args().into();
-		},
-		FuncArgType::KwArgs => return quote! {
-		    let #arg: #ty = ctx.kwargs().into();
-		},
-	    };
-	    if *is_ref {
-		let arg_o = format_ident!("{}_o", arg);
-		quote! {
-		    let #arg_o = match #arg_func (#i, #arg_name) {
+            // HACK again ignoring the path and assuming anything::Option is Option
+            let isopt = ty
+                .to_token_stream()
+                .to_string()
+                .split('<')
+                .next()
+                .unwrap_or_default()
+                .split("::")
+                .last()
+                .unwrap_or_default()
+                .trim()
+                == "Option";
+            let patterns = if isopt {
+
+                quote! {
+                    Some(Ok(v)) => Some(v),
+                    Some(Err(e)) => return ::nadi_core::abi_stable::std_types::RResult::RErr(e.into()),
+                    None => None,
+                }
+            } else {
+
+                quote! {
+                    Some(Ok(v)) => v,
+                    Some(Err(e)) => return ::nadi_core::abi_stable::std_types::RResult::RErr(e.into()),
+                    None => {#def},
+                }
+            };
+            let arg_func = match at {
+                FuncArgType::Arg => quote! { ctx.arg_kwarg },
+                FuncArgType::Relaxed => quote! { ctx.arg_kwarg_relaxed },
+                FuncArgType::Args => {
+                    return quote! {
+                        let #arg: #ty = ctx.args().into();
+                    }
+                }
+                FuncArgType::KwArgs => {
+                    return quote! {
+                        let #arg: #ty = ctx.kwargs().into();
+                    }
+                }
+            };
+            if *is_ref {
+                let arg_o = format_ident!("{}_o", arg);
+
+                quote! {
+                    let #arg_o = match #arg_func (#i, #arg_name) {
 			#patterns
-		    };
-		    let #arg : #ty = & #arg_o;
-		}
-	    } else {
-		quote!{
-		    let #arg : #ty = match #arg_func (#i, #arg_name) {
+                    };
+                    let #arg : #ty = & #arg_o;
+                }
+            } else {
+
+                quote! {
+                    let #arg : #ty = match #arg_func (#i, #arg_name) {
 			#patterns
-		    };
-		}
-	    }
+                    };
+                }
+            }
         })
         .collect();
     let args_n: Vec<proc_macro2::TokenStream> = args
@@ -349,40 +390,40 @@ fn get_call_func(
     if node {
         quote! {
             fn call(&self,
-            nodes: ::abi_stable::std_types::RSlice<::nadi_core::node::Node>,
+            nodes: ::nadi_core::abi_stable::std_types::RSlice<::nadi_core::node::Node>,
             ctx: &::nadi_core::functions::FunctionCtx)
-                -> ::abi_stable::std_types::RResult<(), ::abi_stable::std_types::RString>
+                    -> ::nadi_core::abi_stable::std_types::RResult<(), ::nadi_core::abi_stable::std_types::RString>
             {
 
         #(#extract_args)*
         for #arg0_name in nodes {
             if let ::nadi_core::functions::FunctionRet::Error(e) = ::nadi_core::functions::FunctionRet::from(
-                #func_struct_name :: #func_name(&mut #arg0_name .lock(), #(#args_n),*)
+            #func_struct_name :: #func_name(&mut #arg0_name .lock(), #(#args_n),*)
             ) {
-        return ::abi_stable::std_types::RResult::RErr(e);
+            return ::nadi_core::abi_stable::std_types::RResult::RErr(e);
+            }
         }
-        }
-        ::abi_stable::std_types::ROk(())
+        ::nadi_core::abi_stable::std_types::ROk(())
             }
         }
     } else {
         quote! {
-                        fn call(&self,
-                        #arg0_name : &mut ::nadi_core::network::Network,
-                        ctx: &::nadi_core::functions::FunctionCtx)
-                            -> ::abi_stable::std_types::RResult<(), ::abi_stable::std_types::RString> {
+            fn call(&self,
+                    #arg0_name : &mut ::nadi_core::network::Network,
+                    ctx: &::nadi_core::functions::FunctionCtx)
+                    -> ::nadi_core::abi_stable::std_types::RResult<(), ::nadi_core::abi_stable::std_types::RString> {
 
-                    #(#extract_args)*
-            if let ::nadi_core::functions::FunctionRet::Error(e) = ::nadi_core::functions::FunctionRet::from(
-                            #func_struct_name :: #func_name(#arg0_name, #(#args_n),*)
+                #(#extract_args)*
+        if let ::nadi_core::functions::FunctionRet::Error(e) = ::nadi_core::functions::FunctionRet::from(
+                    #func_struct_name :: #func_name(#arg0_name, #(#args_n),*)
 
-                        ) {
-                    ::abi_stable::std_types::RResult::RErr(e)
-            } else {
-            ::abi_stable::std_types::RResult::ROk(())
+                ) {
+                    ::nadi_core::abi_stable::std_types::RResult::RErr(e)
+        } else {
+            ::nadi_core::abi_stable::std_types::RResult::ROk(())
         }
-                        }
-                    }
+            }
+        }
     }
 }
 
@@ -431,7 +472,7 @@ fn get_help_func(item: &ItemFn, default_args: &HashMap<Ident, Expr>) -> proc_mac
     let docs = docs.join("\n");
     if default_args.is_empty() {
         quote! {
-            fn help(&self) -> ::abi_stable::std_types::RString {
+            fn help(&self) -> ::nadi_core::abi_stable::std_types::RString {
         #docs .into()
             }
         }
@@ -440,8 +481,9 @@ fn get_help_func(item: &ItemFn, default_args: &HashMap<Ident, Expr>) -> proc_mac
             .iter()
             .map(|(k, v)| quote! { let #k = #v; })
             .collect();
+
         quote! {
-            fn help(&self) -> ::abi_stable::std_types::RString {
+            fn help(&self) -> ::nadi_core::abi_stable::std_types::RString {
         #(#values)*
         format!(#docs) .into()
             }
