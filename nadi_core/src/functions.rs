@@ -2,14 +2,14 @@ use crate::attrs::{AttrMap, FromAttributeRelaxed};
 
 use crate::plugins::{load_library, NadiPlugin};
 use crate::StrPath;
-use crate::{AttrSlice, Attribute, FromAttribute, Network, NodeInner};
+use crate::{AttrSlice, Attribute, FromAttribute, Network, Node};
 use abi_stable::std_types::Tuple2;
 use abi_stable::{
     sabi_trait,
     std_types::{
         RBox, RErr, RHashMap, ROk,
         ROption::{self, RNone, RSome},
-        RResult, RString, RVec,
+        RResult, RSlice, RString, RVec,
     },
     StableAbi,
 };
@@ -136,7 +136,7 @@ pub trait NodeFunction: Debug {
     fn name(&self) -> RString;
     fn help(&self) -> RString;
     fn code(&self) -> RString;
-    fn call(&self, obj: &mut NodeInner, ctx: &FunctionCtx) -> FunctionRet;
+    fn call(&self, obj: RSlice<Node>, ctx: &FunctionCtx) -> RResult<(), RString>;
 }
 
 #[sabi_trait]
@@ -144,7 +144,7 @@ pub trait NetworkFunction: Debug {
     fn name(&self) -> RString;
     fn help(&self) -> RString;
     fn code(&self) -> RString;
-    fn call(&self, obj: &mut Network, ctx: &FunctionCtx) -> FunctionRet;
+    fn call(&self, obj: &mut Network, ctx: &FunctionCtx) -> RResult<(), RString>;
 }
 
 // A trait object for the `State` Trait Object
@@ -238,19 +238,17 @@ impl NadiFunctions {
         match &func.r#type {
             FunctionType::Node(p) => match self.node.get(&func.name) {
                 Some(f) => {
-                    for node in net.nodes_propagation(p) {
-                        // todo manage other return types
-                        if let FunctionRet::Error(e) = f.call(&mut node.lock(), func.ctx()) {
-                            return Err(e.to_string());
-                        }
-                    }
-                    Ok(())
+                    let p: RVec<Node> = net.nodes_propagation(p).into();
+                    // todo manage other return types
+                    f.call(p.as_rslice(), func.ctx())
+                        .map_err(|e| e.to_string())
+                        .into()
                 }
                 None => Err(format!("Node Function {} not found", func.name)),
             },
             FunctionType::Network => match self.network.get(&func.name) {
                 // todo use returned attribute value
-                Some(f) => f.call(net, func.ctx()).res().map(|_| ()),
+                Some(f) => f.call(net, func.ctx()).map_err(|e| e.to_string()).into(),
                 None => Err(format!("Network Function {} not found", func.name)),
             },
             FunctionType::Help => {

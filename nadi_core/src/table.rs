@@ -6,7 +6,7 @@ use abi_stable::{
 };
 use string_template_plus::Template;
 
-use crate::{Network};
+use crate::Network;
 
 #[repr(C)]
 #[derive(StableAbi, Debug, Default, Clone, PartialEq)]

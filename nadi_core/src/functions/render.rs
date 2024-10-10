@@ -13,12 +13,12 @@ mod render {
     /// - `template` - String template to render
     /// - `safe` - if render fails keep it as it is instead of exiting
     #[node_func(safe = false)]
-    fn render(node: &mut NodeInner, template: Template, safe: bool) -> Result<String, String> {
+    fn render(node: &mut NodeInner, template: &Template, safe: bool) -> Result<String, String> {
         let text = if safe {
-            node.render(&template)
+            node.render(template)
                 .unwrap_or_else(|_| template.original().to_string())
         } else {
-            node.render(&template).map_err(|e| e.to_string())?
+            node.render(template).map_err(|e| e.to_string())?
         };
         println!("{text}");
         Ok(text)

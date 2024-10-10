@@ -27,7 +27,7 @@ mod command {
     #[node_func(verbose = true, echo = true)]
     fn command(
         node: &mut NodeInner,
-        cmd: Template,
+        cmd: &Template,
         verbose: bool,
         echo: bool,
     ) -> anyhow::Result<()> {
@@ -75,7 +75,7 @@ mod command {
     #[network_func(_workers = 4, verbose = true, echo = true)]
     fn parallel(
         net: &mut Network,
-        cmd: Template,
+        cmd: &Template,
         _workers: i64,
         verbose: bool,
         echo: bool,

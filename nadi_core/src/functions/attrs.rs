@@ -3,12 +3,12 @@
 // written using the macros provided by nadi_plugin crate
 use crate::functions::{FunctionRet, NadiFunctions, NodeFunction};
 use crate::plugins::NadiPlugin;
-use crate::{return_on_err, AttrSlice, FromAttribute, NodeInner};
+use crate::{return_on_err, AttrSlice, FromAttribute, Node, NodeInner};
 use abi_stable::sabi_trait::TD_CanDowncast;
 
 use abi_stable::std_types::Tuple2;
 
-use abi_stable::std_types::RString;
+use abi_stable::std_types::{RErr, ROk, RResult, RSlice, RString};
 use nadi_plugin::node_func;
 use string_template_plus::Template;
 
@@ -42,21 +42,24 @@ impl NodeFunction for LoadAttrs {
         .into()
     }
 
-    fn call(&self, node: &mut NodeInner, ctx: &FunctionCtx) -> FunctionRet {
+    fn call(&self, nodes: RSlice<Node>, ctx: &FunctionCtx) -> RResult<(), RString> {
         let templ: Template = match ctx.arg_kwarg(0, "filename") {
             Some(Ok(a)) => a,
-            Some(Err(e)) => return FunctionRet::Error(e.into()),
-            None => return FunctionRet::Error("Text template not given".into()),
+            Some(Err(e)) => return RErr(e.into()),
+            None => return RErr("Text template not given".into()),
         };
-        let filepath = match node.render(&templ) {
-            Ok(f) => f,
-            Err(e) => return FunctionRet::Error(e.to_string().into()),
-        };
-        println!("Loadin Attributes from: {filepath}");
-        match node.load_attr(&filepath) {
-            Ok(_) => FunctionRet::None,
-            Err(e) => FunctionRet::Error(e.to_string().into()),
+        for node in nodes {
+            let mut node = node.lock();
+            let filepath = match node.render(&templ) {
+                Ok(f) => f,
+                Err(e) => return RErr(e.to_string().into()),
+            };
+            eprintln!("Loadin Attributes from: {filepath}");
+            if let Err(e) = node.load_attr(&filepath) {
+                return RErr(RString::from(e.to_string()));
+            }
         }
+        ROk(())
     }
 
     fn code(&self) -> RString {
@@ -78,11 +81,14 @@ impl NodeFunction for PrintAllAttrs {
         .into()
     }
 
-    fn call(&self, node: &mut NodeInner, _ctx: &FunctionCtx) -> FunctionRet {
-        for Tuple2(k, v) in node.attrs() {
-            println!("{k} = {}", v.to_string());
+    fn call(&self, nodes: RSlice<Node>, _ctx: &FunctionCtx) -> RResult<(), RString> {
+        for node in nodes {
+            let node = node.lock();
+            for Tuple2(k, v) in node.attrs() {
+                println!("{}::{k} = {}", node.name(), v.to_string());
+            }
         }
-        FunctionRet::None
+        ROk(())
     }
     fn code(&self) -> RString {
         "".into()

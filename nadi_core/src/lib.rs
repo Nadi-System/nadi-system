@@ -15,6 +15,8 @@ pub use node::{new_node, Node, NodeInner};
 // path made to be used from other libraries/plugins
 // https://github.com/rust-lang/rust/pull/55275
 extern crate self as nadi_core;
+// re-export these so the plugin systems will use the same version
+pub use abi_stable;
 pub use nadi_plugin;
 
 #[macro_export]
