@@ -2,7 +2,7 @@ use nadi_plugin::nadi_internal_plugin;
 
 #[nadi_internal_plugin]
 mod connections {
-    use crate::Network;
+    use crate::prelude::*;
     use nadi_plugin::network_func;
     use std::path::PathBuf;
 

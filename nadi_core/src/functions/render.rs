@@ -2,7 +2,7 @@ use nadi_plugin::nadi_internal_plugin;
 
 #[nadi_internal_plugin]
 mod render {
-    use crate::{Network, NodeInner};
+    use crate::prelude::{Network, NodeInner};
     use nadi_plugin::{network_func, node_func};
     use std::path::PathBuf;
     use string_template_plus::Template;
@@ -60,7 +60,7 @@ mod render {
 }
 
 mod render_utils {
-    use crate::{functions::Propagation, Network};
+    use crate::{functions::Propagation, network::Network};
     use anyhow::{Context, Error};
     use number_range::NumberRangeOptions;
 

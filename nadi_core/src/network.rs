@@ -9,9 +9,8 @@ use std::path::Path;
 
 use crate::attrs::{AttrMap, Attribute};
 use crate::functions::Propagation;
-use crate::new_node;
+use crate::node::{new_node, Node, NodeInner};
 use crate::parser::parse_network;
-use crate::{Node, NodeInner};
 use abi_stable::{
     std_types::{
         RHashMap,

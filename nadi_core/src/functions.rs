@@ -1,8 +1,7 @@
-use crate::attrs::{AttrMap, FromAttributeRelaxed};
-
-use crate::plugins::{load_library, NadiPlugin};
-use crate::StrPath;
-use crate::{AttrSlice, Attribute, FromAttribute, Network, Node};
+use crate::attrs::{AttrMap, AttrSlice};
+use crate::network::StrPath;
+use crate::plugins::{load_library_safe, NadiPlugin};
+use crate::prelude::*;
 use abi_stable::std_types::Tuple2;
 use abi_stable::{
     sabi_trait,
@@ -192,14 +191,13 @@ impl NadiFunctions {
     }
 
     pub fn load_plugins(&mut self) -> anyhow::Result<()> {
-        // TODO plugins path from env var
         if let Ok(plugin_dirs) = std::env::var("NADI_PLUGIN_DIRS") {
             for pdir in plugin_dirs.split(':') {
                 if let Ok(dir) = std::fs::read_dir(pdir) {
                     for path in dir {
-                        let lib = load_library(&path?.path())?;
-                        // println!("Loading: {}", lib.name());
-                        lib.register(self);
+                        if let Some(lib) = load_library_safe(&path?.path()) {
+                            lib.register(self);
+                        }
                     }
                 }
             }

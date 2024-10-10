@@ -1,7 +1,4 @@
-use crate::{
-    attrs::{type_name, Date, DateTime, Time},
-    Attribute,
-};
+use crate::attrs::{type_name, Attribute, Date, DateTime, Time};
 
 use abi_stable::{
     external_types::RMutex,

@@ -1,8 +1,6 @@
-use crate::attrs::{Date, DateTime, Time};
-
+use crate::attrs::{Attribute, Date, DateTime, Time};
 use crate::parser::string::parse_string;
 use crate::parser::{identifier, sp, Res};
-use crate::Attribute;
 use abi_stable::std_types::RString;
 
 use nom::character::complete::digit1;

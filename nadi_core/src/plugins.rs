@@ -52,9 +52,86 @@ pub fn load_library(path: &Path) -> Result<NadiExternalPlugin_Ref, LibraryError>
     // NadiExternalPlugin_Ref::load_from_file(path)
 }
 
+pub fn load_library_safe(path: &Path) -> Option<NadiExternalPlugin_Ref> {
+    load_library(path)
+        .map_err(|e| {
+            eprint!("Error loading {path:?}: ");
+            print_library_err(e);
+        })
+        .ok()
+}
+
 fn check_library(path: &Path) -> Result<(), LibraryError> {
     let raw_library = abi_stable::library::RawLibrary::load_at(path)?;
     unsafe { abi_stable::library::lib_header_from_raw_library(&raw_library) }
         .and_then(|x| x.check_layout::<NadiExternalPlugin_Ref>())?;
     Ok(())
+}
+
+fn print_library_err(err: LibraryError) {
+    match err {
+	LibraryError::OpenError {
+            path,
+            ..
+	} => eprintln!("Couln't open library {path:?}"),
+	LibraryError::GetSymbolError {
+            library,
+            symbol,
+            ..
+	} => eprintln!("Plugin invalid {library:?} {symbol:?}"),
+	LibraryError::ParseVersionError(_) => eprintln!("Error parsing version"),
+	LibraryError::IncompatibleVersionNumber {
+            library_name,
+            expected_version,
+            actual_version,
+	} => eprintln!("Incompatible Versions: {library_name} expected {expected_version} got {actual_version}"),
+	LibraryError::RootModule {
+            module_name,
+            version,
+	    ..
+	} => eprintln!("Plugin Error: {module_name:?} {version}"),
+	LibraryError::AbiInstability(_) => eprintln!("ABI not stable"),
+	LibraryError::InvalidAbiHeader(_) => eprintln!("Invalid Header"),
+	LibraryError::InvalidCAbi {
+            expected,
+            found,
+	} => eprintln!("C ABI Mismatch expected {expected} got {found}"),
+	LibraryError::Many(errs) => for err in errs {
+	    print_library_err(err);
+	},
+    }
+}
+
+fn _print_library_err_full(err: LibraryError) {
+    match err {
+	LibraryError::OpenError {
+            path,
+            err,
+	} => eprintln!("Couln't open library {path:?} {err:?}"),
+	LibraryError::GetSymbolError {
+            library,
+            symbol,
+            err,
+	} => eprintln!("Plugin invalid {library:?} {symbol:?} {err:?}"),
+	LibraryError::ParseVersionError(e) => eprintln!("Error parsing version {e:?}"),
+	LibraryError::IncompatibleVersionNumber {
+            library_name,
+            expected_version,
+            actual_version,
+	} => eprintln!("Incompatible Versions: {library_name} expected {expected_version} got {actual_version}"),
+	LibraryError::RootModule {
+            err,
+            module_name,
+            version,
+	} => eprintln!("Plugin Error: {err:?} {module_name:?} {version}"),
+	LibraryError::AbiInstability(e) => eprintln!("Abi Instable {e:?}"),
+	LibraryError::InvalidAbiHeader(h) => eprintln!("Invalid Header {h:?}"),
+	LibraryError::InvalidCAbi {
+            expected,
+            found,
+	} => eprintln!("C ABI Mismatch expected {expected} got {found}"),
+	LibraryError::Many(errs) => for err in errs {
+	    print_library_err(err);
+	},
+    }
 }

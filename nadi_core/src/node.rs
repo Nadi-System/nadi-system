@@ -1,9 +1,8 @@
 use std::path::Path;
 
 use crate::{
-    attrs::{parse_attr_file, AttrMap},
+    attrs::{parse_attr_file, AttrMap, Attribute},
     timeseries::TimeSeries,
-    Attribute,
 };
 use abi_stable::{
     external_types::RMutex,

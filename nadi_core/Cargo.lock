@@ -458,7 +458,7 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "nadi_core"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "abi_stable",
  "anyhow",
@@ -473,7 +473,7 @@ dependencies = [
 
 [[package]]
 name = "nadi_plugin"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "convert_case",
  "itertools 0.13.0",

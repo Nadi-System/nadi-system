@@ -2,10 +2,10 @@ use nadi_plugin::nadi_internal_plugin;
 
 #[nadi_internal_plugin]
 mod command {
+    use crate::prelude::{Network, NodeInner};
     use anyhow::Context;
     use colored::Colorize;
     use nadi_core::nadi_plugin::{network_func, node_func};
-    use nadi_core::{Network, NodeInner};
     use std::io::BufRead;
     use std::sync::mpsc::{self, Receiver, Sender};
     use std::thread;

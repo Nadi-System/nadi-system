@@ -2,7 +2,7 @@ use nadi_plugin::nadi_internal_plugin;
 
 #[nadi_internal_plugin]
 mod attrs2 {
-    use crate::{AttrMap, FromAttribute, Network, NodeInner};
+    use crate::prelude::*;
     use abi_stable::std_types::Tuple2;
     use nadi_plugin::{network_func, node_func};
 

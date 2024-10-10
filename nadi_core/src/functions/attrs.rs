@@ -3,7 +3,8 @@
 // written using the macros provided by nadi_plugin crate
 use crate::functions::{FunctionRet, NadiFunctions, NodeFunction};
 use crate::plugins::NadiPlugin;
-use crate::{return_on_err, AttrSlice, FromAttribute, Node, NodeInner};
+use crate::prelude::*;
+use crate::return_on_err;
 use abi_stable::sabi_trait::TD_CanDowncast;
 
 use abi_stable::std_types::Tuple2;

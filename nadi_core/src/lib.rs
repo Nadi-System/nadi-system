@@ -7,9 +7,12 @@ pub mod plugins;
 pub mod table;
 pub mod timeseries;
 
-pub use attrs::{AttrMap, AttrSlice, Attribute, FromAttribute};
-pub use network::{Network, StrPath};
-pub use node::{new_node, Node, NodeInner};
+/// Prelude for the most basic NADI types: node, network and attributes
+pub mod prelude {
+    pub use crate::attrs::{AttrMap, AttrSlice, Attribute, FromAttribute, FromAttributeRelaxed};
+    pub use crate::network::Network;
+    pub use crate::node::{Node, NodeInner};
+}
 
 // workaround for nadi_plugin_macros to work with ::nadi_core:: style
 // path made to be used from other libraries/plugins
@@ -17,7 +20,9 @@ pub use node::{new_node, Node, NodeInner};
 extern crate self as nadi_core;
 // re-export these so the plugin systems will use the same version
 pub use abi_stable;
+pub use anyhow;
 pub use nadi_plugin;
+pub use string_template_plus as string_template;
 
 #[macro_export]
 macro_rules! return_on_err {
