@@ -1,7 +1,7 @@
 use std::{io::Read, path::PathBuf};
 
 use clap::{Parser, ValueEnum};
-use nadi_core::{functions::NadiFunctions, Network};
+use nadi_core::{functions::NadiFunctions, network::Network};
 
 #[derive(Default, Debug, Clone, ValueEnum)]
 enum FunctionType {
