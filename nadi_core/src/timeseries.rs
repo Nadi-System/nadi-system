@@ -18,7 +18,7 @@ pub struct TimeLineInner {
     /// step in seconds
     step: i64,
     /// is regular timeseries or not
-    _regular: bool,
+    regular: bool,
     /// values in string format so that we don't have to deal with time
     str_values: RVec<RString>,
     /// format string used in the str_values,
@@ -26,6 +26,28 @@ pub struct TimeLineInner {
 }
 
 impl<'a> TimeLineInner {
+    pub fn new(
+        start: i64,
+        end: i64,
+        step: i64,
+        regular: bool,
+        str_values: Vec<String>,
+        datetimefmt: &str,
+    ) -> Self {
+        Self {
+            start,
+            end,
+            step,
+            regular,
+            str_values: RVec::from(
+                str_values
+                    .into_iter()
+                    .map(RString::from)
+                    .collect::<Vec<RString>>(),
+            ),
+            datetimefmt: RString::from(datetimefmt),
+        }
+    }
     pub fn start(&self) -> i64 {
         self.start
     }
@@ -71,6 +93,19 @@ impl TimeSeries {
         &self.timeline
     }
 
+    pub fn values_as_attributes(&self) -> Vec<Attribute> {
+        match self.values.clone() {
+            TimeSeriesValues::Floats(v) => v.into_iter().map(Attribute::Float).collect(),
+            TimeSeriesValues::Integers(v) => v.into_iter().map(Attribute::Integer).collect(),
+            TimeSeriesValues::Strings(v) => v.into_iter().map(Attribute::String).collect(),
+            TimeSeriesValues::Booleans(v) => v.into_iter().map(Attribute::Bool).collect(),
+            TimeSeriesValues::Dates(v) => v.into_iter().map(Attribute::Date).collect(),
+            TimeSeriesValues::Times(v) => v.into_iter().map(Attribute::Time).collect(),
+            TimeSeriesValues::DateTimes(v) => v.into_iter().map(Attribute::DateTime).collect(),
+            TimeSeriesValues::Attributes(v) => v.into(),
+        }
+    }
+
     pub fn values<'a, T: FromTimeSeries<'a>>(&'a self) -> Option<&'a [T]> {
         FromTimeSeries::from_ts(&self.values)
     }
@@ -105,6 +140,31 @@ pub enum TimeSeriesValues {
 }
 
 impl TimeSeriesValues {
+    pub fn floats(v: Vec<f64>) -> Self {
+        Self::Floats(v.into())
+    }
+    pub fn integers(v: Vec<i64>) -> Self {
+        Self::Integers(v.into())
+    }
+    pub fn strings(v: Vec<RString>) -> Self {
+        Self::Strings(v.into())
+    }
+    pub fn booleans(v: Vec<bool>) -> Self {
+        Self::Booleans(v.into())
+    }
+    pub fn dates(v: Vec<Date>) -> Self {
+        Self::Dates(v.into())
+    }
+    pub fn times(v: Vec<Time>) -> Self {
+        Self::Times(v.into())
+    }
+    pub fn datetimes(v: Vec<DateTime>) -> Self {
+        Self::DateTimes(v.into())
+    }
+    pub fn attributes(v: Vec<Attribute>) -> Self {
+        Self::Attributes(v.into())
+    }
+
     pub fn len(&self) -> usize {
         match self {
             Self::Floats(v) => v.len(),
@@ -124,14 +184,14 @@ impl TimeSeriesValues {
 
     pub fn type_name(&self) -> &str {
         match self {
-            Self::Floats(_) => "Float",
-            Self::Integers(_) => "Integer",
-            Self::Strings(_) => "String",
-            Self::Booleans(_) => "Boolean",
-            Self::Dates(_) => "Date",
-            Self::Times(_) => "Time",
-            Self::DateTimes(_) => "DateTime",
-            Self::Attributes(_v) => "Attributes",
+            Self::Floats(_) => "Floats",
+            Self::Integers(_) => "Integers",
+            Self::Strings(_) => "Strings",
+            Self::Booleans(_) => "Booleans",
+            Self::Dates(_) => "Dates",
+            Self::Times(_) => "Times",
+            Self::DateTimes(_) => "DateTimes",
+            Self::Attributes(_) => "Attributes",
         }
     }
 }

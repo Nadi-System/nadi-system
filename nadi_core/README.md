@@ -17,6 +17,3 @@ For plugins:
 - Use the macros provided with this crate (reexported from `nadi_plugin` crate) to export the plugin and the functions in it.
 
 For more details on the plugin development and examples, refer to [nadi-plugins-rust](https://github.com/Nadi-System/nadi-plugins-rust) repository.
-
-# TODO
-Write a book for the nadi system as a whole, concepts, examples, codes etc.

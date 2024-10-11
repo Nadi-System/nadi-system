@@ -337,6 +337,62 @@ impl FromAttribute for Template {
     }
 }
 
+impl<T> From<Vec<T>> for Attribute
+where
+    Attribute: From<T>,
+{
+    fn from(value: Vec<T>) -> Self {
+        Self::Array(
+            value
+                .into_iter()
+                .map(Attribute::from)
+                .collect::<Vec<Attribute>>()
+                .into(),
+        )
+    }
+}
+
+impl<T> FromAttribute for Vec<T>
+where
+    T: FromAttribute,
+{
+    fn from_attr(value: &Attribute) -> Option<Vec<T>> {
+        FromAttribute::try_from_attr(value).ok()
+    }
+
+    fn try_from_attr(value: &Attribute) -> Result<Vec<T>, String> {
+        match value {
+            Attribute::Array(v) => v.iter().map(FromAttribute::try_from_attr).collect(),
+            _ => Err(format!(
+                "Incorrect Type: got {} instead of Array",
+                value.type_name()
+            )),
+        }
+    }
+}
+
+impl<T> FromAttributeRelaxed for Vec<T>
+where
+    T: FromAttributeRelaxed,
+{
+    fn from_attr_relaxed(value: &Attribute) -> Option<Vec<T>> {
+        FromAttributeRelaxed::try_from_attr_relaxed(value).ok()
+    }
+
+    fn try_from_attr_relaxed(value: &Attribute) -> Result<Vec<T>, String> {
+        match value {
+            Attribute::Array(v) => v
+                .iter()
+                .map(FromAttributeRelaxed::try_from_attr_relaxed)
+                .collect(),
+            _ => Err(format!(
+                "Incorrect Type: got {} instead of Array",
+                value.type_name()
+            )),
+        }
+    }
+}
+
 pub type AttrSlice<'a> = RSlice<'a, Attribute>;
 pub type AttrMap = RHashMap<RString, Attribute>;
 
