@@ -182,6 +182,11 @@ fn get_fn_arg(arg: &FnArg) -> (&Ident, &Type, FuncArgType) {
 
 // HACK ignoring the path and assuming anything::Option is Option
 fn type_is_opt(ty: &Type) -> bool {
+    // if let Type::Path(p) = ty {
+    //     p.path.is_ident("Option")
+    // } else {
+    //     false
+    // }
     ty.to_token_stream()
         .to_string()
         .split('<')
@@ -192,6 +197,22 @@ fn type_is_opt(ty: &Type) -> bool {
         .unwrap_or_default()
         .trim()
         == "Option"
+}
+
+fn get_opt_type(ty: &Type) -> Option<&Type> {
+    if let Type::Path(p) = ty {
+        // if p.path.is_ident("Option") {
+        let op = p.path.segments.last().expect("should have path component");
+        if let syn::PathArguments::AngleBracketed(ag) = &op.arguments {
+            for a in &ag.args {
+                if let syn::GenericArgument::Type(t) = a {
+                    return Some(t);
+                }
+            }
+        }
+        // }
+    }
+    None
 }
 
 /// Register the plugin for NADI system. This should be on the top
@@ -471,16 +492,27 @@ fn get_call_func(
 			let #m #arg_o : #inner_ty = match #arg_func (#i, #arg_name) {
 			    #patterns
 			};
-			let #arg : #ty = & (#arg_o);
+			let #arg : #ty = & #arg_o;
 		    }
 		},
 		_ => {
-
+		    if let Some(Type::Reference(r)) = get_opt_type(ty) {
+		    let arg_o = format_ident!("{}_o", arg);
+		    let inner_ty = ref_type_inner(&r, false);
+		    let m = r.mutability;
+                    quote! {
+			let #m #arg_o : Option<#inner_ty> = match #arg_func (#i, #arg_name) {
+			    #patterns
+			};
+			let #arg : #ty = #arg_o .as_deref();
+                    }
+		    } else {
                     quote! {
 			let #arg : #ty = match #arg_func (#i, #arg_name) {
 			    #patterns
 			};
                     }
+		    }
 		}
 	    }
         })
