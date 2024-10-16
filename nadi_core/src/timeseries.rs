@@ -9,7 +9,7 @@ use abi_stable::{
 pub type TimeLine = RArc<RMutex<TimeLineInner>>;
 
 #[repr(C)]
-#[derive(StableAbi, Clone, PartialEq, Debug)]
+#[derive(StableAbi, Clone, Debug)]
 pub struct TimeLineInner {
     /// timestamp of the start datetime
     start: i64,
@@ -23,6 +23,17 @@ pub struct TimeLineInner {
     str_values: RVec<RString>,
     /// format string used in the str_values,
     datetimefmt: RString,
+}
+
+impl std::cmp::PartialEq for TimeLineInner {
+    fn eq(&self, other: &Self) -> bool {
+        // str_values and datetimefmt are for exporting/printing them
+        // only, so the other fields should be good enough for eq
+        self.start == other.start
+            && self.end == other.end
+            && self.step == other.step
+            && self.regular == other.regular
+    }
 }
 
 impl<'a> TimeLineInner {
