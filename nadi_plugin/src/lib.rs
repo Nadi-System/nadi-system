@@ -9,7 +9,7 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote, quote_spanned, ToTokens};
 use syn::{
     parse_macro_input, punctuated::Punctuated, token::Comma, Attribute, Expr, FnArg, Ident, ItemFn,
-    ItemMod, Lit, MetaNameValue, Type,
+    ItemMod, Lit, MetaNameValue, Type, TypeReference,
 };
 
 fn nadi_struct_name(name: &Ident, suff: &str) -> Ident {
@@ -349,6 +349,32 @@ fn get_name_func(item: &ItemFn) -> proc_macro2::TokenStream {
     }
 }
 
+fn ref_type_inner(ty: &TypeReference, construct: bool) -> proc_macro2::TokenStream {
+    // to provide slice we need to generate vec
+    let inner_ty = match ty.elem.as_ref() {
+        Type::Slice(i) => {
+            let i = &i.elem;
+            if construct {
+                quote!(Vec::<#i>)
+            } else {
+                quote!(Vec<#i>)
+            }
+        }
+        i => quote! {#i},
+    };
+    // similarly, str needs String, and Path needs PathBuf
+    match inner_ty
+        .to_token_stream()
+        .to_string()
+        .replace(" ", "")
+        .as_str()
+    {
+        "str" => quote!(String),
+        "Path" | "std::path::Path" => quote!(::std::path::PathBuf),
+        _ => inner_ty,
+    }
+}
+
 fn get_code_func(item: &ItemFn) -> proc_macro2::TokenStream {
     let func_code = prettyplease::unparse(&syn::parse2(item.to_token_stream()).unwrap());
 
@@ -375,7 +401,7 @@ fn get_call_func(
             let def = if let Some(val) = defaults.get(arg) {
 		match ty {
                     Type::Reference(r) => {
-			let inner_ty = &r.elem;
+			let inner_ty = ref_type_inner(&r, true);
 			let warn = r.mutability.map(|m| {
 			    // mut reference on the network functions
 			    // are useless as they are one time
@@ -406,6 +432,20 @@ fn get_call_func(
                     );
                 }
             };
+            let arg_func = match at {
+                FuncArgType::Arg => quote! { ctx.arg_kwarg },
+                FuncArgType::Relaxed => quote! { ctx.arg_kwarg_relaxed },
+                FuncArgType::Args => {
+                    return quote! {
+                        let #arg: #ty = ctx.args().into();
+                    }
+                }
+                FuncArgType::KwArgs => {
+                    return quote! {
+                        let #arg: #ty = ctx.kwargs().into();
+                    }
+                }
+            };
             let isopt = type_is_opt(ty);
             let patterns = if isopt {
 
@@ -422,33 +462,17 @@ fn get_call_func(
                     None => {#def},
                 }
             };
-            let arg_func = match at {
-                FuncArgType::Arg => quote! { ctx.arg_kwarg },
-                FuncArgType::Relaxed => quote! { ctx.arg_kwarg_relaxed },
-                FuncArgType::Args => {
-                    return quote! {
-                        let #arg: #ty = ctx.args().into();
-                    }
-                }
-                FuncArgType::KwArgs => {
-                    return quote! {
-                        let #arg: #ty = ctx.kwargs().into();
-                    }
-                }
-            };
             match ty {
                 Type::Reference(r) => {
-                    let arg_o = format_ident!("{}_o", arg);
-		    let inner_ty = &r.elem;
-		    // althought mut is used here for type confirmity,
-		    // mut is not supported and will not compile
+		    let arg_o = format_ident!("{}_o", arg);
+		    let inner_ty = ref_type_inner(&r, false);
 		    let m = r.mutability;
-                    quote! {
+		    quote! {
 			let #m #arg_o : #inner_ty = match #arg_func (#i, #arg_name) {
 			    #patterns
 			};
-			let #arg : #ty = & #m #arg_o;
-                    }
+			let #arg : #ty = & (#arg_o);
+		    }
 		},
 		_ => {
 
