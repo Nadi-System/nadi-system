@@ -370,7 +370,8 @@ fn get_name_func(item: &ItemFn) -> proc_macro2::TokenStream {
     }
 }
 
-fn ref_type_inner(ty: &TypeReference, construct: bool) -> proc_macro2::TokenStream {
+// returns the inner type, and if deref is required or not
+fn ref_type_inner(ty: &TypeReference, construct: bool) -> (proc_macro2::TokenStream, bool) {
     // to provide slice we need to generate vec
     let inner_ty = match ty.elem.as_ref() {
         Type::Slice(i) => {
@@ -390,9 +391,9 @@ fn ref_type_inner(ty: &TypeReference, construct: bool) -> proc_macro2::TokenStre
         .replace(" ", "")
         .as_str()
     {
-        "str" => quote!(String),
-        "Path" | "std::path::Path" => quote!(::std::path::PathBuf),
-        _ => inner_ty,
+        "str" => (quote!(String), true),
+        "Path" | "std::path::Path" => (quote!(::std::path::PathBuf), false),
+        _ => (inner_ty, false),
     }
 }
 
@@ -422,7 +423,7 @@ fn get_call_func(
             let def = if let Some(val) = defaults.get(arg) {
 		match ty {
                     Type::Reference(r) => {
-			let inner_ty = ref_type_inner(&r, true);
+			let inner_ty = ref_type_inner(&r, true).0;
 			let warn = r.mutability.map(|m| {
 			    // mut reference on the network functions
 			    // are useless as they are one time
@@ -486,7 +487,7 @@ fn get_call_func(
             match ty {
                 Type::Reference(r) => {
 		    let arg_o = format_ident!("{}_o", arg);
-		    let inner_ty = ref_type_inner(&r, false);
+		    let inner_ty = ref_type_inner(&r, false).0;
 		    let m = r.mutability;
 		    quote! {
 			let #m #arg_o : #inner_ty = match #arg_func (#i, #arg_name) {
@@ -497,21 +498,28 @@ fn get_call_func(
 		},
 		_ => {
 		    if let Some(Type::Reference(r)) = get_opt_type(ty) {
-		    let arg_o = format_ident!("{}_o", arg);
-		    let inner_ty = ref_type_inner(&r, false);
-		    let m = r.mutability;
-                    quote! {
-			let #m #arg_o : Option<#inner_ty> = match #arg_func (#i, #arg_name) {
-			    #patterns
+			let arg_o = format_ident!("{}_o", arg);
+			let (inner_ty, deref) = ref_type_inner(&r, false);
+			let m = r.mutability;
+			// all this since deref doesn't happen automatically inside option like with & #arg_o above
+			let asref = match (deref, m.is_some()){
+			    (false, true) => quote!(std::option::Option::as_mut),
+			    (false, false) => quote!(std::option::Option::as_ref),
+			    (true, true) => quote!(std::option::Option::as_deref_mut),
+			    (true, false) => quote!(std::option::Option::as_deref),
 			};
-			let #arg : #ty = #arg_o .as_deref();
-                    }
+			quote! {
+			    let #m #arg_o : Option<#inner_ty> = match #arg_func (#i, #arg_name) {
+				#patterns
+			    };
+			    let #arg : #ty = #asref (& #m #arg_o);
+			}
 		    } else {
-                    quote! {
-			let #arg : #ty = match #arg_func (#i, #arg_name) {
-			    #patterns
-			};
-                    }
+			quote! {
+			    let #arg : #ty = match #arg_func (#i, #arg_name) {
+				#patterns
+			    };
+			}
 		    }
 		}
 	    }
