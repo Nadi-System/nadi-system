@@ -198,8 +198,8 @@ mod render_utils {
                     }
                     RenderFileContentsType::Literal(s) => write!(writer, "{}", s)?,
                     RenderFileContentsType::Snippet(templ, prop) => {
-                        for node in net.nodes_propagation(&prop) {
-                            write!(writer, "{}", node.lock().render(&templ)?)?;
+                        for node in net.nodes_propagation(prop) {
+                            write!(writer, "{}", node.lock().render(templ)?)?;
                         }
                     }
                 }

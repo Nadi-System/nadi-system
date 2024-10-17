@@ -31,7 +31,7 @@ mod command {
         verbose: bool,
         echo: bool,
     ) -> anyhow::Result<()> {
-        let cmd = node.render(&cmd)?;
+        let cmd = node.render(cmd)?;
         if verbose {
             println!("$ {cmd}");
         }
@@ -39,9 +39,8 @@ mod command {
         let buf = std::io::BufReader::new(output);
         for line in buf.lines() {
             let l = line?;
-            if l.starts_with("nadi:var:") {
-                let var = &l["nadi:var:".len()..];
-                let (_res, (k, v)) = nadi_core::parser::attrs::attr_key_val(var)
+            if let Some(line) = l.strip_prefix("nadi:var:") {
+                let (_res, (k, v)) = nadi_core::parser::attrs::attr_key_val(line)
                     .map_err(|e| anyhow::Error::msg(e.to_string()))?;
                 match node.attr(&k) {
                     Some(vold) => {
@@ -52,10 +51,8 @@ mod command {
                     None => println!("{k}={}", v.to_string()),
                 };
                 node.set_attr(&k, v);
-            } else {
-                if echo {
-                    println!("{}", l);
-                }
+            } else if echo {
+                println!("{}", l);
             }
         }
         Ok(())
@@ -82,7 +79,7 @@ mod command {
     ) -> anyhow::Result<()> {
         let commands: Vec<_> = net
             .nodes()
-            .map(|n| n.lock().render(&cmd))
+            .map(|n| n.lock().render(cmd))
             .collect::<Result<Vec<_>, anyhow::Error>>()?;
         let (tx, rx): (Sender<(usize, String)>, Receiver<(usize, String)>) = mpsc::channel();
         let mut children = Vec::new();
@@ -99,12 +96,10 @@ mod command {
                 let buf = std::io::BufReader::new(output);
                 for line in buf.lines() {
                     let l = line?;
-                    if l.starts_with("nadi:var:") {
-                        ctx.send((i, l["nadi:var:".len()..].to_string()))?;
-                    } else {
-                        if echo {
-                            println!("{}", l);
-                        }
+                    if let Some(line) = l.strip_prefix("nadi:var:") {
+                        ctx.send((i, line.to_string()))?;
+                    } else if echo {
+                        println!("{}", l);
                     }
                 }
                 Ok::<(), anyhow::Error>(())
@@ -166,8 +161,7 @@ mod command {
         let buf = std::io::BufReader::new(output);
         for line in buf.lines() {
             let l = line?;
-            if l.starts_with("nadi:var:") {
-                let var = &l["nadi:var:".len()..];
+            if let Some(var) = l.strip_prefix("nadi:var:") {
                 let (_res, (k, v)) = nadi_core::parser::attrs::attr_key_val(var)
                     .map_err(|e| anyhow::Error::msg(e.to_string()))?;
                 match net.attr(&k) {
@@ -179,10 +173,8 @@ mod command {
                     None => println!("{k}={}", v.to_string()),
                 };
                 net.set_attr(&k, v);
-            } else {
-                if echo {
-                    println!("{}", l);
-                }
+            } else if echo {
+                println!("{}", l);
             }
         }
         Ok(())

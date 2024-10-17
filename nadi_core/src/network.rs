@@ -172,7 +172,7 @@ impl Network {
             //     nodes
             // }
             Propagation::List(n) => n.iter().map(|n| self.nodes_map[n].clone()).collect(),
-            Propagation::Path(p) => self.nodes_path(&p).unwrap_or_default(),
+            Propagation::Path(p) => self.nodes_path(p).unwrap_or_default(),
         }
     }
 
@@ -357,14 +357,12 @@ impl Network {
                     } else {
                         line.push_str("├──┐");
                     }
+                } else if node.inputs().is_empty() {
+                    line.push_str("  ╵");
+                } else if node.output().is_none() {
+                    line.push_str("  ╷");
                 } else {
-                    if node.inputs().is_empty() {
-                        line.push_str("  ╵");
-                    } else if node.output().is_none() {
-                        line.push_str("  ╷");
-                    } else {
-                        line.push_str("  │");
-                    }
+                    line.push_str("  │");
                 }
                 line
             })

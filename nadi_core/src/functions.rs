@@ -1,3 +1,4 @@
+#![allow(clippy::module_inception)]
 use crate::attrs::{AttrMap, AttrSlice};
 use crate::network::StrPath;
 use crate::plugins::{load_library_safe, NadiPlugin};

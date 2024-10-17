@@ -3,11 +3,7 @@ use nadi_plugin::nadi_internal_plugin;
 #[nadi_internal_plugin]
 mod timeseries {
 
-    use crate::{
-        attrs::{Date, DateTime, Time},
-        prelude::*,
-        timeseries::{TimeSeries, TimeSeriesValues},
-    };
+    use crate::prelude::*;
     use abi_stable::std_types::{ROption, RString};
     use nadi_plugin::node_func;
 
@@ -35,7 +31,7 @@ mod timeseries {
         header: bool,
         head: Option<i64>,
     ) -> Result<ROption<Attribute>, RString> {
-        if let Some(ts) = node.ts(&name) {
+        if let Some(ts) = node.ts(name) {
             let values = ts.values_as_attributes();
             if header {
                 println!("time,{name}");

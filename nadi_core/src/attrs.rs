@@ -406,7 +406,7 @@ pub struct DateTime {
 
 impl std::fmt::Display for DateTime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {}", self.date.to_string(), self.time.to_string())
+        write!(f, "{} {}", self.date, self.time)
     }
 }
 
@@ -532,20 +532,17 @@ pub fn parse_attr_file(txt: &str) -> anyhow::Result<AttrMap> {
         return Err(anyhow::Error::msg("Cannot parse the attr file completely."));
     }
     let mut curr_map: &mut AttrMap = &mut attrs;
-    match grp {
-        Some(grp) => {
-            for g in grp {
-                if !curr_map.contains_key(g) {
-                    curr_map.insert(g.into(), Attribute::Table(AttrMap::new()));
-                }
-                curr_map = curr_map
-                    .get_mut(g)
-                    .expect("Either the key should be there, or inserted above")
-                    .get_mut_table()
-                    .context("The Key is not empty or a table")?;
+    if let Some(grp) = grp {
+        for g in grp {
+            if !curr_map.contains_key(g) {
+                curr_map.insert(g.into(), Attribute::Table(AttrMap::new()));
             }
+            curr_map = curr_map
+                .get_mut(g)
+                .expect("Either the key should be there, or inserted above")
+                .get_mut_table()
+                .context("The Key is not empty or a table")?;
         }
-        None => (),
     }
 
     for (k, v) in grp_attrs {
@@ -574,9 +571,9 @@ mod tests {
     #[rstest]
     fn from_attr_test() {
         let val: bool = FromAttribute::from_attr(&Attribute::Bool(true)).unwrap();
-        assert_eq!(val, true);
+        assert!(val);
         let val: bool = FromAttribute::from_attr(&Attribute::Bool(false)).unwrap();
-        assert_eq!(val, false);
+        assert!(!val);
         assert!(i64::from_attr(&Attribute::Bool(false)).is_none());
         let val: i64 = FromAttribute::from_attr(&Attribute::Integer(2)).unwrap();
         assert_eq!(val, 2);
@@ -592,14 +589,14 @@ mod tests {
     #[rstest]
     fn try_from_attr_test() {
         let val: bool = FromAttribute::try_from_attr(&Attribute::Bool(true)).unwrap();
-        assert_eq!(val, true);
+        assert!(val);
         let val: bool = FromAttribute::try_from_attr(&Attribute::Bool(false)).unwrap();
-        assert_eq!(val, false);
+        assert!(!val);
         assert!(i64::try_from_attr(&Attribute::Bool(false)).is_err());
         let val: i64 = FromAttribute::try_from_attr(&Attribute::Integer(2)).unwrap();
         assert_eq!(val, 2);
         let val: bool = FromAttribute::try_from_attr(&Attribute::Bool(true)).unwrap();
-        assert_eq!(val, true);
+        assert!(val);
         let val: (i64, bool) = FromAttribute::try_from_attr(&Attribute::Array(
             vec![Attribute::Integer(2), Attribute::Bool(true)].into(),
         ))
@@ -617,13 +614,13 @@ mod tests {
     fn try_from_attr_relaxed_test() {
         let val: bool =
             FromAttributeRelaxed::try_from_attr_relaxed(&Attribute::Bool(true)).unwrap();
-        assert_eq!(val, true);
+        assert!(val);
         let val: bool =
             FromAttributeRelaxed::try_from_attr_relaxed(&Attribute::Bool(false)).unwrap();
-        assert_eq!(val, false);
+        assert!(!val);
         let val: bool =
             FromAttributeRelaxed::try_from_attr_relaxed(&Attribute::Integer(2)).unwrap();
-        assert_eq!(val, true);
+        assert!(val);
         let val: i64 =
             FromAttributeRelaxed::try_from_attr_relaxed(&Attribute::Bool(false)).unwrap();
         assert_eq!(val, 0);
@@ -633,7 +630,7 @@ mod tests {
         assert_eq!(val, 2);
         let val: bool =
             FromAttributeRelaxed::try_from_attr_relaxed(&Attribute::Bool(true)).unwrap();
-        assert_eq!(val, true);
+        assert!(val);
         let val: (i64, bool) = FromAttributeRelaxed::try_from_attr_relaxed(&Attribute::Array(
             vec![Attribute::Integer(2), Attribute::Integer(1)].into(),
         ))
