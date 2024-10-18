@@ -44,6 +44,7 @@ impl IntoPy<PyObject> for AttrValue {
 }
 
 #[pyclass(name = "Attribute")]
+#[repr(transparent)]
 #[derive(Clone)]
 pub struct PyAttribute(pub Attribute);
 

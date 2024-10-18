@@ -12,17 +12,19 @@ enum IndOrName {
 }
 
 #[pyclass(name = "Network")]
+#[repr(transparent)]
 #[derive(Clone)]
 pub struct PyNetwork(pub Network);
 
 #[pymethods]
 impl PyNetwork {
     #[new]
-    fn read_file(filename: String, _attrs_dir: Option<String>) -> PyResult<Self> {
+    #[pyo3(signature = (filename, attrs_dir=None))]
+    fn read_file(filename: String, attrs_dir: Option<String>) -> PyResult<Self> {
         let net = Network::from_file(&filename)?;
-        // if let Some(dir) = attrs_dir {
-        //     net.load_attrs(&dir)?
-        // }
+        if let Some(dir) = attrs_dir {
+            net.load_attrs(&dir)?
+        }
         Ok(Self(net))
     }
 
@@ -40,4 +42,18 @@ impl PyNetwork {
     fn nodes(&self) -> Vec<PyNode> {
         self.0.nodes().map(|n| PyNode(n.clone())).collect()
     }
+
+    fn nodes_rev(&self) -> Vec<PyNode> {
+        self.0.nodes_rev().map(|n| PyNode(n.clone())).collect()
+    }
+
+    fn node_names(&self) -> Vec<String> {
+        self.0.node_names().map(|s| s.to_string()).collect()
+    }
+
+    fn nodes_count(&self) -> usize {
+        self.0.nodes_count()
+    }
+
+    // fn nodes_propagation(&self, )
 }
