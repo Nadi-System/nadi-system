@@ -1,4 +1,4 @@
-use crate::attrs::{AttrValue, PyAttribute};
+use crate::attrs::PyAttribute;
 use nadi_core::prelude::*;
 use nadi_core::string_template::Template;
 use pyo3::exceptions::PyAttributeError;
@@ -66,26 +66,21 @@ impl PyNode {
     }
 
     #[pyo3(signature = (name, default=None))]
-    fn getattr(
-        &self,
-        py: Python,
-        name: String,
-        default: Option<PyObject>,
-    ) -> Option<impl IntoPy<PyObject>> {
+    fn getattr(&self, name: String, default: Option<PyAttribute>) -> Option<impl IntoPy<PyObject>> {
         match self.0.lock().attr(&name) {
-            Some(v) => Some(AttrValue::from(v.clone()).into_py(py)),
+            Some(v) => Some(PyAttribute::from(v.clone())),
             None => default,
         }
     }
 
     fn __getattr__(&self, name: String) -> PyResult<impl IntoPy<PyObject>> {
         match self.0.lock().attr(&name) {
-            Some(v) => Ok(AttrValue::from(v.clone())),
+            Some(v) => Ok(PyAttribute::from(v.clone())),
             None => Err(PyAttributeError::new_err("Attribute Not Found")),
         }
     }
 
-    fn __setattr__(&mut self, name: String, value: AttrValue) -> PyResult<()> {
+    fn __setattr__(&mut self, name: String, value: PyAttribute) -> PyResult<()> {
         self.0.lock().set_attr(&name, Attribute::from(value));
         Ok(())
     }

@@ -10,7 +10,6 @@ mod node;
 fn nadi_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<node::PyNode>()?;
     m.add_class::<network::PyNetwork>()?;
-    m.add_class::<attrs::PyAttribute>()?;
     m.add_class::<functions::PyNadiFunctions>()?;
     Ok(())
 }

@@ -1,4 +1,8 @@
-use crate::{attrs::AttrValue, network::PyNetwork, node::PyNode};
+use crate::{
+    attrs::{PyAttrMap, PyAttribute},
+    network::PyNetwork,
+    node::PyNode,
+};
 use nadi_core::abi_stable::std_types::{RResult, RString, RVec};
 use nadi_core::functions::FunctionCtx;
 use nadi_core::functions::{NadiFunctions, NetworkFunctionBox, NodeFunctionBox};
@@ -25,8 +29,8 @@ impl PyNadiFunctions {
         &self,
         function: &str,
         nodes: Vec<PyNode>,
-        args: Vec<AttrValue>,
-        kwargs: Option<HashMap<String, AttrValue>>,
+        args: Vec<PyAttribute>,
+        kwargs: Option<PyAttrMap>,
     ) -> PyResult<()> {
         let args: Vec<Attribute> = args.into_iter().map(|v| v.into()).collect();
         let kwargs = kwargs
@@ -43,8 +47,8 @@ impl PyNadiFunctions {
         &self,
         function: &str,
         mut network: PyNetwork,
-        args: Vec<AttrValue>,
-        kwargs: Option<HashMap<String, AttrValue>>,
+        args: Vec<PyAttribute>,
+        kwargs: Option<PyAttrMap>,
     ) -> PyResult<()> {
         let args: Vec<Attribute> = args.into_iter().map(|v| v.into()).collect();
         let kwargs = kwargs
@@ -67,29 +71,71 @@ impl PyNadiFunctions {
 
     fn network_functions(&self) -> Vec<String> {
         self.0
-            .node_functions()
+            .network_functions()
             .keys()
             .map(|k| k.to_string())
             .collect()
     }
 
-    fn help(&self, func: &str) -> Option<String> {
-        self.0.help(func)
+    #[pyo3(signature = (function, print=true))]
+    fn help(&self, function: &str, print: bool) -> Option<String> {
+        match self.0.help(function) {
+            Some(h) if print => {
+                println!("{h}");
+                None
+            }
+            v => v,
+        }
     }
-    fn help_node(&self, func: &str) -> Option<String> {
-        self.0.help_node(func)
+    #[pyo3(signature = (function, print=true))]
+    fn help_node(&self, function: &str, print: bool) -> Option<String> {
+        match self.0.help_node(function) {
+            Some(h) if print => {
+                println!("{h}");
+                None
+            }
+            v => v,
+        }
     }
-    fn help_network(&self, func: &str) -> Option<String> {
-        self.0.help_network(func)
+    #[pyo3(signature = (function, print=true))]
+    fn help_network(&self, function: &str, print: bool) -> Option<String> {
+        match self.0.help_network(function) {
+            Some(h) if print => {
+                println!("{h}");
+                None
+            }
+            v => v,
+        }
     }
 
-    fn code(&self, func: &str) -> Option<String> {
-        self.0.code(func)
+    #[pyo3(signature = (function, print=true))]
+    fn code(&self, function: &str, print: bool) -> Option<String> {
+        match self.0.code(function) {
+            Some(h) if print => {
+                println!("{h}");
+                None
+            }
+            v => v,
+        }
     }
-    fn code_node(&self, func: &str) -> Option<String> {
-        self.0.code_node(func)
+    #[pyo3(signature = (function, print=true))]
+    fn code_node(&self, function: &str, print: bool) -> Option<String> {
+        match self.0.code_node(function) {
+            Some(h) if print => {
+                println!("{h}");
+                None
+            }
+            v => v,
+        }
     }
-    fn code_network(&self, func: &str) -> Option<String> {
-        self.0.code_network(func)
+    #[pyo3(signature = (function, print=true))]
+    fn code_network(&self, function: &str, print: bool) -> Option<String> {
+        match self.0.code_network(function) {
+            Some(h) if print => {
+                println!("{h}");
+                None
+            }
+            v => v,
+        }
     }
 }
