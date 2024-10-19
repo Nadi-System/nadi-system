@@ -11,7 +11,7 @@ enum IndOrName {
     Name(String),
 }
 
-#[pyclass(name = "Network")]
+#[pyclass(module = "nadi", name = "Network")]
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct PyNetwork(pub Network);

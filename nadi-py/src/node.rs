@@ -5,7 +5,7 @@ use pyo3::exceptions::PyAttributeError;
 use pyo3::prelude::*;
 use std::collections::HashSet;
 
-#[pyclass(name = "Node")]
+#[pyclass(module = "nadi", name = "Node")]
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct PyNode(pub Node);
