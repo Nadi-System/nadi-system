@@ -59,12 +59,75 @@ impl PyNodeFunction {
     }
 
     #[getter]
-    fn __text_signature__(&self) -> String {
-        match self.0.help().split_once("# Signature:") {
-            Some((_, sig)) => sig.trim(),
-            None => "(*args, **kwargs)",
+    fn __signature__(&self) -> String {
+        let sig = self.0.signature().replace(" ", "");
+        if sig == "()" {
+            return "(nodes)".to_string();
         }
-        .to_string()
+        let args: Vec<String> = sig
+            .trim_start_matches('(')
+            .trim_end_matches(')')
+            .split(",")
+            .map(|a| {
+                let (key, ty, val) = match a.split_once(":") {
+                    Some((key, tyval)) => match tyval.split_once("=") {
+                        Some((ty, val)) => (key, Some(ty), Some(val)),
+                        None => (key, Some(tyval), None),
+                    },
+                    None => match a.split_once("=") {
+                        Some((key, val)) => (key, None, Some(val)),
+                        None => (a, None, None),
+                    },
+                };
+                let mut arg = key.to_string();
+                if let Some(ty) = ty {
+                    // type annotation not supported,
+                    // __text_signature__ will have it
+                    // arg.push_str(": ");
+                    // arg.push_str(type_to_py(ty));
+                    if ty.starts_with("'Option") {
+                        arg.push_str(" = None");
+                    }
+                }
+                if let Some(val) = val {
+                    arg.push_str(" = ");
+                    arg.push_str(val_to_py(val));
+                }
+                arg
+            })
+            .collect();
+        format!("(nodes, {})", args.join(", "))
+    }
+
+    #[getter]
+    fn __text_signature__(&self) -> String {
+        self.0.signature().to_string()
+    }
+}
+
+fn type_to_py(ty: &str) -> &'static str {
+    match ty {
+        "i64" => "int",
+        "f64" => "float",
+        "String" | "Template" | "&str" => "str",
+        "bool" => "bool",
+        _ => "Any",
+    }
+}
+
+fn val_to_py(val: &str) -> &str {
+    match val {
+        "true" => "True",
+        "false" => "False",
+        v => {
+            if v.parse::<f64>().is_ok() {
+                v
+            } else if v.starts_with('"') && v.ends_with('"') {
+                v
+            } else {
+                "..."
+            }
+        }
     }
 }
 
@@ -104,12 +167,49 @@ impl PyNetworkFunction {
     }
 
     #[getter]
-    fn __text_signature__(&self) -> String {
-        match self.0.help().split_once("# Signature:") {
-            Some((_, sig)) => sig.trim(),
-            None => "(*args, **kwargs)",
+    fn __signature__(&self) -> String {
+        let sig = self.0.signature().replace(" ", "");
+        if sig == "()" {
+            return "(network)".to_string();
         }
-        .to_string()
+        let args: Vec<String> = sig
+            .trim_start_matches('(')
+            .trim_end_matches(')')
+            .split(",")
+            .map(|a| {
+                let (key, ty, val) = match a.split_once(":") {
+                    Some((key, tyval)) => match tyval.split_once("=") {
+                        Some((ty, val)) => (key, Some(ty), Some(val)),
+                        None => (key, Some(tyval), None),
+                    },
+                    None => match a.split_once("=") {
+                        Some((key, val)) => (key, None, Some(val)),
+                        None => (a, None, None),
+                    },
+                };
+                let mut arg = key.to_string();
+                if let Some(ty) = ty {
+                    // type annotation not supported,
+                    // __text_signature__ will have it
+                    // arg.push_str(": ");
+                    // arg.push_str(type_to_py(ty));
+                    if ty.starts_with("'Option") {
+                        arg.push_str(" = None");
+                    }
+                }
+                if let Some(val) = val {
+                    arg.push_str(" = ");
+                    arg.push_str(val_to_py(val));
+                }
+                arg
+            })
+            .collect();
+        format!("(network, {})", args.join(", "))
+    }
+
+    #[getter]
+    fn __text_signature__(&self) -> String {
+        self.0.signature().to_string()
     }
 }
 
@@ -157,13 +257,22 @@ impl PyNadiFunctions {
         Ok(())
     }
 
-    // todo register python functions into nadi/node functions
+    // todo register python functions into nadi/node function
 
     fn node_function(&self, name: &str) -> PyResult<PyNodeFunction> {
         match self.0.node_functions().get(name) {
             Some(f) => Ok(PyNodeFunction(f.clone())),
             None => Err(PyKeyError::new_err(format!(
                 "Node Function {name} not found"
+            ))),
+        }
+    }
+
+    fn network_function(&self, name: &str) -> PyResult<PyNetworkFunction> {
+        match self.0.network_functions().get(name) {
+            Some(f) => Ok(PyNetworkFunction(f.clone())),
+            None => Err(PyKeyError::new_err(format!(
+                "Network Function {name} not found"
             ))),
         }
     }

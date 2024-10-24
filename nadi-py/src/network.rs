@@ -1,14 +1,15 @@
 use crate::node::PyNode;
-use nadi_core::network::Network;
+use nadi_core::network::{Network, StrPath};
 use pyo3::{
     exceptions::{PyAttributeError, PyKeyError},
     prelude::*,
 };
 
 #[derive(FromPyObject, Clone)]
-enum IndOrName {
+enum NodeIndOrName {
     Index(usize),
     Name(String),
+    Obj(PyNode),
 }
 
 #[pyclass(module = "nadi", name = "Network")]
@@ -28,15 +29,36 @@ impl PyNetwork {
         Ok(Self(net))
     }
 
-    fn node(&self, ind: IndOrName) -> PyResult<PyNode> {
+    fn node(&self, ind: NodeIndOrName) -> PyResult<PyNode> {
         let node = match ind {
-            IndOrName::Index(i) => self.0.node(i),
-            IndOrName::Name(n) => self.0.node_by_name(&n),
+            NodeIndOrName::Index(i) => self.0.node(i),
+            NodeIndOrName::Name(n) => self.0.node_by_name(&n),
+            // if node object, only return it if that node is in network
+            NodeIndOrName::Obj(n) => self.0.node_by_name(n.0.lock().name()),
         };
         match node {
             Some(n) => Ok(PyNode(n.clone())),
-            None => Err(PyKeyError::new_err("Node not found")),
+            None => Err(PyKeyError::new_err("Node not found in the network")),
         }
+    }
+
+    /// Will return empty vec if the path doesn't exist
+    #[pyo3(signature = (start, end, strict = false))]
+    fn nodes_path(
+        &self,
+        start: NodeIndOrName,
+        end: NodeIndOrName,
+        strict: bool,
+    ) -> PyResult<Vec<PyNode>> {
+        let start = self.node(start)?;
+        let end = self.node(end)?;
+        let path = self
+            .0
+            .nodes_path_safe(start.0, end.0, strict)
+            .into_iter()
+            .map(PyNode)
+            .collect();
+        Ok(path)
     }
 
     fn nodes(&self) -> Vec<PyNode> {
