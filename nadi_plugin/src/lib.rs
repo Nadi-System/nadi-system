@@ -76,8 +76,7 @@ fn nadi_func(args: TokenStream, item: TokenStream, node: bool) -> TokenStream {
 
     let name_func = get_name_func(&item);
     let code_func = get_code_func(&item);
-    let help_func = get_help_func(&item, &default_args);
-    let call_func = get_call_func(
+    let (call_func, default_exprs) = get_call_func(
         &item,
         arg0,
         node,
@@ -85,6 +84,7 @@ fn nadi_func(args: TokenStream, item: TokenStream, node: bool) -> TokenStream {
         &default_args,
         &func_struct_name,
     );
+    let help_func = get_help_func(&item, &default_args, default_exprs);
     let impl_trait = nadi_func_impl(node);
 
     let clean_func = clean_function(&item);
@@ -92,7 +92,7 @@ fn nadi_func(args: TokenStream, item: TokenStream, node: bool) -> TokenStream {
     quote! {
     #warnings
 
-        #[derive(Debug)]
+        #[derive(Debug, Clone)]
         pub struct #func_struct_name;
 
         impl #impl_trait for #func_struct_name {
@@ -370,6 +370,12 @@ fn get_name_func(item: &ItemFn) -> proc_macro2::TokenStream {
     }
 }
 
+fn generic_construct(ty: &Type) -> proc_macro2::TokenStream {
+    // if there are any generic parameters, then we need to have ::
+    // there to call its methods like `Vec::<String>::new()`
+    std::str::FromStr::from_str(&ty.to_token_stream().to_string().replace("<", "::<")).unwrap()
+}
+
 // returns the inner type, and if deref is required or not
 fn ref_type_inner(ty: &TypeReference, construct: bool) -> (proc_macro2::TokenStream, bool) {
     // to provide slice we need to generate vec
@@ -382,7 +388,13 @@ fn ref_type_inner(ty: &TypeReference, construct: bool) -> (proc_macro2::TokenStr
                 quote!(Vec<#i>)
             }
         }
-        i => quote! {#i},
+        i => {
+            if construct {
+                generic_construct(i)
+            } else {
+                quote! {#i}
+            }
+        }
     };
     // similarly, str needs String, and Path needs PathBuf
     match inner_ty
@@ -413,7 +425,8 @@ fn get_call_func(
     args: &[(&Ident, &Type, FuncArgType)],
     defaults: &HashMap<Ident, Expr>,
     func_struct_name: &Ident,
-) -> proc_macro2::TokenStream {
+) -> (proc_macro2::TokenStream, proc_macro2::TokenStream) {
+    let mut defaults_expr: Vec<proc_macro2::TokenStream> = Vec::new();
     let extract_args: Vec<proc_macro2::TokenStream> = args
         .iter()
         .enumerate()
@@ -436,15 +449,24 @@ fn get_call_func(
 					"Mutable Reference not supported for nadi function args"
 				    );
 				}
-			    });
+			});
+			defaults_expr.push(quote!{
+			    let #arg = #inner_ty :: from ( #val );
+			});
 			quote!{
 			    #warn
 			    #inner_ty :: from ( #val )
 			    }
 		    },
-		    _ => quote! {
+		    _ => {
+			let ty = generic_construct(ty);
+			defaults_expr.push(quote!{
+			    let #arg = #ty :: from ( #val );
+			});
+			quote! {
                     #ty :: from ( #val )
-                }
+                    }
+		    }
 		}
             } else {
 
@@ -532,7 +554,7 @@ fn get_call_func(
     let func_name = &item.sig.ident;
     let arg0_name = get_fn_arg(arg0).0;
 
-    if node {
+    let call_func = if node {
         quote! {
             fn call(&self,
             nodes: ::nadi_core::abi_stable::std_types::RSlice<::nadi_core::node::Node>,
@@ -568,11 +590,19 @@ fn get_call_func(
         }
             }
         }
-    }
+    };
+    let default_exprs = quote! {
+    #(#defaults_expr)*
+    };
+    (call_func, default_exprs)
 }
 
 // get an expression that can generate function documentation
-fn get_help_func(item: &ItemFn, default_args: &HashMap<Ident, Expr>) -> proc_macro2::TokenStream {
+fn get_help_func(
+    item: &ItemFn,
+    default_args: &HashMap<Ident, Expr>,
+    default_exprs: proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
     let mut docs = get_doc(&item.attrs);
 
     let args: Vec<String> = item
@@ -621,14 +651,9 @@ fn get_help_func(item: &ItemFn, default_args: &HashMap<Ident, Expr>) -> proc_mac
             }
         }
     } else {
-        let values: Vec<proc_macro2::TokenStream> = default_args
-            .iter()
-            .map(|(k, v)| quote! { let #k = #v; })
-            .collect();
-
         quote! {
             fn help(&self) -> ::nadi_core::abi_stable::std_types::RString {
-        #(#values)*
+        #default_exprs
         format!(#docs) .into()
             }
         }
