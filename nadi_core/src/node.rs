@@ -121,6 +121,10 @@ impl NodeInner {
     //     self.attributes.extend(attrs);
     // }
 
+    pub fn del_attr(&mut self, name: &str) -> bool {
+        self.attributes.remove(name.into()).is_some()
+    }
+
     pub fn set_attr(&mut self, name: &str, val: Attribute) {
         self.attributes.insert(name.into(), val);
     }

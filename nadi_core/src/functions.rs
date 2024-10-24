@@ -14,6 +14,7 @@ use abi_stable::{
     StableAbi,
 };
 use colored::Colorize;
+use std::collections::HashMap;
 mod attrs;
 mod attrs2;
 mod command;
@@ -233,6 +234,36 @@ impl NadiFunctions {
         }
     }
 
+    pub fn call_node(
+        &self,
+        func: &str,
+        nodes: RSlice<Node>,
+        ctx: &FunctionCtx,
+    ) -> anyhow::Result<()> {
+        match self.node.get(func) {
+            Some(f) => f
+                .call(nodes, ctx)
+                .map_err(|e| anyhow::Error::msg(e.to_string()))
+                .into(),
+            None => anyhow::bail!("Node Function {} not found", func),
+        }
+    }
+
+    pub fn call_network(
+        &self,
+        func: &str,
+        network: &mut Network,
+        ctx: &FunctionCtx,
+    ) -> anyhow::Result<()> {
+        match self.network.get(func) {
+            Some(f) => f
+                .call(network, ctx)
+                .map_err(|e| anyhow::Error::msg(e.to_string()))
+                .into(),
+            None => anyhow::bail!("Node Function {} not found", func),
+        }
+    }
+
     pub fn execute(&self, func: &FunctionCall, net: &mut Network) -> Result<(), String> {
         match &func.r#type {
             FunctionType::Node(p) => match self.node.get(&func.name) {
@@ -346,6 +377,15 @@ impl FunctionCtx {
             }
         }
         fc
+    }
+
+    pub fn from_arg_kwarg(args: Vec<Attribute>, kwargs: HashMap<String, Attribute>) -> Self {
+        let args = RVec::from(args);
+        let kwargs = kwargs
+            .into_iter()
+            .map(|(k, v)| (RString::from(k), v))
+            .collect();
+        Self { args, kwargs }
     }
 
     pub fn args(&self) -> AttrSlice {

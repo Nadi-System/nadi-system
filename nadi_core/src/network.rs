@@ -117,6 +117,19 @@ impl Network {
         Ok(network)
     }
 
+    pub fn load_attrs<P: AsRef<Path>>(&self, attr_dir: P) -> anyhow::Result<()> {
+        self.nodes_map.iter().try_for_each(|Tuple2(name, node)| {
+            // ignore the error on attribute read
+            let attr_file = attr_dir.as_ref().join(format!("{}.toml", name));
+            if attr_file.exists() && attr_file.is_file() {
+                node.lock().load_attr(&attr_file)
+            } else {
+                Ok(())
+            }
+        })?;
+        Ok(())
+    }
+
     pub fn nodes(&self) -> impl Iterator<Item = &Node> {
         self.nodes.iter().map(|n| &self.nodes_map[n])
     }
