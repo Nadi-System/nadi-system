@@ -84,7 +84,8 @@ fn nadi_func(args: TokenStream, item: TokenStream, node: bool) -> TokenStream {
         &default_args,
         &func_struct_name,
     );
-    let help_func = get_help_func(&item, &default_args, default_exprs);
+    let help_func = get_help_func(&item);
+    let signature_func = get_signature_func(&item, &default_args, default_exprs);
     let impl_trait = nadi_func_impl(node);
 
     let clean_func = clean_function(&item);
@@ -99,7 +100,7 @@ fn nadi_func(args: TokenStream, item: TokenStream, node: bool) -> TokenStream {
             #name_func
             #code_func
             #help_func
-
+            #signature_func
             #call_func
         }
 
@@ -597,14 +598,20 @@ fn get_call_func(
     (call_func, default_exprs)
 }
 
-// get an expression that can generate function documentation
-fn get_help_func(
+fn get_help_func(item: &ItemFn) -> proc_macro2::TokenStream {
+    let docs = get_doc(&item.attrs).join("\n");
+    quote! {
+        fn help(&self) -> ::nadi_core::abi_stable::std_types::RString {
+    #docs .into()
+        }
+    }
+}
+
+fn get_signature_func(
     item: &ItemFn,
     default_args: &HashMap<Ident, Expr>,
     default_exprs: proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
-    let mut docs = get_doc(&item.attrs);
-
     let args: Vec<String> = item
         .sig
         .inputs
@@ -622,13 +629,13 @@ fn get_help_func(
                         syn::Pat::Ident(i) => {
                             if default_args.contains_key(&i.ident) {
                                 format!(
-                                    "{} [{}] = {{{}:?}}",
+                                    "{}: '{}' = {{{}:?}}",
                                     i.ident,
                                     a.ty.as_ref().into_token_stream(),
                                     i.ident
                                 )
                             } else {
-                                format!("{} [{}]", i.ident, a.ty.as_ref().into_token_stream())
+                                format!("{}: '{}'", i.ident, a.ty.as_ref().into_token_stream())
                             }
                         }
                         _ => panic!("Not supported"),
@@ -641,20 +648,18 @@ fn get_help_func(
 
     // function signature showing the function name, arguments and
     // their default values
-    docs.push("\n# Signature:".into());
-    docs.push(format!("{}({})\n", &item.sig.ident, args.join(", ")));
-    let docs = docs.join("\n");
+    let sig = format!("({})", args.join(", "));
     if default_args.is_empty() {
         quote! {
-            fn help(&self) -> ::nadi_core::abi_stable::std_types::RString {
-        #docs .into()
+            fn signature(&self) -> ::nadi_core::abi_stable::std_types::RString {
+        #sig .into()
             }
         }
     } else {
         quote! {
-            fn help(&self) -> ::nadi_core::abi_stable::std_types::RString {
+            fn signature(&self) -> ::nadi_core::abi_stable::std_types::RString {
         #default_exprs
-        format!(#docs) .into()
+        format!(#sig) .into()
             }
         }
     }
