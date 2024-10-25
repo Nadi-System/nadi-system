@@ -296,11 +296,12 @@ fn sig_to_py(sig: &str, arg0: &str, notype: bool) -> String {
             };
             let mut arg = key.to_string();
             if let Some(ty) = ty {
+                let ty = ty.trim_matches('\'').trim_start_matches('&');
                 if !notype {
                     arg.push_str(": ");
                     arg.push_str(type_to_py(ty));
                 }
-                if ty.starts_with("'Option") {
+                if ty.starts_with("Option") {
                     arg.push_str(" = None");
                 }
             }
@@ -320,7 +321,7 @@ fn type_to_py(ty: &str) -> &'static str {
     match ty {
         "i64" => "int",
         "f64" => "float",
-        "String" | "Template" | "&str" => "str",
+        "String" | "Template" | "str" => "str",
         "bool" => "bool",
         _ => "Any",
     }
