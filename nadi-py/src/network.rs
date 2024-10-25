@@ -1,9 +1,6 @@
 use crate::node::PyNode;
-use nadi_core::network::{Network, StrPath};
-use pyo3::{
-    exceptions::{PyAttributeError, PyKeyError},
-    prelude::*,
-};
+use nadi_core::network::Network;
+use pyo3::{exceptions::PyKeyError, prelude::*};
 
 #[derive(FromPyObject, Clone)]
 enum NodeIndOrName {

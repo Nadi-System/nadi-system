@@ -1,5 +1,5 @@
-use nadi_core::abi_stable::std_types::{RHashMap, RString, RVec, Tuple2};
-use nadi_core::attrs::{Attribute, FromAttribute};
+use nadi_core::abi_stable::std_types::{RString, Tuple2};
+use nadi_core::attrs::Attribute;
 use pyo3::prelude::*;
 use std::collections::HashMap;
 
