@@ -192,9 +192,14 @@ impl Network {
     pub fn nodes_path(&self, path: &StrPath) -> Option<Vec<Node>> {
         let start = self.node_by_name(path.start.as_str())?;
         let end = self.node_by_name(path.end.as_str())?;
+        Some(self.nodes_path_safe(start.clone(), end.clone(), false))
+    }
+
+    /// Will return empty vec if the path doesn't exist
+    pub fn nodes_path_safe(&self, start: Node, end: Node, strict: bool) -> Vec<Node> {
         // we'll assume the network is indexed based on order, small
         // indices are closer to outlet
-        let (start, end) = if start.lock().index() > end.lock().index() {
+        let (start, end) = if strict || (start.lock().index() > end.lock().index()) {
             (start, end)
         } else {
             (end, start)
@@ -210,11 +215,12 @@ impl Network {
             let tmp = if let RSome(o) = curr.lock().output() {
                 o.clone()
             } else {
-                return None;
+                // start doesn't reach end
+                return vec![];
             };
             curr = tmp;
         }
-        Some(path_nodes)
+        path_nodes
     }
 
     pub fn calc_order(&mut self) {

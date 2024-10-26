@@ -29,7 +29,7 @@ impl NadiPlugin for AttrsMod {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LoadAttrs;
 
 impl NodeFunction for LoadAttrs {
@@ -68,7 +68,7 @@ impl NodeFunction for LoadAttrs {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PrintAllAttrs;
 
 impl NodeFunction for PrintAllAttrs {

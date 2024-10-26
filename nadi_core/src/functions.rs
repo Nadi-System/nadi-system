@@ -133,7 +133,7 @@ where
 }
 
 #[sabi_trait]
-pub trait NodeFunction: Debug {
+pub trait NodeFunction: Debug + Clone {
     fn name(&self) -> RString;
     fn help(&self) -> RString;
     fn code(&self) -> RString;
@@ -141,7 +141,7 @@ pub trait NodeFunction: Debug {
 }
 
 #[sabi_trait]
-pub trait NetworkFunction: Debug {
+pub trait NetworkFunction: Debug + Clone {
     fn name(&self) -> RString;
     fn help(&self) -> RString;
     fn code(&self) -> RString;

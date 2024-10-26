@@ -137,6 +137,10 @@ impl NodeInner {
         &self.attributes
     }
 
+    pub fn attrs_mut(&mut self) -> &mut AttrMap {
+        &mut self.attributes
+    }
+
     pub fn set_ts(&mut self, name: &str, val: TimeSeries) {
         self.timeseries.insert(name.into(), val);
     }
