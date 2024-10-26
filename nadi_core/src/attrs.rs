@@ -1,5 +1,6 @@
 use crate::parser::attrs::attr_file;
 use anyhow::Context;
+use chrono::{Datelike, Timelike};
 use colored::Colorize;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -8,7 +9,7 @@ use string_template_plus::Template;
 use abi_stable::{
     std_types::{
         RHashMap,
-        ROption::{self, RNone},
+        ROption::{self, RNone, RSome},
         RSlice, RStr, RString, RVec, Tuple2,
     },
     StableAbi,
@@ -442,6 +443,46 @@ impl std::fmt::Display for DateTime {
     }
 }
 
+impl From<chrono::NaiveDateTime> for DateTime {
+    fn from(value: chrono::NaiveDateTime) -> Self {
+        Date::from(value.date()).with_time(Time::from(value.time()))
+    }
+}
+
+impl Into<chrono::NaiveDateTime> for DateTime {
+    fn into(self) -> chrono::NaiveDateTime {
+        let d: chrono::NaiveDate = self.date.into();
+        let t: chrono::NaiveTime = self.time.into();
+        chrono::NaiveDateTime::new(d, t)
+    }
+}
+
+impl From<chrono::DateTime<chrono::FixedOffset>> for DateTime {
+    fn from(value: chrono::DateTime<chrono::FixedOffset>) -> Self {
+        Self::new(
+            Date::from(value.date_naive()),
+            Time::from(value.time()),
+            Some(Offset::from(value.offset().clone())),
+        )
+    }
+}
+
+impl Into<chrono::DateTime<chrono::FixedOffset>> for DateTime {
+    fn into(self) -> chrono::DateTime<chrono::FixedOffset> {
+        let d: chrono::NaiveDate = self.date.into();
+        let t: chrono::NaiveTime = self.time.into();
+        if let RSome(offset) = self.offset {
+            let o: chrono::FixedOffset = offset.into();
+            chrono::NaiveDateTime::new(d, t)
+                .and_local_timezone(o)
+                .single()
+                .expect("Offset should be valid")
+        } else {
+            chrono::NaiveDateTime::new(d, t).and_utc().fixed_offset()
+        }
+    }
+}
+
 impl DateTime {
     pub fn new(date: Date, time: Time, offset: Option<Offset>) -> Self {
         Self {
@@ -463,6 +504,19 @@ pub struct Date {
 impl std::fmt::Display for Date {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:02}-{:02}-{:02}", self.year, self.month, self.day)
+    }
+}
+
+impl From<chrono::NaiveDate> for Date {
+    fn from(value: chrono::NaiveDate) -> Self {
+        Self::new(value.year() as u16, value.month() as u8, value.day() as u8)
+    }
+}
+
+impl Into<chrono::NaiveDate> for Date {
+    fn into(self) -> chrono::NaiveDate {
+        chrono::NaiveDate::from_ymd_opt(self.year as i32, self.month as u32, self.day as u32)
+            .expect("should be valid date")
     }
 }
 
@@ -518,6 +572,29 @@ impl std::fmt::Display for Time {
     }
 }
 
+impl From<chrono::NaiveTime> for Time {
+    fn from(value: chrono::NaiveTime) -> Self {
+        Self::new(
+            value.hour() as u8,
+            value.minute() as u8,
+            value.second() as u8,
+            value.nanosecond(),
+        )
+    }
+}
+
+impl Into<chrono::NaiveTime> for Time {
+    fn into(self) -> chrono::NaiveTime {
+        chrono::NaiveTime::from_hms_nano_opt(
+            self.hour as u32,
+            self.min as u32,
+            self.sec as u32,
+            self.nanosecond,
+        )
+        .expect("should be valid time")
+    }
+}
+
 impl Time {
     pub fn new(hour: u8, min: u8, sec: u8, nanosecond: u32) -> Self {
         // TODO check valid time
@@ -552,6 +629,36 @@ impl Time {
 pub struct Offset {
     pub hour: u8,
     pub min: u8,
+    pub east: bool,
+}
+
+impl From<chrono::FixedOffset> for Offset {
+    fn from(value: chrono::FixedOffset) -> Self {
+        let (secs, east) = {
+            let s = value.local_minus_utc();
+            if s > 0 {
+                (s, false)
+            } else {
+                (s.abs(), true)
+            }
+        };
+        let m = secs / 60;
+        let h = m / 60;
+        let min = (m - h * 60) as u8;
+        let hour = h as u8;
+        Self { hour, min, east }
+    }
+}
+
+impl Into<chrono::FixedOffset> for Offset {
+    fn into(self) -> chrono::FixedOffset {
+        let secs = (self.hour as i32 * 60 + self.min as i32) * 60;
+        if self.east {
+            chrono::FixedOffset::east_opt(secs).expect("should be valid offset")
+        } else {
+            chrono::FixedOffset::west_opt(secs).expect("should be valid offset")
+        }
+    }
 }
 
 pub fn parse_attr_file(txt: &str) -> anyhow::Result<AttrMap> {
