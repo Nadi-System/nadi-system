@@ -1,6 +1,5 @@
 use crate::parser::attrs::attr_file;
 use anyhow::Context;
-use chrono::{Datelike, Timelike};
 use colored::Colorize;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -14,6 +13,9 @@ use abi_stable::{
     },
     StableAbi,
 };
+
+#[cfg(feature = "chrono")]
+use chrono::{Datelike, Timelike};
 
 #[repr(C)]
 #[derive(StableAbi, Clone, PartialEq, Debug)]
@@ -443,12 +445,14 @@ impl std::fmt::Display for DateTime {
     }
 }
 
+#[cfg(feature = "chrono")]
 impl From<chrono::NaiveDateTime> for DateTime {
     fn from(value: chrono::NaiveDateTime) -> Self {
         Date::from(value.date()).with_time(Time::from(value.time()))
     }
 }
 
+#[cfg(feature = "chrono")]
 impl Into<chrono::NaiveDateTime> for DateTime {
     fn into(self) -> chrono::NaiveDateTime {
         let d: chrono::NaiveDate = self.date.into();
@@ -457,6 +461,7 @@ impl Into<chrono::NaiveDateTime> for DateTime {
     }
 }
 
+#[cfg(feature = "chrono")]
 impl From<chrono::DateTime<chrono::FixedOffset>> for DateTime {
     fn from(value: chrono::DateTime<chrono::FixedOffset>) -> Self {
         Self::new(
@@ -467,6 +472,7 @@ impl From<chrono::DateTime<chrono::FixedOffset>> for DateTime {
     }
 }
 
+#[cfg(feature = "chrono")]
 impl Into<chrono::DateTime<chrono::FixedOffset>> for DateTime {
     fn into(self) -> chrono::DateTime<chrono::FixedOffset> {
         let d: chrono::NaiveDate = self.date.into();
@@ -507,12 +513,14 @@ impl std::fmt::Display for Date {
     }
 }
 
+#[cfg(feature = "chrono")]
 impl From<chrono::NaiveDate> for Date {
     fn from(value: chrono::NaiveDate) -> Self {
         Self::new(value.year() as u16, value.month() as u8, value.day() as u8)
     }
 }
 
+#[cfg(feature = "chrono")]
 impl Into<chrono::NaiveDate> for Date {
     fn into(self) -> chrono::NaiveDate {
         chrono::NaiveDate::from_ymd_opt(self.year as i32, self.month as u32, self.day as u32)
@@ -572,6 +580,7 @@ impl std::fmt::Display for Time {
     }
 }
 
+#[cfg(feature = "chrono")]
 impl From<chrono::NaiveTime> for Time {
     fn from(value: chrono::NaiveTime) -> Self {
         Self::new(
@@ -583,6 +592,7 @@ impl From<chrono::NaiveTime> for Time {
     }
 }
 
+#[cfg(feature = "chrono")]
 impl Into<chrono::NaiveTime> for Time {
     fn into(self) -> chrono::NaiveTime {
         chrono::NaiveTime::from_hms_nano_opt(
@@ -632,6 +642,7 @@ pub struct Offset {
     pub east: bool,
 }
 
+#[cfg(feature = "chrono")]
 impl From<chrono::FixedOffset> for Offset {
     fn from(value: chrono::FixedOffset) -> Self {
         let (secs, east) = {
@@ -650,6 +661,7 @@ impl From<chrono::FixedOffset> for Offset {
     }
 }
 
+#[cfg(feature = "chrono")]
 impl Into<chrono::FixedOffset> for Offset {
     fn into(self) -> chrono::FixedOffset {
         let secs = (self.hour as i32 * 60 + self.min as i32) * 60;
