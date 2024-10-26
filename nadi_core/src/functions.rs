@@ -136,6 +136,7 @@ where
 pub trait NodeFunction: Debug + Clone {
     fn name(&self) -> RString;
     fn help(&self) -> RString;
+    fn signature(&self) -> RString;
     fn code(&self) -> RString;
     fn call(&self, obj: RSlice<Node>, ctx: &FunctionCtx) -> RResult<(), RString>;
 }
@@ -144,6 +145,7 @@ pub trait NodeFunction: Debug + Clone {
 pub trait NetworkFunction: Debug + Clone {
     fn name(&self) -> RString;
     fn help(&self) -> RString;
+    fn signature(&self) -> RString;
     fn code(&self) -> RString;
     fn call(&self, obj: &mut Network, ctx: &FunctionCtx) -> RResult<(), RString>;
 }
@@ -314,6 +316,13 @@ impl NadiFunctions {
                 }
             }
         }
+    }
+
+    pub fn node(&self, func: &str) -> Option<&NodeFunctionBox> {
+        self.node.get(&RString::from(func))
+    }
+    pub fn network(&self, func: &str) -> Option<&NetworkFunctionBox> {
+        self.network.get(&RString::from(func))
     }
 
     pub fn help(&self, func: &str) -> Option<String> {

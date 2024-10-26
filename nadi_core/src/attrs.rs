@@ -1,7 +1,7 @@
 use crate::parser::attrs::attr_file;
 use anyhow::Context;
 use colored::Colorize;
-
+use std::collections::HashMap;
 use std::path::PathBuf;
 use string_template_plus::Template;
 
@@ -290,6 +290,16 @@ impl FromAttribute for String {
     }
 }
 
+impl FromAttributeRelaxed for String {
+    fn try_from_attr_relaxed(value: &Attribute) -> Result<String, String> {
+        match value {
+            // normal to_string puts quote on string, we don't want that
+            Attribute::String(v) => Ok(v.to_string()),
+            a => Ok(a.to_string()),
+        }
+    }
+}
+
 impl From<String> for Attribute {
     fn from(value: String) -> Self {
         Self::String(RString::from(value))
@@ -384,6 +394,28 @@ where
             Attribute::Array(v) => v
                 .iter()
                 .map(FromAttributeRelaxed::try_from_attr_relaxed)
+                .collect(),
+            _ => Err(format!(
+                "Incorrect Type: got {} instead of Array",
+                value.type_name()
+            )),
+        }
+    }
+}
+
+impl<T> FromAttribute for HashMap<String, T>
+where
+    T: FromAttribute,
+{
+    fn from_attr(value: &Attribute) -> Option<HashMap<String, T>> {
+        FromAttribute::try_from_attr(value).ok()
+    }
+
+    fn try_from_attr(value: &Attribute) -> Result<HashMap<String, T>, String> {
+        match value {
+            Attribute::Table(t) => t
+                .iter()
+                .map(|Tuple2(k, v)| FromAttribute::try_from_attr(v).map(|v| (k.to_string(), v)))
                 .collect(),
             _ => Err(format!(
                 "Incorrect Type: got {} instead of Array",

@@ -43,6 +43,10 @@ impl NodeFunction for LoadAttrs {
         .into()
     }
 
+    fn signature(&self) -> RString {
+        "(filename)".into()
+    }
+
     fn call(&self, nodes: RSlice<Node>, ctx: &FunctionCtx) -> RResult<(), RString> {
         let templ: Template = match ctx.arg_kwarg(0, "filename") {
             Some(Ok(a)) => a,
@@ -80,6 +84,10 @@ impl NodeFunction for PrintAllAttrs {
         "Print all attrs node
 "
         .into()
+    }
+
+    fn signature(&self) -> RString {
+        "()".into()
     }
 
     fn call(&self, nodes: RSlice<Node>, _ctx: &FunctionCtx) -> RResult<(), RString> {
