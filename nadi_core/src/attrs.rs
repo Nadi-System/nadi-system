@@ -445,6 +445,16 @@ impl std::fmt::Display for DateTime {
     }
 }
 
+impl std::str::FromStr for DateTime {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match crate::parser::attrs::parse_datetime(s) {
+            Ok((_, d)) => Ok(d),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+}
+
 #[cfg(feature = "chrono")]
 impl From<chrono::NaiveDateTime> for DateTime {
     fn from(value: chrono::NaiveDateTime) -> Self {
@@ -513,6 +523,16 @@ impl std::fmt::Display for Date {
     }
 }
 
+impl std::str::FromStr for Date {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match crate::parser::attrs::parse_date(s) {
+            Ok((_, d)) => Ok(d),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+}
+
 #[cfg(feature = "chrono")]
 impl From<chrono::NaiveDate> for Date {
     fn from(value: chrono::NaiveDate) -> Self {
@@ -577,6 +597,16 @@ pub struct Time {
 impl std::fmt::Display for Time {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:02}:{:02}:{:02}", self.hour, self.min, self.sec)
+    }
+}
+
+impl std::str::FromStr for Time {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match crate::parser::attrs::parse_time(s) {
+            Ok((_, d)) => Ok(d),
+            Err(e) => Err(e.to_string()),
+        }
     }
 }
 

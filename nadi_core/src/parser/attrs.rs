@@ -90,7 +90,7 @@ pub fn digit_4(input: &str) -> Res<&str, u16> {
     map_res(take(4_u8), |s: &str| s.parse::<u16>())(input)
 }
 
-fn parse_date(txt: &str) -> Res<&str, Date> {
+pub fn parse_date(txt: &str) -> Res<&str, Date> {
     let (rest, (y, _, m, _, d)) = context(
         "date",
         preceded(sp, tuple((digit_4, tag("-"), digit_2, tag("-"), digit_2))),
@@ -98,7 +98,7 @@ fn parse_date(txt: &str) -> Res<&str, Date> {
     Ok((rest, Date::new(y, m, d)))
 }
 
-fn parse_time(txt: &str) -> Res<&str, Time> {
+pub fn parse_time(txt: &str) -> Res<&str, Time> {
     // TODO support nanoseconds
     let (rest, (h, _, m, s)) = context(
         "time",
@@ -110,7 +110,7 @@ fn parse_time(txt: &str) -> Res<&str, Time> {
     Ok((rest, Time::new(h, m, s.unwrap_or_default(), 0)))
 }
 
-fn parse_datetime(txt: &str) -> Res<&str, DateTime> {
+pub fn parse_datetime(txt: &str) -> Res<&str, DateTime> {
     // TODO support offset
     let (rest, (d, _, t)) = preceded(sp, tuple((parse_date, one_of(" T"), parse_time)))(txt)?;
     Ok((rest, DateTime::new(d, t, None)))
