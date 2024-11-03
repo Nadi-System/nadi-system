@@ -134,6 +134,30 @@ impl Network {
         self.nodes.iter().map(|n| &self.nodes_map[n])
     }
 
+    pub fn edges(&self) -> impl Iterator<Item = (&Node, &Node)> + '_ {
+        self.edges_ind().map(|(s, e)| {
+            (
+                &self.nodes_map[&self.nodes[s]],
+                &self.nodes_map[&self.nodes[e]],
+            )
+        })
+    }
+
+    pub fn edges_str(&self) -> impl Iterator<Item = (&str, &str)> + '_ {
+        self.edges_ind()
+            .map(|(s, e)| (self.nodes[s].as_str(), self.nodes[e].as_str()))
+    }
+
+    pub fn edges_ind(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
+        self.nodes().filter_map(|n| {
+            let n = n.lock();
+            match n.output() {
+                RSome(o) => Some((n.index(), o.lock().index())),
+                RNone => None,
+            }
+        })
+    }
+
     pub fn node_names(&self) -> impl Iterator<Item = &str> {
         self.nodes.iter().map(|n| n.as_str())
     }
@@ -327,6 +351,12 @@ impl Network {
         if let RSome(output) = &self.outlet {
             recc_set(output, 0);
         }
+    }
+
+    /// move the network outlet to the given node, discard all nodes
+    /// not leading to the outlet
+    pub fn move_outlet(&mut self, name: &str) -> Result<(), String> {
+        todo!()
     }
 
     pub fn set_attr(&mut self, name: &str, val: Attribute) {

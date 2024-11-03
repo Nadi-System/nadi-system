@@ -168,7 +168,9 @@ pub type NetworkFunctionBox = NetworkFunction_TO<'static, RBox<()>>;
 #[derive(StableAbi, Default)]
 pub struct NadiFunctions {
     node: RHashMap<RString, NodeFunctionBox>,
+    node_alias: RHashMap<RString, RString>,
     network: RHashMap<RString, NetworkFunctionBox>,
+    network_alias: RHashMap<RString, RString>,
 }
 
 impl NadiFunctions {
@@ -188,11 +190,27 @@ impl NadiFunctions {
         funcs.load_plugins().unwrap();
         funcs
     }
-    pub fn register_network_function(&mut self, func: NetworkFunctionBox) {
-        self.network.insert(func.name(), func);
+    pub fn register_network_function(&mut self, prefix: &str, func: NetworkFunctionBox) {
+        let name = func.name();
+        let fullname = RString::from(format!("{}.{}", prefix, name));
+        self.network.insert(fullname.clone(), func);
+        if let RSome(al) = self.network_alias.insert(name.clone(), fullname.clone()) {
+            eprintln!(
+                "WARN Function {} now uses {} instead of {}, use full name for disambiguity",
+                name, fullname, al
+            );
+        }
     }
-    pub fn register_node_function(&mut self, func: NodeFunctionBox) {
-        self.node.insert(func.name(), func);
+    pub fn register_node_function(&mut self, prefix: &str, func: NodeFunctionBox) {
+        let name = func.name();
+        let fullname = RString::from(format!("{}.{}", prefix, name));
+        self.node.insert(fullname.clone(), func);
+        if let RSome(al) = self.node_alias.insert(name.clone(), fullname.clone()) {
+            eprintln!(
+                "WARN Function {} now uses {} instead of {}, use full name for disambiguity",
+                name, fullname, al
+            );
+        }
     }
 
     pub fn load_plugins(&mut self) -> anyhow::Result<()> {
@@ -243,7 +261,7 @@ impl NadiFunctions {
         nodes: RSlice<Node>,
         ctx: &FunctionCtx,
     ) -> anyhow::Result<()> {
-        match self.node.get(func) {
+        match self.node(func) {
             Some(f) => f
                 .call(nodes, ctx)
                 .map_err(|e| anyhow::Error::msg(e.to_string()))
@@ -258,7 +276,7 @@ impl NadiFunctions {
         network: &mut Network,
         ctx: &FunctionCtx,
     ) -> anyhow::Result<()> {
-        match self.network.get(func) {
+        match self.network(func) {
             Some(f) => f
                 .call(network, ctx)
                 .map_err(|e| anyhow::Error::msg(e.to_string()))
@@ -320,10 +338,20 @@ impl NadiFunctions {
     }
 
     pub fn node(&self, func: &str) -> Option<&NodeFunctionBox> {
-        self.node.get(&RString::from(func))
+        if func.contains('.') {
+            self.node.get(func)
+        } else {
+            self.node_alias.get(func).and_then(|f| self.node.get(f))
+        }
     }
     pub fn network(&self, func: &str) -> Option<&NetworkFunctionBox> {
-        self.network.get(&RString::from(func))
+        if func.contains('.') {
+            self.network.get(func)
+        } else {
+            self.network_alias
+                .get(func)
+                .and_then(|f| self.network.get(f))
+        }
     }
 
     pub fn help(&self, func: &str) -> Option<String> {
@@ -332,15 +360,11 @@ impl NadiFunctions {
     }
 
     pub fn help_node(&self, func: &str) -> Option<String> {
-        self.node
-            .get(&RString::from(func))
-            .map(|f| f.help().into_string())
+        self.node(func).map(|f| f.help().into_string())
     }
 
     pub fn help_network(&self, func: &str) -> Option<String> {
-        self.network
-            .get(&RString::from(func))
-            .map(|f| f.help().into_string())
+        self.network(func).map(|f| f.help().into_string())
     }
     pub fn code(&self, func: &str) -> Option<String> {
         // node and network function might have same name
@@ -348,15 +372,11 @@ impl NadiFunctions {
     }
 
     pub fn code_node(&self, func: &str) -> Option<String> {
-        self.node
-            .get(&RString::from(func))
-            .map(|f| f.code().into_string())
+        self.node(func).map(|f| f.code().into_string())
     }
 
     pub fn code_network(&self, func: &str) -> Option<String> {
-        self.network
-            .get(&RString::from(func))
-            .map(|f| f.code().into_string())
+        self.network(func).map(|f| f.code().into_string())
     }
 }
 

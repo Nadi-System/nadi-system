@@ -15,6 +15,7 @@ use string_template_plus::Template;
 
 use super::{FunctionCtx, NodeFunction_TO};
 
+/// The main Mod object of the plugin
 pub struct AttrsMod;
 
 impl NadiPlugin for AttrsMod {
@@ -22,10 +23,19 @@ impl NadiPlugin for AttrsMod {
         "attrs".into()
     }
     fn register(&self, nf: &mut NadiFunctions) {
-        nf.register_node_function(NodeFunction_TO::from_value(LoadAttrs, TD_CanDowncast));
-        nf.register_node_function(NodeFunction_TO::from_value(PrintAllAttrs, TD_CanDowncast));
-        // node_func makes struct from function_name to  FunctionNameNode:
-        nf.register_node_function(NodeFunction_TO::from_value(PrintAttrsNode, TD_CanDowncast));
+        nf.register_node_function(
+            "attrs",
+            NodeFunction_TO::from_value(LoadAttrs, TD_CanDowncast),
+        );
+        nf.register_node_function(
+            "attrs",
+            NodeFunction_TO::from_value(PrintAllAttrs, TD_CanDowncast),
+        );
+        // #[node_func] makes struct from function_name to  FunctionNameNode:
+        nf.register_node_function(
+            "attrs",
+            NodeFunction_TO::from_value(PrintAttrsNode, TD_CanDowncast),
+        );
     }
 }
 
@@ -104,6 +114,7 @@ impl NodeFunction for PrintAllAttrs {
     }
 }
 
+// You can also use the *_func macros only for generating the functions easily
 /// Print the given node attributes if present
 #[node_func]
 fn print_attrs(node: &mut NodeInner, #[args] attrs: AttrSlice) -> FunctionRet {

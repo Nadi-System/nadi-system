@@ -12,13 +12,17 @@ use nom::{
     sequence::{pair, preceded, separated_pair, terminated},
 };
 
+pub fn is_valid_node_name(name: &str) -> bool {
+    node_name(name).is_ok()
+}
+
 fn node_name(input: &str) -> Res<&str, RString> {
     context(
         "node name",
         alt((
             map(
                 recognize(pair(
-                    alt((alpha1, tag("_"))),
+                    alt((alphanumeric1, tag("_"))),
                     // because the name can have -, there needs to be space before ->
                     many0_count(alt((alphanumeric1, tag("_"), tag("-")))),
                 )),
