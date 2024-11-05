@@ -260,6 +260,7 @@ fn nadi_export_plugin(_args: TokenStream, item: TokenStream, external: bool) -> 
         .map(|n| {
             quote! {
                     nf.register_node_function(
+                #name_s,
                         ::nadi_core::functions::NodeFunction_TO::from_value(
                 #n,
                 ::nadi_core::abi_stable::sabi_trait::TD_CanDowncast
@@ -273,13 +274,14 @@ fn nadi_export_plugin(_args: TokenStream, item: TokenStream, external: bool) -> 
         .map(|n| nadi_struct_name(n, "Network"))
         .map(|n| {
             quote! {
-            nf.register_network_function(
-                        ::nadi_core::functions::NetworkFunction_TO::from_value(
-                            #n,
-                            ::nadi_core::abi_stable::sabi_trait::TD_CanDowncast
-                        )
-                    );
-                }
+                nf.register_network_function(
+            #name_s,
+                    ::nadi_core::functions::NetworkFunction_TO::from_value(
+                        #n,
+                        ::nadi_core::abi_stable::sabi_trait::TD_CanDowncast
+                    )
+                );
+            }
         });
 
     if external {
@@ -599,7 +601,7 @@ fn get_call_func(
 }
 
 fn get_help_func(item: &ItemFn) -> proc_macro2::TokenStream {
-    let docs = get_doc(&item.attrs).join("\n");
+    let docs = get_doc(&item.attrs);
     quote! {
         fn help(&self) -> ::nadi_core::abi_stable::std_types::RString {
     #docs .into()
@@ -666,8 +668,8 @@ fn get_signature_func(
 }
 
 /// collect doc attributes
-fn get_doc(attrs: &[Attribute]) -> Vec<String> {
-    attrs
+fn get_doc(attrs: &[Attribute]) -> String {
+    let docs: Vec<String> = attrs
         .iter()
         .filter(|a| a.path().is_ident("doc"))
         .filter_map(|a| match &a.meta {
@@ -675,7 +677,7 @@ fn get_doc(attrs: &[Attribute]) -> Vec<String> {
                 Expr::Lit(lit) => match &lit.lit {
                     Lit::Str(c) => {
                         let c = c.value();
-                        Some(c.strip_prefix(' ').unwrap_or(c.as_str()).to_string())
+                        Some(c.trim_matches(' ').to_string())
                     }
                     _ => None,
                 },
@@ -683,5 +685,34 @@ fn get_doc(attrs: &[Attribute]) -> Vec<String> {
             },
             _ => None,
         })
-        .collect()
+        .collect();
+    format_docstrings(docs.join("\n"))
+}
+
+fn format_docstrings(string: String) -> String {
+    if string.lines().count() == 1 {
+        string.trim().to_string()
+    } else {
+        let num_leading = string
+            .lines()
+            .skip(1)
+            .filter(|s| !s.is_empty())
+            .filter_map(|l| l.chars().position(|c| !c.is_whitespace()))
+            .min()
+            .unwrap_or(0);
+        let lines = string
+            .lines()
+            .skip(1)
+            .map(|line| {
+                if line.len() > num_leading {
+                    &line[num_leading..]
+                } else {
+                    line
+                }
+            })
+            .map(|l| l.trim_end())
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!("{}\n{}", string.lines().next().unwrap(), lines)
+    }
 }
