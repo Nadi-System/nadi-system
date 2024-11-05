@@ -49,6 +49,18 @@ impl NodeFunction for LoadAttrs {
 
     fn help(&self) -> RString {
         "Loads attrs from file for all nodes based on the given template
+
+# Arguments
+- `filename`: Template for the filename to load node attributes from
+
+The template will be rendered for each node, and that filename from the
+rendered template will be used to load the attributes.
+
+# Errors
+The function will error out in following conditions:
+- Template for filename is not given,
+- The template couldn't be rendered,
+- There was error loading attributes from the file.
 "
         .into()
     }
@@ -91,7 +103,13 @@ impl NodeFunction for PrintAllAttrs {
     }
 
     fn help(&self) -> RString {
-        "Print all attrs node
+        "Print all attrs in a node
+
+No arguments and no errors, it'll just print all the attributes in a node with
+`node::attr=val` format, where,
+- node is node name
+- attr is attribute name
+- val is attribute value (string representation)
 "
         .into()
     }
@@ -114,10 +132,24 @@ impl NodeFunction for PrintAllAttrs {
     }
 }
 
-// You can also use the *_func macros only for generating the functions easily
-/// Print the given node attributes if present
+// You can also use the *_func macros for only generating the
+// functions easily; but again, use macros for everything as the
+// internal structure of how plugins work might change.
+/** Print the given node attributes if present
+
+# Arguments
+- attrs,... : list of attributes to print
+- name: Bool for whether to show the node name or not
+
+# Error
+The function will error if
+- list of arguments are not `String`
+- the `name` argument is not Boolean
+
+The attributes will be printed in `key=val` format.
+*/
 #[node_func]
-fn print_attrs(node: &mut NodeInner, #[args] attrs: AttrSlice) -> FunctionRet {
+fn print_attrs(node: &mut NodeInner, #[args] attrs: AttrSlice, name: bool) -> FunctionRet {
     let attrs = return_on_err!(attrs
         .iter()
         .map(String::try_from_attr)
@@ -125,6 +157,9 @@ fn print_attrs(node: &mut NodeInner, #[args] attrs: AttrSlice) -> FunctionRet {
 
     for a in attrs {
         if let Some(v) = node.attr(&a) {
+            if name {
+                print!("{}::", node.name());
+            }
             println!("{a} = {}", v.to_string());
         }
     }

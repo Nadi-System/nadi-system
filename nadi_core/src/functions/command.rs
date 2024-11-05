@@ -19,12 +19,27 @@ mod command {
     and followed by `key=val` pairs, it'll be read as new attributes
     to that node.
 
-    # Arguments:
-    - cmd: String Command template to run
-    - verbose: bool Show the rendered version of command
-    - echo: bool Echo the stdin from the command
+    For example if a command writes `nadi:var:name="Joe"` to stdout,
+    then the for the current node the command is being run for, `name`
+    attribute will be set to `Joe`. This way, you can write your
+    scripts in any language and pass the values back to the NADI
+    system.
+
+    It will also print out the new values or changes from old values,
+    if `verbose` is true.
+
+    # Arguments
+    - `cmd`: String Command template to run
+    - `verbose`: bool Show the rendered version of command
+    - `echo`: bool Echo the stdin from the command
+
+    # Errors
+    The function will error if,
+    - The command template cannot be rendered,
+    - The command cannot be executed,
+    - The attributes from command's stdout cannot be parsed properly
         */
-    #[node_func(verbose = true, echo = true)]
+    #[node_func(verbose = true, echo = false)]
     fn command(
         node: &mut NodeInner,
         cmd: &Template,
@@ -39,20 +54,23 @@ mod command {
         let buf = std::io::BufReader::new(output);
         for line in buf.lines() {
             let l = line?;
+            if echo {
+                println!("{}", l);
+            }
             if let Some(line) = l.strip_prefix("nadi:var:") {
                 let (_res, (k, v)) = nadi_core::parser::attrs::attr_key_val(line)
                     .map_err(|e| anyhow::Error::msg(e.to_string()))?;
-                match node.attr(&k) {
-                    Some(vold) => {
-                        if !(vold == &v) {
-                            println!("{k}={} -> {}", vold.to_string(), v.to_string())
+                if verbose {
+                    match node.attr(&k) {
+                        Some(vold) => {
+                            if !(vold == &v) {
+                                println!("{k}={} -> {}", vold.to_string(), v.to_string())
+                            }
                         }
-                    }
-                    None => println!("{k}={}", v.to_string()),
-                };
+                        None => println!("{k}={}", v.to_string()),
+                    };
+                }
                 node.set_attr(&k, v);
-            } else if echo {
-                println!("{}", l);
             }
         }
         Ok(())
@@ -60,16 +78,18 @@ mod command {
 
     /** Run the given template as a shell command for each nodes in the network in parallel.
 
-    Arguments:
-    - cmd: String Command template to run
-    - workers: Integer Number of workers to run in parallel
-    - verbose: bool Show the rendered version of command
-    - echo: bool Echo the stdin from the command
+    # Warning
+    Currently there is no way to limit the number of parallel
+    processes, so please be careful with this command if you have very
+    large number of nodes.
 
-    Run any command in the shell. The standard output of the command will
-        be ignored. Use the node function `command` for more control.
-        */
-    #[network_func(_workers = 4, verbose = true, echo = true)]
+    # Arguments
+    - `cmd`: String Command template to run
+    - `workers`: Integer Number of workers to run in parallel
+    - `verbose`: bool Show the rendered version of command and variable changes
+    - `echo`: bool Echo the stdin from the command
+     */
+    #[network_func(_workers = 4, verbose = true, echo = false)]
     fn parallel(
         net: &mut Network,
         cmd: &Template,
@@ -96,10 +116,11 @@ mod command {
                 let buf = std::io::BufReader::new(output);
                 for line in buf.lines() {
                     let l = line?;
+                    if echo {
+                        println!("{}", l);
+                    }
                     if let Some(line) = l.strip_prefix("nadi:var:") {
                         ctx.send((i, line.to_string()))?;
-                    } else if echo {
-                        println!("{}", l);
                     }
                 }
                 Ok::<(), anyhow::Error>(())
@@ -121,14 +142,16 @@ mod command {
                     continue;
                 }
             };
-            match node.attr(&k) {
-                Some(vold) => {
-                    if !(vold == &v) {
-                        println!("[{name}]\t{k}={vold:?} -> {v:?}")
+            if verbose {
+                match node.attr(&k) {
+                    Some(vold) => {
+                        if !(vold == &v) {
+                            println!("[{name}]\t{k}={vold:?} -> {v:?}")
+                        }
                     }
-                }
-                None => println!("[{name}]\t{k}={v:?}"),
-            };
+                    None => println!("[{name}]\t{k}={v:?}"),
+                };
+            }
             node.set_attr(&k, v);
         }
 
@@ -146,12 +169,15 @@ mod command {
     and followed by `key=val` pairs, it'll be read as new attributes
     to that node.
 
-    # Arguments:
-    - cmd: String Command template to run
-    - verbose: bool Show the rendered version of command
-    - echo: bool Echo the stdin from the command
-        */
-    #[network_func(verbose = true, echo = true)]
+    See `node command.command` for more details as they have
+    the same implementation
+
+    # Arguments
+    - `cmd`: String Command template to run
+    - `verbose`: bool Show the rendered version of command
+    - `echo`: bool Echo the stdin from the command
+     */
+    #[network_func(verbose = true, echo = false)]
     fn command(net: &mut Network, cmd: Template, verbose: bool, echo: bool) -> anyhow::Result<()> {
         let cmd = net.render(&cmd)?;
         if verbose {
@@ -161,20 +187,23 @@ mod command {
         let buf = std::io::BufReader::new(output);
         for line in buf.lines() {
             let l = line?;
+            if echo {
+                println!("{}", l);
+            }
             if let Some(var) = l.strip_prefix("nadi:var:") {
                 let (_res, (k, v)) = nadi_core::parser::attrs::attr_key_val(var)
                     .map_err(|e| anyhow::Error::msg(e.to_string()))?;
-                match net.attr(&k) {
-                    Some(vold) => {
-                        if !(vold == &v) {
-                            println!("{k}={} -> {}", vold.to_string(), v.to_string())
+                if verbose {
+                    match net.attr(&k) {
+                        Some(vold) => {
+                            if !(vold == &v) {
+                                println!("{k}={} -> {}", vold.to_string(), v.to_string())
+                            }
                         }
-                    }
-                    None => println!("{k}={}", v.to_string()),
-                };
+                        None => println!("{k}={}", v.to_string()),
+                    };
+                }
                 net.set_attr(&k, v);
-            } else if echo {
-                println!("{}", l);
             }
         }
         Ok(())

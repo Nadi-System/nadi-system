@@ -8,8 +8,9 @@ mod timeseries {
     use nadi_plugin::node_func;
 
     /// Print the list of available timeseries for the node
+    ///
     /// # Arguments
-    /// - `label` - Label the line with node name
+    /// - `label`: Label the line with node name
     #[node_func(label = true)]
     fn list_ts(node: &mut NodeInner, label: bool) {
         if label {
@@ -24,7 +25,9 @@ mod timeseries {
     /** Print the given timeseries values in csv format
 
     # Arguments
-    - `name` - name
+    - `name`: name of the timeseries
+    - `header`: whether to show header or not
+    - `head`: number of head rows to show (all by default)
     */
     #[node_func(header = true)]
     fn show_ts(

@@ -9,6 +9,9 @@ mod render {
 
     /// Render the template based on the node attributes
     ///
+    /// For more details on the template system. Refer to the String
+    /// Template section of the NADI book.
+    ///
     /// # Arguments
     /// - `template` - String template to render
     /// - `safe` - if render fails keep it as it is instead of exiting

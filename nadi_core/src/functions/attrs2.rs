@@ -1,7 +1,7 @@
 use nadi_plugin::nadi_internal_plugin;
 
 #[nadi_internal_plugin]
-mod attrs2 {
+mod attrs {
     use crate::prelude::*;
     use abi_stable::std_types::Tuple2;
     use nadi_plugin::{network_func, node_func};
@@ -10,8 +10,23 @@ mod attrs2 {
 
     /// Set node attributes
     ///
+    /// Use this function to set the node attributes of all nodes, or
+    /// a select few nodes using the node selection methods (path or
+    /// list of nodes)
+    ///
     /// # Arguments
     /// - `key=value` - Kwargs of attr = value
+    ///
+    /// # Error
+    /// The function should not error.
+    ///
+    /// # Example
+    /// Following will set the attribute `a2d` to `true` for all nodes
+    /// from `A` to `D`
+    ///
+    /// ```task
+    /// node[A -> D] set_attrs(a2d = true)
+    /// ```
     #[node_func]
     fn set_attrs(node: &mut NodeInner, #[kwargs] kwargs: &AttrMap) -> Result<(), String> {
         for Tuple2(k, v) in kwargs {

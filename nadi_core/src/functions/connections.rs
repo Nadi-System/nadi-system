@@ -11,6 +11,9 @@ mod connections {
     use std::io::{BufWriter, Write};
 
     /// Load the given file into the network
+    ///
+    /// This replaces the current network with the one loaded from the
+    /// file.
     #[network_func]
     fn load_file(net: &mut Network, file: PathBuf) -> anyhow::Result<()> {
         *net = Network::from_file(file)?;

@@ -223,7 +223,7 @@ impl NadiFunctions {
         // NadiPlugin trait within functions
         render::RenderMod {}.register(&mut funcs);
         attrs::AttrsMod {}.register(&mut funcs);
-        attrs2::Attrs2Mod {}.register(&mut funcs);
+        attrs2::AttrsMod {}.register(&mut funcs);
         debug::DebugMod {}.register(&mut funcs);
         timeseries::TimeseriesMod {}.register(&mut funcs);
         command::CommandMod {}.register(&mut funcs);
