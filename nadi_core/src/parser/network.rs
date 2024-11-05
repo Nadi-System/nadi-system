@@ -16,7 +16,7 @@ pub fn is_valid_node_name(name: &str) -> bool {
     node_name(name).is_ok()
 }
 
-fn node_name(input: &str) -> Res<&str, RString> {
+pub fn node_name(input: &str) -> Res<&str, RString> {
     context(
         "node name",
         alt((

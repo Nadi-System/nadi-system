@@ -7,6 +7,7 @@ use abi_stable::std_types::Tuple2;
 use abi_stable::{
     sabi_trait,
     std_types::{
+        map::REntry,
         RBox, RErr, RHashMap, ROk,
         ROption::{self, RNone, RSome},
         RResult, RSlice, RString, RVec,
@@ -24,6 +25,8 @@ mod debug;
 mod render;
 mod table;
 mod timeseries;
+
+use crate::table::{contents_2_md, ColumnAlign};
 
 /// Return values for Nadi Functions
 #[repr(C)]
@@ -156,6 +159,41 @@ pub type NodeFunctionBox = NodeFunction_TO<'static, RBox<()>>;
 
 pub type NetworkFunctionBox = NetworkFunction_TO<'static, RBox<()>>;
 
+#[repr(C)]
+#[derive(StableAbi, Default)]
+pub struct PluginFunctions {
+    node: RVec<RString>,
+    network: RVec<RString>,
+}
+
+impl PluginFunctions {
+    pub fn with_network(mut self, func: RString) -> Self {
+        self.network.push(func);
+        self
+    }
+
+    pub fn with_node(mut self, func: RString) -> Self {
+        self.node.push(func);
+        self
+    }
+
+    pub fn push_network(&mut self, func: RString) {
+        self.network.push(func);
+    }
+
+    pub fn push_node(&mut self, func: RString) {
+        self.node.push(func);
+    }
+
+    pub fn network(&self) -> &RVec<RString> {
+        &self.network
+    }
+
+    pub fn node(&self) -> &RVec<RString> {
+        &self.node
+    }
+}
+
 // TODO: add environmental variables, like verbose, progress, debug,
 // etc. that all functions can read (passed along with args, kwargs to
 // all functions)
@@ -171,6 +209,7 @@ pub struct NadiFunctions {
     node_alias: RHashMap<RString, RString>,
     network: RHashMap<RString, NetworkFunctionBox>,
     network_alias: RHashMap<RString, RString>,
+    plugins: RHashMap<RString, PluginFunctions>,
 }
 
 impl NadiFunctions {
@@ -200,6 +239,12 @@ impl NadiFunctions {
                 name, fullname, al
             );
         }
+        match self.plugins.entry(prefix.into()) {
+            REntry::Occupied(mut o) => o.get_mut().push_network(name),
+            REntry::Vacant(v) => {
+                v.insert(PluginFunctions::default().with_network(name));
+            }
+        };
     }
     pub fn register_node_function(&mut self, prefix: &str, func: NodeFunctionBox) {
         let name = func.name();
@@ -211,6 +256,12 @@ impl NadiFunctions {
                 name, fullname, al
             );
         }
+        match self.plugins.entry(prefix.into()) {
+            REntry::Occupied(mut o) => o.get_mut().push_node(name),
+            REntry::Vacant(v) => {
+                v.insert(PluginFunctions::default().with_node(name));
+            }
+        };
     }
 
     pub fn load_plugins(&mut self) -> anyhow::Result<()> {
@@ -238,21 +289,89 @@ impl NadiFunctions {
         &self.network
     }
 
+    pub fn plugins(&self) -> &RHashMap<RString, PluginFunctions> {
+        &self.plugins
+    }
+
     pub fn list_functions(&self) {
-        println!("Node Functions:");
-        for Tuple2(fname, func) in &self.node {
-            println!(
-                "{fname}\t: {}",
-                func.help().split('\n').next().unwrap_or("No Help")
-            );
+        fn print_func(p: &RString, t: &str, f: &RString, sig: RString) {
+            print!("{} {}.{}", t, p.as_str().red(), f.as_str().blue(),);
+            let args: Vec<String> = sig
+                .trim_start_matches('(')
+                .trim_end_matches(')')
+                .replace(" ", "")
+                .split(",")
+                .map(|a| match a.split_once(":") {
+                    Some((key, tyval)) => match tyval.split_once("=") {
+                        Some((ty, val)) => {
+                            format!("{} : {} = {}", key.red(), ty.green(), val.yellow())
+                        }
+                        None => format!("{} : {}", key.red(), tyval.green()),
+                    },
+                    None => match a.split_once("=") {
+                        Some((key, val)) => format!("{} = {}", key.red(), val.yellow()),
+                        None => format!("{}", a.red()),
+                    },
+                })
+                .collect();
+            if args.len() < 3 {
+                println!("({})", args.join(", "));
+            } else {
+                println!("(\n    {}\n)", args.join(",\n    "));
+            }
         }
-        println!("Network Functions:");
-        for Tuple2(fname, func) in &self.network {
-            println!(
-                "network {fname}\t: {}",
-                func.help().split('\n').next().unwrap_or("No Help")
-            );
+
+        for Tuple2(plug, funcs) in self.plugins() {
+            if !funcs.node().is_empty() {
+                for func in funcs.node() {
+                    let fname = format!("{plug}.{func}");
+                    let func_obj = self.node(&fname).expect("Func Should Exist");
+                    print_func(plug, "node", func, func_obj.signature());
+                }
+            }
+            if !funcs.network().is_empty() {
+                for func in funcs.network() {
+                    let fname = format!("{plug}.{func}");
+                    let func_obj = self.network(&fname).expect("Func Should Exist");
+                    print_func(plug, "network", func, func_obj.signature());
+                }
+            }
         }
+    }
+
+    pub fn list_functions_md(&self, link: bool) {
+        let mut functions = vec![];
+        let fname = if link {
+            |p: &RString, t: &str, n: &RString| {
+                vec![p.to_string(), t.to_string(), format!("[{n}]({p}.{n})")]
+            }
+        } else {
+            |p: &RString, t: &str, n: &RString| vec![p.to_string(), t.to_string(), n.to_string()]
+        };
+        for Tuple2(plug, funcs) in self.plugins() {
+            if !funcs.node().is_empty() {
+                for func in funcs.node() {
+                    functions.push(fname(plug, "node", func));
+                }
+            }
+            if !funcs.network().is_empty() {
+                for func in funcs.network() {
+                    functions.push(fname(plug, "network", func));
+                }
+            }
+        }
+        println!(
+            "{}",
+            contents_2_md(
+                &["Plugin", "Type", "Name"],
+                &[&ColumnAlign::Left, &ColumnAlign::Left, &ColumnAlign::Left],
+                functions,
+            )
+        )
+    }
+
+    pub fn generate_help_md(&self, plugin: Option<&str>) {
+        todo!()
     }
 
     pub fn call_node(
@@ -287,7 +406,7 @@ impl NadiFunctions {
 
     pub fn execute(&self, func: &FunctionCall, net: &mut Network) -> Result<(), String> {
         match &func.r#type {
-            FunctionType::Node(p) => match self.node.get(&func.name) {
+            FunctionType::Node(p) => match self.node(&func.name) {
                 Some(f) => {
                     let p: RVec<Node> = net.nodes_propagation(p).into();
                     // todo manage other return types
@@ -297,18 +416,18 @@ impl NadiFunctions {
                 }
                 None => Err(format!("Node Function {} not found", func.name)),
             },
-            FunctionType::Network => match self.network.get(&func.name) {
+            FunctionType::Network => match self.network(&func.name) {
                 // todo use returned attribute value
                 Some(f) => f.call(net, func.ctx()).map_err(|e| e.to_string()).into(),
                 None => Err(format!("Network Function {} not found", func.name)),
             },
             FunctionType::Help => {
                 let mut found = false;
-                if let Some(help) = self.help_node(&func.name) {
+                if let Some(help) = self.node(&func.name).map(|f| f.help()) {
                     println!("{}: {}\n{}", "== Node Function".blue(), func.name, help);
                     found = true;
                 }
-                if let Some(help) = self.help_network(&func.name) {
+                if let Some(help) = self.network(&func.name).map(|f| f.help()) {
                     println!("{}: {}\n{}", "== Network Function".blue(), func.name, help);
                     found = true;
                 }
@@ -319,7 +438,7 @@ impl NadiFunctions {
                 }
             }
             FunctionType::HelpNode => {
-                if let Some(help) = self.help_node(&func.name) {
+                if let Some(help) = self.node(&func.name).map(|f| f.help()) {
                     println!("{}: {}\n{}", "== Node Function".blue(), func.name, help);
                     Ok(())
                 } else {
@@ -327,7 +446,7 @@ impl NadiFunctions {
                 }
             }
             FunctionType::HelpNetwork => {
-                if let Some(help) = self.help_network(&func.name) {
+                if let Some(help) = self.network(&func.name).map(|f| f.help()) {
                     println!("{}: {}\n{}", "== Network Function".blue(), func.name, help);
                     Ok(())
                 } else {

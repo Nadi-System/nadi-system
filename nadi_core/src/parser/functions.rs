@@ -1,5 +1,6 @@
 use crate::functions::{FunctionArg, FunctionCall, FunctionType, KeyVal, Propagation};
 use crate::parser::attrs::{attr_any, attr_key_val};
+use crate::parser::network::node_name;
 use crate::parser::string::parse_string;
 use crate::parser::{eol, identifier, node_path, sp, Res};
 
@@ -9,11 +10,11 @@ use nom::error::convert_error;
 use nom::{
     branch::alt,
     bytes::complete::tag,
-    character::complete::multispace0,
-    combinator::{all_consuming, map, opt, value},
+    character::complete::{alpha1, alphanumeric1, multispace0},
+    combinator::{all_consuming, map, opt, recognize, value},
     error::context,
-    multi::{many0, separated_list1},
-    sequence::{delimited, preceded, terminated, tuple},
+    multi::{many0, many0_count, separated_list1},
+    sequence::{delimited, pair, preceded, terminated, tuple},
 };
 
 fn parse_arg(txt: &str) -> Res<&str, FunctionArg> {
@@ -52,13 +53,7 @@ fn node_list(txt: &str) -> Res<&str, RVec<RString>> {
             sp,
             separated_list1(
                 preceded(sp, tag(",")),
-                preceded(
-                    sp,
-                    alt((
-                        map(parse_string, RString::from),
-                        map(identifier, RString::from),
-                    )),
-                ),
+                preceded(sp, alt((map(parse_string, RString::from), node_name))),
             ),
         ),
     )(txt)?;
@@ -126,11 +121,24 @@ fn function_type(txt: &str) -> Res<&str, FunctionType> {
     )(txt)
 }
 
+pub fn function_name(txt: &str) -> Res<&str, &str> {
+    context(
+        "function_name",
+        preceded(
+            sp,
+            recognize(pair(
+                alt((alpha1, tag("_"))),
+                many0_count(alt((alphanumeric1, tag("_"), tag(".")))),
+            )),
+        ),
+    )(txt)
+}
+
 pub fn parse_function(txt: &str) -> Res<&str, FunctionCall> {
     // TODO make it terminated in either \n or ;
     let (rest, (tt, func, args)) = context(
         "task function call",
-        delimited(sp, tuple((function_type, identifier, parse_args)), eol),
+        delimited(sp, tuple((function_type, function_name, parse_args)), eol),
     )(txt)?;
     Ok((rest, FunctionCall::new(tt, func, args)))
 }

@@ -120,46 +120,53 @@ impl Table {
             alignments.insert(0, &ColumnAlign::Left);
         }
         let contents = self.render_contents(net, conn.is_some())?;
-        let col_widths: Vec<usize> = headers
-            .iter()
-            .enumerate()
-            .map(|(i, h)| {
-                contents
-                    .iter()
-                    .map(|row| row[i].len())
-                    .chain([h.len()])
-                    .max()
-                    .unwrap_or(1)
-            })
-            .collect();
+        Ok(contents_2_md(&headers, &alignments, contents))
+    }
+}
 
-        let mut table = String::new();
+pub fn contents_2_md(
+    headers: &[&str],
+    alignments: &[&ColumnAlign],
+    contents: Vec<Vec<String>>,
+) -> String {
+    let col_widths: Vec<usize> = headers
+        .iter()
+        .enumerate()
+        .map(|(i, h)| {
+            contents
+                .iter()
+                .map(|row| row[i].len())
+                .chain([h.len()])
+                .max()
+                .unwrap_or(1)
+        })
+        .collect();
+    let mut table = String::new();
+    table.push('|');
+    for ((c, w), a) in headers.iter().zip(&col_widths).zip(alignments) {
+        table.push_str(&align_fmt_fn(c, a, w));
         table.push('|');
-        for ((c, w), a) in headers.iter().zip(&col_widths).zip(&alignments) {
+    }
+    table.push('\n');
+    table.push('|');
+    for (w, a) in col_widths.iter().zip(alignments) {
+        let (pre, post) = match a {
+            ColumnAlign::Left => (':', '-'),
+            ColumnAlign::Right => ('-', ':'),
+            ColumnAlign::Center => (':', ':'),
+        };
+        table.push_str(&format!("{pre}{:->1$}{post}|", "", w));
+    }
+    table.push('\n');
+    for row in contents {
+        table.push('|');
+        for ((c, w), a) in row.iter().zip(&col_widths).zip(alignments) {
             table.push_str(&align_fmt_fn(c, a, w));
             table.push('|');
         }
         table.push('\n');
-        table.push('|');
-        for (w, a) in col_widths.iter().zip(&alignments) {
-            let (pre, post) = match a {
-                ColumnAlign::Left => (':', '-'),
-                ColumnAlign::Right => ('-', ':'),
-                ColumnAlign::Center => (':', ':'),
-            };
-            table.push_str(&format!("{pre}{:->1$}{post}|", "", w));
-        }
-        table.push('\n');
-        for row in contents {
-            table.push('|');
-            for ((c, w), a) in row.iter().zip(&col_widths).zip(&alignments) {
-                table.push_str(&align_fmt_fn(c, a, w));
-                table.push('|');
-            }
-            table.push('\n');
-        }
-        Ok(table)
     }
+    table
 }
 
 fn align_fmt_fn(col: &str, align: &ColumnAlign, width: &usize) -> String {
