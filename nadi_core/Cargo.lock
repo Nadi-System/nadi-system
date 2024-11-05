@@ -462,6 +462,7 @@ version = "0.4.0"
 dependencies = [
  "abi_stable",
  "anyhow",
+ "chrono",
  "colored",
  "nadi_plugin",
  "nom",

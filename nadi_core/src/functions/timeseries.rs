@@ -21,9 +21,11 @@ mod timeseries {
         println!();
     }
 
-    /// Print the given timeseries values in csv format
-    /// # Arguments
-    /// - `name` - name
+    /** Print the given timeseries values in csv format
+
+    # Arguments
+    - `name` - name
+    */
     #[node_func(header = true)]
     fn show_ts(
         node: &mut NodeInner,
