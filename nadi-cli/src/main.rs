@@ -13,6 +13,9 @@ enum FunctionType {
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct CliArgs {
+    /// Generate markdown doc for all plugins and functions
+    #[arg(short, long)]
+    generate_doc: Option<PathBuf>,
     /// list all functions and exit
     #[arg(short, long)]
     list_functions: bool,
@@ -45,7 +48,9 @@ fn main() -> anyhow::Result<()> {
     let args = CliArgs::parse();
     let functions = NadiFunctions::new();
 
-    if let Some(func) = args.fnhelp {
+    if let Some(dir) = args.generate_doc {
+        functions.plugins_doc(&dir)?;
+    } else if let Some(func) = args.fnhelp {
         println!("{}", functions.help(&func).unwrap_or_default());
     } else if let Some(func) = args.fncode {
         println!("{}", functions.code(&func).unwrap_or_default());
