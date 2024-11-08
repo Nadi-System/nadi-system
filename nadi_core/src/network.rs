@@ -116,7 +116,6 @@ impl Network {
         network.set_levels();
         Ok(network)
     }
-
     pub fn load_attrs<P: AsRef<Path>>(&self, attr_dir: P) -> anyhow::Result<()> {
         self.nodes_map.iter().try_for_each(|Tuple2(name, node)| {
             // ignore the error on attribute read
@@ -353,10 +352,39 @@ impl Network {
         }
     }
 
-    /// move the network outlet to the given node, discard all nodes
-    /// not leading to the outlet
-    pub fn move_outlet(&mut self, name: &str) -> Result<(), String> {
-        todo!()
+    fn remove_node_single(&mut self, node: &Node) {
+        let n = node.lock();
+        let ind = n.index();
+        self.nodes.remove(ind);
+        self.nodes_map.remove(n.name());
+        // make sure the block below doesn't hang for long
+        if let RSome(out) = n.output() {
+            let pos = out
+                .lock()
+                .inputs()
+                .iter()
+                .position(|i| i.lock().index() == ind)
+                .expect("Node should be in input list of output");
+            out.lock().inputs_mut().remove(pos);
+            for inp in n.inputs() {
+                inp.lock().set_output(out.clone());
+                out.lock().add_input(inp.clone());
+            }
+        } else {
+            for inp in n.inputs() {
+                inp.lock().unset_output();
+            }
+            if n.inputs().len() > 1 {
+                eprintln!("WARN: Node with multiple inputs and no output Removed");
+            }
+        }
+        self.reindex();
+    }
+
+    pub fn remove_node(&mut self, node: &Node) {
+        self.remove_node_single(node);
+        self.reorder();
+        self.set_levels();
     }
 
     pub fn set_attr(&mut self, name: &str, val: Attribute) {
@@ -490,4 +518,45 @@ impl StrPath {
 
 fn compare_node_order(n1: &Node, n2: &Node) -> std::cmp::Ordering {
     n1.lock().order().partial_cmp(&n2.lock().order()).unwrap()
+}
+
+/// Take any [`Node`] and create [`Network`] with it as the outlet.
+impl From<Node> for Network {
+    fn from(node: Node) -> Self {
+        let mut net = Self::default();
+
+        let mut nodes = vec![];
+        fn insert_node(n: &Node, nodes: &mut Vec<Node>) {
+            let ni = n
+                .try_lock_for(RDuration::from_secs(1))
+                .expect("Lock failed for node, maybe branched network");
+            if ni.inputs().is_empty() {
+                nodes.push(n.clone());
+            } else {
+                for i in ni.inputs() {
+                    insert_node(i, nodes);
+                }
+                nodes.push(n.clone());
+            }
+        }
+        insert_node(&node, &mut nodes);
+        net.nodes_map = nodes
+            .into_iter()
+            .map(|n| {
+                let name = RString::from(n.lock().name());
+                (name, n)
+            })
+            .collect::<HashMap<RString, Node>>()
+            .into();
+        net.nodes = net
+            .nodes_map
+            .keys()
+            .map(|s| s.clone())
+            .collect::<Vec<_>>()
+            .into();
+        net.outlet = RSome(node);
+        net.reorder();
+        net.set_levels();
+        net
+    }
 }

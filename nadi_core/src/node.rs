@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::{
     attrs::{parse_attr_file, AttrMap, Attribute},
+    network::Network,
     timeseries::TimeSeries,
 };
 use abi_stable::{
@@ -164,6 +165,10 @@ impl NodeInner {
         &self.inputs
     }
 
+    pub(crate) fn inputs_mut(&mut self) -> &mut RVec<Node> {
+        &mut self.inputs
+    }
+
     pub fn add_input(&mut self, input: Node) {
         self.inputs.push(input);
     }
@@ -185,8 +190,23 @@ impl NodeInner {
         self.output = RSome(output);
     }
 
-    pub fn unset_output(&mut self) {
-        self.output = RNone;
+    pub fn unset_output(&mut self) -> ROption<Node> {
+        self.output.take()
+    }
+
+    /// Move the node to the side (move the inputs to its output)
+    pub fn move_aside(&mut self) {
+        if let RSome(o) = self.unset_output() {
+            self.inputs().iter().for_each(|i| {
+                o.lock().add_input(i.clone());
+                i.lock().set_output(o.clone())
+            });
+        } else {
+            self.inputs().iter().for_each(|i| {
+                i.lock().unset_output();
+            });
+        }
+        self.unset_inputs();
     }
 
     pub fn render(&self, template: &Template) -> anyhow::Result<String> {
