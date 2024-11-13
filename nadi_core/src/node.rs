@@ -196,7 +196,7 @@ impl NodeInner {
 
     /// Move the node to the side (move the inputs to its output)
     pub fn move_aside(&mut self) {
-        if let RSome(o) = self.unset_output() {
+        if let RSome(o) = self.output() {
             self.inputs().iter().for_each(|i| {
                 o.lock().add_input(i.clone());
                 i.lock().set_output(o.clone())
@@ -207,6 +207,23 @@ impl NodeInner {
             });
         }
         self.unset_inputs();
+    }
+
+    /// Move the network down one step, (swap places with its output)
+    pub fn move_down(&mut self) {
+        if let RSome(out) = self.unset_output() {
+            let i = out
+                .lock()
+                .inputs()
+                .iter()
+                // HACK current node will fail to lock
+                .position(|c| c.try_lock().is_none())
+                .unwrap();
+            let o = out.lock().inputs.remove(i);
+            self.output = out.lock().output.clone();
+            out.lock().set_output(o);
+            self.add_input(out.clone());
+        }
     }
 
     pub fn render(&self, template: &Template) -> anyhow::Result<String> {
