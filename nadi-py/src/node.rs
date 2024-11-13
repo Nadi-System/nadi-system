@@ -59,6 +59,14 @@ impl PyNode {
             .collect()
     }
 
+    fn move_aside(&mut self) {
+        self.0.lock().move_aside();
+    }
+
+    fn move_down(&mut self) {
+        self.0.lock().move_down();
+    }
+
     fn render(&self, text: &str) -> PyResult<String> {
         let templ = Template::parse_template(text)?;
         let text = self.0.lock().render(&templ)?;
