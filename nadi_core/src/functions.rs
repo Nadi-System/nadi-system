@@ -20,15 +20,6 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-mod attrs;
-mod attrs2;
-mod command;
-mod connections;
-mod debug;
-mod render;
-mod table;
-mod timeseries;
-
 use crate::table::{contents_2_md, ColumnAlign};
 
 /// Return values for Nadi Functions
@@ -218,29 +209,26 @@ pub struct NadiFunctions {
 impl NadiFunctions {
     pub fn new() -> Self {
         let mut funcs = Self::default();
-        // These things need to be automated if possible, but I don't
-        // think that is possible: search all types that implement
-        // NadiPlugin trait within functions
-        render::RenderMod {}.register(&mut funcs);
-        attrs::AttrsMod {}.register(&mut funcs);
-        attrs2::AttrsMod {}.register(&mut funcs);
-        debug::DebugMod {}.register(&mut funcs);
-        timeseries::TimeseriesMod {}.register(&mut funcs);
-        command::CommandMod {}.register(&mut funcs);
-        connections::ConnectionsMod {}.register(&mut funcs);
-        table::TableMod {}.register(&mut funcs);
+
+	#[cfg(feature = "functions")]
+	crate::internal::register_internal(&mut funcs);
+
         funcs.load_plugins().unwrap();
         funcs
     }
+
+    
     pub fn register_network_function(&mut self, prefix: &str, func: NetworkFunctionBox) {
         let name = func.name();
         let fullname = RString::from(format!("{}.{}", prefix, name));
         self.network.insert(fullname.clone(), func);
-        if let RSome(al) = self.network_alias.insert(name.clone(), fullname.clone()) {
-            eprintln!(
-                "WARN Function {} now uses {} instead of {}, use full name for disambiguity",
-                name, fullname, al
-            );
+        if let RSome(oldname) = self.network_alias.insert(name.clone(), fullname.clone()) {
+	    if fullname != oldname {
+		eprintln!(
+                    "WARN Function {} now uses {} instead of {}, use full name for disambiguity",
+                    name, fullname, oldname
+		);
+	    }
         }
         match self.plugins.entry(prefix.into()) {
             REntry::Occupied(mut o) => o.get_mut().push_network(name),
@@ -253,11 +241,13 @@ impl NadiFunctions {
         let name = func.name();
         let fullname = RString::from(format!("{}.{}", prefix, name));
         self.node.insert(fullname.clone(), func);
-        if let RSome(al) = self.node_alias.insert(name.clone(), fullname.clone()) {
-            eprintln!(
-                "WARN Function {} now uses {} instead of {}, use full name for disambiguity",
-                name, fullname, al
-            );
+        if let RSome(oldname) = self.node_alias.insert(name.clone(), fullname.clone()) {
+	    if fullname != oldname {
+		eprintln!(
+                    "WARN Function {} now uses {} instead of {}, use full name for disambiguity",
+                    name, fullname, oldname
+		);
+	    }
         }
         match self.plugins.entry(prefix.into()) {
             REntry::Occupied(mut o) => o.get_mut().push_node(name),

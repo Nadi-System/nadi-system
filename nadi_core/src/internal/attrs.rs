@@ -1,7 +1,7 @@
 // This mod is kept as an example to how the functions are written
 // without the macros. Any additional functions are recommended to be
 // written using the macros provided by nadi_plugin crate
-use crate::functions::{FunctionRet, NadiFunctions, NodeFunction};
+use crate::functions::{FunctionRet, NadiFunctions, NodeFunction, FunctionCtx, NodeFunction_TO};
 use crate::plugins::NadiPlugin;
 use crate::prelude::*;
 use crate::return_on_err;
@@ -12,8 +12,6 @@ use abi_stable::std_types::Tuple2;
 use abi_stable::std_types::{RErr, ROk, RResult, RSlice, RString};
 use nadi_plugin::node_func;
 use string_template_plus::Template;
-
-use super::{FunctionCtx, NodeFunction_TO};
 
 /// The main Mod object of the plugin
 pub struct AttrsMod;

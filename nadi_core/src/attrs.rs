@@ -283,25 +283,6 @@ tuple_impls!(a A 0, b B 1, c C 2, d D 3);
 tuple_impls!(a A 0, b B 1, c C 2, d D 3, e E 4);
 tuple_impls!(a A 0, b B 1, c C 2, d D 3, e E 4, f F 5);
 
-// impl for popular/useful types not in enum
-impl FromAttribute for String {
-    fn from_attr(value: &Attribute) -> Option<String> {
-        match value {
-            Attribute::String(v) => Some(v.to_string()),
-            _ => None,
-        }
-    }
-}
-
-impl FromAttributeRelaxed for String {
-    fn try_from_attr_relaxed(value: &Attribute) -> Result<String, String> {
-        match value {
-            // normal to_string puts quote on string, we don't want that
-            Attribute::String(v) => Ok(v.to_string()),
-            a => Ok(a.to_string()),
-        }
-    }
-}
 
 impl From<String> for Attribute {
     fn from(value: String) -> Self {
@@ -315,31 +296,38 @@ impl FromAttribute for Attribute {
     }
 }
 
-impl FromAttribute for u64 {
-    fn from_attr(value: &Attribute) -> Option<Self> {
-        FromAttribute::try_from_attr(value).ok()
-    }
-    fn try_from_attr(value: &Attribute) -> Result<Self, String> {
-        match value {
-            Attribute::Integer(v) => u64::try_from(*v).map_err(|e| e.to_string()),
-            _ => Err(format!(
-                "Incorrect Type: `{}` cannot be converted to `{}`",
-                value.type_name(),
-                type_name::<Self>()
-            )),
-        }
+
+// impl for different types that can be converted from ones that has
+// FromAttribute. Can't do this automatically because there will be
+// duplicate implementation
+macro_rules! convert_impls {
+    ($src: tt => $dest: tt) => {
+	impl FromAttribute for $dest {
+	    fn from_attr(value: &Attribute) -> Option<Self> {
+		FromAttribute::try_from_attr(value).ok()
+	    }
+	    fn try_from_attr(value: &Attribute) -> Result<Self, String> {
+		let val: $src = FromAttribute::try_from_attr(value)?;
+		$dest::try_from(val).map_err(|e| e.to_string())
+	    }
+	}
+
+	impl FromAttributeRelaxed for $dest {
+	    fn try_from_attr_relaxed(value: &Attribute) -> Result<Self, String> {
+		let val: $src = FromAttributeRelaxed::try_from_attr_relaxed(value)?;
+		$dest::try_from(val).map_err(|e| e.to_string())
+	    }
+	}
     }
 }
 
-impl FromAttribute for PathBuf {
-    fn from_attr(value: &Attribute) -> Option<PathBuf> {
-        match value {
-            Attribute::String(v) => Some(PathBuf::from(v.as_str())),
-            _ => None,
-        }
-    }
-}
+convert_impls!(i64 => u64);
+convert_impls!(i64 => usize);
+convert_impls!(RString => String);
+// since we have String now, we can use that to convert to others
+convert_impls!(String => PathBuf);
 
+// TODO impl try_from for String => Template in string_template crate
 impl FromAttribute for Template {
     fn from_attr(value: &Attribute) -> Option<Self> {
         Template::parse_template(&String::from_attr(value)?).ok()

@@ -27,3 +27,4 @@ rstest = "0.22.0"
 
 [features]
 chrono = ["dep:chrono"]
+functions = []

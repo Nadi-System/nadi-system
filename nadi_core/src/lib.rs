@@ -7,6 +7,10 @@ pub mod plugins;
 pub mod table;
 pub mod timeseries;
 
+
+#[cfg(feature = "functions")]
+mod internal;
+
 /// Prelude for the most basic NADI types: node, network and attributes
 pub mod prelude {
     pub use crate::attrs::{AttrMap, AttrSlice, Attribute, FromAttribute, FromAttributeRelaxed};
