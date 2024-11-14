@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::{
     attrs::{parse_attr_file, AttrMap, Attribute},
+    network::Network,
     timeseries::TimeSeries,
 };
 use abi_stable::{
@@ -164,6 +165,10 @@ impl NodeInner {
         &self.inputs
     }
 
+    pub(crate) fn inputs_mut(&mut self) -> &mut RVec<Node> {
+        &mut self.inputs
+    }
+
     pub fn add_input(&mut self, input: Node) {
         self.inputs.push(input);
     }
@@ -185,8 +190,40 @@ impl NodeInner {
         self.output = RSome(output);
     }
 
-    pub fn unset_output(&mut self) {
-        self.output = RNone;
+    pub fn unset_output(&mut self) -> ROption<Node> {
+        self.output.take()
+    }
+
+    /// Move the node to the side (move the inputs to its output)
+    pub fn move_aside(&mut self) {
+        if let RSome(o) = self.output() {
+            self.inputs().iter().for_each(|i| {
+                o.lock().add_input(i.clone());
+                i.lock().set_output(o.clone())
+            });
+        } else {
+            self.inputs().iter().for_each(|i| {
+                i.lock().unset_output();
+            });
+        }
+        self.unset_inputs();
+    }
+
+    /// Move the network down one step, (swap places with its output)
+    pub fn move_down(&mut self) {
+        if let RSome(out) = self.unset_output() {
+            let i = out
+                .lock()
+                .inputs()
+                .iter()
+                // HACK current node will fail to lock
+                .position(|c| c.try_lock().is_none())
+                .unwrap();
+            let o = out.lock().inputs.remove(i);
+            self.output = out.lock().output.clone();
+            out.lock().set_output(o);
+            self.add_input(out.clone());
+        }
     }
 
     pub fn render(&self, template: &Template) -> anyhow::Result<String> {
