@@ -413,7 +413,7 @@ fn ref_type_inner(ty: &TypeReference, construct: bool) -> (proc_macro2::TokenStr
 }
 
 fn get_code_func(item: &ItemFn) -> proc_macro2::TokenStream {
-    let func_code = prettyplease::unparse(&syn::parse2(item.to_token_stream()).unwrap());
+    let func_code = prettyplease::unparse(&syn::parse2(item.to_token_stream()).expect("code should be valid for prettyplease"));
 
     quote! {
     fn code(&self) -> ::nadi_core::abi_stable::std_types::RString {
@@ -690,29 +690,35 @@ fn get_doc(attrs: &[Attribute]) -> String {
 }
 
 fn format_docstrings(string: String) -> String {
-    if string.lines().count() == 1 {
-        string.trim().to_string()
-    } else {
-        let num_leading = string
-            .lines()
-            .skip(1)
-            .filter(|s| !s.is_empty())
-            .filter_map(|l| l.chars().position(|c| !c.is_whitespace()))
-            .min()
-            .unwrap_or(0);
-        let lines = string
-            .lines()
-            .skip(1)
-            .map(|line| {
-                if line.len() > num_leading {
-                    &line[num_leading..]
-                } else {
-                    line
-                }
-            })
-            .map(|l| l.trim_end())
-            .collect::<Vec<_>>()
-            .join("\n");
-        format!("{}\n{}", string.lines().next().unwrap(), lines)
+    match string.lines().count() {
+	0 => {
+	    panic!("Please add at least one line of documentation");
+	}
+	1 => {
+            string.trim().to_string()
+	}
+	_ => {
+            let num_leading = string
+		.lines()
+		.skip(1)
+		.filter(|s| !s.is_empty())
+		.filter_map(|l| l.chars().position(|c| !c.is_whitespace()))
+		.min()
+		.unwrap_or(0);
+            let lines = string
+		.lines()
+		.skip(1)
+		.map(|line| {
+                    if line.len() > num_leading {
+			&line[num_leading..]
+                    } else {
+			line
+                    }
+		})
+		.map(|l| l.trim_end())
+		.collect::<Vec<_>>()
+		.join("\n");
+            format!("{}\n{}", string.lines().next().expect("There should be at least one line of documentation"), lines)
+	}
     }
 }
