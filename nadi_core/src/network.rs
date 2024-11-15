@@ -185,8 +185,8 @@ impl Network {
 
     pub fn nodes_propagation(&self, prop: &Propagation) -> Vec<Node> {
         match prop {
-            Propagation::Sequential | Propagation::InputsFirst => self.nodes().cloned().collect(),
-            Propagation::Inverse | Propagation::OutputFirst => self.nodes_rev().cloned().collect(),
+            Propagation::Sequential | Propagation::OutputFirst => self.nodes().cloned().collect(),
+            Propagation::Inverse | Propagation::InputsFirst => self.nodes_rev().cloned().collect(),
             // // since it is already ordered, we don't need to do this
             // Propagation::InputsFirst => {
             //     let mut all_nodes: Vec<&Node> = self.nodes().collect();
@@ -287,10 +287,9 @@ impl Network {
                     let cc = child.lock().output().cloned();
                     match cc {
                         RSome(c) => child = c.clone(),
-                        RNone => break,
+                        RNone => break child,
                     }
                 }
-                child
             })
             .into();
         let mut new_nodes: Vec<Node> = Vec::with_capacity(self.nodes.len());
@@ -337,15 +336,14 @@ impl Network {
             node.lock().set_level(level);
             node.lock().order_inputs();
             let node = node.lock();
-            let inps = node.inputs();
-            if !inps.is_empty() {
-                recc_set(&inps[0], level);
+            let mut inps = node.inputs().iter();
+            if let Some(i) = inps.next() {
+                recc_set(i, level);
             }
-            if inps.len() > 1 {
-                for i in &inps[1..] {
-                    recc_set(i, level + 1);
-                }
+            for i in inps {
+                recc_set(i, level + 1);
             }
+            
         }
         if let RSome(output) = &self.outlet {
             recc_set(output, 0);

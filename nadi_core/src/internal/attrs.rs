@@ -50,6 +50,7 @@ impl NodeFunction for LoadAttrs {
 
 # Arguments
 - `filename`: Template for the filename to load node attributes from
+- `verbose`: print verbose message
 
 The template will be rendered for each node, and that filename from the
 rendered template will be used to load the attributes.
@@ -73,13 +74,20 @@ The function will error out in following conditions:
             Some(Err(e)) => return RErr(e.into()),
             None => return RErr("Text template not given".into()),
         };
+        let verbose: bool = match ctx.arg_kwarg(1, "verbose") {
+            Some(Ok(a)) => a,
+            Some(Err(e)) => return RErr(e.into()),
+            None => false,
+        };
         for node in nodes {
             let mut node = node.lock();
             let filepath = match node.render(&templ) {
                 Ok(f) => f,
                 Err(e) => return RErr(e.to_string().into()),
             };
-            eprintln!("Loadin Attributes from: {filepath}");
+	    if verbose {
+		eprintln!("Loadin Attributes from: {filepath}");
+	    }
             if let Err(e) = node.load_attr(&filepath) {
                 return RErr(RString::from(e.to_string()));
             }

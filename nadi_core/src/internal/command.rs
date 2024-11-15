@@ -47,7 +47,65 @@ mod command {
         echo: bool,
     ) -> anyhow::Result<()> {
         let cmd = node.render(cmd)?;
-        if verbose {
+	run_command_on_node(node, &cmd, verbose, echo)
+    }
+
+    /** Run the node as if it's a command if inputs are changed
+
+    This function will not run a command node if all outputs are older
+    than all inputs. This is useful to networks where each nodes are
+    tasks with input files and output files.
+
+    # Arguments
+    - `command`: Node Attribute with the command to run
+    - `inputs`: Node attribute with list of input files
+    - `outputs`: Node attribute with list of output files
+    - `verbose`: print the command being run
+    - `echo`: Show the output of the command
+    */
+    #[node_func(verbose = true, echo = false)]
+    fn run(
+        node: &mut NodeInner,
+        command: &str,
+        inputs: &str,
+        outputs: &str,
+        verbose: bool,
+        echo: bool,
+    ) -> Result<(), String> {
+        let cmd: String = node.try_attr(command)?;
+        let inputs: Vec<String> = node.try_attr(inputs)?;
+        let outputs: Vec<String> = node.try_attr(outputs)?;
+
+	let latest_input = inputs.iter().filter_map(|i|{
+	    let meta = std::fs::metadata(i).ok()?;
+	    let tm = filetime::FileTime::from_last_modification_time(&meta);
+	    Some(tm)
+ }).max();
+	let outputs: Option<Vec<_>> = outputs.iter().map(|i|{
+	    let meta = std::fs::metadata(i).ok()?;
+	    let tm = filetime::FileTime::from_last_modification_time(&meta);
+	    Some(tm)
+	}).collect();
+	let run = 
+	    if let Some(outs) = outputs {
+		let oldest_output = outs.iter().min();
+		latest_input.as_ref() > oldest_output
+	    } else {
+		true
+	    };
+	if run {
+	    run_command_on_node(node, &cmd, verbose, echo).map_err(|e| e.to_string())
+	} else {
+	    Ok(())
+	}
+    }
+
+    fn run_command_on_node(
+        node: &mut NodeInner,
+        cmd: &str,
+        verbose: bool,
+        echo: bool) -> anyhow::Result<()> {
+	if verbose {
             println!("$ {cmd}");
         }
         let output = Exec::shell(cmd).stream_stdout()?;
@@ -73,7 +131,7 @@ mod command {
                 node.set_attr(&k, v);
             }
         }
-        Ok(())
+	Ok(())
     }
 
     /** Run the given template as a shell command for each nodes in the network in parallel.
