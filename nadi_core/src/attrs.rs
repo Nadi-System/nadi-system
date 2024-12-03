@@ -283,7 +283,6 @@ tuple_impls!(a A 0, b B 1, c C 2, d D 3);
 tuple_impls!(a A 0, b B 1, c C 2, d D 3, e E 4);
 tuple_impls!(a A 0, b B 1, c C 2, d D 3, e E 4, f F 5);
 
-
 impl From<String> for Attribute {
     fn from(value: String) -> Self {
         Self::String(RString::from(value))
@@ -296,29 +295,28 @@ impl FromAttribute for Attribute {
     }
 }
 
-
 // impl for different types that can be converted from ones that has
 // FromAttribute. Can't do this automatically because there will be
 // duplicate implementation
 macro_rules! convert_impls {
     ($src: tt => $dest: tt) => {
-	impl FromAttribute for $dest {
-	    fn from_attr(value: &Attribute) -> Option<Self> {
-		FromAttribute::try_from_attr(value).ok()
-	    }
-	    fn try_from_attr(value: &Attribute) -> Result<Self, String> {
-		let val: $src = FromAttribute::try_from_attr(value)?;
-		$dest::try_from(val).map_err(|e| e.to_string())
-	    }
-	}
+        impl FromAttribute for $dest {
+            fn from_attr(value: &Attribute) -> Option<Self> {
+                FromAttribute::try_from_attr(value).ok()
+            }
+            fn try_from_attr(value: &Attribute) -> Result<Self, String> {
+                let val: $src = FromAttribute::try_from_attr(value)?;
+                $dest::try_from(val).map_err(|e| e.to_string())
+            }
+        }
 
-	impl FromAttributeRelaxed for $dest {
-	    fn try_from_attr_relaxed(value: &Attribute) -> Result<Self, String> {
-		let val: $src = FromAttributeRelaxed::try_from_attr_relaxed(value)?;
-		$dest::try_from(val).map_err(|e| e.to_string())
-	    }
-	}
-    }
+        impl FromAttributeRelaxed for $dest {
+            fn try_from_attr_relaxed(value: &Attribute) -> Result<Self, String> {
+                let val: $src = FromAttributeRelaxed::try_from_attr_relaxed(value)?;
+                $dest::try_from(val).map_err(|e| e.to_string())
+            }
+        }
+    };
 }
 
 convert_impls!(i64 => u64);
@@ -426,10 +424,7 @@ where
 
     fn try_from_attr(value: &Attribute) -> Result<HashSet<T>, String> {
         match value {
-            Attribute::Array(t) => t
-                .iter()
-                .map(|v| FromAttribute::try_from_attr(v))
-                .collect(),
+            Attribute::Array(t) => t.iter().map(|v| FromAttribute::try_from_attr(v)).collect(),
             _ => Err(format!(
                 "Incorrect Type: got {} instead of Array",
                 value.type_name()

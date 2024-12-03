@@ -136,14 +136,14 @@ impl TimeSeries {
         self.values.type_name()
     }
 
-    pub fn same_timeline(&self, other: &Self) -> bool{
-	self.is_timeline(&other.timeline)
+    pub fn same_timeline(&self, other: &Self) -> bool {
+        self.is_timeline(&other.timeline)
     }
-    
-    pub fn is_timeline(&self, tl: &TimeLine) -> bool{
-	// counting on RArc PartialEq to compare properly
-	abi_stable::pointer_trait::AsPtr::as_ptr(&self.timeline) ==
-	    abi_stable::pointer_trait::AsPtr::as_ptr(tl)
+
+    pub fn is_timeline(&self, tl: &TimeLine) -> bool {
+        // counting on RArc PartialEq to compare properly
+        abi_stable::pointer_trait::AsPtr::as_ptr(&self.timeline)
+            == abi_stable::pointer_trait::AsPtr::as_ptr(tl)
     }
 }
 

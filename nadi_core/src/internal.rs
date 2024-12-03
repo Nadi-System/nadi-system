@@ -9,10 +9,10 @@ mod render;
 mod table;
 mod timeseries;
 
-use crate::plugins::NadiPlugin;
 use crate::functions::NadiFunctions;
+use crate::plugins::NadiPlugin;
 
-pub(crate) fn register_internal(funcs: &mut NadiFunctions){
+pub(crate) fn register_internal(funcs: &mut NadiFunctions) {
     // These things need to be automated if possible, but I don't
     // think that is possible: search all types that implement
     // NadiPlugin trait within functions
@@ -25,4 +25,3 @@ pub(crate) fn register_internal(funcs: &mut NadiFunctions){
     connections::ConnectionsMod {}.register(funcs);
     table::TableMod {}.register(funcs);
 }
-

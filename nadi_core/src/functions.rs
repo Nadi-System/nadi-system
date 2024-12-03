@@ -210,25 +210,24 @@ impl NadiFunctions {
     pub fn new() -> Self {
         let mut funcs = Self::default();
 
-	#[cfg(feature = "functions")]
-	crate::internal::register_internal(&mut funcs);
+        #[cfg(feature = "functions")]
+        crate::internal::register_internal(&mut funcs);
 
         funcs.load_plugins().unwrap();
         funcs
     }
 
-    
     pub fn register_network_function(&mut self, prefix: &str, func: NetworkFunctionBox) {
         let name = func.name();
         let fullname = RString::from(format!("{}.{}", prefix, name));
         self.network.insert(fullname.clone(), func);
         if let RSome(oldname) = self.network_alias.insert(name.clone(), fullname.clone()) {
-	    if fullname != oldname {
-		eprintln!(
+            if fullname != oldname {
+                eprintln!(
                     "WARN Function {} now uses {} instead of {}, use full name for disambiguity",
                     name, fullname, oldname
-		);
-	    }
+                );
+            }
         }
         match self.plugins.entry(prefix.into()) {
             REntry::Occupied(mut o) => o.get_mut().push_network(name),
@@ -242,12 +241,12 @@ impl NadiFunctions {
         let fullname = RString::from(format!("{}.{}", prefix, name));
         self.node.insert(fullname.clone(), func);
         if let RSome(oldname) = self.node_alias.insert(name.clone(), fullname.clone()) {
-	    if fullname != oldname {
-		eprintln!(
+            if fullname != oldname {
+                eprintln!(
                     "WARN Function {} now uses {} instead of {}, use full name for disambiguity",
                     name, fullname, oldname
-		);
-	    }
+                );
+            }
         }
         match self.plugins.entry(prefix.into()) {
             REntry::Occupied(mut o) => o.get_mut().push_node(name),

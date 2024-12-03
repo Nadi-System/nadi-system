@@ -135,10 +135,12 @@ impl NodeInner {
     }
 
     pub fn try_attr<T: FromAttribute>(&self, name: &str) -> Result<T, String> {
-	match self.attr(name) {
-	    Some(v) => FromAttribute::try_from_attr(v),
-	    None => Err(format!("Attribute Error: Attribute {name} not found in Node"))
-	}
+        match self.attr(name) {
+            Some(v) => FromAttribute::try_from_attr(v),
+            None => Err(format!(
+                "Attribute Error: Attribute {name} not found in Node"
+            )),
+        }
     }
 
     pub fn attrs(&self) -> &AttrMap {

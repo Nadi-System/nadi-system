@@ -1,7 +1,7 @@
 // This mod is kept as an example to how the functions are written
 // without the macros. Any additional functions are recommended to be
 // written using the macros provided by nadi_plugin crate
-use crate::functions::{FunctionRet, NadiFunctions, NodeFunction, FunctionCtx, NodeFunction_TO};
+use crate::functions::{FunctionCtx, FunctionRet, NadiFunctions, NodeFunction, NodeFunction_TO};
 use crate::plugins::NadiPlugin;
 use crate::prelude::*;
 use crate::return_on_err;
@@ -85,9 +85,9 @@ The function will error out in following conditions:
                 Ok(f) => f,
                 Err(e) => return RErr(e.to_string().into()),
             };
-	    if verbose {
-		eprintln!("Loadin Attributes from: {filepath}");
-	    }
+            if verbose {
+                eprintln!("Loadin Attributes from: {filepath}");
+            }
             if let Err(e) = node.load_attr(&filepath) {
                 return RErr(RString::from(e.to_string()));
             }

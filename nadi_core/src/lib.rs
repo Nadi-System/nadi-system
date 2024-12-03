@@ -7,7 +7,6 @@ pub mod plugins;
 pub mod table;
 pub mod timeseries;
 
-
 #[cfg(feature = "functions")]
 mod internal;
 

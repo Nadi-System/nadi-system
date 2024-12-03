@@ -343,7 +343,6 @@ impl Network {
             for i in inps {
                 recc_set(i, level + 1);
             }
-            
         }
         if let RSome(output) = &self.outlet {
             recc_set(output, 0);
