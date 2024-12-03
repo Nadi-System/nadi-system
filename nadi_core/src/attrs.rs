@@ -1,7 +1,7 @@
 use crate::parser::attrs::attr_file;
 use anyhow::Context;
 use colored::Colorize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use string_template_plus::Template;
 
@@ -407,6 +407,28 @@ where
             Attribute::Table(t) => t
                 .iter()
                 .map(|Tuple2(k, v)| FromAttribute::try_from_attr(v).map(|v| (k.to_string(), v)))
+                .collect(),
+            _ => Err(format!(
+                "Incorrect Type: got {} instead of Array",
+                value.type_name()
+            )),
+        }
+    }
+}
+
+impl<T> FromAttribute for HashSet<T>
+where
+    T: FromAttribute + std::hash::Hash + std::cmp::Eq,
+{
+    fn from_attr(value: &Attribute) -> Option<HashSet<T>> {
+        FromAttribute::try_from_attr(value).ok()
+    }
+
+    fn try_from_attr(value: &Attribute) -> Result<HashSet<T>, String> {
+        match value {
+            Attribute::Array(t) => t
+                .iter()
+                .map(|v| FromAttribute::try_from_attr(v))
                 .collect(),
             _ => Err(format!(
                 "Incorrect Type: got {} instead of Array",

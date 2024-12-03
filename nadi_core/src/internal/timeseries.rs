@@ -5,7 +5,9 @@ mod timeseries {
 
     use crate::prelude::*;
     use abi_stable::std_types::{ROption, RString};
-    use nadi_plugin::node_func;
+    use nadi_plugin::{node_func, network_func};
+    use crate::timeseries::TimeSeries;
+    use std::collections::{HashMap, HashSet};
 
     /// Print the list of available timeseries for the node
     ///
@@ -28,6 +30,9 @@ mod timeseries {
     - `name`: name of the timeseries
     - `header`: whether to show header or not
     - `head`: number of head rows to show (all by default)
+
+    # TODO
+    - save to file instead of showing with `outfile: Option<PathBuf>`
     */
     #[node_func(header = true)]
     fn show_ts(
@@ -61,5 +66,52 @@ mod timeseries {
             .into());
         }
         Ok(None.into())
+    }
+
+    
+    /// Save timeseries from all nodes into a single csv file
+    ///
+    /// TODO: error/not on unqual length
+    /// TODO: error/not on no timeseries, etc...
+    /// TODO: output to `file: PathBuf`
+    #[network_func]
+    fn show_ts_csv(net: &mut Network, name: String, head: Option<usize>, nodes: Option<HashSet<String>>) -> anyhow::Result<()> {
+	let mut ts_nodes = vec![];
+	let mut values = vec![];
+	let mut timeline = None;
+	for node in net.nodes(){
+	    let node = node.lock();
+	    if let Some(ref node_list) = nodes {
+		if !node_list.contains(node.name()){
+		    continue;
+		}
+	    }
+	    // ignoring the nodes without the given timeseries
+	    if let Some(ts) = node.ts(&name) {
+		if let Some(tl) = &timeline {
+		    if !ts.is_timeline(tl) {
+			return Err(anyhow::Error::msg("Different Timelines"));
+		    }
+		} else {
+		    timeline = Some(ts.timeline().clone());
+		}
+		ts_nodes.push(node.name().to_string());
+		values.push(ts.values_as_attributes());
+	    }
+	}
+	// export to CSV
+	if let Some(tl) = timeline {
+	    let tl = tl.lock();
+	    let head = head.unwrap_or(tl.str_values().count());
+	    println!("datetime,{}", ts_nodes.join(","));
+	    for (i, t) in tl.str_values().enumerate() {
+		if i >= head {
+		    break;
+		}
+		let row: Vec<String> = values.iter().map(|v| v[i].to_string()).collect();
+		println!("{t},{}", row.join(","));
+	    }
+	}
+	Ok(())
     }
 }
