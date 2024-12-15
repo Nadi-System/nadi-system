@@ -9,8 +9,31 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote, quote_spanned, ToTokens};
 use syn::{
     parse_macro_input, punctuated::Punctuated, token::Comma, Attribute, Expr, FnArg, Ident, ItemFn,
-    ItemMod, Lit, MetaNameValue, Type, TypeReference,
+    ItemMod, Lit, MetaNameValue, Type, TypeReference, DeriveInput
 };
+
+
+/// Idents and Path for from_attr and try_from_attr
+fn nadi_trait_idents(relaxed: bool) -> (proc_macro2::TokenStream, Ident, Ident) {
+    let (tr, func1, func2) = if relaxed {
+	(
+	    format_ident!("FromAttributeRelaxed"),
+	    format_ident!("from_attr_relaxed"),
+	    format_ident!("try_from_attr_relaxed"),
+	)
+    } else {
+	(
+	    format_ident!("FromAttribute"),
+	    format_ident!("from_attr"),
+	    format_ident!("try_from_attr"),
+	)
+    };
+    (
+	quote! {::nadi_core::attrs::#tr},
+	func1,
+	func2,
+    )
+}
 
 fn nadi_struct_name(name: &Ident, suff: &str) -> Ident {
     format_ident!("{}{suff}", name.to_string().to_case(Case::UpperCamel))
@@ -23,6 +46,98 @@ fn nadi_func_impl(node: bool) -> proc_macro2::TokenStream {
         quote! {::nadi_core::functions::NetworkFunction}
     }
 }
+
+
+#[proc_macro_derive(FromAttribute)]
+pub fn from_attribute_derive(input: TokenStream) -> TokenStream {
+    from_attr_derive(input, false)
+}
+
+#[proc_macro_derive(FromAttributeRelaxed)]
+pub fn from_attribute_relaxed_derive(input: TokenStream) -> TokenStream {
+    from_attr_derive(input, true)
+}
+
+
+/// this should support automatically deriving the FromAttribute trait for the following complex types
+/// - Struct(ty) => wrapper values like this as long as ty has FromAttribute
+/// - Struct {x:.., y:..}  => struct values will be made from Table() as long as each field type has FromAttribute
+/// - Enum{...} => enum values will be made for the first type that is matched from Attribute types as long as each one has FromAttribute
+fn from_attr_derive(input: TokenStream, relaxed: bool) -> TokenStream {
+    let (trt, func, try_func) = nadi_trait_idents(relaxed);
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = input.ident;
+    let name_s = name.to_string();
+    let data = input.data.clone();
+    let conversion = match data {
+	syn::Data::Struct(st) => {
+	    match st.fields {
+		syn::Fields::Named(flds) => {
+		    // try to parse a Table value into the fields of this struct
+		    let conv: Vec<_> = flds.named.iter().map(|f| {
+			let i = &f.ident;
+			let is = i.as_ref().map(|l| l.to_string()).expect("should be named");
+			quote!{
+			    let val = match attrmap.get(#is) {
+				Some(v) => v,
+				None => return Err(format!("FieldError: Field {} not found in the value for {}", #is, #name_s)),
+			    };
+			    let #i = #trt :: #try_func (val)?;
+			}
+		    }).collect();
+		    let names = flds.named.iter().map(|f| &f.ident);
+		    quote!{
+			let attrmap: ::nadi_core::attrs::AttrMap = ::nadi_core::attrs::FromAttribute::try_from_attr (value)?;
+			#(#conv)*
+			Ok(Self {
+			    #(#names),*
+			})
+		    }
+		}
+		syn::Fields::Unnamed(fld) => {
+		    quote!{
+			Ok(Self(#trt :: #func (value)?))
+		    }
+		}
+		_ => panic!("Not supported")
+	    }
+
+	}
+	syn::Data::Enum(en) => {
+	    // try each variant and return the first one that succeeds
+	    let vars: Vec<_> = en.variants.iter().map(|v| {
+		let i = &v.ident;
+		quote!{
+		    if let Some(val) = #trt :: #func (value) {
+			return Ok(Self::#i(val));
+		    }
+		}
+	    }).collect();
+	    let names : Vec<String> = en.variants.iter().map(|v| v.fields.to_token_stream().to_string()).collect();
+	    // TODO extra () for unnamed fields should be renamed later
+	    let names = names.join(", ");
+	    quote!{
+		#(#vars)*
+		Err(format!("Incorrect Type: got {} instead of any of: [{}]", value.type_name(), #names))
+	    }
+	}
+	syn::Data::Union(un) => {panic!("Union derive not supported!")}
+    };
+
+    let expanded = quote! {
+        impl #trt for #name {
+	    fn #func (value: &Attribute) -> Option<Self>{
+		#trt :: #try_func(value).ok()
+	    }
+	    fn #try_func (value: &Attribute) -> Result<Self, String> {
+		#conversion
+	    }
+	}
+    };
+    println!("{}", expanded);
+    TokenStream::from(expanded)
+}
+
 
 /// register this function as a node function on nadi plugin
 #[proc_macro_attribute]
