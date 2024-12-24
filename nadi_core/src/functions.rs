@@ -277,8 +277,16 @@ impl NadiFunctions {
         &self.node
     }
 
+    pub fn node_alias(&self) -> &RHashMap<RString, RString> {
+        &self.node_alias
+    }
+
     pub fn network_functions(&self) -> &RHashMap<RString, NetworkFunctionBox> {
         &self.network
+    }
+
+    pub fn network_alias(&self) -> &RHashMap<RString, RString> {
+        &self.network_alias
     }
 
     pub fn plugins(&self) -> &RHashMap<RString, PluginFunctions> {
@@ -708,7 +716,10 @@ pub enum FunctionType {
 impl ToString for FunctionType {
     fn to_string(&self) -> String {
         match self {
-            Self::Node(p) => format!("{}.{}", "node", p.to_string()),
+            Self::Node(p) => match p {
+                Propagation::List(_) | Propagation::Path(_) => format!("node[{}]", p.to_string()),
+                _ => format!("node.{}", p.to_string()),
+            },
             Self::Network => "network".to_string(),
             Self::Help => "help".to_string(),
             Self::HelpNode => "help.node".to_string(),
@@ -720,7 +731,12 @@ impl ToString for FunctionType {
 impl FunctionType {
     fn to_colored_string(&self) -> String {
         match self {
-            Self::Node(p) => format!("{}.{}", "node".red(), p.to_colored_string()),
+            Self::Node(p) => match p {
+                Propagation::List(_) | Propagation::Path(_) => {
+                    format!("{}[{}]", "node".red(), p.to_colored_string())
+                }
+                _ => format!("{}.{}", "node".red(), p.to_colored_string()),
+            },
             Self::Network => "network".red().to_string(),
             Self::Help => "help".blue().to_string(),
             Self::HelpNode => format!("{}.{}", "help".blue(), "node".red()),
