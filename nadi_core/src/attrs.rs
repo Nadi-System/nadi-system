@@ -1,5 +1,3 @@
-use crate::parser::attrs::attr_file;
-use anyhow::Context;
 use colored::Colorize;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -8,11 +6,14 @@ use string_template_plus::Template;
 use abi_stable::{
     std_types::{
         RHashMap,
-        ROption::{self, RNone, RSome},
+        ROption::{self, RNone},
         RSlice, RStr, RString, RVec, Tuple2,
     },
     StableAbi,
 };
+
+#[cfg(feature = "chrono")]
+use abi_stable::std_types::RSome;
 
 #[cfg(feature = "chrono")]
 use chrono::{Datelike, Timelike};
@@ -450,16 +451,6 @@ impl std::fmt::Display for DateTime {
     }
 }
 
-impl std::str::FromStr for DateTime {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match crate::parser::attrs::parse_datetime(s) {
-            Ok((_, d)) => Ok(d),
-            Err(e) => Err(e.to_string()),
-        }
-    }
-}
-
 #[cfg(feature = "chrono")]
 impl From<chrono::NaiveDateTime> for DateTime {
     fn from(value: chrono::NaiveDateTime) -> Self {
@@ -525,16 +516,6 @@ pub struct Date {
 impl std::fmt::Display for Date {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:02}-{:02}-{:02}", self.year, self.month, self.day)
-    }
-}
-
-impl std::str::FromStr for Date {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match crate::parser::attrs::parse_date(s) {
-            Ok((_, d)) => Ok(d),
-            Err(e) => Err(e.to_string()),
-        }
     }
 }
 
@@ -605,16 +586,6 @@ impl std::fmt::Display for Time {
     }
 }
 
-impl std::str::FromStr for Time {
-    type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match crate::parser::attrs::parse_time(s) {
-            Ok((_, d)) => Ok(d),
-            Err(e) => Err(e.to_string()),
-        }
-    }
-}
-
 #[cfg(feature = "chrono")]
 impl From<chrono::NaiveTime> for Time {
     fn from(value: chrono::NaiveTime) -> Self {
@@ -642,7 +613,7 @@ impl Into<chrono::NaiveTime> for Time {
 
 impl Time {
     pub fn new(hour: u8, min: u8, sec: u8, nanosecond: u32) -> Self {
-        // TODO check valid time
+        // TODO check valid time here instead of from_str
         Self {
             hour,
             min,
@@ -706,47 +677,6 @@ impl Into<chrono::FixedOffset> for Offset {
             chrono::FixedOffset::west_opt(secs).expect("should be valid offset")
         }
     }
-}
-
-pub fn parse_attr_file(txt: &str) -> anyhow::Result<AttrMap> {
-    let mut attrs = AttrMap::new();
-    let (rest, (grp, grp_attrs, parts)) = attr_file(txt)
-            .map_err(|e| anyhow::Error::msg(e.to_string()))// .map_err(|e| e.to_owned())
-	?;
-    if !rest.is_empty() {
-        println!("{rest}");
-        return Err(anyhow::Error::msg("Cannot parse the attr file completely."));
-    }
-    let mut curr_map: &mut AttrMap = &mut attrs;
-    if let Some(grp) = grp {
-        for g in grp {
-            if !curr_map.contains_key(g) {
-                curr_map.insert(g.into(), Attribute::Table(AttrMap::new()));
-            }
-            curr_map = curr_map
-                .get_mut(g)
-                .expect("Either the key should be there, or inserted above")
-                .get_mut_table()
-                .context("The Key is not empty or a table")?;
-        }
-    }
-
-    for (k, v) in grp_attrs {
-        curr_map.insert(k, v);
-    }
-
-    for (grp, grp_attrs) in parts {
-        for g in grp {
-            if !curr_map.contains_key(g) {
-                curr_map.insert(g.into(), Attribute::Table(AttrMap::new()));
-            }
-            curr_map = curr_map.get_mut(g).unwrap().get_mut_table().unwrap();
-        }
-        for (k, v) in grp_attrs {
-            curr_map.insert(k, v);
-        }
-    }
-    Ok(attrs)
 }
 
 #[cfg(test)]

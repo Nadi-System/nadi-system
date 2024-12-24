@@ -1,15 +1,12 @@
-use std::path::Path;
-
 use crate::{
-    attrs::{parse_attr_file, AttrMap, Attribute, FromAttribute},
-    network::Network,
+    attrs::{AttrMap, Attribute, FromAttribute},
     timeseries::TimeSeries,
 };
 use abi_stable::{
     external_types::RMutex,
     std_types::{
         RArc, RHashMap,
-        ROption::{self, RNone, RSome},
+        ROption::{self, RSome},
         RString, RVec,
     },
     StableAbi,
@@ -50,22 +47,22 @@ pub fn new_node(index: usize, name: &str) -> Node {
 #[derive(StableAbi, Default, Clone)]
 pub struct NodeInner {
     /// index of the current node in the [`crate::Network`]
-    index: usize,
+    pub(crate) index: usize,
     /// name of the node
-    name: RString,
+    pub(crate) name: RString,
     /// level represents the rank of the tributary, 0 for main branch
     /// and 1 for tributaries connected to main branch and so on
-    level: u64,
+    pub(crate) level: u64,
     /// Number of inputs connected to the current node
-    order: u64,
+    pub(crate) order: u64,
     /// Node attributes in a  Hashmap of [`RString`] to [`Attribute`]
-    attributes: AttrMap,
+    pub(crate) attributes: AttrMap,
     /// Hashmap of [`RString`] to [`TimeSeries`]
-    timeseries: RHashMap<RString, TimeSeries>,
+    pub(crate) timeseries: RHashMap<RString, TimeSeries>,
     /// List of immediate inputs
-    inputs: RVec<Node>,
+    pub(crate) inputs: RVec<Node>,
     /// Output of the node if present
-    output: ROption<Node>,
+    pub(crate) output: ROption<Node>,
 }
 
 impl NodeInner {
@@ -78,13 +75,6 @@ impl NodeInner {
         node.set_attr("NAME", Attribute::String(name.into()));
         node.set_attr("INDEX", Attribute::Integer(index as i64));
         node
-    }
-
-    pub fn load_attr<P: AsRef<Path>>(&mut self, file: P) -> anyhow::Result<()> {
-        let contents = std::fs::read_to_string(file)?;
-        let attrs: AttrMap = parse_attr_file(&contents)?;
-        self.attributes.extend(attrs);
-        Ok(())
     }
 
     pub fn name(&self) -> &str {

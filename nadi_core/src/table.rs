@@ -1,5 +1,3 @@
-use std::{path::Path, str::FromStr};
-
 use abi_stable::{
     std_types::{RString, RVec},
     StableAbi,
@@ -55,22 +53,8 @@ pub struct Table {
     pub columns: RVec<Column>,
 }
 
-impl FromStr for Table {
-    type Err = anyhow::Error;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let cols = crate::parser::table::parse_table_complete(s).map_err(anyhow::Error::msg)?;
-        Ok(Self {
-            columns: cols.into(),
-        })
-    }
-}
 
 impl Table {
-    pub fn from_file<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
-        let contents = std::fs::read_to_string(path)?;
-        Self::from_str(&contents)
-    }
-
     pub fn render_contents(
         &self,
         net: &Network,

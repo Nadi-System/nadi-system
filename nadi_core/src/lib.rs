@@ -2,13 +2,15 @@ pub mod attrs;
 pub mod functions;
 pub mod network;
 pub mod node;
-pub mod parser;
 pub mod plugins;
 pub mod table;
 pub mod timeseries;
 
 #[cfg(feature = "functions")]
 mod internal;
+
+#[cfg(feature = "parser")]
+mod parser;
 
 /// Prelude for the most basic NADI types: node, network and attributes
 pub mod prelude {

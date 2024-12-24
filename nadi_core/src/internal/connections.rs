@@ -2,7 +2,7 @@ use nadi_plugin::nadi_internal_plugin;
 
 #[nadi_internal_plugin]
 mod connections {
-    use crate::parser::network::is_valid_node_name;
+    use crate::parser::tokenizer::valid_variable_name;
     use crate::prelude::*;
     use nadi_plugin::network_func;
     use std::path::PathBuf;
@@ -45,13 +45,13 @@ mod connections {
             if quote_all {
                 writeln!(writer, "{:?} -> {:?}", start, end)?;
             } else {
-                if is_valid_node_name(start) {
+                if valid_variable_name(start) {
                     write!(writer, "{}", start)?;
                 } else {
                     write!(writer, "{:?}", start)?;
                 }
                 write!(writer, " -> ")?;
-                if is_valid_node_name(end) {
+                if valid_variable_name(end) {
                     writeln!(writer, "{}", end)?;
                 } else {
                     writeln!(writer, "{:?}", end)?;

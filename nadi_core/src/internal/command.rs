@@ -2,7 +2,8 @@ use nadi_plugin::nadi_internal_plugin;
 
 #[nadi_internal_plugin]
 mod command {
-    use crate::prelude::{Network, NodeInner};
+    use crate::prelude::*;
+    use crate::parser;
     use anyhow::Context;
     use colored::Colorize;
     use nadi_core::nadi_plugin::{network_func, node_func};
@@ -11,6 +12,12 @@ mod command {
     use std::thread;
     use string_template_plus::Template;
     use subprocess::Exec;
+
+    pub fn key_val(txt: &str) -> anyhow::Result<(String, Attribute)> {
+	let tokens = parser::tokenizer::get_tokens(&txt)?;
+	let mut attrs = parser::attrs::parse(tokens)?;
+	attrs.into_iter().map(|v| (v.0.to_string(), v.1)).next().context("No values read")
+    }
 
     /** Run the given template as a shell command.
 
@@ -122,8 +129,7 @@ mod command {
                 println!("{}", l);
             }
             if let Some(line) = l.strip_prefix("nadi:var:") {
-                let (_res, (k, v)) = nadi_core::parser::attrs::attr_key_val(line)
-                    .map_err(|e| anyhow::Error::msg(e.to_string()))?;
+                let (k, v) = key_val(line)?;
                 if verbose {
                     match node.attr(&k) {
                         Some(vold) => {
@@ -199,7 +205,7 @@ mod command {
             let mut node = net.node(i).unwrap().lock();
             let name = node.name();
 
-            let (_res, (k, v)) = match nadi_core::parser::attrs::attr_key_val(&var) {
+            let (k, v) = match key_val(&var) {
                 Ok(v) => v,
                 Err(e) => {
                     eprintln!("{:?}", e);
@@ -255,8 +261,7 @@ mod command {
                 println!("{}", l);
             }
             if let Some(var) = l.strip_prefix("nadi:var:") {
-                let (_res, (k, v)) = nadi_core::parser::attrs::attr_key_val(var)
-                    .map_err(|e| anyhow::Error::msg(e.to_string()))?;
+                let (k, v) = key_val(var)?;
                 if verbose {
                     match net.attr(&k) {
                         Some(vold) => {

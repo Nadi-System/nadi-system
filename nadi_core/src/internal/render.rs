@@ -71,6 +71,7 @@ mod render_utils {
     use std::io::{BufRead, BufReader};
     use std::io::{BufWriter, Write};
     use std::path::{Path, PathBuf};
+    use std::str::FromStr;
     use string_template_plus::Template;
 
     pub enum RenderFileContentsType {
@@ -126,9 +127,7 @@ mod render_utils {
                         // if in a snippet already, we're exiting
                         None
                     } else if let Some((_, s)) = l.split_once(':') {
-                        let (_, prop) = crate::parser::functions::node_list_or_path(s)
-                            .map_err(|e| anyhow::Error::msg(e.to_string()))
-                            .context("Invalid Nodes Selection Method, use path or list of nodes")?;
+                        let prop = Propagation::from_str(s)?;
                         Some(prop)
                     } else {
                         Some(Propagation::default())

@@ -1,16 +1,12 @@
 use abi_stable::std_types::{RDuration, Tuple2};
-use anyhow::Context;
 use colored::Colorize;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use string_template_plus::{Render, RenderOptions, Template};
 
-use std::path::Path;
-
 use crate::attrs::{AttrMap, Attribute};
 use crate::functions::Propagation;
 use crate::node::{new_node, Node, NodeInner};
-use crate::parser::parse_network;
 use abi_stable::{
     std_types::{
         RHashMap,
@@ -61,15 +57,15 @@ use abi_stable::{
 #[derive(StableAbi, Default, Clone)]
 pub struct Network {
     /// List of [`Node`]s
-    nodes: RVec<RString>,
+    pub(crate) nodes: RVec<RString>,
     /// Map of node names to the [`Node`]
-    nodes_map: RHashMap<RString, Node>,
+    pub(crate) nodes_map: RHashMap<RString, Node>,
     /// Network Attributes
-    attributes: AttrMap,
+    pub(crate) attributes: AttrMap,
     /// Output [`Node`] of the network if present
-    outlet: ROption<Node>,
+    pub(crate) outlet: ROption<Node>,
     /// network is ordered based on input topology
-    ordered: bool,
+    pub(crate) ordered: bool,
 }
 
 impl std::fmt::Debug for Network {
@@ -87,48 +83,6 @@ impl std::fmt::Debug for Network {
 }
 
 impl Network {
-    // TODO import DOT format as well, or maybe make it work through plugin
-    pub fn from_file<P: AsRef<Path>>(filename: P) -> anyhow::Result<Self> {
-        let mut network = Self::default();
-        let content =
-            std::fs::read_to_string(filename).context("Error while accessing the network file")?;
-        let (res, paths) = parse_network(&content)
-            .map_err(|e| anyhow::Error::msg(e.to_string()))
-            // .context("Error while parsing the network file")
-	    ?;
-        println!("{res}");
-        for path in paths {
-            if !network.nodes_map.contains_key(&path.start) {
-                network.insert_node_by_name(&path.start);
-            }
-            if !network.nodes_map.contains_key(&path.end) {
-                network.insert_node_by_name(&path.end);
-            }
-
-            let inp = network.node_by_name(&path.start).unwrap();
-            let out = network.node_by_name(&path.end).unwrap();
-            {
-                inp.lock().set_output(out.clone());
-                out.lock().add_input(inp.clone());
-            }
-        }
-        network.reorder();
-        network.set_levels();
-        Ok(network)
-    }
-    pub fn load_attrs<P: AsRef<Path>>(&self, attr_dir: P) -> anyhow::Result<()> {
-        self.nodes_map.iter().try_for_each(|Tuple2(name, node)| {
-            // ignore the error on attribute read
-            let attr_file = attr_dir.as_ref().join(format!("{}.toml", name));
-            if attr_file.exists() && attr_file.is_file() {
-                node.lock().load_attr(&attr_file)
-            } else {
-                Ok(())
-            }
-        })?;
-        Ok(())
-    }
-
     pub fn nodes(&self) -> impl Iterator<Item = &Node> {
         self.nodes.iter().map(|n| &self.nodes_map[n])
     }
