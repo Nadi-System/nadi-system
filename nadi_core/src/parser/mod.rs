@@ -1,14 +1,14 @@
 use crate::attrs::{Date, DateTime, Time};
-use crate::prelude::*;
-use std::str::FromStr;
-use crate::table::Table;
-use crate::network::StrPath;
 use crate::functions::Propagation;
-use crate::parser::tokenizer::{VecTokens, get_tokens, TaskToken};
-use abi_stable::std_types::{Tuple2, RString};
+use crate::network::StrPath;
+use crate::parser::tokenizer::{get_tokens, TaskToken, VecTokens};
+use crate::prelude::*;
+use crate::table::Table;
+use abi_stable::std_types::{RString, Tuple2};
 use anyhow::Context;
 use colored::Colorize;
 use std::path::Path;
+use std::str::FromStr;
 
 pub mod attrs;
 pub mod network;
@@ -230,7 +230,6 @@ impl NodeInner {
     }
 }
 
-
 impl FromStr for Table {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -240,7 +239,6 @@ impl FromStr for Table {
         })
     }
 }
-
 
 impl Table {
     pub fn from_file<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
@@ -253,60 +251,73 @@ impl FromStr for Propagation {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut tokens = VecTokens::new(get_tokens(&s)?);
-	let tk = match tokens.next_no_ws(false) {
-	    None => return Err(anyhow::Error::msg("No propagation")),
-	    Some(t) => t,
-	};
-	match tk.ty {
-	    TaskToken::Variable => Ok(propagation(tk.content)?),
-	    TaskToken::ParenStart => {
-		let tt = match tokens.next_no_ws(false) {
-		    None => return Err(anyhow::Error::msg("No propagation")),
-		    Some(t) => t,
-		};
-		match tt.ty {
-		    TaskToken::Variable => Ok(propagation(tt.content)?),
-		    _ => Err(tokens.parse_error(ParseErrorType::InvalidPropagation).into()),
-		}
-	    },
-	    TaskToken::BracketStart => {
-		let mut path = false;
-		let mut comma = false;
-		let mut nodes = vec![];
-		while let Some(t) = tokens.next_no_ws(false) {
-		    if comma {
-			match t.ty {
-			    TaskToken::Comma => {
-				comma = false;
-				continue;
-			    }
-			    TaskToken::PathSep => {
-				path = true;
-				continue;
-			    }
-			    _ => return Err(tokens.parse_error(ParseErrorType::InvalidPropagation).into()),
-			}
-		    }
-		    match t.ty {
-			TaskToken::Variable => {
-			    nodes.push(t.content.to_string());
-			    comma = true;
-			}
-			TaskToken::String(s) => {
-			    nodes.push(s);
-			    comma = true;
-			}
-			_ => return Err(tokens.parse_error(ParseErrorType::InvalidPropagation).into()),
-		    }
-		    if path && nodes.len() == 2 {
-			return Ok(Propagation::Path(StrPath::new(nodes[0].as_str().into(), nodes[1].as_str().into())));
-		    }
-		}
-		let nodes: Vec<RString> = nodes.into_iter().map(|s| s.into()).collect();
-		Ok(Propagation::List(nodes.into()))
-	    },
-	    _ => Err(anyhow::Error::msg("No propagation")),
-	}
+        let tk = match tokens.next_no_ws(false) {
+            None => return Err(anyhow::Error::msg("No propagation")),
+            Some(t) => t,
+        };
+        match tk.ty {
+            TaskToken::Variable => Ok(propagation(tk.content)?),
+            TaskToken::ParenStart => {
+                let tt = match tokens.next_no_ws(false) {
+                    None => return Err(anyhow::Error::msg("No propagation")),
+                    Some(t) => t,
+                };
+                match tt.ty {
+                    TaskToken::Variable => Ok(propagation(tt.content)?),
+                    _ => Err(tokens
+                        .parse_error(ParseErrorType::InvalidPropagation)
+                        .into()),
+                }
+            }
+            TaskToken::BracketStart => {
+                let mut path = false;
+                let mut comma = false;
+                let mut nodes = vec![];
+                while let Some(t) = tokens.next_no_ws(false) {
+                    if comma {
+                        match t.ty {
+                            TaskToken::Comma => {
+                                comma = false;
+                                continue;
+                            }
+                            TaskToken::PathSep => {
+                                path = true;
+                                continue;
+                            }
+                            _ => {
+                                return Err(tokens
+                                    .parse_error(ParseErrorType::InvalidPropagation)
+                                    .into())
+                            }
+                        }
+                    }
+                    match t.ty {
+                        TaskToken::Variable => {
+                            nodes.push(t.content.to_string());
+                            comma = true;
+                        }
+                        TaskToken::String(s) => {
+                            nodes.push(s);
+                            comma = true;
+                        }
+                        _ => {
+                            return Err(tokens
+                                .parse_error(ParseErrorType::InvalidPropagation)
+                                .into())
+                        }
+                    }
+                    if path && nodes.len() == 2 {
+                        return Ok(Propagation::Path(StrPath::new(
+                            nodes[0].as_str().into(),
+                            nodes[1].as_str().into(),
+                        )));
+                    }
+                }
+                let nodes: Vec<RString> = nodes.into_iter().map(|s| s.into()).collect();
+                Ok(Propagation::List(nodes.into()))
+            }
+            _ => Err(anyhow::Error::msg("No propagation")),
+        }
     }
 }
 

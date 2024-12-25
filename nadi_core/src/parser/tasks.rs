@@ -1,62 +1,11 @@
 use crate::functions::Propagation;
 use crate::network::StrPath;
-use crate::parser::tokenizer::{TaskKeyword, TaskToken, Token, VecTokens};
+use crate::parser::tokenizer::{TaskToken, Token, VecTokens};
 use crate::parser::{ParseError, ParseErrorType};
 use crate::prelude::*;
+use crate::tasks::{FunctionCall, Task, TaskInput, TaskKeyword, TaskType};
 use abi_stable::std_types::{RString, RVec};
 use std::collections::HashMap;
-
-#[derive(Clone, PartialEq, Debug)]
-pub struct Task {
-    ty: TaskType,
-    attribute: Option<String>,
-    input: TaskInput,
-}
-
-impl Task {
-    pub fn colored_print(&self) {
-        println!("{:?}", self);
-    }
-
-    pub fn exit() -> Self {
-        Task {
-            ty: TaskType::Exit,
-            attribute: None,
-            input: TaskInput::None,
-        }
-    }
-
-    pub fn help(kw: Option<TaskKeyword>, var: Option<String>) -> Self {
-        Task {
-            ty: TaskType::Help(kw, var),
-            attribute: None,
-            input: TaskInput::None,
-        }
-    }
-}
-
-#[derive(Clone, PartialEq, Debug)]
-pub enum TaskType {
-    Node(Propagation),
-    Network,
-    Help(Option<TaskKeyword>, Option<String>),
-    Exit,
-}
-
-#[derive(Clone, PartialEq, Debug)]
-pub enum TaskInput {
-    None,
-    Function(FunctionCall),
-    Literal(Attribute),
-    Variable(String),
-}
-
-#[derive(Clone, PartialEq, Debug)]
-pub struct FunctionCall {
-    name: String,
-    args: Vec<TaskInput>,
-    kwargs: HashMap<String, TaskInput>,
-}
 
 #[derive(Clone, PartialEq, Debug)]
 enum State {
@@ -87,6 +36,7 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
             Some(t) => t,
             None => break,
         };
+        // println!("{token:?} {state:?}");
         match token.ty {
             TaskToken::NewLine | TaskToken::Comment | TaskToken::WhiteSpace => (),
             TaskToken::Keyword(kw) => {
@@ -118,6 +68,13 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                                     input: TaskInput::None,
                                 });
                             }
+                            TaskKeyword::Env => {
+                                tasks.push(Task {
+                                    ty: TaskType::Env,
+                                    attribute: output.take(),
+                                    input: TaskInput::None,
+                                });
+                            }
                             _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
                         }
                     }
@@ -134,7 +91,7 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                     TaskKeyword::Node => {
                         state = State::Propagation;
                     }
-                    TaskKeyword::Network => {
+                    TaskKeyword::Network | TaskKeyword::Env => {
                         state = State::Attribute;
                     }
                     TaskKeyword::Help => {
@@ -351,7 +308,12 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
             }
             TaskToken::Function => match state {
                 State::Attribute | State::Propagation | State::Rhs => {
-                    state = State::Function(token.content.to_string());
+                    if let Some(TaskKeyword::Env) = curr_keyword {
+                        // env rhs can only be literal values
+                        return Err(tokens.parse_error(ParseErrorType::ValueError));
+                    } else {
+                        state = State::Function(token.content.to_string());
+                    }
                 }
                 _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
             },
@@ -375,6 +337,7 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                             TaskType::Node(prop)
                         }
                         Some(TaskKeyword::Network) => TaskType::Network,
+                        Some(TaskKeyword::Env) => TaskType::Env,
                         _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
                     };
                     tasks.push(Task {
@@ -428,6 +391,7 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                             TaskType::Node(prop)
                         }
                         Some(TaskKeyword::Network) => TaskType::Network,
+                        Some(TaskKeyword::Env) => TaskType::Env,
                         _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
                     };
                     match token.attribute() {
@@ -461,10 +425,17 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
             },
         }
     }
-    if state == State::None {
-        Ok(tasks)
-    } else {
-        Err(tokens.parse_error(ParseErrorType::Unclosed))
+    match (state, curr_keyword) {
+        (State::None, _) => Ok(tasks),
+        (State::Assignment | State::Attribute, Some(TaskKeyword::Env)) => {
+            tasks.push(Task {
+                ty: TaskType::Env,
+                attribute: output.take(),
+                input: TaskInput::None,
+            });
+            Ok(tasks)
+        }
+        _ => Err(tokens.parse_error(ParseErrorType::Unclosed)),
     }
 }
 

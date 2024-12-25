@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use string_template_plus::{Render, RenderOptions, Template};
 
-use crate::attrs::{AttrMap, Attribute};
+use crate::attrs::{AttrMap, Attribute, FromAttribute};
 use crate::functions::Propagation;
 use crate::node::{new_node, Node, NodeInner};
 use abi_stable::{
@@ -344,6 +344,15 @@ impl Network {
 
     pub fn attr(&self, name: &str) -> Option<&Attribute> {
         self.attributes.get(name)
+    }
+
+    pub fn try_attr<T: FromAttribute>(&self, name: &str) -> Result<T, String> {
+        match self.attr(name) {
+            Some(v) => FromAttribute::try_from_attr(v),
+            None => Err(format!(
+                "Attribute Error: Attribute {name} not found in Node"
+            )),
+        }
     }
 
     pub fn attrs(&self) -> &AttrMap {

@@ -3,6 +3,8 @@ use crate::attrs::{AttrMap, AttrSlice};
 use crate::network::StrPath;
 use crate::plugins::{load_library_safe, NadiPlugin};
 use crate::prelude::*;
+use crate::table::{contents_2_md, ColumnAlign};
+use crate::tasks::{FunctionCall, Task, TaskInput, TaskType};
 use abi_stable::std_types::Tuple2;
 use abi_stable::{
     sabi_trait,
@@ -19,8 +21,6 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
-
-use crate::table::{contents_2_md, ColumnAlign};
 
 /// Return values for Nadi Functions
 #[repr(C)]
@@ -130,10 +130,21 @@ where
     }
 }
 
+// #[repr(C)]
+// #[derive(StableAbi, Default)]
+// struct FunctionArg {
+//     name: RString,
+//     r#type: RString,
+//     kwarg: bool,
+//     optional: bool,
+//     default: Attribute,
+// }
+
 #[sabi_trait]
 pub trait NodeFunction: Debug + Clone {
     fn name(&self) -> RString;
     fn help(&self) -> RString;
+    // fn args(&self) -> RSlice<FunctionArg>;
     fn signature(&self) -> RString;
     fn code(&self) -> RString;
     fn call(&self, obj: RSlice<Node>, ctx: &FunctionCtx) -> RResult<(), RString>;
@@ -143,9 +154,10 @@ pub trait NodeFunction: Debug + Clone {
 pub trait NetworkFunction: Debug + Clone {
     fn name(&self) -> RString;
     fn help(&self) -> RString;
+    // fn args(&self) -> RSlice<FunctionArg>;
     fn signature(&self) -> RString;
     fn code(&self) -> RString;
-    fn call(&self, obj: &mut Network, ctx: &FunctionCtx) -> RResult<(), RString>;
+    fn call(&self, obj: &mut Network, ctx: &FunctionCtx) -> FunctionRet;
 }
 
 // A trait object for the `State` Trait Object
@@ -191,11 +203,6 @@ impl PluginFunctions {
 // TODO: add environmental variables, like verbose, progress, debug,
 // etc. that all functions can read (passed along with args, kwargs to
 // all functions)
-
-// TODO: register functions with plugin name as well, making optional
-// plugin.function syntax when disambiguity is required. Can have
-// another map with plugin name and functions provided by it. And a
-// function to generate html doc with that index.
 #[repr(C)]
 #[derive(StableAbi, Default)]
 pub struct NadiFunctions {
@@ -469,72 +476,19 @@ impl NadiFunctions {
         }
     }
 
-    pub fn call_network(
-        &self,
-        func: &str,
-        network: &mut Network,
-        ctx: &FunctionCtx,
-    ) -> anyhow::Result<()> {
-        match self.network(func) {
-            Some(f) => f
-                .call(network, ctx)
-                .map_err(|e| anyhow::Error::msg(e.to_string()))
-                .into(),
-            None => anyhow::bail!("Node Function {} not found", func),
-        }
-    }
-
-    pub fn execute(&self, func: &FunctionCall, net: &mut Network) -> Result<(), String> {
-        match &func.r#type {
-            FunctionType::Node(p) => match self.node(&func.name) {
-                Some(f) => {
-                    let p: RVec<Node> = net.nodes_propagation(p).into();
-                    // todo manage other return types
-                    f.call(p.as_rslice(), func.ctx())
-                        .map_err(|e| e.to_string())
-                        .into()
-                }
-                None => Err(format!("Node Function {} not found", func.name)),
-            },
-            FunctionType::Network => match self.network(&func.name) {
-                // todo use returned attribute value
-                Some(f) => f.call(net, func.ctx()).map_err(|e| e.to_string()).into(),
-                None => Err(format!("Network Function {} not found", func.name)),
-            },
-            FunctionType::Help => {
-                let mut found = false;
-                if let Some(help) = self.node(&func.name).map(|f| f.help()) {
-                    println!("{}: {}\n{}", "== Node Function".blue(), func.name, help);
-                    found = true;
-                }
-                if let Some(help) = self.network(&func.name).map(|f| f.help()) {
-                    println!("{}: {}\n{}", "== Network Function".blue(), func.name, help);
-                    found = true;
-                }
-                if found {
-                    Ok(())
-                } else {
-                    Err(format!("Function {} not found", func.name))
-                }
-            }
-            FunctionType::HelpNode => {
-                if let Some(help) = self.node(&func.name).map(|f| f.help()) {
-                    println!("{}: {}\n{}", "== Node Function".blue(), func.name, help);
-                    Ok(())
-                } else {
-                    Err(format!("Node Function {} not found", func.name))
-                }
-            }
-            FunctionType::HelpNetwork => {
-                if let Some(help) = self.network(&func.name).map(|f| f.help()) {
-                    println!("{}: {}\n{}", "== Network Function".blue(), func.name, help);
-                    Ok(())
-                } else {
-                    Err(format!("Network Function {} not found", func.name))
-                }
-            }
-        }
-    }
+    // pub fn call_network(
+    //     &self,
+    //     func: &str,
+    //     network: &mut Network,
+    //     ctx: &FunctionCtx,
+    // ) -> anyhow::Result<()> {
+    //     match self.network(func) {
+    //         Some(f) => f
+    //             .call(network, ctx)
+    //             .res(),
+    //         None => anyhow::bail!("Node Function {} not found", func),
+    //     }
+    // }
 
     pub fn node(&self, func: &str) -> Option<&NodeFunctionBox> {
         if func.contains('.') {
@@ -580,34 +534,13 @@ impl NadiFunctions {
 }
 
 #[repr(C)]
-#[derive(StableAbi, Debug, PartialEq)]
-pub struct FunctionCall {
-    r#type: FunctionType,
-    name: RString,
-    ctx: FunctionCtx,
-}
-
-#[repr(C)]
 #[derive(StableAbi, Default, Debug, PartialEq)]
 pub struct FunctionCtx {
-    args: RVec<Attribute>,
-    kwargs: AttrMap,
+    pub args: RVec<Attribute>,
+    pub kwargs: AttrMap,
 }
 
 impl FunctionCtx {
-    pub fn new(args: Vec<FunctionArg>) -> Self {
-        let mut fc = Self::default();
-        for l in args {
-            match l {
-                FunctionArg::Arg(a) => fc.args.push(a),
-                FunctionArg::KwArg(KeyVal { key, val }) => {
-                    fc.kwargs.insert(key, val);
-                }
-            }
-        }
-        fc
-    }
-
     pub fn from_arg_kwarg(args: Vec<Attribute>, kwargs: HashMap<String, Attribute>) -> Self {
         let args = RVec::from(args);
         let kwargs = kwargs
@@ -616,6 +549,46 @@ impl FunctionCtx {
             .collect();
         Self { args, kwargs }
     }
+
+    // pub fn node_task(node: &NodeInner, args: &[TaskInput], kwargs: &HashMap<String, TaskInput>, out: &Option<String>) -> anyhow::Result<Self> {
+    // 	let args = args.iter().map(|a| {
+    // 	    match a {
+    // 		TaskInput::Literal(v) => Ok(v),
+    // 		TaskInput::Variable(v) => node.try_attr(v),
+    // 		_ => Err(anyhow::Error::msg("Invalid output")),
+    // 	    }
+    // 	}).collect::<anyhow::Result<Vec<Attribute>>>()?.into();
+    // 	let kwargs = kwargs.iter().map(|(k, a)| {
+    // 	    let k = RString::from(k);
+    // 	    match a {
+    // 		TaskInput::Literal(v) => Ok((k, v)),
+    // 		TaskInput::Variable(v) => Ok((k, node.try_attr(v)?)),
+    // 	    _ => Err(anyhow::Error::msg("Invalid output")),
+    // 	    }
+    // 	}).collect::<anyhow::Result<HashMap<String, Attribute>>>()?.into();
+    // 	let outattr = out.map(|s| s.into()).into();
+    //     Ok(Self { args, kwargs, outattr })
+    // }
+
+    // pub fn network_task(net: &Network, args: &[TaskInput], kwargs: &HashMap<String, TaskInput>, out: &Option<String>) -> anyhow::Result<Self> {
+    // 	let args = args.iter().map(|a| {
+    // 	    match a {
+    // 		TaskInput::Literal(v) => Ok(v),
+    // 		TaskInput::Variable(v) => net.try_attr(v),
+    // 		_ => Err(anyhow::Error::msg("Invalid output")),
+    // 	    }
+    // 	}).collect::<anyhow::Result<Vec<Attribute>>>()?.into();
+    // 	let kwargs = kwargs.iter().map(|(k, a)| {
+    // 	    let k = RString::from(k);
+    // 	    match a {
+    // 		TaskInput::Literal(v) => Ok((k, v)),
+    // 		TaskInput::Variable(v) => Ok((k, net.try_attr(v)?)),
+    // 	    _ => Err(anyhow::Error::msg("Invalid output")),
+    // 	    }
+    // 	}).collect::<anyhow::Result<HashMap<String, Attribute>>>()?.into();
+    // 	let outattr = out.map(|s| s.into()).into();
+    //     Ok(Self { args, kwargs, outattr })
+    // }
 
     pub fn args(&self) -> AttrSlice {
         self.args.as_rslice()
@@ -666,85 +639,6 @@ impl FunctionCtx {
     }
 }
 
-impl FunctionCall {
-    pub fn new(r#type: FunctionType, name: &str, args: Option<Vec<FunctionArg>>) -> Self {
-        Self {
-            r#type,
-            name: name.into(),
-            ctx: args.map(FunctionCtx::new).unwrap_or_default(),
-        }
-    }
-
-    pub fn ctx(&self) -> &FunctionCtx {
-        &self.ctx
-    }
-
-    pub fn to_colored_string(&self) -> String {
-        let mut args_str: Vec<String> = self
-            .ctx()
-            .args()
-            .iter()
-            .map(|a| Attribute::to_colored_string(a).to_string())
-            .collect();
-        let kwargs_str: Vec<String> = self
-            .ctx()
-            .kwargs()
-            .iter()
-            .map(|Tuple2(k, v)| format!("{}={}", k.to_string().blue(), v.to_colored_string()))
-            .collect();
-        args_str.extend(kwargs_str);
-        format!(
-            "{} {}({})",
-            self.r#type.to_colored_string(),
-            self.name.truecolor(80, 80, 200),
-            args_str.join(", ")
-        )
-    }
-}
-
-#[repr(C)]
-#[derive(StableAbi, Debug, Default, Clone, PartialEq)]
-pub enum FunctionType {
-    Node(Propagation),
-    #[default]
-    Network,
-    Help,
-    HelpNode,
-    HelpNetwork,
-}
-
-impl ToString for FunctionType {
-    fn to_string(&self) -> String {
-        match self {
-            Self::Node(p) => match p {
-                Propagation::List(_) | Propagation::Path(_) => format!("node[{}]", p.to_string()),
-                _ => format!("node.{}", p.to_string()),
-            },
-            Self::Network => "network".to_string(),
-            Self::Help => "help".to_string(),
-            Self::HelpNode => "help.node".to_string(),
-            Self::HelpNetwork => "help.network".to_string(),
-        }
-    }
-}
-
-impl FunctionType {
-    fn to_colored_string(&self) -> String {
-        match self {
-            Self::Node(p) => match p {
-                Propagation::List(_) | Propagation::Path(_) => {
-                    format!("{}[{}]", "node".red(), p.to_colored_string())
-                }
-                _ => format!("{}.{}", "node".red(), p.to_colored_string()),
-            },
-            Self::Network => "network".red().to_string(),
-            Self::Help => "help".blue().to_string(),
-            Self::HelpNode => format!("{}.{}", "help".blue(), "node".red()),
-            Self::HelpNetwork => format!("{}.{}", "help".blue(), "network".red()),
-        }
-    }
-}
-
 #[repr(C)]
 #[derive(StableAbi, Debug, Default, Clone, PartialEq)]
 pub enum Propagation {
@@ -760,16 +654,18 @@ pub enum Propagation {
 impl ToString for Propagation {
     fn to_string(&self) -> String {
         match self {
-            Self::Sequential => "sequential".to_string(),
-            Self::Inverse => "inverse".to_string(),
-            Self::InputsFirst => "inputsfirst".to_string(),
-            Self::OutputFirst => "outputfirst".to_string(),
-            Self::List(v) => v
-                .iter()
-                .map(|a| a.to_string())
-                .collect::<Vec<String>>()
-                .join(", "),
-            Self::Path(p) => p.to_string(),
+            Self::Sequential => "(sequential)".to_string(),
+            Self::Inverse => "(inverse)".to_string(),
+            Self::InputsFirst => "(inputsfirst)".to_string(),
+            Self::OutputFirst => "(outputfirst)".to_string(),
+            Self::List(v) => format!(
+                "[{}]",
+                v.iter()
+                    .map(|a| a.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            Self::Path(p) => format!("[{}]", p.to_string()),
         }
     }
 }
@@ -777,16 +673,18 @@ impl ToString for Propagation {
 impl Propagation {
     pub fn to_colored_string(&self) -> String {
         match self {
-            Self::Sequential => "sequential".red().to_string(),
-            Self::Inverse => "inverse".red().to_string(),
-            Self::InputsFirst => "inputsfirst".red().to_string(),
-            Self::OutputFirst => "outputfirst".red().to_string(),
-            Self::List(v) => v
-                .iter()
-                .map(|a| a.as_str().green().to_string())
-                .collect::<Vec<String>>()
-                .join(", "),
-            Self::Path(p) => p.to_colored_string(),
+            Self::Sequential => format!("({})", "sequential".red()),
+            Self::Inverse => format!("({})", "inverse".red()),
+            Self::InputsFirst => format!("({})", "inputsfirst".red()),
+            Self::OutputFirst => format!("({})", "outputfirst".red()),
+            Self::List(v) => format!(
+                "[{}]",
+                v.iter()
+                    .map(|a| a.as_str().green().to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            Self::Path(p) => format!("[{}]", p.to_colored_string()),
         }
     }
 }

@@ -53,7 +53,6 @@ pub struct Table {
     pub columns: RVec<Column>,
 }
 
-
 impl Table {
     pub fn render_contents(
         &self,

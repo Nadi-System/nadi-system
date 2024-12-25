@@ -1,6 +1,7 @@
 use crate::parser::string::parse_string;
 use crate::parser::NadiError;
 use crate::parser::{ParseError as TaskParseError, ParseErrorType};
+use crate::tasks::{FunctionCall, Task, TaskInput, TaskKeyword, TaskType};
 use colored::Colorize;
 use nadi_core::attrs::{Attribute, Date, DateTime, Time};
 use nom::{
@@ -185,14 +186,6 @@ pub enum TaskToken {
     DateTime,
 }
 
-#[derive(Clone, PartialEq, Debug)]
-pub enum TaskKeyword {
-    Node,
-    Network,
-    Exit,
-    Help,
-}
-
 impl<'a> Token<'a> {
     pub fn colored_print(&self) {
         match self.ty {
@@ -308,29 +301,40 @@ fn symbols<'a>(i: &'a str) -> TokenRes<'a> {
 
 pub fn valid_variable_name(txt: &str) -> bool {
     match variable(txt) {
-	Ok((res, _)) => {
-	    res.trim().is_empty()
-	},
-	_ => false
+        Ok((res, _)) => res.trim().is_empty(),
+        _ => false,
     }
 }
 
 fn variable<'a>(i: &'a str) -> TokenRes<'a> {
-    let (rest, var) = recognize(pair(
+    let mut get_var = recognize(pair(
         alt((alpha1, tag("_"))),
         many0(pair(opt(tag("-")), many1(alt((alphanumeric1, tag("_")))))),
-    ))(i)?;
+    ));
+    let (mut rest, mut var) = get_var(i)?;
     let ty = match var {
         "node" => TaskToken::Keyword(TaskKeyword::Node),
         "network" => TaskToken::Keyword(TaskKeyword::Network),
         "net" => TaskToken::Keyword(TaskKeyword::Network),
+        "env" => TaskToken::Keyword(TaskKeyword::Env),
         "exit" => TaskToken::Keyword(TaskKeyword::Exit),
         "help" => TaskToken::Keyword(TaskKeyword::Help),
         _ => {
             if rest.trim_start().starts_with('(') {
                 TaskToken::Function
             } else {
-                TaskToken::Variable
+                if let Some(re) = rest.trim_start().strip_prefix('.') {
+                    let (r, v) = get_var(re)?;
+                    if r.trim_start().starts_with('(') {
+                        rest = r;
+                        var = &i[..(i.len() - r.len())];
+                        TaskToken::Function
+                    } else {
+                        TaskToken::Variable
+                    }
+                } else {
+                    TaskToken::Variable
+                }
             }
         }
     };

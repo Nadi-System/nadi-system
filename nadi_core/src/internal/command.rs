@@ -2,8 +2,8 @@ use nadi_plugin::nadi_internal_plugin;
 
 #[nadi_internal_plugin]
 mod command {
-    use crate::prelude::*;
     use crate::parser;
+    use crate::prelude::*;
     use anyhow::Context;
     use colored::Colorize;
     use nadi_core::nadi_plugin::{network_func, node_func};
@@ -14,9 +14,13 @@ mod command {
     use subprocess::Exec;
 
     pub fn key_val(txt: &str) -> anyhow::Result<(String, Attribute)> {
-	let tokens = parser::tokenizer::get_tokens(&txt)?;
-	let mut attrs = parser::attrs::parse(tokens)?;
-	attrs.into_iter().map(|v| (v.0.to_string(), v.1)).next().context("No values read")
+        let tokens = parser::tokenizer::get_tokens(&txt)?;
+        let mut attrs = parser::attrs::parse(tokens)?;
+        attrs
+            .into_iter()
+            .map(|v| (v.0.to_string(), v.1))
+            .next()
+            .context("No values read")
     }
 
     /** Run the given template as a shell command.
