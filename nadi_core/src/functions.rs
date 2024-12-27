@@ -147,7 +147,7 @@ pub trait NodeFunction: Debug + Clone {
     // fn args(&self) -> RSlice<FunctionArg>;
     fn signature(&self) -> RString;
     fn code(&self) -> RString;
-    fn call(&self, obj: RSlice<Node>, ctx: &FunctionCtx) -> RResult<(), RString>;
+    fn call(&self, obj: &mut NodeInner, ctx: &FunctionCtx) -> FunctionRet;
 }
 
 #[sabi_trait]
@@ -461,20 +461,20 @@ impl NadiFunctions {
         )
     }
 
-    pub fn call_node(
-        &self,
-        func: &str,
-        nodes: RSlice<Node>,
-        ctx: &FunctionCtx,
-    ) -> anyhow::Result<()> {
-        match self.node(func) {
-            Some(f) => f
-                .call(nodes, ctx)
-                .map_err(|e| anyhow::Error::msg(e.to_string()))
-                .into(),
-            None => anyhow::bail!("Node Function {} not found", func),
-        }
-    }
+    // pub fn call_node(
+    //     &self,
+    //     func: &str,
+    //     nodes: RSlice<Node>,
+    //     ctx: &FunctionCtx,
+    // ) -> anyhow::Result<()> {
+    //     match self.node(func) {
+    //         Some(f) => f
+    //             .call(nodes, ctx)
+    //             .map_err(|e| anyhow::Error::msg(e.to_string()))
+    //             .into(),
+    //         None => anyhow::bail!("Node Function {} not found", func),
+    //     }
+    // }
 
     // pub fn call_network(
     //     &self,

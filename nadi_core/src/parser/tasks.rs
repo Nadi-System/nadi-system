@@ -193,6 +193,9 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                 _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
             },
             TaskToken::Dot => match state {
+                State::Propagation => {
+		    state = State::Attribute;
+		},
                 State::Attribute => (),
                 _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
             },
@@ -239,6 +242,7 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                             Some(e) => e.to_string(),
                             None => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
                         };
+			data = vec![];
                         propagation =
                             Some(Propagation::Path(StrPath::new(start.into(), end.into())));
                         state = State::Attribute;
@@ -427,9 +431,16 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
     }
     match (state, curr_keyword) {
         (State::None, _) => Ok(tasks),
-        (State::Assignment | State::Attribute, Some(TaskKeyword::Env)) => {
+        (State::Assignment | State::Attribute, Some(kw)) => {
+	    let ty = match kw {
+		TaskKeyword::Env => TaskType::Env,
+		TaskKeyword::Node => TaskType::Node(propagation.take().unwrap_or_default()),
+		TaskKeyword::Network => TaskType::Network,
+		TaskKeyword::Help => TaskType::Help(None, None),
+		TaskKeyword::Exit => TaskType::Exit,
+	    };
             tasks.push(Task {
-                ty: TaskType::Env,
+                ty,
                 attribute: output.take(),
                 input: TaskInput::None,
             });

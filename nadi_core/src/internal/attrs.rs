@@ -68,31 +68,29 @@ The function will error out in following conditions:
         "(filename)".into()
     }
 
-    fn call(&self, nodes: RSlice<Node>, ctx: &FunctionCtx) -> RResult<(), RString> {
+    fn call(&self, node: &mut NodeInner, ctx: &FunctionCtx) -> FunctionRet {
         let templ: Template = match ctx.arg_kwarg(0, "filename") {
             Some(Ok(a)) => a,
-            Some(Err(e)) => return RErr(e.into()),
-            None => return RErr("Text template not given".into()),
+            Some(Err(e)) => return FunctionRet::Error(e.into()),
+            None => return FunctionRet::Error("Text template not given".into()),
         };
         let verbose: bool = match ctx.arg_kwarg(1, "verbose") {
             Some(Ok(a)) => a,
-            Some(Err(e)) => return RErr(e.into()),
+            Some(Err(e)) => return FunctionRet::Error(e.into()),
             None => false,
         };
-        for node in nodes {
-            let mut node = node.lock();
-            let filepath = match node.render(&templ) {
-                Ok(f) => f,
-                Err(e) => return RErr(e.to_string().into()),
-            };
-            if verbose {
-                eprintln!("Loadin Attributes from: {filepath}");
-            }
-            if let Err(e) = node.load_attr(&filepath) {
-                return RErr(RString::from(e.to_string()));
-            }
+        let filepath = match node.render(&templ) {
+            Ok(f) => f,
+            Err(e) => return FunctionRet::Error(e.to_string().into()),
+        };
+        if verbose {
+            eprintln!("Loadin Attributes from: {filepath}");
         }
-        ROk(())
+        if let Err(e) = node.load_attr(&filepath) {
+            FunctionRet::Error(RString::from(e.to_string()))
+        } else {
+            FunctionRet::None
+	}
     }
 
     fn code(&self) -> RString {
@@ -124,14 +122,11 @@ No arguments and no errors, it'll just print all the attributes in a node with
         "()".into()
     }
 
-    fn call(&self, nodes: RSlice<Node>, _ctx: &FunctionCtx) -> RResult<(), RString> {
-        for node in nodes {
-            let node = node.lock();
-            for Tuple2(k, v) in node.attrs() {
-                println!("{}::{k} = {}", node.name(), v.to_string());
-            }
+    fn call(&self, node: &mut NodeInner, _ctx: &FunctionCtx) -> FunctionRet {
+        for Tuple2(k, v) in node.attrs() {
+            println!("{}::{k} = {}", node.name(), v.to_string());
         }
-        ROk(())
+        FunctionRet::None
     }
     fn code(&self) -> RString {
         "".into()

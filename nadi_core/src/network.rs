@@ -161,6 +161,8 @@ impl Network {
             //     insert_node(self.outlet.as_ref().unwrap(), &mut nodes);
             //     nodes
             // }
+	    
+	    // TODO return Result with nodes that do not exist erroring
             Propagation::List(n) => n.iter().map(|n| self.nodes_map[n].clone()).collect(),
             Propagation::Path(p) => self.nodes_path(p).unwrap_or_default(),
         }
