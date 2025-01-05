@@ -4,7 +4,7 @@ use crate::{
     node::PyNode,
 };
 use nadi_core::abi_stable::std_types::{RResult, RString, RVec};
-use nadi_core::functions::FunctionCtx;
+use nadi_core::functions::{FunctionCtx, FunctionRet};
 use nadi_core::functions::{NadiFunctions, NetworkFunctionBox, NodeFunctionBox};
 use nadi_core::prelude::*;
 
@@ -23,27 +23,26 @@ pub struct PyNodeFunction {
 impl PyNodeFunction {
     fn new(func: NodeFunctionBox) -> Self {
         let sig = func.signature();
-        let pysig = sig_to_py(sig.as_str(), "nodes", true).into();
-        let sig = sig_to_py(sig.as_str(), "nodes", false).into();
+        let pysig = sig_to_py(sig.as_str(), "node", true).into();
+        let sig = sig_to_py(sig.as_str(), "node", false).into();
         Self { func, sig, pysig }
     }
 }
 
 #[pymethods]
 impl PyNodeFunction {
-    #[pyo3(signature = (nodes, *args, **kwargs))]
+    #[pyo3(signature = (node, *args, **kwargs))]
     fn __call__(
         &self,
-        nodes: Vec<PyNode>,
+        node: PyNode,
         args: Vec<PyAttribute>,
         kwargs: Option<PyAttrMap>,
-    ) -> PyResult<()> {
+    ) -> PyResult<Option<PyAttribute>> {
         let ctx = py_args_kwargs_to_ctx(args, kwargs);
-        let nodes: RVec<Node> = nodes.into_iter().map(|n| n.0).collect();
-        if let RResult::RErr(e) = self.func.call(nodes.as_rslice(), &ctx) {
-            Err(PyRuntimeError::new_err(e.to_string()))
-        } else {
-            Ok(())
+        match self.func.call(&mut node.0.lock(), &ctx) {
+	    FunctionRet::None => Ok(None),
+	    FunctionRet::Some(v) => Ok(Some(v.into())),
+	    FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
         }
     }
 
@@ -83,8 +82,8 @@ pub struct PyNetworkFunction {
 impl PyNetworkFunction {
     fn new(func: NetworkFunctionBox) -> Self {
         let sig = func.signature();
-        let pysig = sig_to_py(sig.as_str(), "nodes", true).into();
-        let sig = sig_to_py(sig.as_str(), "nodes", false).into();
+        let pysig = sig_to_py(sig.as_str(), "network", true).into();
+        let sig = sig_to_py(sig.as_str(), "network", false).into();
         Self { func, sig, pysig }
     }
 }
@@ -96,12 +95,12 @@ impl PyNetworkFunction {
         mut network: PyNetwork,
         args: Vec<PyAttribute>,
         kwargs: Option<PyAttrMap>,
-    ) -> PyResult<()> {
+    ) -> PyResult<Option<PyAttribute>> {
         let ctx = py_args_kwargs_to_ctx(args, kwargs);
-        if let RResult::RErr(e) = self.func.call(&mut network.0, &ctx) {
-            Err(PyRuntimeError::new_err(e.to_string()))
-        } else {
-            Ok(())
+        match self.func.call(&mut network.0, &ctx) {
+	    FunctionRet::None => Ok(None),
+	    FunctionRet::Some(v) => Ok(Some(v.into())),
+	    FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
         }
     }
 
@@ -148,18 +147,26 @@ impl PyNadiFunctions {
         Self(NadiFunctions::new())
     }
 
-    #[pyo3(signature = (function, nodes, *args, **kwargs))]
-    fn nodes(
+    #[pyo3(signature = (function, node, *args, **kwargs))]
+    fn node(
         &self,
         function: &str,
-        nodes: Vec<PyNode>,
+        node: PyNode,
         args: Vec<PyAttribute>,
         kwargs: Option<PyAttrMap>,
-    ) -> PyResult<()> {
+    ) -> PyResult<Option<PyAttribute>> {
         let ctx = py_args_kwargs_to_ctx(args, kwargs);
-        let nodes: RVec<Node> = nodes.into_iter().map(|n| n.0).collect();
-        self.0.call_node(function, nodes.as_rslice(), &ctx)?;
-        Ok(())
+        let func = match self.0.node(function) {
+            Some(f) => f,
+            None => return Err(PyKeyError::new_err(format!(
+                "Node Function {function} not found"
+            ))),
+        };
+        match func.call(&mut node.0.lock(), &ctx) {
+	    FunctionRet::None => Ok(None),
+	    FunctionRet::Some(v) => Ok(Some(v.into())),
+	    FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
+	}
     }
 
     #[pyo3(signature = (function, network, *args, **kwargs))]
@@ -169,16 +176,25 @@ impl PyNadiFunctions {
         mut network: PyNetwork,
         args: Vec<PyAttribute>,
         kwargs: Option<PyAttrMap>,
-    ) -> PyResult<()> {
+    ) -> PyResult<Option<PyAttribute>> {
         let ctx = py_args_kwargs_to_ctx(args, kwargs);
-        self.0.call_network(function, &mut network.0, &ctx)?;
-        Ok(())
+        let func = match self.0.network(function) {
+            Some(f) => f,
+            None => return Err(PyKeyError::new_err(format!(
+                "Network Function {function} not found"
+            ))),
+        };
+        match func.call(&mut network.0, &ctx) {
+	    FunctionRet::None => Ok(None),
+	    FunctionRet::Some(v) => Ok(Some(v.into())),
+	    FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
+	}
     }
 
     // todo register python functions into nadi/node function
 
     fn node_function(&self, name: &str) -> PyResult<PyNodeFunction> {
-        match self.0.node_functions().get(name) {
+        match self.0.node(name) {
             Some(f) => Ok(PyNodeFunction::new(f.clone())),
             None => Err(PyKeyError::new_err(format!(
                 "Node Function {name} not found"
@@ -187,7 +203,7 @@ impl PyNadiFunctions {
     }
 
     fn network_function(&self, name: &str) -> PyResult<PyNetworkFunction> {
-        match self.0.network_functions().get(name) {
+        match self.0.network(name) {
             Some(f) => Ok(PyNetworkFunction::new(f.clone())),
             None => Err(PyKeyError::new_err(format!(
                 "Network Function {name} not found"
