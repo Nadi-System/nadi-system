@@ -136,7 +136,7 @@ fn from_attr_derive(input: TokenStream, relaxed: bool) -> TokenStream {
         }
     }
     };
-    println!("{}", expanded);
+    // println!("{}", expanded);
     TokenStream::from(expanded)
 }
 
