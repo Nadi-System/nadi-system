@@ -8,31 +8,26 @@ use std::collections::HashMap;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote, quote_spanned, ToTokens};
 use syn::{
-    parse_macro_input, punctuated::Punctuated, token::Comma, Attribute, Expr, FnArg, Ident, ItemFn,
-    ItemMod, Lit, MetaNameValue, Type, TypeReference, DeriveInput
+    parse_macro_input, punctuated::Punctuated, token::Comma, Attribute, DeriveInput, Expr, FnArg,
+    Ident, ItemFn, ItemMod, Lit, MetaNameValue, Type, TypeReference,
 };
-
 
 /// Idents and Path for from_attr and try_from_attr
 fn nadi_trait_idents(relaxed: bool) -> (proc_macro2::TokenStream, Ident, Ident) {
     let (tr, func1, func2) = if relaxed {
-	(
-	    format_ident!("FromAttributeRelaxed"),
-	    format_ident!("from_attr_relaxed"),
-	    format_ident!("try_from_attr_relaxed"),
-	)
+        (
+            format_ident!("FromAttributeRelaxed"),
+            format_ident!("from_attr_relaxed"),
+            format_ident!("try_from_attr_relaxed"),
+        )
     } else {
-	(
-	    format_ident!("FromAttribute"),
-	    format_ident!("from_attr"),
-	    format_ident!("try_from_attr"),
-	)
+        (
+            format_ident!("FromAttribute"),
+            format_ident!("from_attr"),
+            format_ident!("try_from_attr"),
+        )
     };
-    (
-	quote! {::nadi_core::attrs::#tr},
-	func1,
-	func2,
-    )
+    (quote! {::nadi_core::attrs::#tr}, func1, func2)
 }
 
 fn nadi_struct_name(name: &Ident, suff: &str) -> Ident {
@@ -47,7 +42,6 @@ fn nadi_func_impl(node: bool) -> proc_macro2::TokenStream {
     }
 }
 
-
 #[proc_macro_derive(FromAttribute)]
 pub fn from_attribute_derive(input: TokenStream) -> TokenStream {
     from_attr_derive(input, false)
@@ -57,7 +51,6 @@ pub fn from_attribute_derive(input: TokenStream) -> TokenStream {
 pub fn from_attribute_relaxed_derive(input: TokenStream) -> TokenStream {
     from_attr_derive(input, true)
 }
-
 
 /// this should support automatically deriving the FromAttribute trait for the following complex types
 /// - Struct(ty) => wrapper values like this as long as ty has FromAttribute
@@ -70,11 +63,11 @@ fn from_attr_derive(input: TokenStream, relaxed: bool) -> TokenStream {
     let name_s = name.to_string();
     let data = input.data.clone();
     let conversion = match data {
-	syn::Data::Struct(st) => {
-	    match st.fields {
-		syn::Fields::Named(flds) => {
-		    // try to parse a Table value into the fields of this struct
-		    let conv: Vec<_> = flds.named.iter().map(|f| {
+        syn::Data::Struct(st) => {
+            match st.fields {
+                syn::Fields::Named(flds) => {
+                    // try to parse a Table value into the fields of this struct
+                    let conv: Vec<_> = flds.named.iter().map(|f| {
 			let i = &f.ident;
 			let is = i.as_ref().map(|l| l.to_string()).expect("should be named");
 			quote!{
@@ -85,59 +78,67 @@ fn from_attr_derive(input: TokenStream, relaxed: bool) -> TokenStream {
 			    let #i = #trt :: #try_func (val)?;
 			}
 		    }).collect();
-		    let names = flds.named.iter().map(|f| &f.ident);
-		    quote!{
-			let attrmap: ::nadi_core::attrs::AttrMap = ::nadi_core::attrs::FromAttribute::try_from_attr (value)?;
-			#(#conv)*
-			Ok(Self {
-			    #(#names),*
-			})
-		    }
-		}
-		syn::Fields::Unnamed(fld) => {
-		    quote!{
-			Ok(Self(#trt :: #func (value)?))
-		    }
-		}
-		_ => panic!("Not supported")
-	    }
-
-	}
-	syn::Data::Enum(en) => {
-	    // try each variant and return the first one that succeeds
-	    let vars: Vec<_> = en.variants.iter().map(|v| {
-		let i = &v.ident;
-		quote!{
-		    if let Some(val) = #trt :: #func (value) {
-			return Ok(Self::#i(val));
-		    }
-		}
-	    }).collect();
-	    let names : Vec<String> = en.variants.iter().map(|v| v.fields.to_token_stream().to_string()).collect();
-	    // TODO extra () for unnamed fields should be renamed later
-	    let names = names.join(", ");
-	    quote!{
-		#(#vars)*
-		Err(format!("Incorrect Type: got {} instead of any of: [{}]", value.type_name(), #names))
-	    }
-	}
-	syn::Data::Union(un) => {panic!("Union derive not supported!")}
+                    let names = flds.named.iter().map(|f| &f.ident);
+                    quote! {
+                    let attrmap: ::nadi_core::attrs::AttrMap = ::nadi_core::attrs::FromAttribute::try_from_attr (value)?;
+                    #(#conv)*
+                    Ok(Self {
+                        #(#names),*
+                    })
+                    }
+                }
+                syn::Fields::Unnamed(_) => {
+                    quote! {
+                    Ok(Self(#trt :: #func (value)?))
+                    }
+                }
+                _ => panic!("Not supported"),
+            }
+        }
+        syn::Data::Enum(en) => {
+            // try each variant and return the first one that succeeds
+            let vars: Vec<_> = en
+                .variants
+                .iter()
+                .map(|v| {
+                    let i = &v.ident;
+                    quote! {
+                        if let Some(val) = #trt :: #func (value) {
+                        return Ok(Self::#i(val));
+                        }
+                    }
+                })
+                .collect();
+            let names: Vec<String> = en
+                .variants
+                .iter()
+                .map(|v| v.fields.to_token_stream().to_string())
+                .collect();
+            // TODO extra () for unnamed fields should be renamed later
+            let names = names.join(", ");
+            quote! {
+            #(#vars)*
+            Err(format!("Incorrect Type: got {} instead of any of: [{}]", value.type_name(), #names))
+            }
+        }
+        syn::Data::Union(_) => {
+            panic!("Union derive not supported!")
+        }
     };
 
     let expanded = quote! {
         impl #trt for #name {
-	    fn #func (value: &Attribute) -> Option<Self>{
-		#trt :: #try_func(value).ok()
-	    }
-	    fn #try_func (value: &Attribute) -> Result<Self, String> {
-		#conversion
-	    }
-	}
+        fn #func (value: &Attribute) -> Option<Self>{
+        #trt :: #try_func(value).ok()
+        }
+        fn #try_func (value: &Attribute) -> Result<Self, String> {
+        #conversion
+        }
+    }
     };
     println!("{}", expanded);
     TokenStream::from(expanded)
 }
-
 
 /// register this function as a node function on nadi plugin
 #[proc_macro_attribute]
@@ -528,7 +529,9 @@ fn ref_type_inner(ty: &TypeReference, construct: bool) -> (proc_macro2::TokenStr
 }
 
 fn get_code_func(item: &ItemFn) -> proc_macro2::TokenStream {
-    let func_code = prettyplease::unparse(&syn::parse2(item.to_token_stream()).expect("code should be valid for prettyplease"));
+    let func_code = prettyplease::unparse(
+        &syn::parse2(item.to_token_stream()).expect("code should be valid for prettyplease"),
+    );
 
     quote! {
     fn code(&self) -> ::nadi_core::abi_stable::std_types::RString {
@@ -545,6 +548,7 @@ fn get_call_func(
     func_struct_name: &Ident,
 ) -> (proc_macro2::TokenStream, proc_macro2::TokenStream) {
     let mut defaults_expr: Vec<proc_macro2::TokenStream> = Vec::new();
+    let ret_err = quote! { ::nadi_core::functions::FunctionRet::Error };
     let extract_args: Vec<proc_macro2::TokenStream> = args
         .iter()
         .enumerate()
@@ -552,47 +556,46 @@ fn get_call_func(
             let arg_name = arg.to_string();
             let ty_name = ty.to_token_stream().to_string();
             let def = if let Some(val) = defaults.get(arg) {
-		match ty {
+                match ty {
                     Type::Reference(r) => {
-			let inner_ty = ref_type_inner(&r, true).0;
-			let warn = r.mutability.map(|m| {
-			    // mut reference on the network functions
-			    // are useless as they are one time
-			    // execution; in node function they might
-			    // have unexpected behaviour as the node
-			    // functions are supposed to be able to
-			    // run in parallel
-				quote_spanned! {
-				    m.span=> compile_error!(
-					"Mutable Reference not supported for nadi function args"
-				    );
-				}
-			});
-			defaults_expr.push(quote!{
-			    let #arg = #inner_ty :: from ( #val );
-			});
-			quote!{
-			    #warn
-			    #inner_ty :: from ( #val )
-			    }
-		    },
-		    _ => {
-			let ty = generic_construct(ty);
-			defaults_expr.push(quote!{
-			    let #arg = #ty :: from ( #val );
-			});
-			quote! {
-                    #ty :: from ( #val )
+                        let inner_ty = ref_type_inner(&r, true).0;
+                        let warn = r.mutability.map(|m| {
+                            // mut reference on the network functions
+                            // are useless as they are one time
+                            // execution; in node function they might
+                            // have unexpected behaviour as the node
+                            // functions are supposed to be able to
+                            // run in parallel
+                            quote_spanned! {
+                                m.span=> compile_error!(
+                                "Mutable Reference not supported for nadi function args"
+                                );
+                            }
+                        });
+                        defaults_expr.push(quote! {
+                            let #arg = #inner_ty :: from ( #val );
+                        });
+                        quote! {
+                        #warn
+                        #inner_ty :: from ( #val )
+                        }
                     }
-		    }
-		}
-            } else {
-
-                quote! {
-                    return ::nadi_core::abi_stable::std_types::RResult::RErr(
-			format!("Argument {} ({} [{}]) is required", #i + 1, #arg_name, #ty_name).into()
-                    );
+                    _ => {
+                        let ty = generic_construct(ty);
+                        defaults_expr.push(quote! {
+                            let #arg = #ty :: from ( #val );
+                        });
+                        quote! {
+                        #ty :: from ( #val )
+                        }
+                    }
                 }
+            } else {
+                quote! {
+                        return #ret_err (
+                format!("Argument {} ({} [{}]) is required", #i + 1, #arg_name, #ty_name).into()
+                        );
+                    }
             };
             let arg_func = match at {
                 FuncArgType::Arg => quote! { ctx.arg_kwarg },
@@ -610,59 +613,57 @@ fn get_call_func(
             };
             let isopt = type_is_opt(ty);
             let patterns = if isopt {
-
                 quote! {
                     Some(Ok(v)) => Some(v),
-                    Some(Err(e)) => return ::nadi_core::abi_stable::std_types::RResult::RErr(e.into()),
+                    Some(Err(e)) => return #ret_err (e.into()),
                     None => None,
                 }
             } else {
-
                 quote! {
                     Some(Ok(v)) => v,
-                    Some(Err(e)) => return ::nadi_core::abi_stable::std_types::RResult::RErr(e.into()),
+                    Some(Err(e)) => return #ret_err (e.into()),
                     None => {#def},
                 }
             };
             match ty {
                 Type::Reference(r) => {
-		    let arg_o = format_ident!("{}_o", arg);
-		    let inner_ty = ref_type_inner(&r, false).0;
-		    let m = r.mutability;
-		    quote! {
-			let #m #arg_o : #inner_ty = match #arg_func (#i, #arg_name) {
-			    #patterns
-			};
-			let #arg : #ty = & #arg_o;
-		    }
-		},
-		_ => {
-		    if let Some(Type::Reference(r)) = get_opt_type(ty) {
-			let arg_o = format_ident!("{}_o", arg);
-			let (inner_ty, deref) = ref_type_inner(&r, false);
-			let m = r.mutability;
-			// all this since deref doesn't happen automatically inside option like with & #arg_o above
-			let asref = match (deref, m.is_some()){
-			    (false, true) => quote!(std::option::Option::as_mut),
-			    (false, false) => quote!(std::option::Option::as_ref),
-			    (true, true) => quote!(std::option::Option::as_deref_mut),
-			    (true, false) => quote!(std::option::Option::as_deref),
-			};
-			quote! {
-			    let #m #arg_o : Option<#inner_ty> = match #arg_func (#i, #arg_name) {
-				#patterns
-			    };
-			    let #arg : #ty = #asref (& #m #arg_o);
-			}
-		    } else {
-			quote! {
-			    let #arg : #ty = match #arg_func (#i, #arg_name) {
-				#patterns
-			    };
-			}
-		    }
-		}
-	    }
+                    let arg_o = format_ident!("{}_o", arg);
+                    let inner_ty = ref_type_inner(&r, false).0;
+                    let m = r.mutability;
+                    quote! {
+                    let #m #arg_o : #inner_ty = match #arg_func (#i, #arg_name) {
+                        #patterns
+                    };
+                    let #arg : #ty = & #arg_o;
+                    }
+                }
+                _ => {
+                    if let Some(Type::Reference(r)) = get_opt_type(ty) {
+                        let arg_o = format_ident!("{}_o", arg);
+                        let (inner_ty, deref) = ref_type_inner(&r, false);
+                        let m = r.mutability;
+                        // all this since deref doesn't happen automatically inside option like with & #arg_o above
+                        let asref = match (deref, m.is_some()) {
+                            (false, true) => quote!(std::option::Option::as_mut),
+                            (false, false) => quote!(std::option::Option::as_ref),
+                            (true, true) => quote!(std::option::Option::as_deref_mut),
+                            (true, false) => quote!(std::option::Option::as_deref),
+                        };
+                        quote! {
+                            let #m #arg_o : Option<#inner_ty> = match #arg_func (#i, #arg_name) {
+                            #patterns
+                            };
+                            let #arg : #ty = #asref (& #m #arg_o);
+                        }
+                    } else {
+                        quote! {
+                            let #arg : #ty = match #arg_func (#i, #arg_name) {
+                            #patterns
+                            };
+                        }
+                    }
+                }
+            }
         })
         .collect();
     let args_n: Vec<proc_macro2::TokenStream> = args
@@ -671,43 +672,26 @@ fn get_call_func(
         .collect();
     let func_name = &item.sig.ident;
     let arg0_name = get_fn_arg(arg0).0;
-
-    let call_func = if node {
+    let arg0_ty = if node {
         quote! {
-            fn call(&self,
-            nodes: ::nadi_core::abi_stable::std_types::RSlice<::nadi_core::node::Node>,
-            ctx: &::nadi_core::functions::FunctionCtx)
-                    -> ::nadi_core::abi_stable::std_types::RResult<(), ::nadi_core::abi_stable::std_types::RString>
-            {
-        #(#extract_args)*
-        for #arg0_name in nodes {
-            if let ::nadi_core::functions::FunctionRet::Error(e) = ::nadi_core::functions::FunctionRet::from(
-            #func_struct_name :: #func_name(&mut #arg0_name .lock(), #(#args_n),*)
-            ) {
-            return ::nadi_core::abi_stable::std_types::RResult::RErr(e);
-            }
-        }
-        ::nadi_core::abi_stable::std_types::ROk(())
-            }
+            &mut ::nadi_core::node::NodeInner
         }
     } else {
         quote! {
+            &mut ::nadi_core::network::Network
+        }
+    };
+    let call_func = quote! {
             fn call(&self,
-                    #arg0_name : &mut ::nadi_core::network::Network,
+                    #arg0_name : #arg0_ty,
                     ctx: &::nadi_core::functions::FunctionCtx)
-                    -> ::nadi_core::abi_stable::std_types::RResult<(), ::nadi_core::abi_stable::std_types::RString> {
+                    -> ::nadi_core::functions::FunctionRet {
 
                 #(#extract_args)*
-        if let ::nadi_core::functions::FunctionRet::Error(e) = ::nadi_core::functions::FunctionRet::from(
+        ::nadi_core::functions::FunctionRet::from(
                     #func_struct_name :: #func_name(#arg0_name, #(#args_n),*)
-
-                ) {
-                    ::nadi_core::abi_stable::std_types::RResult::RErr(e)
-        } else {
-            ::nadi_core::abi_stable::std_types::RResult::ROk(())
-        }
+                )
             }
-        }
     };
     let default_exprs = quote! {
     #(#defaults_expr)*
@@ -806,34 +790,39 @@ fn get_doc(attrs: &[Attribute]) -> String {
 
 fn format_docstrings(string: String) -> String {
     match string.lines().count() {
-	0 => {
-	    panic!("Please add at least one line of documentation");
-	}
-	1 => {
-            string.trim().to_string()
-	}
-	_ => {
+        0 => {
+            panic!("Please add at least one line of documentation");
+        }
+        1 => string.trim().to_string(),
+        _ => {
             let num_leading = string
-		.lines()
-		.skip(1)
-		.filter(|s| !s.is_empty())
-		.filter_map(|l| l.chars().position(|c| !c.is_whitespace()))
-		.min()
-		.unwrap_or(0);
+                .lines()
+                .skip(1)
+                .filter(|s| !s.is_empty())
+                .filter_map(|l| l.chars().position(|c| !c.is_whitespace()))
+                .min()
+                .unwrap_or(0);
             let lines = string
-		.lines()
-		.skip(1)
-		.map(|line| {
+                .lines()
+                .skip(1)
+                .map(|line| {
                     if line.len() > num_leading {
-			&line[num_leading..]
+                        &line[num_leading..]
                     } else {
-			line
+                        line
                     }
-		})
-		.map(|l| l.trim_end())
-		.collect::<Vec<_>>()
-		.join("\n");
-            format!("{}\n{}", string.lines().next().expect("There should be at least one line of documentation"), lines)
-	}
+                })
+                .map(|l| l.trim_end())
+                .collect::<Vec<_>>()
+                .join("\n");
+            format!(
+                "{}\n{}",
+                string
+                    .lines()
+                    .next()
+                    .expect("There should be at least one line of documentation"),
+                lines
+            )
+        }
     }
 }
