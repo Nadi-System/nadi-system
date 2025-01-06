@@ -4,7 +4,6 @@ use crate::network::StrPath;
 use crate::plugins::{load_library_safe, NadiPlugin};
 use crate::prelude::*;
 use crate::table::{contents_2_md, ColumnAlign};
-use crate::tasks::{FunctionCall, Task, TaskInput, TaskType};
 use abi_stable::std_types::Tuple2;
 use abi_stable::{
     sabi_trait,
@@ -12,7 +11,7 @@ use abi_stable::{
         map::REntry,
         RBox, RErr, RHashMap, ROk,
         ROption::{self, RNone, RSome},
-        RResult, RSlice, RString, RVec,
+        RResult, RString, RVec,
     },
     StableAbi,
 };

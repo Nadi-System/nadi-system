@@ -125,6 +125,28 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                 _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
             },
             TaskToken::BraceStart => match state {
+		State::Rhs => {
+                    let inp = match read_attribute(Some(token.clone()), &mut tokens, true)? {
+			Some(a) => a,
+			None => return Err(tokens.parse_error(ParseErrorType::SyntaxError))
+		    };
+                    let ty = match curr_keyword {
+                        Some(TaskKeyword::Node) => {
+                            let prop = propagation
+                                .replace(Propagation::default())
+                                .unwrap_or_default();
+                            TaskType::Node(prop)
+                        }
+                        Some(TaskKeyword::Network) => TaskType::Network,
+                        _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
+                    };
+                    tasks.push(Task {
+                        ty,
+                        attribute: output.take(),
+                        input: TaskInput::Literal(inp),
+                    });
+                    state = State::None;
+		}
                 State::FuncArgs(ref mut fc) => {
                     let inp = read_input(Some(token.clone()), &mut tokens)?;
                     fc.args.push(inp);
@@ -155,6 +177,28 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                 State::Propagation => {
                     state = State::PropagationList;
                 }
+		State::Rhs => {
+                    let inp = match read_attribute(Some(token.clone()), &mut tokens, true)? {
+			Some(a) => a,
+			None => return Err(tokens.parse_error(ParseErrorType::SyntaxError))
+		    };
+                    let ty = match curr_keyword {
+                        Some(TaskKeyword::Node) => {
+                            let prop = propagation
+                                .replace(Propagation::default())
+                                .unwrap_or_default();
+                            TaskType::Node(prop)
+                        }
+                        Some(TaskKeyword::Network) => TaskType::Network,
+                        _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
+                    };
+                    tasks.push(Task {
+                        ty,
+                        attribute: output.take(),
+                        input: TaskInput::Literal(inp),
+                    });
+                    state = State::None;
+		}
                 State::FuncArgs(ref mut fc) => {
                     let inp = read_input(Some(token.clone()), &mut tokens)?;
                     fc.args.push(inp);
@@ -332,6 +376,9 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                 _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
             },
             TaskToken::String(ref s) => match state {
+                State::PropagationList | State::PropagationPath => {
+                    data.push(s.to_string());
+                }
                 State::Rhs => {
                     let ty = match curr_keyword {
                         Some(TaskKeyword::Node) => {

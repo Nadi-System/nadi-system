@@ -425,10 +425,12 @@ pub fn get_tokens(txt: &str) -> Result<Vec<Token>, TokenError> {
                 nom::Err::Error(e) | nom::Err::Failure(e) => {
                     println!("{}", nom::error::convert_error(txt, e))
                 }
-                _ => (),
+                _ => panic!("incomplete error shouldn't happen"),
             }
-            // todo convert it into tokenerror type
-            panic!("Token Error");
+	    let line = 0;
+	    let col = 0;
+	    let linestr = String::new();
+	    return Err(TokenError{line, col, linestr});
         }
     };
     if res.is_empty() {

@@ -1,14 +1,13 @@
 use crate::functions::{FunctionCtx, FunctionRet, NadiFunctions, Propagation};
 use crate::prelude::*;
-use abi_stable::std_types::{RString, RVec, Tuple2};
-use anyhow::Context;
+use abi_stable::std_types::{RString, Tuple2};
 use colored::Colorize;
 use std::collections::HashMap;
 
 pub struct TaskContext {
-    network: Network,
-    functions: NadiFunctions,
-    env: AttrMap,
+    pub network: Network,
+    pub functions: NadiFunctions,
+    pub env: AttrMap,
 }
 
 impl TaskContext {
@@ -48,75 +47,95 @@ impl TaskContext {
                 }
             }
             TaskType::Node(p) => {
-		let nodes: Vec<Node> = self.network.nodes_propagation(p);
-		match task.input {
+                let nodes: Vec<Node> = self.network.nodes_propagation(p);
+                match task.input {
                     TaskInput::None => {
-			if let Some(attr) = task.attribute {
-			    // this or filter_map ?
-			    let attrs = nodes.iter().map(|n| {
-				let n = n.lock();
-				format!("  {} = {}", n.name(),
-					if let Some(a) = n.attr(&attr) {
-					    a.to_colored_string()
-					} else {
-					    "<None>".truecolor(100, 100, 100).to_string()
-					})
-			    }).collect::<Vec<String>>();
-			    Ok(Some(format!("{attr} = {{\n{}\n}}", attrs.join(",\n"))))
-			} else {
+                        if let Some(attr) = task.attribute {
+                            // this or filter_map ?
+                            let attrs = nodes
+                                .iter()
+                                .map(|n| {
+                                    let n = n.lock();
+                                    format!(
+                                        "  {} = {}",
+                                        n.name(),
+                                        if let Some(a) = n.attr(&attr) {
+                                            a.to_colored_string()
+                                        } else {
+                                            "<None>".truecolor(100, 100, 100).to_string()
+                                        }
+                                    )
+                                })
+                                .collect::<Vec<String>>();
+                            Ok(Some(format!("{attr} = {{\n{}\n}}", attrs.join(",\n"))))
+                        } else {
                             Ok(None) // it's just keyword with nothing to do
-			}
+                        }
                     }
                     TaskInput::Literal(v) => {
-			if let Some(attr) = task.attribute {
-			    nodes.iter().for_each(|n| {
-				n.lock().set_attr(&attr, v.clone());
-			    });
-			    Ok(None)
-			}else {
+                        if let Some(attr) = task.attribute {
+                            nodes.iter().for_each(|n| {
+                                n.lock().set_attr(&attr, v.clone());
+                            });
+                            Ok(None)
+                        } else {
                             Err("Invalid operation, no attribute to assign".to_string())
-			}
+                        }
                     }
                     TaskInput::Variable(v) => {
-			if let Some(attr) = task.attribute {
-			    nodes.iter().try_for_each(|n| {
-				let mut n = n.lock();
-				let a = n.attr(&v).cloned();
-				match a {
-				    Some(v) => Ok(n.set_attr(&attr, v)),
-				    None => Err(format!("Node {}: Attribute {} not found", n.name(), v))
-				}
-			    })?;
-			    Ok(None)
-			}else {
+                        if let Some(attr) = task.attribute {
+                            nodes.iter().try_for_each(|n| {
+                                let mut n = n.lock();
+                                let a = n.attr(&v).cloned();
+                                match a {
+                                    Some(v) => Ok(n.set_attr(&attr, v)),
+                                    None => {
+                                        Err(format!("Node {}: Attribute {} not found", n.name(), v))
+                                    }
+                                }
+                            })?;
+                            Ok(None)
+                        } else {
                             Err("Invalid operation, no attribute to assign".to_string())
-			}
+                        }
                     }
                     TaskInput::Function(fc) => match self.functions.node(&fc.name) {
-			Some(f) => {
-			    let attrs = nodes.iter().map(|n| {
-				let mut node = n.lock();
-				let ctx = fc.node_ctx(&node)?;
-				match f.call(&mut node, &ctx) {
-				    FunctionRet::None => Ok(None),
-				    FunctionRet::Some(a) => {
-					if let Some(attr) = &task.attribute {
-					    node.set_attr(&attr, a);
-					    Ok(None)
-					} else {
-					    Ok(Some(format!("  {} = {}", node.name(), a.to_colored_string())))
-					}
-				    }
-				    FunctionRet::Error(e) => Err(e.to_string()),
-				}
-			    }).collect::<Result<Vec<Option<String>>, String>>()?;
-			    let attrs = attrs.into_iter().filter_map(|v| v).collect::<Vec<String>>();
-			    Ok(Some(format!("{{\n{}\n}}", attrs.join(",\n"))))
-			}
-			None => Err(format!("Node Function {} not found", fc.name)),
+                        Some(f) => {
+                            let attrs = nodes
+                                .iter()
+                                .map(|n| {
+                                    let mut node = n.lock();
+                                    let ctx = fc.node_ctx(&node)?;
+                                    match f.call(&mut node, &ctx) {
+                                        FunctionRet::None => Ok(None),
+                                        FunctionRet::Some(a) => {
+                                            if let Some(attr) = &task.attribute {
+                                                node.set_attr(&attr, a);
+                                                Ok(None)
+                                            } else {
+                                                Ok(Some(format!(
+                                                    "  {} = {}",
+                                                    node.name(),
+                                                    a.to_colored_string()
+                                                )))
+                                            }
+                                        }
+                                        FunctionRet::Error(e) => Err(e.to_string()),
+                                    }
+                                })
+                                .collect::<Result<Vec<Option<String>>, String>>()?;
+                            let attrs =
+                                attrs.into_iter().filter_map(|v| v).collect::<Vec<String>>();
+                            if attrs.is_empty() {
+                                Ok(None)
+                            } else {
+                                Ok(Some(format!("{{\n{}\n}}", attrs.join(",\n"))))
+                            }
+                        }
+                        None => Err(format!("Node Function {} not found", fc.name)),
                     },
-		}
-	    },
+                }
+            }
             TaskType::Network => match task.input {
                 TaskInput::None => {
                     if let Some(attr) = task.attribute {
@@ -166,15 +185,28 @@ impl TaskContext {
             },
             TaskType::Help(None, Some(var)) => {
                 let mut helpstr = String::new();
-                if let Some(help) = self.functions.node(&var).map(|f| f.help()) {
-                    helpstr = format!("{}: {}\n{}", "== Node Function".blue(), var, help);
+                if let Some((help, sig)) =
+                    self.functions.node(&var).map(|f| (f.help(), f.signature()))
+                {
+                    helpstr = format!(
+                        "{} {} {}\n{}",
+                        "node".red(),
+                        var.truecolor(80, 80, 200),
+                        sig.blue(),
+                        format_md(&help)
+                    );
                 }
-                if let Some(help) = self.functions.network(&var).map(|f| f.help()) {
+                if let Some((help, sig)) = self
+                    .functions
+                    .network(&var)
+                    .map(|f| (f.help(), f.signature()))
+                {
                     helpstr.push_str(&format!(
-                        "\n{}: {}\n{}",
-                        "== Network Function".blue(),
-                        var,
-                        help
+                        "{} {} {}\n{}",
+                        "node".red(),
+                        var.truecolor(80, 80, 200),
+                        sig.blue(),
+                        format_md(&help)
                     ));
                 }
                 if !helpstr.is_empty() {
@@ -184,19 +216,32 @@ impl TaskContext {
                 }
             }
             TaskType::Help(Some(TaskKeyword::Node), Some(var)) => {
-                if let Some(help) = self.functions.node(&var).map(|f| f.help()) {
-                    Ok(Some(format!("{}: {}\n{}", "== Node Function".blue(), var, help)))
+                if let Some((help, sig)) =
+                    self.functions.node(&var).map(|f| (f.help(), f.signature()))
+                {
+                    Ok(Some(format!(
+                        "{} {} {}\n{}",
+                        "node".red(),
+                        var.truecolor(80, 80, 200),
+                        sig.blue(),
+                        format_md(&help)
+                    )))
                 } else {
                     Err(format!("Node Function {} not found", var))
                 }
             }
             TaskType::Help(Some(TaskKeyword::Network), Some(var)) => {
-                if let Some(help) = self.functions.network(&var).map(|f| f.help()) {
+                if let Some((help, sig)) = self
+                    .functions
+                    .network(&var)
+                    .map(|f| (f.help(), f.signature()))
+                {
                     Ok(Some(format!(
-                        "{}: {}\n{}",
-                        "== Network Function".blue(),
-                        var,
-                        help
+                        "{} {} {}\n{}",
+                        "network".red(),
+                        var.truecolor(80, 80, 200),
+                        sig.blue(),
+                        format_md(&help)
                     )))
                 } else {
                     Err(format!("Network Function {} not found", var))
@@ -443,4 +488,25 @@ impl ToString for TaskKeyword {
         }
         .to_string()
     }
+}
+
+impl TaskKeyword {
+    pub fn help(&self) -> String {
+        match self {
+            TaskKeyword::Node => "node function",
+            TaskKeyword::Network => "network function",
+            TaskKeyword::Env => "environmental variables",
+            TaskKeyword::Exit => "exit",
+            TaskKeyword::Help => "help",
+        }
+        .to_string()
+    }
+}
+
+fn format_md(txt: &str) -> String {
+    let mut skin = termimad::MadSkin::default_dark();
+    for h in &mut skin.headers {
+        h.align = termimad::Alignment::Left;
+    }
+    skin.text(txt, None).to_string()
 }

@@ -46,7 +46,7 @@ fn column_align(txt: &str) -> Res<&str, ColumnAlign> {
     )(txt)
 }
 
-fn column(txt: &str) -> Res<&str, Column> {
+pub fn column(txt: &str) -> Res<&str, Column> {
     let (rest, (align, (head, templ))) = context(
         "column definition",
         preceded(

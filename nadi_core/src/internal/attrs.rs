@@ -9,7 +9,7 @@ use abi_stable::sabi_trait::TD_CanDowncast;
 
 use abi_stable::std_types::Tuple2;
 
-use abi_stable::std_types::{RErr, ROk, RResult, RSlice, RString};
+use abi_stable::std_types::RString;
 use nadi_plugin::node_func;
 use string_template_plus::Template;
 
@@ -90,7 +90,7 @@ The function will error out in following conditions:
             FunctionRet::Error(RString::from(e.to_string()))
         } else {
             FunctionRet::None
-	}
+        }
     }
 
     fn code(&self) -> RString {
