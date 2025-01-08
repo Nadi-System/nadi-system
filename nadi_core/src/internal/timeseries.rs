@@ -4,10 +4,9 @@ use nadi_plugin::nadi_internal_plugin;
 mod timeseries {
 
     use crate::prelude::*;
-    use crate::timeseries::TimeSeries;
     use abi_stable::std_types::{ROption, RString};
     use nadi_plugin::{network_func, node_func};
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashSet;
 
     /// Print the list of available timeseries for the node
     ///
@@ -18,7 +17,7 @@ mod timeseries {
         if label {
             print!("{}: ", node.name());
         }
-        for ts in node.ts_all() {
+        for ts in node.ts_map() {
             print!("{}", ts.0);
         }
         println!();

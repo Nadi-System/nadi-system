@@ -125,11 +125,11 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                 _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
             },
             TaskToken::BraceStart => match state {
-		State::Rhs => {
+                State::Rhs => {
                     let inp = match read_attribute(Some(token.clone()), &mut tokens, true)? {
-			Some(a) => a,
-			None => return Err(tokens.parse_error(ParseErrorType::SyntaxError))
-		    };
+                        Some(a) => a,
+                        None => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
+                    };
                     let ty = match curr_keyword {
                         Some(TaskKeyword::Node) => {
                             let prop = propagation
@@ -146,7 +146,7 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                         input: TaskInput::Literal(inp),
                     });
                     state = State::None;
-		}
+                }
                 State::FuncArgs(ref mut fc) => {
                     let inp = read_input(Some(token.clone()), &mut tokens)?;
                     fc.args.push(inp);
@@ -177,11 +177,11 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                 State::Propagation => {
                     state = State::PropagationList;
                 }
-		State::Rhs => {
+                State::Rhs => {
                     let inp = match read_attribute(Some(token.clone()), &mut tokens, true)? {
-			Some(a) => a,
-			None => return Err(tokens.parse_error(ParseErrorType::SyntaxError))
-		    };
+                        Some(a) => a,
+                        None => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
+                    };
                     let ty = match curr_keyword {
                         Some(TaskKeyword::Node) => {
                             let prop = propagation
@@ -198,7 +198,7 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                         input: TaskInput::Literal(inp),
                     });
                     state = State::None;
-		}
+                }
                 State::FuncArgs(ref mut fc) => {
                     let inp = read_input(Some(token.clone()), &mut tokens)?;
                     fc.args.push(inp);
@@ -238,8 +238,8 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
             },
             TaskToken::Dot => match state {
                 State::Propagation => {
-		    state = State::Attribute;
-		},
+                    state = State::Attribute;
+                }
                 State::Attribute => (),
                 _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
             },
@@ -286,7 +286,7 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                             Some(e) => e.to_string(),
                             None => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
                         };
-			data = vec![];
+                        data = vec![];
                         propagation =
                             Some(Propagation::Path(StrPath::new(start.into(), end.into())));
                         state = State::Attribute;
@@ -479,13 +479,13 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
     match (state, curr_keyword) {
         (State::None, _) => Ok(tasks),
         (State::Assignment | State::Attribute, Some(kw)) => {
-	    let ty = match kw {
-		TaskKeyword::Env => TaskType::Env,
-		TaskKeyword::Node => TaskType::Node(propagation.take().unwrap_or_default()),
-		TaskKeyword::Network => TaskType::Network,
-		TaskKeyword::Help => TaskType::Help(None, None),
-		TaskKeyword::Exit => TaskType::Exit,
-	    };
+            let ty = match kw {
+                TaskKeyword::Env => TaskType::Env,
+                TaskKeyword::Node => TaskType::Node(propagation.take().unwrap_or_default()),
+                TaskKeyword::Network => TaskType::Network,
+                TaskKeyword::Help => TaskType::Help(None, None),
+                TaskKeyword::Exit => TaskType::Exit,
+            };
             tasks.push(Task {
                 ty,
                 attribute: output.take(),

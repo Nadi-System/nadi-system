@@ -88,7 +88,10 @@ impl TaskContext {
                                 let mut n = n.lock();
                                 let a = n.attr(&v).cloned();
                                 match a {
-                                    Some(v) => Ok(n.set_attr(&attr, v)),
+                                    Some(v) => {
+                                        n.set_attr(&attr, v);
+                                        Ok(())
+                                    }
                                     None => {
                                         Err(format!("Node {}: Attribute {} not found", n.name(), v))
                                     }

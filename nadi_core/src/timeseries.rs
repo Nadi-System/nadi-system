@@ -2,11 +2,32 @@ use crate::attrs::{type_name, Attribute, Date, DateTime, Time};
 
 use abi_stable::{
     external_types::RMutex,
-    std_types::{RArc, RString, RVec},
+    std_types::{RArc, RHashMap, RString, RVec},
     StableAbi,
 };
 
 pub type TimeLine = RArc<RMutex<TimeLineInner>>;
+pub type TsMap = RHashMap<RString, TimeSeries>;
+
+pub trait HasTimeSeries {
+    fn ts_map(&self) -> &TsMap;
+    fn ts_map_mut(&mut self) -> &mut TsMap;
+    fn ts(&self, name: &str) -> Option<&TimeSeries> {
+        self.ts_map().get(name)
+    }
+    fn del_ts(&mut self, name: &str) -> Option<TimeSeries> {
+        self.ts_map_mut().remove(name.into()).into()
+    }
+    fn set_ts(&mut self, name: &str, val: TimeSeries) -> Option<TimeSeries> {
+        self.ts_map_mut().insert(name.into(), val).into()
+    }
+
+    fn try_ts(&self, name: &str) -> Result<&TimeSeries, String> {
+        self.ts_map()
+            .get(name)
+            .ok_or(format!("Timeseries `{name}` not found"))
+    }
+}
 
 #[repr(C)]
 #[derive(StableAbi, Clone, Debug)]

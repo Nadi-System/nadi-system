@@ -1,17 +1,17 @@
 use crate::{
-    attrs::{AttrMap, Attribute, FromAttribute},
-    timeseries::TimeSeries,
+    attrs::{AttrMap, Attribute, HasAttributes},
+    prelude::HasTimeSeries,
+    timeseries::TsMap,
 };
 use abi_stable::{
     external_types::RMutex,
     std_types::{
-        RArc, RHashMap,
+        RArc,
         ROption::{self, RSome},
         RString, RVec,
     },
     StableAbi,
 };
-use string_template_plus::{Render, RenderOptions, Template};
 
 pub type Node = RArc<RMutex<NodeInner>>;
 
@@ -58,11 +58,31 @@ pub struct NodeInner {
     /// Node attributes in a  Hashmap of [`RString`] to [`Attribute`]
     pub(crate) attributes: AttrMap,
     /// Hashmap of [`RString`] to [`TimeSeries`]
-    pub(crate) timeseries: RHashMap<RString, TimeSeries>,
+    pub(crate) timeseries: TsMap,
     /// List of immediate inputs
     pub(crate) inputs: RVec<Node>,
     /// Output of the node if present
     pub(crate) output: ROption<Node>,
+}
+
+impl HasAttributes for NodeInner {
+    fn attr_map(&self) -> &AttrMap {
+        &self.attributes
+    }
+
+    fn attr_map_mut(&mut self) -> &mut AttrMap {
+        &mut self.attributes
+    }
+}
+
+impl HasTimeSeries for NodeInner {
+    fn ts_map(&self) -> &TsMap {
+        &self.timeseries
+    }
+
+    fn ts_map_mut(&mut self) -> &mut TsMap {
+        &mut self.timeseries
+    }
 }
 
 impl NodeInner {
@@ -106,58 +126,6 @@ impl NodeInner {
     pub fn set_order(&mut self, order: u64) {
         self.order = order;
         self.set_attr("ORDER", Attribute::Integer(order as i64));
-    }
-
-    // pub fn extend_attr(&mut self, attrs: &AttrMap) {
-    //     self.attributes.extend(attrs);
-    // }
-
-    pub fn del_attr(&mut self, name: &str) -> bool {
-        self.attributes.remove(name.into()).is_some()
-    }
-
-    pub fn set_attr(&mut self, name: &str, val: Attribute) {
-        self.attributes.insert(name.into(), val);
-    }
-
-    pub fn attr(&self, name: &str) -> Option<&Attribute> {
-        self.attributes.get(name)
-    }
-
-    pub fn try_attr<T: FromAttribute>(&self, name: &str) -> Result<T, String> {
-        match self.attr(name) {
-            Some(v) => FromAttribute::try_from_attr(v),
-            None => Err(format!(
-                "Attribute Error: Attribute {name} not found in Node"
-            )),
-        }
-    }
-
-    pub fn attrs(&self) -> &AttrMap {
-        &self.attributes
-    }
-
-    pub fn attrs_mut(&mut self) -> &mut AttrMap {
-        &mut self.attributes
-    }
-
-    pub fn set_ts(&mut self, name: &str, val: TimeSeries) {
-        self.timeseries.insert(name.into(), val);
-    }
-
-    pub fn ts(&self, name: &str) -> Option<&TimeSeries> {
-        self.timeseries.get(name)
-    }
-
-    pub fn try_ts(&self, name: &str) -> Result<&TimeSeries, String> {
-        self.timeseries.get(name).ok_or(format!(
-            "Node `{}` does not have timeseries `{name}`",
-            self.name
-        ))
-    }
-
-    pub fn ts_all(&self) -> &RHashMap<RString, TimeSeries> {
-        &self.timeseries
     }
 
     pub fn inputs(&self) -> &[Node] {
@@ -223,21 +191,5 @@ impl NodeInner {
             out.lock().set_output(o);
             self.add_input(out.clone());
         }
-    }
-
-    pub fn render(&self, template: &Template) -> anyhow::Result<String> {
-        let mut op = RenderOptions::default();
-        let used_vars = template.parts().iter().flat_map(|p| p.variables());
-        for var in used_vars {
-            if let Some(val) = self.attr(var) {
-                op.variables.insert(var.to_string(), val.to_string());
-            }
-            if let Some(val) = var.strip_prefix('_') {
-                if let Some(Attribute::String(s)) = self.attr(val) {
-                    op.variables.insert(var.to_string(), s.to_string());
-                }
-            }
-        }
-        template.render(&op)
     }
 }

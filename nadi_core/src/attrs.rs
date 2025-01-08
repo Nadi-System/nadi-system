@@ -1,7 +1,7 @@
 use colored::Colorize;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use string_template_plus::Template;
+use string_template_plus::{Render, RenderOptions, Template};
 
 use abi_stable::{
     std_types::{
@@ -17,6 +17,45 @@ use abi_stable::std_types::RSome;
 
 #[cfg(feature = "chrono")]
 use chrono::{Datelike, Timelike};
+
+pub trait HasAttributes {
+    fn attr_map(&self) -> &AttrMap;
+    fn attr_map_mut(&mut self) -> &mut AttrMap;
+    fn attr(&self, name: &str) -> Option<&Attribute> {
+        self.attr_map().get(name)
+    }
+    fn del_attr(&mut self, name: &str) -> Option<Attribute> {
+        self.attr_map_mut().remove(name.into()).into()
+    }
+    fn set_attr(&mut self, name: &str, val: Attribute) -> Option<Attribute> {
+        self.attr_map_mut().insert(name.into(), val).into()
+    }
+
+    fn try_attr<T: FromAttribute>(&self, name: &str) -> Result<T, String> {
+        match self.attr(name) {
+            Some(v) => FromAttribute::try_from_attr(v),
+            None => Err(format!(
+                "Attribute Error: Attribute {name} not found in Node"
+            )),
+        }
+    }
+
+    fn render(&self, template: &Template) -> anyhow::Result<String> {
+        let mut op = RenderOptions::default();
+        let used_vars = template.parts().iter().flat_map(|p| p.variables());
+        for var in used_vars {
+            if let Some(val) = self.attr(var) {
+                op.variables.insert(var.to_string(), val.to_string());
+            }
+            if let Some(val) = var.strip_prefix('_') {
+                if let Some(Attribute::String(s)) = self.attr(val) {
+                    op.variables.insert(var.to_string(), s.to_string());
+                }
+            }
+        }
+        template.render(&op)
+    }
+}
 
 #[repr(C)]
 #[derive(StableAbi, Clone, PartialEq, Debug)]

@@ -15,9 +15,12 @@ pub mod parser;
 
 /// Prelude for the most basic NADI types: node, network and attributes
 pub mod prelude {
-    pub use crate::attrs::{AttrMap, AttrSlice, Attribute, FromAttribute, FromAttributeRelaxed};
+    pub use crate::attrs::{
+        AttrMap, AttrSlice, Attribute, FromAttribute, FromAttributeRelaxed, HasAttributes,
+    };
     pub use crate::network::Network;
     pub use crate::node::{Node, NodeInner};
+    pub use crate::timeseries::HasTimeSeries;
 }
 
 // workaround for nadi_plugin_macros to work with ::nadi_core:: style

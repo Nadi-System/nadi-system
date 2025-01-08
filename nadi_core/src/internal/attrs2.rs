@@ -35,6 +35,45 @@ mod attrs {
         Ok(())
     }
 
+    /// simple if else condition
+    #[node_func]
+    fn ifelse(
+        node: &mut NodeInner,
+        #[relaxed] cond: bool,
+        iftrue: Attribute,
+        iffalse: Attribute,
+    ) -> Result<Attribute, String> {
+        let v = if cond { iftrue } else { iffalse };
+        Ok(v)
+    }
+
+    /// map values from the attribute based on the given table
+    #[node_func]
+    fn strmap(
+        node: &mut NodeInner,
+        attr: &str,
+        attrmap: &AttrMap,
+        default: Option<Attribute>,
+    ) -> Option<Attribute> {
+        let attr = String::from_attr_relaxed(node.attr(attr)?)?;
+        attrmap.get(attr.as_str()).cloned().or(default)
+    }
+
+    /// if else condition with multiple attributes
+    #[node_func]
+    fn set_attrs_ifelse(
+        node: &mut NodeInner,
+        #[relaxed] cond: bool,
+        #[kwargs] kwargs: &AttrMap,
+    ) -> Result<(), String> {
+        for Tuple2(k, v) in kwargs {
+            let (t, f) = FromAttribute::try_from_attr(v)?;
+            let v = if cond { t } else { f };
+            node.set_attr(k, v);
+        }
+        Ok(())
+    }
+
     /// Set node attributes based on string templates
     ///
     /// # Arguments

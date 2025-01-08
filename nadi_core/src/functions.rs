@@ -129,32 +129,75 @@ where
     }
 }
 
-// #[repr(C)]
-// #[derive(StableAbi, Default)]
-// struct FunctionArg {
-//     name: RString,
-//     r#type: RString,
-//     kwarg: bool,
-//     optional: bool,
-//     default: Attribute,
-// }
+#[repr(C)]
+#[derive(StableAbi)]
+pub enum SignatureArg {
+    Arg(RString, RString),
+    OptArg(RString, RString),
+    DefArg(RString, RString, RString),
+    Args,
+    KwArgs,
+}
 
 #[sabi_trait]
 pub trait NodeFunction: Debug + Clone {
     fn name(&self) -> RString;
     fn help(&self) -> RString;
-    // fn args(&self) -> RSlice<FunctionArg>;
-    fn signature(&self) -> RString;
+    fn short_help(&self) -> RString {
+        self.help()
+            .trim()
+            .split('\n')
+            .next()
+            .unwrap_or("No Help")
+            .into()
+    }
+    fn args(&self) -> RVec<SignatureArg>;
+    fn signature(&self) -> RString {
+        self.args()
+            .iter()
+            .map(|s| match s {
+                SignatureArg::Arg(n, t) => format!("{n}: '{t}'"),
+                SignatureArg::OptArg(n, t) => format!("{n}: '{t}'"),
+                SignatureArg::DefArg(n, t, val) => format!("{n}: '{t}' = {}", val.to_string()),
+                SignatureArg::Args => "*args".to_string(),
+                SignatureArg::KwArgs => "**kwargs".to_string(),
+            })
+            .collect::<Vec<String>>()
+            .join(", ")
+            .into()
+    }
     fn code(&self) -> RString;
     fn call(&self, obj: &mut NodeInner, ctx: &FunctionCtx) -> FunctionRet;
 }
 
+// can't use generics because of sabi_trait
 #[sabi_trait]
 pub trait NetworkFunction: Debug + Clone {
     fn name(&self) -> RString;
     fn help(&self) -> RString;
-    // fn args(&self) -> RSlice<FunctionArg>;
-    fn signature(&self) -> RString;
+    fn short_help(&self) -> RString {
+        self.help()
+            .trim()
+            .split('\n')
+            .next()
+            .unwrap_or("No Help")
+            .into()
+    }
+    fn args(&self) -> RVec<SignatureArg>;
+    fn signature(&self) -> RString {
+        self.args()
+            .iter()
+            .map(|s| match s {
+                SignatureArg::Arg(n, t) => format!("{n}: '{t}'"),
+                SignatureArg::OptArg(n, t) => format!("{n}: '{t}'"),
+                SignatureArg::DefArg(n, t, val) => format!("{n}: '{t}' = {}", val.to_string()),
+                SignatureArg::Args => "*args".to_string(),
+                SignatureArg::KwArgs => "**kwargs".to_string(),
+            })
+            .collect::<Vec<String>>()
+            .join(", ")
+            .into()
+    }
     fn code(&self) -> RString;
     fn call(&self, obj: &mut Network, ctx: &FunctionCtx) -> FunctionRet;
 }

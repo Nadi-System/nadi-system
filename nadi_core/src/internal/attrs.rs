@@ -1,15 +1,15 @@
 // This mod is kept as an example to how the functions are written
 // without the macros. Any additional functions are recommended to be
 // written using the macros provided by nadi_plugin crate
-use crate::functions::{FunctionCtx, FunctionRet, NadiFunctions, NodeFunction, NodeFunction_TO};
+use crate::functions::{
+    FunctionCtx, FunctionRet, NadiFunctions, NodeFunction, NodeFunction_TO, SignatureArg,
+};
 use crate::plugins::NadiPlugin;
 use crate::prelude::*;
 use crate::return_on_err;
 use abi_stable::sabi_trait::TD_CanDowncast;
 
-use abi_stable::std_types::Tuple2;
-
-use abi_stable::std_types::RString;
+use abi_stable::std_types::{RString, RVec, Tuple2};
 use nadi_plugin::node_func;
 use string_template_plus::Template;
 
@@ -64,8 +64,8 @@ The function will error out in following conditions:
         .into()
     }
 
-    fn signature(&self) -> RString {
-        "(filename)".into()
+    fn args(&self) -> RVec<SignatureArg> {
+        vec![SignatureArg::Arg("filename".into(), "PathBuf".into())].into()
     }
 
     fn call(&self, node: &mut NodeInner, ctx: &FunctionCtx) -> FunctionRet {
@@ -118,12 +118,12 @@ No arguments and no errors, it'll just print all the attributes in a node with
         .into()
     }
 
-    fn signature(&self) -> RString {
-        "()".into()
+    fn args(&self) -> RVec<SignatureArg> {
+        vec![].into()
     }
 
     fn call(&self, node: &mut NodeInner, _ctx: &FunctionCtx) -> FunctionRet {
-        for Tuple2(k, v) in node.attrs() {
+        for Tuple2(k, v) in node.attr_map() {
             println!("{}::{k} = {}", node.name(), v.to_string());
         }
         FunctionRet::None

@@ -15,7 +15,7 @@ mod command {
 
     pub fn key_val(txt: &str) -> anyhow::Result<(String, Attribute)> {
         let tokens = parser::tokenizer::get_tokens(&txt)?;
-        let mut attrs = parser::attrs::parse(tokens)?;
+        let attrs = parser::attrs::parse(tokens)?;
         attrs
             .into_iter()
             .map(|v| (v.0.to_string(), v.1))

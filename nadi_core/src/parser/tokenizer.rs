@@ -1,7 +1,7 @@
 use crate::parser::string::parse_string;
 use crate::parser::NadiError;
 use crate::parser::{ParseError as TaskParseError, ParseErrorType};
-use crate::tasks::{FunctionCall, Task, TaskInput, TaskKeyword, TaskType};
+use crate::tasks::TaskKeyword;
 use colored::Colorize;
 use nadi_core::attrs::{Attribute, Date, DateTime, Time};
 use nom::{
@@ -40,7 +40,7 @@ impl NadiError for TokenError {
         let mut msg = String::new();
         msg.push_str(&format!(
             "{}: Invalid Token at Line {} Column {}\n",
-            "Error".bright_red(),
+            "TokenError".bright_red(),
             self.line,
             self.col
         ));
@@ -324,7 +324,7 @@ fn variable<'a>(i: &'a str) -> TokenRes<'a> {
                 TaskToken::Function
             } else {
                 if let Some(re) = rest.trim_start().strip_prefix('.') {
-                    let (r, v) = get_var(re)?;
+                    let (r, _) = get_var(re)?;
                     if r.trim_start().starts_with('(') {
                         rest = r;
                         var = &i[..(i.len() - r.len())];
@@ -421,16 +421,25 @@ pub fn get_tokens(txt: &str) -> Result<Vec<Token>, TokenError> {
     let (res, tokens) = match task_script(txt) {
         Ok(v) => v,
         Err(e) => {
-            match e {
-                nom::Err::Error(e) | nom::Err::Failure(e) => {
-                    println!("{}", nom::error::convert_error(txt, e))
-                }
+            let er = match e {
+                nom::Err::Error(e) | nom::Err::Failure(e) => e,
                 _ => panic!("incomplete error shouldn't happen"),
-            }
-	    let line = 0;
-	    let col = 0;
-	    let linestr = String::new();
-	    return Err(TokenError{line, col, linestr});
+            };
+            let pre = er.errors.iter().next().unwrap().0;
+            let off = txt.len() - pre.len();
+            // if pre.is_empty() {
+            //     txt.len()
+            // } else {
+            // let s = txt.as_ptr();
+            // let e = pre.as_ptr();
+            // e as usize - s as usize
+            // };
+            let pre = &txt[..off];
+            let res = &txt[off..];
+            let line = pre.lines().count() - 1;
+            let linestr = txt.lines().nth(line).unwrap_or_default().to_string();
+            let col = linestr.len() - res.lines().next().unwrap_or_default().len() + 1;
+            return Err(TokenError { line, col, linestr });
         }
     };
     if res.is_empty() {

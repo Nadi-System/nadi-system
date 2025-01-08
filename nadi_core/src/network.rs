@@ -2,11 +2,11 @@ use abi_stable::std_types::{RDuration, Tuple2};
 use colored::Colorize;
 use std::collections::HashMap;
 use std::fmt::Debug;
-use string_template_plus::{Render, RenderOptions, Template};
 
-use crate::attrs::{AttrMap, Attribute, FromAttribute};
+use crate::attrs::{AttrMap, HasAttributes};
 use crate::functions::Propagation;
 use crate::node::{new_node, Node, NodeInner};
+use crate::timeseries::{HasTimeSeries, TsMap};
 use abi_stable::{
     std_types::{
         RHashMap,
@@ -62,6 +62,8 @@ pub struct Network {
     pub(crate) nodes_map: RHashMap<RString, Node>,
     /// Network Attributes
     pub(crate) attributes: AttrMap,
+    /// Network TimeSeries
+    pub(crate) timeseries: TsMap,
     /// Output [`Node`] of the network if present
     pub(crate) outlet: ROption<Node>,
     /// network is ordered based on input topology
@@ -79,6 +81,26 @@ impl std::fmt::Debug for Network {
             )
             .field("ordered", &self.ordered)
             .finish()
+    }
+}
+
+impl HasAttributes for Network {
+    fn attr_map(&self) -> &AttrMap {
+        &self.attributes
+    }
+
+    fn attr_map_mut(&mut self) -> &mut AttrMap {
+        &mut self.attributes
+    }
+}
+
+impl HasTimeSeries for Network {
+    fn ts_map(&self) -> &TsMap {
+        &self.timeseries
+    }
+
+    fn ts_map_mut(&mut self) -> &mut TsMap {
+        &mut self.timeseries
     }
 }
 
@@ -161,8 +183,8 @@ impl Network {
             //     insert_node(self.outlet.as_ref().unwrap(), &mut nodes);
             //     nodes
             // }
-	    
-	    // TODO return Result with nodes that do not exist erroring
+
+            // TODO return Result with nodes that do not exist erroring
             Propagation::List(n) => n.iter().map(|n| self.nodes_map[n].clone()).collect(),
             Propagation::Path(p) => self.nodes_path(p).unwrap_or_default(),
         }
@@ -338,43 +360,6 @@ impl Network {
         self.remove_node_single(node);
         self.reorder();
         self.set_levels();
-    }
-
-    pub fn set_attr(&mut self, name: &str, val: Attribute) {
-        self.attributes.insert(name.into(), val);
-    }
-
-    pub fn attr(&self, name: &str) -> Option<&Attribute> {
-        self.attributes.get(name)
-    }
-
-    pub fn try_attr<T: FromAttribute>(&self, name: &str) -> Result<T, String> {
-        match self.attr(name) {
-            Some(v) => FromAttribute::try_from_attr(v),
-            None => Err(format!(
-                "Attribute Error: Attribute {name} not found in Node"
-            )),
-        }
-    }
-
-    pub fn attrs(&self) -> &AttrMap {
-        &self.attributes
-    }
-
-    pub fn render(&self, template: &Template) -> anyhow::Result<String> {
-        let mut op = RenderOptions::default();
-        let used_vars = template.parts().iter().flat_map(|p| p.variables());
-        for var in used_vars {
-            if let Some(val) = self.attr(var) {
-                op.variables.insert(var.to_string(), val.to_string());
-            }
-            if let Some(val) = var.strip_prefix('_') {
-                if let Some(Attribute::String(s)) = self.attr(val) {
-                    op.variables.insert(var.to_string(), s.to_string());
-                }
-            }
-        }
-        template.render(&op)
     }
 
     pub fn connections_utf8(&self) -> Vec<String> {

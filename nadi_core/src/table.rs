@@ -1,5 +1,5 @@
 use crate::{
-    attrs::{Attribute, FromAttribute},
+    attrs::{Attribute, FromAttribute, HasAttributes},
     network::Network,
 };
 use abi_stable::{
