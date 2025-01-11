@@ -1,10 +1,10 @@
-use crate::functions::Propagation;
+use crate::functions::{Condition, Propagation};
 use crate::network::StrPath;
 use crate::parser::tokenizer::{TaskToken, Token, VecTokens};
 use crate::parser::{ParseError, ParseErrorType};
 use crate::prelude::*;
 use crate::tasks::{FunctionCall, Task, TaskInput, TaskKeyword, TaskType};
-use abi_stable::std_types::{RString, RVec};
+use abi_stable::std_types::{RBox, RString, RVec};
 use std::collections::HashMap;
 
 #[derive(Clone, PartialEq, Debug)]
@@ -104,9 +104,21 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                 }
                 curr_keyword = Some(kw.clone());
             }
-            TaskToken::ParenStart => match state {
+            TaskToken::AngleStart => match state {
                 State::Propagation => {
                     match read_propagation(&mut tokens)? {
+                        Some(p) => {
+                            propagation.replace(p);
+                        }
+                        None => break,
+                    }
+                    state = State::Attribute;
+                }
+                _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
+            },
+            TaskToken::ParenStart => match state {
+                State::Propagation => {
+                    match read_conditional(&mut tokens)? {
                         Some(p) => {
                             propagation.replace(p);
                         }
@@ -621,13 +633,115 @@ fn read_propagation(tokens: &mut VecTokens) -> Result<Option<Propagation>, Parse
         "outputfirst" => Propagation::OutputFirst,
         _ => return Err(tokens.parse_error(ParseErrorType::InvalidPropagation)),
     };
-    let tk = match tokens.next_no_ws(true) {
-        None => return Ok(None),
-        Some(t) => t,
+    match tokens.next_no_ws(true) {
+        None => Ok(None),
+        Some(tk) => match tk.ty {
+            TaskToken::AngleEnd => Ok(Some(prop)),
+            _ => Err(tokens.parse_error(ParseErrorType::Unclosed)),
+        },
+    }
+}
+
+enum CondState {
+    FirstVar(i64),
+    Not,
+    Cond(Condition),
+    SecondVar(Condition, bool),
+}
+
+fn read_conditional(tokens: &mut VecTokens) -> Result<Option<Propagation>, ParseError> {
+    let mut state = CondState::FirstVar(0);
+    let mut strict = 0;
+    let cond = loop {
+        let tk = match tokens.next_no_ws(true) {
+            None => return Ok(None),
+            Some(t) => t,
+        };
+        match tk.ty {
+            TaskToken::Assignment => match state {
+                CondState::FirstVar(i) => {
+                    if i > 1 {
+                        return Err(tokens.parse_error(ParseErrorType::SyntaxError));
+                    }
+                    state = CondState::FirstVar(i + 1);
+                }
+                _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
+            },
+            TaskToken::And => match state {
+                CondState::Cond(s) => {
+                    state = CondState::SecondVar(s, true);
+                }
+                _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
+            },
+            TaskToken::Or => match state {
+                CondState::Cond(s) => {
+                    state = CondState::SecondVar(s, false);
+                }
+                _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
+            },
+            TaskToken::Not => match state {
+                CondState::FirstVar(i) => {
+                    strict = i;
+                    state = CondState::Not;
+                }
+                CondState::SecondVar(f, a) => match tokens.next_no_ws(true) {
+                    Some(t) => {
+                        let var = match t.ty {
+                            TaskToken::Variable => tk.content.to_string(),
+                            TaskToken::String(s) => s,
+                            _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
+                        };
+                        let cv = Condition::Not(RBox::new(Condition::Single(var.into())));
+                        let cond = if a {
+                            Condition::And(RBox::new(f), RBox::new(cv))
+                        } else {
+                            Condition::Or(RBox::new(f), RBox::new(cv))
+                        };
+                        state = CondState::Cond(cond);
+                    }
+                    None => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
+                },
+                _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
+            },
+            TaskToken::ParenEnd => {
+                if let CondState::Cond(s) = state {
+                    break s;
+                } else {
+                    return Err(tokens.parse_error(ParseErrorType::Unclosed));
+                }
+            }
+            ty => {
+                let s = match ty {
+                    TaskToken::Variable => tk.content.to_string(),
+                    TaskToken::String(s) => s,
+                    _ => return Err(tokens.parse_error(ParseErrorType::InvalidPropagation)),
+                };
+                match state {
+                    CondState::FirstVar(i) => {
+                        strict = i;
+                        state = CondState::Cond(Condition::Single(s.into()));
+                    }
+                    CondState::Not => {
+                        state =
+                            CondState::Cond(Condition::Not(RBox::new(Condition::Single(s.into()))));
+                    }
+                    CondState::SecondVar(f, a) => {
+                        let cond = if a {
+                            Condition::And(RBox::new(f), RBox::new(Condition::Single(s.into())))
+                        } else {
+                            Condition::Or(RBox::new(f), RBox::new(Condition::Single(s.into())))
+                        };
+                        state = CondState::Cond(cond);
+                    }
+                    _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
+                }
+            }
+        }
     };
-    match tk.ty {
-        TaskToken::ParenEnd => (),
-        _ => return Err(tokens.parse_error(ParseErrorType::Unclosed)),
+    let prop = match strict {
+        0 => Propagation::Conditional(cond),
+        1 => Propagation::ConditionalStrict(cond),
+        _ => Propagation::ConditionalSuperStrict(cond),
     };
     Ok(Some(prop))
 }

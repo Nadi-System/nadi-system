@@ -175,7 +175,7 @@ mod render_utils {
             &self,
             net: &mut Network,
             output: Option<PathBuf>,
-        ) -> Result<(), Error> {
+        ) -> anyhow::Result<()> {
             let file = output.map(|f| File::create(f).unwrap());
 
             let mut writer: Box<dyn Write> = match file {
@@ -201,7 +201,10 @@ mod render_utils {
                     }
                     RenderFileContentsType::Literal(s) => write!(writer, "{}", s)?,
                     RenderFileContentsType::Snippet(templ, prop) => {
-                        for node in net.nodes_propagation(prop) {
+                        for node in net
+                            .nodes_propagation(prop)
+                            .map_err(|e| anyhow::Error::msg(e))?
+                        {
                             write!(writer, "{}", node.lock().render(templ)?)?;
                         }
                     }

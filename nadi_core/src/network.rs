@@ -159,10 +159,20 @@ impl Network {
         self.nodes_map.get(name)
     }
 
-    pub fn nodes_propagation(&self, prop: &Propagation) -> Vec<Node> {
+    pub fn try_node_by_name(&self, name: &str) -> Result<&Node, String> {
+        self.nodes_map
+            .get(name)
+            .ok_or_else(|| format!("Node {name} not found"))
+    }
+
+    pub fn nodes_propagation(&self, prop: &Propagation) -> Result<Vec<Node>, String> {
         match prop {
-            Propagation::Sequential | Propagation::OutputFirst => self.nodes().cloned().collect(),
-            Propagation::Inverse | Propagation::InputsFirst => self.nodes_rev().cloned().collect(),
+            Propagation::Sequential | Propagation::OutputFirst => {
+                Ok(self.nodes().cloned().collect())
+            }
+            Propagation::Inverse | Propagation::InputsFirst => {
+                Ok(self.nodes_rev().cloned().collect())
+            }
             // // since it is already ordered, we don't need to do this
             // Propagation::InputsFirst => {
             //     let mut all_nodes: Vec<&Node> = self.nodes().collect();
@@ -183,30 +193,53 @@ impl Network {
             //     insert_node(self.outlet.as_ref().unwrap(), &mut nodes);
             //     nodes
             // }
-
-            // TODO return Result with nodes that do not exist erroring
-            Propagation::List(n) => n.iter().map(|n| self.nodes_map[n].clone()).collect(),
-            Propagation::Path(p) => self.nodes_path(p).unwrap_or_default(),
+            Propagation::Conditional(c) => Ok(self
+                .nodes()
+                .filter(|n| n.lock().check(c))
+                .map(|n| n.clone())
+                .collect()),
+            Propagation::ConditionalStrict(c) => Ok(self
+                .nodes()
+                .map(|n| Ok((n.lock().check_strict(c)?, n)))
+                .collect::<Result<Vec<(bool, &Node)>, String>>()?
+                .into_iter()
+                .filter(|(c, _)| *c)
+                .map(|(_, n)| n.clone())
+                .collect()),
+            Propagation::ConditionalSuperStrict(c) => Ok(self
+                .nodes()
+                .map(|n| Ok((n.lock().check_super_strict(c)?, n)))
+                .collect::<Result<Vec<(bool, &Node)>, String>>()?
+                .into_iter()
+                .filter(|(c, _)| *c)
+                .map(|(_, n)| n.clone())
+                .collect()),
+            Propagation::List(n) => n
+                .iter()
+                .map(|n| {
+                    self.nodes_map
+                        .get(n)
+                        .cloned()
+                        .ok_or_else(|| format!("Node {n} not found"))
+                })
+                .collect(),
+            Propagation::Path(p) => self.nodes_path(p),
         }
     }
 
-    pub fn nodes_path(&self, path: &StrPath) -> Option<Vec<Node>> {
-        let start = self.node_by_name(path.start.as_str())?;
-        let end = self.node_by_name(path.end.as_str())?;
-        Some(self.nodes_path_safe(start.clone(), end.clone(), false))
-    }
-
-    /// Will return empty vec if the path doesn't exist
-    pub fn nodes_path_safe(&self, start: Node, end: Node, strict: bool) -> Vec<Node> {
+    pub fn nodes_path(&self, path: &StrPath) -> Result<Vec<Node>, String> {
+        let start = self.try_node_by_name(path.start.as_str())?;
+        let end = self.try_node_by_name(path.end.as_str())?;
         // we'll assume the network is indexed based on order, small
-        // indices are closer to outlet
-        let (start, end) = if strict || (start.lock().index() > end.lock().index()) {
-            (start, end)
-        } else {
-            (end, start)
-        };
+        // indices are closer to outlet; and resuffle the nodes
+        // let (start, end) = if start.lock().index() > end.lock().index() {
+        //     (start, end)
+        // } else {
+        //     (end, start)
+        // };
         let mut curr = start.clone();
         let mut path_nodes = vec![];
+        let start_name = self.nodes[start.lock().index()].as_str();
         let end_name = self.nodes[end.lock().index()].as_str();
         loop {
             path_nodes.push(curr.clone());
@@ -216,12 +249,16 @@ impl Network {
             let tmp = if let RSome(o) = curr.lock().output() {
                 o.clone()
             } else {
-                // start doesn't reach end
-                return vec![];
+                return Err(format!(
+                    "Node {:?} does not reach Node {:?} (path ends at {:?})",
+                    start_name,
+                    end_name,
+                    curr.lock().name()
+                ));
             };
             curr = tmp;
         }
-        path_nodes
+        Ok(path_nodes)
     }
 
     pub fn calc_order(&mut self) {

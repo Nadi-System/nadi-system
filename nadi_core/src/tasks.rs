@@ -47,7 +47,7 @@ impl TaskContext {
                 }
             }
             TaskType::Node(p) => {
-                let nodes: Vec<Node> = self.network.nodes_propagation(p);
+                let nodes: Vec<Node> = self.network.nodes_propagation(p)?;
                 match task.input {
                     TaskInput::None => {
                         if let Some(attr) = task.attribute {
@@ -343,7 +343,7 @@ impl ToString for TaskType {
 impl TaskType {
     fn to_colored_string(&self) -> String {
         match self {
-            Self::Node(p) => format!("{}{}", "node".red(), p.to_string()),
+            Self::Node(p) => format!("{}{}", "node".red(), p.to_colored_string()),
             Self::Network => "network".red().to_string(),
             Self::Help(None, None) => "help".red().to_string(),
             Self::Help(Some(x), None) => format!("{} {}", "help".red(), x.to_string().red()),

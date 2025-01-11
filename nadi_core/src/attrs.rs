@@ -253,9 +253,9 @@ pub fn type_name<P>() -> String {
 impl_from_attr!(bool, Attribute::Bool,
 		Attribute::Integer(v) => *v != 0,
 		Attribute::Float(v) => *v != 0.0,
-		Attribute::String(s) => s.is_empty(),
-		Attribute::Array(s) => s.is_empty(),
-		Attribute::Table(s) => s.is_empty());
+		Attribute::String(s) => !s.is_empty(),
+		Attribute::Array(s) => !s.is_empty(),
+		Attribute::Table(s) => !s.is_empty());
 impl_from_attr!(RString, Attribute::String,);
 impl_from_attr!(i64, Attribute::Integer,
 		Attribute::Bool(v) => *v as i64);

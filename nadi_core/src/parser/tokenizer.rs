@@ -165,12 +165,17 @@ pub enum TaskToken {
     WhiteSpace,
     Comment,
     Keyword(TaskKeyword),
+    AngleStart,   // <>
     ParenStart,   // ()
     BraceStart,   // {}
     BracketStart, // []
     PathSep,      // ->
     Comma,
     Dot,
+    And,
+    Or,
+    Not,
+    AngleEnd,
     ParenEnd,
     BraceEnd,
     BracketEnd,
@@ -188,30 +193,7 @@ pub enum TaskToken {
 
 impl<'a> Token<'a> {
     pub fn colored_print(&self) {
-        match self.ty {
-            TaskToken::NewLine | TaskToken::WhiteSpace => print!("{}", self.content),
-            TaskToken::Comment => print!("{}", self.content.truecolor(100, 100, 100)),
-            TaskToken::Keyword(_) => print!("{}", self.content.red()),
-            TaskToken::ParenStart => print!("{}", self.content.blue()),
-            TaskToken::BraceStart => print!("{}", self.content.blue()),
-            TaskToken::BracketStart => print!("{}", self.content.blue()),
-            TaskToken::PathSep => print!("{}", self.content.blue()),
-            TaskToken::Comma => print!("{}", self.content.blue()),
-            TaskToken::Dot => print!("{}", self.content.blue()),
-            TaskToken::ParenEnd => print!("{}", self.content.blue()),
-            TaskToken::BraceEnd => print!("{}", self.content.blue()),
-            TaskToken::BracketEnd => print!("{}", self.content.blue()),
-            TaskToken::Variable => print!("{}", self.content.green()),
-            TaskToken::Function => print!("{}", self.content.magenta()),
-            TaskToken::Assignment => print!("{}", self.content.blue()),
-            TaskToken::Bool => print!("{}", self.content.yellow()),
-            TaskToken::String(_) => print!("{}", self.content.yellow()),
-            TaskToken::Integer => print!("{}", self.content.yellow()),
-            TaskToken::Float => print!("{}", self.content.yellow()),
-            TaskToken::Date => print!("{}", self.content.cyan()),
-            TaskToken::Time => print!("{}", self.content.cyan()),
-            TaskToken::DateTime => print!("{}", self.content.cyan()),
-        }
+        print!("{}", self.colored());
     }
 
     pub fn colored(&self) -> String {
@@ -219,12 +201,17 @@ impl<'a> Token<'a> {
             TaskToken::NewLine | TaskToken::WhiteSpace => format!("{}", self.content),
             TaskToken::Comment => format!("{}", self.content.truecolor(100, 100, 100)),
             TaskToken::Keyword(_) => format!("{}", self.content.red()),
+            TaskToken::AngleStart => format!("{}", self.content.blue()),
             TaskToken::ParenStart => format!("{}", self.content.blue()),
             TaskToken::BraceStart => format!("{}", self.content.blue()),
             TaskToken::BracketStart => format!("{}", self.content.blue()),
             TaskToken::PathSep => format!("{}", self.content.blue()),
             TaskToken::Comma => format!("{}", self.content.blue()),
             TaskToken::Dot => format!("{}", self.content.blue()),
+            TaskToken::And => format!("{}", self.content.yellow()),
+            TaskToken::Or => format!("{}", self.content.yellow()),
+            TaskToken::Not => format!("{}", self.content.yellow()),
+            TaskToken::AngleEnd => format!("{}", self.content.blue()),
             TaskToken::ParenEnd => format!("{}", self.content.blue()),
             TaskToken::BraceEnd => format!("{}", self.content.blue()),
             TaskToken::BracketEnd => format!("{}", self.content.blue()),
@@ -286,6 +273,8 @@ fn comment<'a>(i: &'a str) -> TokenRes<'a> {
 
 fn symbols<'a>(i: &'a str) -> TokenRes<'a> {
     alt((
+        map(tag("<"), |s| Token::new(TaskToken::AngleStart, s)),
+        map(tag(">"), |s| Token::new(TaskToken::AngleEnd, s)),
         map(tag("("), |s| Token::new(TaskToken::ParenStart, s)),
         map(tag(")"), |s| Token::new(TaskToken::ParenEnd, s)),
         map(tag("["), |s| Token::new(TaskToken::BracketStart, s)),
@@ -296,6 +285,9 @@ fn symbols<'a>(i: &'a str) -> TokenRes<'a> {
         map(tag(","), |s| Token::new(TaskToken::Comma, s)),
         map(tag("->"), |s| Token::new(TaskToken::PathSep, s)),
         map(tag("="), |s| Token::new(TaskToken::Assignment, s)),
+        map(tag("&"), |s| Token::new(TaskToken::And, s)),
+        map(tag("|"), |s| Token::new(TaskToken::Or, s)),
+        map(tag("!"), |s| Token::new(TaskToken::Not, s)),
     ))(i)
 }
 

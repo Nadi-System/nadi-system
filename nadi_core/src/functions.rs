@@ -681,6 +681,113 @@ impl FunctionCtx {
     }
 }
 
+// TODO maybe add attr = "smth"; attr > 1.0 etc as conditions
+// Maybe we can't because attribute name can be string or variable for now
+#[repr(C)]
+#[derive(StableAbi, Debug, Clone, PartialEq)]
+pub enum Condition {
+    Single(RString),
+    Not(RBox<Condition>),
+    And(RBox<Condition>, RBox<Condition>),
+    Or(RBox<Condition>, RBox<Condition>),
+}
+
+impl NodeInner {
+    /// check if the condition is true
+    pub fn check(&self, cond: &Condition) -> bool {
+        match cond {
+            Condition::Single(v) => self.try_attr_relaxed(v.as_str()).unwrap_or(false),
+            Condition::Not(v) => !self.check(v),
+            Condition::And(a, b) => self.check(a) & self.check(b),
+            Condition::Or(a, b) => self.check(a) | self.check(b),
+        }
+    }
+    /// check if condition is true only if attributes exist
+    pub fn check_strict(&self, cond: &Condition) -> Result<bool, String> {
+        match cond {
+            Condition::Single(v) => self.try_attr_relaxed(v.as_str()),
+            Condition::Not(v) => self.check_strict(v).map(|b| !b),
+            Condition::And(a, b) => {
+                let a = self.check_strict(a)?;
+                let b = self.check_strict(b)?;
+                Ok(a & b)
+            }
+            Condition::Or(a, b) => {
+                let a = self.check_strict(a)?;
+                let b = self.check_strict(b)?;
+                Ok(a | b)
+            }
+        }
+    }
+    /// check if condition is true only if attributes are bool
+    pub fn check_super_strict(&self, cond: &Condition) -> Result<bool, String> {
+        match cond {
+            Condition::Single(v) => self.try_attr(v.as_str()),
+            Condition::Not(v) => self.check_super_strict(v).map(|b| !b),
+            Condition::And(a, b) => {
+                let a = self.check_super_strict(a)?;
+                let b = self.check_super_strict(b)?;
+                Ok(a && b)
+            }
+            Condition::Or(a, b) => {
+                let a = self.check_super_strict(a)?;
+                let b = self.check_super_strict(b)?;
+                Ok(a || b)
+            }
+        }
+    }
+}
+
+impl Condition {
+    fn maybe_paren(&self) -> String {
+        match self {
+            Condition::Single(_) => self.to_string(),
+            _ => format!("({})", self.to_string()),
+        }
+    }
+
+    fn maybe_paren_colored(&self) -> String {
+        match self {
+            Condition::Single(_) => self.to_colored_string(),
+            _ => format!("{}{}{}", "(".red(), self.to_colored_string(), ")".red()),
+        }
+    }
+
+    pub fn to_colored_string(&self) -> String {
+        match self {
+            Condition::Single(v) => v.to_string(),
+            Condition::Not(v) => format!("{}{}", "!".yellow(), v.maybe_paren_colored()),
+            Condition::And(a, b) => {
+                format!(
+                    "{} {} {}",
+                    a.maybe_paren_colored(),
+                    "&".yellow(),
+                    b.maybe_paren_colored()
+                )
+            }
+            Condition::Or(a, b) => {
+                format!(
+                    "{} {} {}",
+                    a.maybe_paren_colored(),
+                    "|".yellow(),
+                    b.maybe_paren_colored()
+                )
+            }
+        }
+    }
+}
+
+impl ToString for Condition {
+    fn to_string(&self) -> String {
+        match self {
+            Condition::Single(v) => v.to_string(),
+            Condition::Not(v) => format!("!{}", v.maybe_paren()),
+            Condition::And(a, b) => format!("{} & {}", a.maybe_paren(), b.maybe_paren()),
+            Condition::Or(a, b) => format!("{} | {}", a.maybe_paren(), b.maybe_paren()),
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(StableAbi, Debug, Default, Clone, PartialEq)]
 pub enum Propagation {
@@ -689,6 +796,9 @@ pub enum Propagation {
     Inverse,
     InputsFirst,
     OutputFirst,
+    Conditional(Condition),
+    ConditionalStrict(Condition),
+    ConditionalSuperStrict(Condition),
     List(RVec<RString>),
     Path(StrPath),
 }
@@ -696,10 +806,13 @@ pub enum Propagation {
 impl ToString for Propagation {
     fn to_string(&self) -> String {
         match self {
-            Self::Sequential => "(sequential)".to_string(),
-            Self::Inverse => "(inverse)".to_string(),
-            Self::InputsFirst => "(inputsfirst)".to_string(),
-            Self::OutputFirst => "(outputfirst)".to_string(),
+            Self::Sequential => "<sequential>".to_string(),
+            Self::Inverse => "<inverse>".to_string(),
+            Self::InputsFirst => "<inputsfirst>".to_string(),
+            Self::OutputFirst => "<outputfirst>".to_string(),
+            Self::Conditional(c) => format!("({})", c.to_string()),
+            Self::ConditionalStrict(c) => format!("(={})", c.to_string()),
+            Self::ConditionalSuperStrict(c) => format!("(=={})", c.to_string()),
             Self::List(v) => format!(
                 "[{}]",
                 v.iter()
@@ -715,10 +828,13 @@ impl ToString for Propagation {
 impl Propagation {
     pub fn to_colored_string(&self) -> String {
         match self {
-            Self::Sequential => format!("({})", "sequential".red()),
-            Self::Inverse => format!("({})", "inverse".red()),
-            Self::InputsFirst => format!("({})", "inputsfirst".red()),
-            Self::OutputFirst => format!("({})", "outputfirst".red()),
+            Self::Sequential => format!("<{}>", "sequential".red()),
+            Self::Inverse => format!("<{}>", "inverse".red()),
+            Self::InputsFirst => format!("<{}>", "inputsfirst".red()),
+            Self::OutputFirst => format!("<{}>", "outputfirst".red()),
+            Self::Conditional(c) => format!("({})", c.to_colored_string()),
+            Self::ConditionalStrict(c) => format!("(={})", c.to_colored_string()),
+            Self::ConditionalSuperStrict(c) => format!("(=={})", c.to_colored_string()),
             Self::List(v) => format!(
                 "[{}]",
                 v.iter()
