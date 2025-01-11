@@ -128,28 +128,51 @@ fn from_attr_derive(input: TokenStream, relaxed: bool) -> TokenStream {
 
     let expanded = quote! {
         impl #trt for #name {
-        fn #func (value: &Attribute) -> Option<Self>{
+            fn #func (value: &Attribute) -> Option<Self>{
         #trt :: #try_func(value).ok()
-        }
-        fn #try_func (value: &Attribute) -> Result<Self, String> {
+            }
+            fn #try_func (value: &Attribute) -> Result<Self, String> {
         #conversion
-        }
+            }
     }
     };
     // println!("{}", expanded);
     TokenStream::from(expanded)
 }
 
+// todo make a new category of functions that can be called from both
+/// register this function as a node function and network function on nadi plugin
+#[proc_macro_attribute]
+pub fn nadi_func(args: TokenStream, mut item: TokenStream) -> TokenStream {
+    let mut item = parse_macro_input!(item as ItemFn);
+    let mut item_n = item.clone();
+    let narg = quote!(_node: &mut ::nadi_core::node::NodeInner).into();
+    item_n
+        .sig
+        .inputs
+        .insert(0, parse_macro_input!(narg as FnArg).into());
+    let mut node_f = nadi_func_inner(args.clone(), item_n, true);
+    let narg = quote!(_net: &mut ::nadi_core::network::Network).into();
+    item.sig
+        .inputs
+        .insert(0, parse_macro_input!(narg as FnArg).into());
+    let net_f = nadi_func_inner(args, item, false);
+    node_f.extend([net_f]);
+    node_f
+}
+
 /// register this function as a node function on nadi plugin
 #[proc_macro_attribute]
 pub fn node_func(args: TokenStream, item: TokenStream) -> TokenStream {
-    nadi_func(args, item, true)
+    let item = parse_macro_input!(item as ItemFn);
+    nadi_func_inner(args, item, true).into()
 }
 
 /// register this function as a network function on nadi plugin
 #[proc_macro_attribute]
 pub fn network_func(args: TokenStream, item: TokenStream) -> TokenStream {
-    nadi_func(args, item, false)
+    let item = parse_macro_input!(item as ItemFn);
+    nadi_func_inner(args, item, false).into()
 }
 
 #[derive(Clone, Copy, Default)]
@@ -167,13 +190,12 @@ const FUNC_ARG_ATTRS: [(&str, FuncArgType); 3] = [
     ("relaxed", FuncArgType::Relaxed),
 ];
 
-fn nadi_func(args: TokenStream, item: TokenStream, node: bool) -> TokenStream {
+fn nadi_func_inner(args: TokenStream, item: ItemFn, node: bool) -> TokenStream {
     let args = parse_macro_input!(args with Punctuated<MetaNameValue, Comma>::parse_terminated);
     let default_args: HashMap<Ident, Expr> = args
         .into_iter()
         .map(|p| (p.path.segments.first().unwrap().ident.clone(), p.value))
         .collect();
-    let item = parse_macro_input!(item as ItemFn);
     let arg0 = item
         .sig
         .inputs
@@ -370,8 +392,10 @@ fn nadi_export_plugin(_args: TokenStream, item: TokenStream, external: bool) -> 
     let name_mod = nadi_struct_name(name, "Mod");
     let node_funcs = get_nadi_functions(&item, "node_func");
     let network_funcs = get_nadi_functions(&item, "network_func");
+    let both_funcs = get_nadi_functions(&item, "nadi_func");
     let regis_node_funcs = node_funcs
         .iter()
+        .chain(&both_funcs)
         .map(|n| nadi_struct_name(n, "Node"))
         .map(|n| {
             quote! {
@@ -387,6 +411,7 @@ fn nadi_export_plugin(_args: TokenStream, item: TokenStream, external: bool) -> 
 
     let regis_network_funcs = network_funcs
         .iter()
+        .chain(&both_funcs)
         .map(|n| nadi_struct_name(n, "Network"))
         .map(|n| {
             quote! {
@@ -713,7 +738,7 @@ fn get_signature_func(
     default_args: &HashMap<Ident, Expr>,
     default_exprs: proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
-    let args: Vec<String> = item
+    let args: Vec<proc_macro2::TokenStream> = item
         .sig
         .inputs
         .iter()
@@ -722,21 +747,29 @@ fn get_signature_func(
             syn::FnArg::Typed(a) => {
                 // args and kwargs function signature
                 if a.attrs.iter().any(|at| at.path().is_ident("args")) {
-                    "*args".into()
+                    quote! { Args }
                 } else if a.attrs.iter().any(|at| at.path().is_ident("kwargs")) {
-                    "**kwargs".into()
+                    quote! { KwArgs }
                 } else {
                     match a.pat.as_ref() {
                         syn::Pat::Ident(i) => {
                             if default_args.contains_key(&i.ident) {
-                                format!(
-                                    "{}: '{}' = {{{}:?}}",
-                                    i.ident,
-                                    a.ty.as_ref().into_token_stream(),
-                                    i.ident
-                                )
+                                let (n, t, v) = (
+                                    i.ident.to_string(),
+                                    a.ty.as_ref().into_token_stream().to_string(),
+                                    format!("{{{}:?}}", i.ident),
+                                );
+                                quote! { DefArg(#n .into(), #t .into(), format!(#v) .into()) }
                             } else {
-                                format!("{}: '{}'", i.ident, a.ty.as_ref().into_token_stream())
+                                let (n, t) = (
+                                    i.ident.to_string(),
+                                    a.ty.as_ref().into_token_stream().to_string(),
+                                );
+                                if type_is_opt(&a.ty) {
+                                    quote! { OptArg(#n .into(), #t .into()) }
+                                } else {
+                                    quote! { Arg(#n .into(), #t .into()) }
+                                }
                             }
                         }
                         _ => panic!("Not supported"),
@@ -745,23 +778,19 @@ fn get_signature_func(
             }
             _ => panic!("Not supported"),
         })
+        .map(|a| quote! {::nadi_core::functions::SignatureArg:: #a})
         .collect();
 
     // function signature showing the function name, arguments and
     // their default values
-    let sig = format!("({})", args.join(", "));
-    if default_args.is_empty() {
-        quote! {
-            fn signature(&self) -> ::nadi_core::abi_stable::std_types::RString {
-        #sig .into()
-            }
-        }
-    } else {
-        quote! {
-            fn signature(&self) -> ::nadi_core::abi_stable::std_types::RString {
-        #default_exprs
-        format!(#sig) .into()
-            }
+    quote! {
+        fn args(&self) -> ::nadi_core::abi_stable::std_types::RVec<
+        ::nadi_core::functions::SignatureArg
+        > {
+            #default_exprs
+        vec![
+        #(#args),*
+        ] .into()
         }
     }
 }
