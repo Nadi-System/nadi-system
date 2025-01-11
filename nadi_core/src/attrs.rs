@@ -39,6 +39,14 @@ pub trait HasAttributes {
             )),
         }
     }
+    fn try_attr_relaxed<T: FromAttributeRelaxed>(&self, name: &str) -> Result<T, String> {
+        match self.attr(name) {
+            Some(v) => FromAttributeRelaxed::try_from_attr_relaxed(v),
+            None => Err(format!(
+                "Attribute Error: Attribute {name} not found in Node"
+            )),
+        }
+    }
 
     fn render(&self, template: &Template) -> anyhow::Result<String> {
         let mut op = RenderOptions::default();
@@ -323,6 +331,12 @@ tuple_impls!(a A 0, b B 1, c C 2, d D 3);
 tuple_impls!(a A 0, b B 1, c C 2, d D 3, e E 4);
 tuple_impls!(a A 0, b B 1, c C 2, d D 3, e E 4, f F 5);
 
+impl From<usize> for Attribute {
+    fn from(value: usize) -> Self {
+        Self::Integer(value as i64)
+    }
+}
+
 impl From<String> for Attribute {
     fn from(value: String) -> Self {
         Self::String(RString::from(value))
@@ -338,6 +352,7 @@ impl FromAttribute for Attribute {
 // impl for different types that can be converted from ones that has
 // FromAttribute. Can't do this automatically because there will be
 // duplicate implementation
+#[macro_export]
 macro_rules! convert_impls {
     ($src: tt => $dest: tt) => {
         impl FromAttribute for $dest {

@@ -108,7 +108,9 @@ impl TaskContext {
                                 .iter()
                                 .map(|n| {
                                     let mut node = n.lock();
-                                    let ctx = fc.node_ctx(&node)?;
+                                    let ctx = fc
+                                        .node_ctx(&node)
+                                        .map_err(|e| format!("{}: {e}", node.name()))?;
                                     match f.call(&mut node, &ctx) {
                                         FunctionRet::None => Ok(None),
                                         FunctionRet::Some(a) => {
@@ -123,7 +125,9 @@ impl TaskContext {
                                                 )))
                                             }
                                         }
-                                        FunctionRet::Error(e) => Err(e.to_string()),
+                                        FunctionRet::Error(e) => {
+                                            Err(format!("{}: {e}", node.name()))
+                                        }
                                     }
                                 })
                                 .collect::<Result<Vec<Option<String>>, String>>()?;

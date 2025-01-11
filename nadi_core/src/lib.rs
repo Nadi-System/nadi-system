@@ -1,5 +1,6 @@
 pub mod attrs;
 pub mod functions;
+pub mod graphics;
 pub mod network;
 pub mod node;
 pub mod plugins;

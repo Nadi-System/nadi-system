@@ -128,8 +128,8 @@ pub fn parse(tokens: Vec<Token>) -> Result<AttrMap, ParseError> {
         }
     }
     match state {
-        State::None | State::Newline => Err(tokens.parse_error(ParseErrorType::Unclosed)),
-        _ => Ok(attrmap),
+        State::None | State::Newline => Ok(attrmap),
+        _ => Err(tokens.parse_error(ParseErrorType::Unclosed)),
     }
 }
 

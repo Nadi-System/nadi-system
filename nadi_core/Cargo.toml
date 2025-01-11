@@ -23,11 +23,13 @@ subprocess = "0.2.9"
 number_range = "0.3.2"
 filetime = {version = "0.2.25", optional = true}
 termimad = "0.31.1"
+cairo-rs = "0.20.7"
+regex = {version = "1.11.1", optional = true}
 
 [dev-dependencies]
 rstest = "0.22.0"
 
 [features]
 chrono = ["dep:chrono"]
-functions = ["dep:filetime", "parser"]
+functions = ["dep:filetime", "dep:regex", "parser"]
 parser = ["dep:nom"]

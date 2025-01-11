@@ -91,7 +91,7 @@ impl ParseErrorType {
         match self {
             Self::ValueError => "Invalid Value",
             Self::InvalidLineStart => "Lines should start with a keyword",
-            Self::Unclosed => "Unclosed paren",
+            Self::Unclosed => "Incomplete Input",
             Self::InvalidPropagation => "Invalid propagation value",
             Self::SyntaxError => "Invalid Syntax",
             Self::InvalidToken => "Invalid Token",
