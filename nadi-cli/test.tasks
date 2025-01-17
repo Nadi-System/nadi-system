@@ -17,4 +17,34 @@
 #  		preamble="unset ytics\nunset yrange\n set xrange [\"1900-01-01\":\"2025-12-31\"]\n unset xlabel"
 # 	}
 # )
-network render("test.template", "/tmp/rendered.md")
+# network render("test.template", "/tmp/rendered.md")
+env.new = "this"
+# env.other = {test=12.2, this=[true, "what?", {"tes"="yes"}]} # todo
+env.new
+# env.other
+network load_file("routing.network")
+network parallel("echo 'hi {NAME}'", echo = false, verbose=true)
+
+node.NAME
+
+# you can have different type attributes for different nodes, but this
+# is not recommended. Most algorithms will assume same type for the
+# attribute on all nodes.
+
+node(test_attr).testname = true
+node(test_attr & oatr).testname = true
+node(test_attr | oatr).testname = true
+node(test_attr & oatr | another & !"not this").testname = true
+
+node.testname = true
+node[markland -> smithland].testname = "hello"
+node[elizabeth -> markland].testname = 12.0
+node.testname
+network.name = "Ohio River Network"
+network.name2 = name
+
+network.name2
+
+help node render
+help render
+# help # todo
