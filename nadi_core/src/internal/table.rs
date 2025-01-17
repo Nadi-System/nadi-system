@@ -12,12 +12,6 @@ mod table {
 
     /** Render the Table as a rendered markdown
 
-    # Arguments
-    - `table`: Path to the table file
-    - `template`: String template for table
-    - `outfile`: Path to the output file
-    - `connetions`: Show connections column or not
-
     # Error
     The function will error out if,
     - error reading the table file,
@@ -30,9 +24,13 @@ mod table {
     #[network_func]
     fn table_to_markdown(
         net: &mut Network,
+        /// Path to the table file
         table: Option<PathBuf>,
+        /// String template for table
         template: Option<String>,
+        /// Path to the output file
         outfile: Option<PathBuf>,
+        /// Show connections column or not
         connections: Option<String>,
     ) -> anyhow::Result<()> {
         let tab = match (table, template) {

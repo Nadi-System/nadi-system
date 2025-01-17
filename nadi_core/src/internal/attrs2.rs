@@ -146,10 +146,14 @@ mod attrs {
     #[node_func]
     fn set_attrs_ifelse(
         node: &mut NodeInner,
-        #[relaxed] cond: bool,
-        #[kwargs] kwargs: &AttrMap,
+        /// Condition to check
+        #[relaxed]
+        cond: bool,
+        /// key = [val1, val2] where key is set as first if `cond` is true else second
+        #[kwargs]
+        values: &AttrMap,
     ) -> Result<(), String> {
-        for Tuple2(k, v) in kwargs {
+        for Tuple2(k, v) in values {
             let (t, f) = FromAttribute::try_from_attr(v)?;
             let v = if cond { t } else { f };
             node.set_attr(k, v);
@@ -158,11 +162,13 @@ mod attrs {
     }
 
     /// Set node attributes based on string templates
-    ///
-    /// # Arguments
-    /// - `attr=template` - Kwargs of attr = String template to render
     #[node_func]
-    fn set_attrs_render(node: &mut NodeInner, #[kwargs] kwargs: &AttrMap) -> Result<(), String> {
+    fn set_attrs_render(
+        node: &mut NodeInner,
+        /// key value pair of attribute to set and the Template to render
+        #[kwargs]
+        kwargs: &AttrMap,
+    ) -> Result<(), String> {
         for Tuple2(k, v) in kwargs {
             let templ: Template = Template::try_from_attr(v)?;
             let text = node.render(&templ).map_err(|e| e.to_string())?;
@@ -172,11 +178,14 @@ mod attrs {
     }
 
     /// Set node attributes based on string templates
-    ///
-    /// # Arguments
-    /// - toml - String template to render and load as TOML string
     #[node_func(echo = false)]
-    fn load_toml_render(node: &mut NodeInner, toml: &Template, echo: bool) -> anyhow::Result<()> {
+    fn load_toml_render(
+        node: &mut NodeInner,
+        /// String template to render and load as TOML string
+        toml: &Template,
+        /// Print the rendered toml or not
+        echo: bool,
+    ) -> anyhow::Result<()> {
         let toml = format!("{}\n", node.render(toml)?);
         if echo {
             println!("{toml}");
@@ -191,7 +200,10 @@ mod attrs {
     #[node_func]
     fn float_transform(
         _node: &mut NodeInner,
-        #[relaxed] value: f64,
+        /// value to transform
+        #[relaxed]
+        value: f64,
+        /// transformation function, can be one of log/log10/sqrt
         transformation: &str,
     ) -> Result<Attribute, String> {
         let value = if value == 0.0 { value + 0.1 } else { value };
@@ -209,19 +221,26 @@ mod attrs {
     /// # Arguments
     /// - `key=value` - Kwargs of attr = value
     #[network_func]
-    fn set_attrs(network: &mut Network, #[kwargs] kwargs: &AttrMap) -> Result<(), String> {
-        for Tuple2(k, v) in kwargs {
+    fn set_attrs(
+        network: &mut Network,
+        /// key value pair of attributes to set
+        #[kwargs]
+        attrs: &AttrMap,
+    ) -> Result<(), String> {
+        for Tuple2(k, v) in attrs {
             network.set_attr(k.as_str(), v.clone());
         }
         Ok(())
     }
 
     /// Set network attributes based on string templates
-    ///
-    /// # Arguments
-    /// - `attr=template` - Kwargs of attr = String template to render
     #[network_func]
-    fn set_attrs_render(network: &mut Network, #[kwargs] kwargs: &AttrMap) -> Result<(), String> {
+    fn set_attrs_render(
+        network: &mut Network,
+        /// Kwargs of attr = String template to render
+        #[kwargs]
+        kwargs: &AttrMap,
+    ) -> Result<(), String> {
         for Tuple2(k, v) in kwargs {
             let templ: Template = Template::try_from_attr(v)?;
             let text = network.render(&templ).map_err(|e| e.to_string())?;

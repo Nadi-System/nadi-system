@@ -10,36 +10,69 @@ mod regex {
 
     convert_impls!(String => Regex);
 
-    /// Set the node size of the nodes based on the attribute value
+    /// Check if the given pattern matches the value or not
     #[nadi_func]
-    fn str_match(pattern: Regex, #[relaxed] attr: &str) -> bool {
+    fn str_match(
+        /// Regex pattern to match
+        pattern: Regex,
+        /// attribute to check for pattern
+        #[relaxed]
+        attr: &str,
+    ) -> bool {
         pattern.is_match(attr)
     }
 
-    /// Set the node size of the nodes based on the attribute value
+    /// Replace the occurances of the given match
     #[nadi_func]
-    fn str_replace(pattern: Regex, #[relaxed] attr: &str, #[relaxed] rep: &str) -> String {
+    fn str_replace(
+        /// Regex pattern to match
+        pattern: Regex,
+        /// attribute to replace
+        #[relaxed]
+        attr: &str,
+        /// replacement string
+        #[relaxed]
+        rep: &str,
+    ) -> String {
         pattern.replace_all(attr, rep).to_string()
     }
 
-    /// Set the node size of the nodes based on the attribute value
+    /// Find the given pattern in the value
     #[nadi_func]
-    fn str_find(pattern: Regex, #[relaxed] attr: &str) -> Option<String> {
+    fn str_find(
+        /// Regex pattern to match
+        pattern: Regex,
+        /// attribute to check for pattern
+        #[relaxed]
+        attr: &str,
+    ) -> Option<String> {
         pattern.find(attr).map(|m| m.as_str().to_string())
     }
 
-    /// Set the node size of the nodes based on the attribute value
+    /// Find all the matches of the given pattern in the value
     #[nadi_func]
-    fn str_find_all(pattern: Regex, #[relaxed] attr: &str) -> Vec<String> {
+    fn str_find_all(
+        /// Regex pattern to match
+        pattern: Regex,
+        /// attribute to check for pattern
+        #[relaxed]
+        attr: &str,
+    ) -> Vec<String> {
         pattern
             .captures_iter(attr)
             .map(|c| c[0].to_string())
             .collect()
     }
 
-    /// Set the node size of the nodes based on the attribute value
+    /// Count the number of matches of given pattern in the value
     #[nadi_func]
-    fn str_count(pattern: Regex, #[relaxed] attr: &str) -> usize {
+    fn str_count(
+        /// Regex pattern to match
+        pattern: Regex,
+        /// attribute to check for pattern
+        #[relaxed]
+        attr: &str,
+    ) -> usize {
         pattern.captures_iter(attr).count()
     }
 }

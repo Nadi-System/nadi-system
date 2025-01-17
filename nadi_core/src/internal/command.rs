@@ -39,11 +39,6 @@ mod command {
     It will also print out the new values or changes from old values,
     if `verbose` is true.
 
-    # Arguments
-    - `cmd`: String Command template to run
-    - `verbose`: bool Show the rendered version of command
-    - `echo`: bool Echo the stdin from the command
-
     # Errors
     The function will error if,
     - The command template cannot be rendered,
@@ -53,8 +48,11 @@ mod command {
     #[node_func(verbose = true, echo = false)]
     fn command(
         node: &mut NodeInner,
+        /// String Command template to run
         cmd: &Template,
+        /// Show the rendered version of command, and other messages
         verbose: bool,
+        /// Echo the stdout from the command
         echo: bool,
     ) -> anyhow::Result<()> {
         let cmd = node.render(cmd)?;
@@ -66,21 +64,19 @@ mod command {
     This function will not run a command node if all outputs are older
     than all inputs. This is useful to networks where each nodes are
     tasks with input files and output files.
-
-    # Arguments
-    - `command`: Node Attribute with the command to run
-    - `inputs`: Node attribute with list of input files
-    - `outputs`: Node attribute with list of output files
-    - `verbose`: print the command being run
-    - `echo`: Show the output of the command
     */
     #[node_func(verbose = true, echo = false)]
     fn run(
         node: &mut NodeInner,
+        /// Node Attribute with the command to run
         command: &str,
+        /// Node attribute with list of input files
         inputs: &str,
+        /// Node attribute with list of output files
         outputs: &str,
+        /// Print the command being run
         verbose: bool,
+        /// Show the output of the command
         echo: bool,
     ) -> Result<(), String> {
         let cmd: String = node.try_attr(command)?;
@@ -156,25 +152,28 @@ mod command {
     Currently there is no way to limit the number of parallel
     processes, so please be careful with this command if you have very
     large number of nodes.
-
-    # Arguments
-    - `cmd`: String Command template to run
-    - `workers`: Integer Number of workers to run in parallel
-    - `verbose`: bool Show the rendered version of command and variable changes
-    - `echo`: bool Echo the stdin from the command
      */
     #[network_func(_workers = 4, verbose = true, echo = false)]
     fn parallel(
         net: &mut Network,
+        /// String Command template to run
         cmd: &Template,
+        /// Number of workers to run in parallel
         _workers: i64,
+        /// Print the command being run
         verbose: bool,
+        /// Show the output of the command
         echo: bool,
     ) -> anyhow::Result<()> {
         let commands: Vec<_> = net
             .nodes()
             .map(|n| n.lock().render(cmd))
             .collect::<Result<Vec<_>, anyhow::Error>>()?;
+
+        // todo: put commands in a mutex, and then pop it from each
+        // thread until it is exhausted to implement the number of
+        // workers thing.
+
         let (tx, rx): (Sender<(usize, String)>, Receiver<(usize, String)>) = mpsc::channel();
         let mut children = Vec::new();
 
@@ -245,14 +244,17 @@ mod command {
 
     See `node command.command` for more details as they have
     the same implementation
-
-    # Arguments
-    - `cmd`: String Command template to run
-    - `verbose`: bool Show the rendered version of command
-    - `echo`: bool Echo the stdin from the command
      */
     #[network_func(verbose = true, echo = false)]
-    fn command(net: &mut Network, cmd: Template, verbose: bool, echo: bool) -> anyhow::Result<()> {
+    fn command(
+        net: &mut Network,
+        /// String Command template to run
+        cmd: Template,
+        /// Print the command being run
+        verbose: bool,
+        /// Show the output of the command
+        echo: bool,
+    ) -> anyhow::Result<()> {
         let cmd = net.render(&cmd)?;
         if verbose {
             println!("$ {cmd}");

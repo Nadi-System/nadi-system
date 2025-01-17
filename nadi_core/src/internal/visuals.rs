@@ -10,10 +10,17 @@ mod visuals {
     #[network_func(minsize = 4.0, maxsize = 12.0)]
     fn set_nodesize_attrs(
         net: &mut Network,
+        /// Attribute to use for size scaling
         attr: String,
-        #[relaxed] default: Option<f64>,
-        #[relaxed] minsize: f64,
-        #[relaxed] maxsize: f64,
+        /// default value of the attribute if not found
+        #[relaxed]
+        default: Option<f64>,
+        /// minimum size of the node
+        #[relaxed]
+        minsize: f64,
+        /// maximum size of the node
+        #[relaxed]
+        maxsize: f64,
     ) -> Result<Attribute, String> {
         let values = if let Some(v) = default {
             net.nodes()

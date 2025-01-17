@@ -15,7 +15,15 @@ mod debug {
     /// used to see how the nadi system takes the input from the
     /// function call.
     #[network_func]
-    fn debug(_net: &mut Network, #[args] args: AttrSlice, #[kwargs] kwargs: &AttrMap) {
+    fn debug(
+        _net: &mut Network,
+        /// Function arguments
+        #[args]
+        args: AttrSlice,
+        /// Function Keyword arguments
+        #[kwargs]
+        kwargs: &AttrMap,
+    ) {
         let mut args_str: Vec<String> = args
             .iter()
             .map(|a| Attribute::to_colored_string(a).to_string())
@@ -39,7 +47,15 @@ mod debug {
     ///
     /// Also useful for nadi preprocessor.
     #[network_func(error = false, newline = true)]
-    fn echo(_net: &mut Network, line: String, error: bool, newline: bool) {
+    fn echo(
+        _net: &mut Network,
+        /// line to print
+        line: String,
+        /// print to stderr instead of stdout
+        error: bool,
+        /// print newline at the end
+        newline: bool,
+    ) {
         match (error, newline) {
             (false, false) => print!("{line}"),
             (false, true) => println!("{line}"),
@@ -48,7 +64,7 @@ mod debug {
         }
     }
 
-    /// Echo the ----8<---- line for clipping sytax
+    /// Echo the ----8<---- line for clipping syntax
     ///
     /// This function is a utility function for the generation of nadi
     /// book. This prints out the `----8<----` line when called, so
@@ -74,7 +90,11 @@ mod debug {
     /// it'll discard outputs before that during documentation
     /// generation.
     #[network_func(error = false)]
-    fn clip(_net: &mut Network, error: bool) {
+    fn clip(
+        _net: &mut Network,
+        /// print in stderr instead of in stdout
+        error: bool,
+    ) {
         if error {
             eprintln!("----8<----");
         } else {

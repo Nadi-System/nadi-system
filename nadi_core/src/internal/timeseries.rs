@@ -9,11 +9,12 @@ mod timeseries {
     use std::collections::HashSet;
 
     /// Print the list of available timeseries for the node
-    ///
-    /// # Arguments
-    /// - `label`: Label the line with node name
     #[node_func(label = true)]
-    fn list_ts(node: &mut NodeInner, label: bool) {
+    fn list_ts(
+        node: &mut NodeInner,
+        /// Label the line with node name
+        label: bool,
+    ) {
         if label {
             print!("{}: ", node.name());
         }
@@ -24,22 +25,19 @@ mod timeseries {
     }
 
     /** Print the given timeseries values in csv format
-
-    # Arguments
-    - `name`: name of the timeseries
-    - `header`: whether to show header or not
-    - `head`: number of head rows to show (all by default)
-
     # TODO
     - save to file instead of showing with `outfile: Option<PathBuf>`
     */
     #[node_func(header = true)]
     fn show_ts(
         node: &mut NodeInner,
+        /// name of the timeseries
         name: &String,
+        /// show header
         header: bool,
+        /// number of head rows to show (all by default)
         head: Option<i64>,
-    ) -> Result<ROption<Attribute>, RString> {
+    ) -> Result<(), RString> {
         if let Some(ts) = node.ts(name) {
             let values = ts.values_as_attributes();
             if header {
@@ -64,7 +62,7 @@ mod timeseries {
             )
             .into());
         }
-        Ok(None.into())
+        Ok(())
     }
 
     /// Save timeseries from all nodes into a single csv file
@@ -75,8 +73,11 @@ mod timeseries {
     #[network_func]
     fn show_ts_csv(
         net: &mut Network,
+        /// Name of the timeseries to save
         name: String,
+        /// number of head rows to show (all by default)
         head: Option<usize>,
+        /// Include only these nodes (all by default)
         nodes: Option<HashSet<String>>,
     ) -> anyhow::Result<()> {
         let mut ts_nodes = vec![];

@@ -14,26 +14,34 @@ mod connections {
     ///
     /// This replaces the current network with the one loaded from the
     /// file.
-    #[network_func]
-    fn load_file(net: &mut Network, file: PathBuf) -> anyhow::Result<()> {
-        *net = Network::from_file(file)?;
+    #[network_func(append = false)]
+    fn load_file(
+        net: &mut Network,
+        /// File to load the network connections from
+        file: PathBuf,
+        /// Append the connections in the current network
+        append: bool,
+    ) -> anyhow::Result<()> {
+        if append {
+            todo!()
+        } else {
+            *net = Network::from_file(file)?;
+        }
         Ok(())
     }
 
     /// Save the network into the given file
     ///
-    /// # Arguments
-    /// - `file`: Path to the output file
-    /// - `quote_all` [default: true]: quote all node names.
-    ///   if false, doesn't quote valid identifier names
-    /// - `graphviz` [default: false]: wrap the network into
-    ///   a valid graphviz file. For more control on file
-    ///   `save_graphviz` from `graphviz` plugin instead.
+    /// For more control on graphviz file writing use
+    /// `save_graphviz` from `graphviz` plugin instead.
     #[network_func(quote_all = true, graphviz = false)]
     fn save_file(
         net: &mut Network,
+        /// Path to the output file
         file: PathBuf,
+        /// quote all node names; if false, doesn't quote valid identifier names
         quote_all: bool,
+        /// wrap the network into a valid graphviz file
         graphviz: bool,
     ) -> anyhow::Result<()> {
         let file = File::create(file)?;

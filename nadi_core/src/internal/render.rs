@@ -11,19 +11,20 @@ mod render {
     ///
     /// For more details on the template system. Refer to the String
     /// Template section of the NADI book.
-    ///
-    /// # Arguments
-    /// - `template` - String template to render
-    /// - `safe` - if render fails keep it as it is instead of exiting
     #[node_func(safe = false)]
-    fn render(node: &mut NodeInner, template: &Template, safe: bool) -> Result<String, String> {
+    fn render(
+        node: &mut NodeInner,
+        /// String template to render
+        template: &Template,
+        /// if render fails keep it as it is instead of exiting
+        safe: bool,
+    ) -> Result<String, String> {
         let text = if safe {
             node.render(template)
                 .unwrap_or_else(|_| template.original().to_string())
         } else {
             node.render(template).map_err(|e| e.to_string())?
         };
-        println!("{text}");
         Ok(text)
     }
 
@@ -54,7 +55,9 @@ mod render {
     #[network_func]
     fn render(
         network: &mut Network,
+        /// Path to the template file
         template: PathBuf,
+        /// output file
         outfile: Option<PathBuf>,
     ) -> anyhow::Result<()> {
         let template = super::render_utils::RenderFileContents::read_file(&template)?;
