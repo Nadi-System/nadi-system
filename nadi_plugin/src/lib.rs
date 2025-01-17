@@ -289,9 +289,14 @@ fn clean_function(func: &ItemFn) -> ItemFn {
         match arg {
             syn::FnArg::Typed(ref mut a) => {
                 let attrs = std::mem::take(&mut a.attrs);
-                let (_, remain): (Vec<_>, Vec<_>) = attrs
-                    .into_iter()
-                    .partition(|at| FUNC_ARG_ATTRS.iter().any(|a| at.path().is_ident(a.0)));
+                let (_, remain): (Vec<_>, Vec<_>) = attrs.into_iter().partition(|at| {
+                    // remove all attrs for function arg, and the doc attribute
+                    FUNC_ARG_ATTRS
+                        .iter()
+                        .map(|a| a.0)
+                        .chain(["doc"])
+                        .any(|a| at.path().is_ident(a))
+                });
 
                 a.attrs = remain;
             }
@@ -743,49 +748,54 @@ fn get_signature_func(
         .inputs
         .iter()
         .skip(1) // skip first argument, which should be node or network
-        .map(|a| match a {
-            syn::FnArg::Typed(a) => {
-                // args and kwargs function signature
-                if a.attrs.iter().any(|at| at.path().is_ident("args")) {
-                    quote! { Args }
-                } else if a.attrs.iter().any(|at| at.path().is_ident("kwargs")) {
-                    quote! { KwArgs }
-                } else {
+        .map(|a| {
+            match a {
+                syn::FnArg::Typed(a) => {
                     match a.pat.as_ref() {
                         syn::Pat::Ident(i) => {
-                            if default_args.contains_key(&i.ident) {
-                                let (n, t, v) = (
-                                    i.ident.to_string(),
-                                    a.ty.as_ref().into_token_stream().to_string(),
-                                    format!("{{{}:?}}", i.ident),
-                                );
-                                quote! { DefArg(#n .into(), #t .into(), format!(#v) .into()) }
+                            let doc = get_doc(&a.attrs);
+                            let (n, t) = (
+                                i.ident.to_string(),
+                                a.ty.as_ref().into_token_stream().to_string(),
+                            );
+                            // args and kwargs function signature
+                            let ft = if a.attrs.iter().any(|at| at.path().is_ident("args")) {
+                                quote! { Args }
+                            } else if a.attrs.iter().any(|at| at.path().is_ident("kwargs")) {
+                                quote! { KwArgs }
+                            } else if default_args.contains_key(&i.ident) {
+                                let v = format!("{{{}:?}}", i.ident);
+                                quote! { DefArg(format!(#v) .into()) }
                             } else {
-                                let (n, t) = (
-                                    i.ident.to_string(),
-                                    a.ty.as_ref().into_token_stream().to_string(),
-                                );
                                 if type_is_opt(&a.ty) {
-                                    quote! { OptArg(#n .into(), #t .into()) }
+                                    quote! { OptArg }
                                 } else {
-                                    quote! { Arg(#n .into(), #t .into()) }
+                                    quote! { Arg }
                                 }
+                            };
+
+                            quote! {
+                            ::nadi_core::functions::FuncArg {
+                                            name: #n .into(),
+                                            ty: #t .into(),
+                                            help: #doc .into(),
+                                category: ::nadi_core::functions::FuncArgType:: #ft
+                            }
                             }
                         }
                         _ => panic!("Not supported"),
                     }
                 }
+                _ => panic!("Not supported"),
             }
-            _ => panic!("Not supported"),
         })
-        .map(|a| quote! {::nadi_core::functions::SignatureArg:: #a})
         .collect();
 
     // function signature showing the function name, arguments and
     // their default values
     quote! {
         fn args(&self) -> ::nadi_core::abi_stable::std_types::RVec<
-        ::nadi_core::functions::SignatureArg
+        ::nadi_core::functions::FuncArg
         > {
             #default_exprs
         vec![
@@ -820,7 +830,8 @@ fn get_doc(attrs: &[Attribute]) -> String {
 fn format_docstrings(string: String) -> String {
     match string.lines().count() {
         0 => {
-            panic!("Please add at least one line of documentation");
+            // panic!("Please add at least one line of documentation");
+            String::new()
         }
         1 => string.trim().to_string(),
         _ => {
