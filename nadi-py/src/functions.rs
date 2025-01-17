@@ -3,7 +3,7 @@ use crate::{
     network::PyNetwork,
     node::PyNode,
 };
-use nadi_core::abi_stable::std_types::{RResult, RString, RVec};
+use nadi_core::abi_stable::std_types::RString;
 use nadi_core::functions::{FunctionCtx, FunctionRet};
 use nadi_core::functions::{NadiFunctions, NetworkFunctionBox, NodeFunctionBox};
 use nadi_core::prelude::*;
@@ -40,9 +40,9 @@ impl PyNodeFunction {
     ) -> PyResult<Option<PyAttribute>> {
         let ctx = py_args_kwargs_to_ctx(args, kwargs);
         match self.func.call(&mut node.0.lock(), &ctx) {
-	    FunctionRet::None => Ok(None),
-	    FunctionRet::Some(v) => Ok(Some(v.into())),
-	    FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
+            FunctionRet::None => Ok(None),
+            FunctionRet::Some(v) => Ok(Some(v.into())),
+            FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
         }
     }
 
@@ -98,9 +98,9 @@ impl PyNetworkFunction {
     ) -> PyResult<Option<PyAttribute>> {
         let ctx = py_args_kwargs_to_ctx(args, kwargs);
         match self.func.call(&mut network.0, &ctx) {
-	    FunctionRet::None => Ok(None),
-	    FunctionRet::Some(v) => Ok(Some(v.into())),
-	    FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
+            FunctionRet::None => Ok(None),
+            FunctionRet::Some(v) => Ok(Some(v.into())),
+            FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
         }
     }
 
@@ -158,15 +158,17 @@ impl PyNadiFunctions {
         let ctx = py_args_kwargs_to_ctx(args, kwargs);
         let func = match self.0.node(function) {
             Some(f) => f,
-            None => return Err(PyKeyError::new_err(format!(
-                "Node Function {function} not found"
-            ))),
+            None => {
+                return Err(PyKeyError::new_err(format!(
+                    "Node Function {function} not found"
+                )))
+            }
         };
         match func.call(&mut node.0.lock(), &ctx) {
-	    FunctionRet::None => Ok(None),
-	    FunctionRet::Some(v) => Ok(Some(v.into())),
-	    FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
-	}
+            FunctionRet::None => Ok(None),
+            FunctionRet::Some(v) => Ok(Some(v.into())),
+            FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
+        }
     }
 
     #[pyo3(signature = (function, network, *args, **kwargs))]
@@ -180,15 +182,17 @@ impl PyNadiFunctions {
         let ctx = py_args_kwargs_to_ctx(args, kwargs);
         let func = match self.0.network(function) {
             Some(f) => f,
-            None => return Err(PyKeyError::new_err(format!(
-                "Network Function {function} not found"
-            ))),
+            None => {
+                return Err(PyKeyError::new_err(format!(
+                    "Network Function {function} not found"
+                )))
+            }
         };
         match func.call(&mut network.0, &ctx) {
-	    FunctionRet::None => Ok(None),
-	    FunctionRet::Some(v) => Ok(Some(v.into())),
-	    FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
-	}
+            FunctionRet::None => Ok(None),
+            FunctionRet::Some(v) => Ok(Some(v.into())),
+            FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
+        }
     }
 
     // todo register python functions into nadi/node function
