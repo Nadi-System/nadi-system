@@ -2,7 +2,7 @@
 // without the macros. Any additional functions are recommended to be
 // written using the macros provided by nadi_plugin crate
 use crate::functions::{
-    FunctionCtx, FunctionRet, NadiFunctions, NodeFunction, NodeFunction_TO, SignatureArg,
+    FuncArg, FuncArgType, FunctionCtx, FunctionRet, NadiFunctions, NodeFunction, NodeFunction_TO,
 };
 use crate::plugins::NadiPlugin;
 use crate::prelude::*;
@@ -64,8 +64,14 @@ The function will error out in following conditions:
         .into()
     }
 
-    fn args(&self) -> RVec<SignatureArg> {
-        vec![SignatureArg::Arg("filename".into(), "PathBuf".into())].into()
+    fn args(&self) -> RVec<FuncArg> {
+        vec![FuncArg {
+            name: "filename".into(),
+            ty: "PathBuf".into(),
+            help: "Template for the filename to load node attributes from".into(),
+            category: FuncArgType::Arg,
+        }]
+        .into()
     }
 
     fn call(&self, node: &mut NodeInner, ctx: &FunctionCtx) -> FunctionRet {
@@ -118,7 +124,7 @@ No arguments and no errors, it'll just print all the attributes in a node with
         .into()
     }
 
-    fn args(&self) -> RVec<SignatureArg> {
+    fn args(&self) -> RVec<FuncArg> {
         vec![].into()
     }
 

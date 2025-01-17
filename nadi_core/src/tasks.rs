@@ -1,4 +1,6 @@
-use crate::functions::{FunctionCtx, FunctionRet, NadiFunctions, Propagation};
+use crate::functions::{
+    FuncArg, FuncArgType, FunctionCtx, FunctionRet, NadiFunctions, Propagation,
+};
 use crate::prelude::*;
 use abi_stable::std_types::{RString, Tuple2};
 use colored::Colorize;
@@ -165,11 +167,13 @@ impl TaskContext {
                     if let Some(attr) = task.attribute {
                         if let Some(v) = self.network.attr(&var) {
                             self.network.set_attr(&attr, v.clone());
+                            Ok(None)
                         } else {
-                            todo!()
+                            Err(format!("Attribute not found {}", attr))
                         }
+                    } else {
+                        Err(format!("Nothing to do, found variable {}", var))
                     }
-                    Ok(None)
                 }
                 TaskInput::Function(fc) => match self.functions.network(&fc.name) {
                     Some(f) => {
@@ -192,28 +196,16 @@ impl TaskContext {
             },
             TaskType::Help(None, Some(var)) => {
                 let mut helpstr = String::new();
-                if let Some((help, sig)) =
-                    self.functions.node(&var).map(|f| (f.help(), f.signature()))
-                {
-                    helpstr = format!(
-                        "{} {} {}\n{}",
-                        "node".red(),
-                        var.truecolor(80, 80, 200),
-                        sig.blue(),
-                        format_md(&help)
-                    );
+                if let Some(f) = self.functions.node(&var) {
+                    helpstr = format_help("node", var, &f.signature(), &f.args(), &f.help());
                 }
-                if let Some((help, sig)) = self
-                    .functions
-                    .network(&var)
-                    .map(|f| (f.help(), f.signature()))
-                {
-                    helpstr.push_str(&format!(
-                        "{} {} {}\n{}",
-                        "node".red(),
-                        var.truecolor(80, 80, 200),
-                        sig.blue(),
-                        format_md(&help)
+                if let Some(f) = self.functions.network(&var) {
+                    helpstr.push_str(&format_help(
+                        "network",
+                        var,
+                        &f.signature(),
+                        &f.args(),
+                        &f.help(),
                     ));
                 }
                 if !helpstr.is_empty() {
@@ -223,32 +215,26 @@ impl TaskContext {
                 }
             }
             TaskType::Help(Some(TaskKeyword::Node), Some(var)) => {
-                if let Some((help, sig)) =
-                    self.functions.node(&var).map(|f| (f.help(), f.signature()))
-                {
-                    Ok(Some(format!(
-                        "{} {} {}\n{}",
-                        "node".red(),
-                        var.truecolor(80, 80, 200),
-                        sig.blue(),
-                        format_md(&help)
+                if let Some(f) = self.functions.node(&var) {
+                    Ok(Some(format_help(
+                        "node",
+                        var,
+                        &f.signature(),
+                        &f.args(),
+                        &f.help(),
                     )))
                 } else {
                     Err(format!("Node Function {} not found", var))
                 }
             }
             TaskType::Help(Some(TaskKeyword::Network), Some(var)) => {
-                if let Some((help, sig)) = self
-                    .functions
-                    .network(&var)
-                    .map(|f| (f.help(), f.signature()))
-                {
-                    Ok(Some(format!(
-                        "{} {} {}\n{}",
-                        "network".red(),
-                        var.truecolor(80, 80, 200),
-                        sig.blue(),
-                        format_md(&help)
+                if let Some(f) = self.functions.network(&var) {
+                    Ok(Some(format_help(
+                        "network",
+                        var,
+                        &f.signature(),
+                        &f.args(),
+                        &f.help(),
                     )))
                 } else {
                     Err(format!("Network Function {} not found", var))
@@ -508,6 +494,33 @@ impl TaskKeyword {
         }
         .to_string()
     }
+}
+
+fn format_help(prefix: &str, name: &str, signature: &str, args: &[FuncArg], help: &str) -> String {
+    let mut help = help.trim().split('\n');
+    let short_help = help.next().unwrap_or("No Help");
+    let desc = help.collect::<Vec<&str>>().join("\n");
+    let mut argshelp = "# Arguments\n".to_string();
+    for arg in args {
+        let desc = match &arg.category {
+            FuncArgType::Arg => format!("- `{}: {}` {}", arg.name, arg.ty, arg.help),
+            FuncArgType::OptArg => format!("- `{}: {}` [optional] {}", arg.name, arg.ty, arg.help),
+            FuncArgType::DefArg(v) => {
+                format!("- `{}: {}` [def = {}] {}", arg.name, arg.ty, v, arg.help)
+            }
+            FuncArgType::Args => format!("- `*{}` {}", arg.name, arg.help),
+            FuncArgType::KwArgs => format!("- `**{}` {}", arg.name, arg.help),
+        };
+        argshelp.push_str(&desc);
+        argshelp.push('\n');
+    }
+    format!(
+        "{} {} ({})\n{}",
+        prefix.red(),
+        name.truecolor(80, 80, 200),
+        signature.blue(),
+        format_md(&format!("{}\n{}\n{}", short_help, argshelp, desc))
+    )
 }
 
 fn format_md(txt: &str) -> String {

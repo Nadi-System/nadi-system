@@ -131,10 +131,31 @@ where
 
 #[repr(C)]
 #[derive(StableAbi)]
-pub enum SignatureArg {
-    Arg(RString, RString),
-    OptArg(RString, RString),
-    DefArg(RString, RString, RString),
+pub struct FuncArg {
+    pub name: RString,
+    pub ty: RString,
+    pub help: RString,
+    pub category: FuncArgType,
+}
+
+impl ToString for FuncArg {
+    fn to_string(&self) -> String {
+        match &self.category {
+            FuncArgType::Arg => format!("{}: '{}'", self.name, self.ty),
+            FuncArgType::OptArg => format!("{}: '{}'", self.name, self.ty),
+            FuncArgType::DefArg(val) => format!("{}: '{}' = {}", self.name, self.ty, val),
+            FuncArgType::Args => format!("*{}", self.name),
+            FuncArgType::KwArgs => format!("**{}", self.name),
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(StableAbi)]
+pub enum FuncArgType {
+    Arg,
+    OptArg,
+    DefArg(RString),
     Args,
     KwArgs,
 }
@@ -151,17 +172,11 @@ pub trait NodeFunction: Debug + Clone {
             .unwrap_or("No Help")
             .into()
     }
-    fn args(&self) -> RVec<SignatureArg>;
+    fn args(&self) -> RVec<FuncArg>;
     fn signature(&self) -> RString {
         self.args()
             .iter()
-            .map(|s| match s {
-                SignatureArg::Arg(n, t) => format!("{n}: '{t}'"),
-                SignatureArg::OptArg(n, t) => format!("{n}: '{t}'"),
-                SignatureArg::DefArg(n, t, val) => format!("{n}: '{t}' = {}", val.to_string()),
-                SignatureArg::Args => "*args".to_string(),
-                SignatureArg::KwArgs => "**kwargs".to_string(),
-            })
+            .map(|f| f.to_string())
             .collect::<Vec<String>>()
             .join(", ")
             .into()
@@ -183,17 +198,11 @@ pub trait NetworkFunction: Debug + Clone {
             .unwrap_or("No Help")
             .into()
     }
-    fn args(&self) -> RVec<SignatureArg>;
+    fn args(&self) -> RVec<FuncArg>;
     fn signature(&self) -> RString {
         self.args()
             .iter()
-            .map(|s| match s {
-                SignatureArg::Arg(n, t) => format!("{n}: '{t}'"),
-                SignatureArg::OptArg(n, t) => format!("{n}: '{t}'"),
-                SignatureArg::DefArg(n, t, val) => format!("{n}: '{t}' = {}", val.to_string()),
-                SignatureArg::Args => "*args".to_string(),
-                SignatureArg::KwArgs => "**kwargs".to_string(),
-            })
+            .map(|f| f.to_string())
             .collect::<Vec<String>>()
             .join(", ")
             .into()

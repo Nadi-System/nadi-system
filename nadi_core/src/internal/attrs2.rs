@@ -14,9 +14,6 @@ mod attrs {
     /// a select few nodes using the node selection methods (path or
     /// list of nodes)
     ///
-    /// # Arguments
-    /// - `key=value` - Kwargs of attr = value
-    ///
     /// # Error
     /// The function should not error.
     ///
@@ -28,8 +25,13 @@ mod attrs {
     /// node[A -> D] set_attrs(a2d = true)
     /// ```
     #[node_func]
-    fn set_attrs(node: &mut NodeInner, #[kwargs] kwargs: &AttrMap) -> Result<(), String> {
-        for Tuple2(k, v) in kwargs {
+    fn set_attrs(
+        node: &mut NodeInner,
+        /// Key value pairs of the attributes to set
+        #[kwargs]
+        attrs: &AttrMap,
+    ) -> Result<(), String> {
+        for Tuple2(k, v) in attrs {
             node.set_attr(k.as_str(), v.clone());
         }
         Ok(())
@@ -37,31 +39,72 @@ mod attrs {
 
     /// Retrive attribute
     #[node_func]
-    fn get_attr(node: &mut NodeInner, attr: &str, default: Option<Attribute>) -> Option<Attribute> {
+    fn get_attr(
+        node: &mut NodeInner,
+        /// Name of the attribute to get
+        attr: &str,
+        /// Default value if the attribute is not found
+        default: Option<Attribute>,
+    ) -> Option<Attribute> {
         node.attr(attr).cloned().or(default)
     }
 
     /// Check if the attribute is present
     #[node_func]
-    fn has_attr(node: &mut NodeInner, attr: &str) -> bool {
+    fn has_attr(
+        node: &mut NodeInner,
+        /// Name of the attribute to check
+        attr: &str,
+    ) -> bool {
         node.attr(attr).is_some()
     }
 
-    /// simple if else condition
+    /// Simple if else condition
     #[node_func]
     fn ifelse(
         _node: &mut NodeInner,
-        #[relaxed] cond: bool,
+        /// Attribute that can be cast to bool value
+        #[relaxed]
+        cond: bool,
+        /// Output if `cond` is true
         iftrue: Attribute,
+        /// Output if `cond` is false
         iffalse: Attribute,
     ) -> Result<Attribute, String> {
         let v = if cond { iftrue } else { iffalse };
         Ok(v)
     }
 
-    /// boolean and
+    /// make an array from the arguments
     #[node_func]
-    fn and(_node: &mut NodeInner, #[args] conds: &[Attribute]) -> bool {
+    fn array(
+        _node: &mut NodeInner,
+        /// List of attributes
+        #[args]
+        attributes: &[Attribute],
+    ) -> Attribute {
+        Attribute::Array(attributes.to_vec().into())
+    }
+
+    /// make an array from the arguments
+    #[node_func]
+    fn attrmap(
+        _node: &mut NodeInner,
+        /// name and values of attributes
+        #[kwargs]
+        attributes: &AttrMap,
+    ) -> Attribute {
+        Attribute::Table(attributes.clone())
+    }
+
+    /// Boolean and
+    #[node_func]
+    fn and(
+        _node: &mut NodeInner,
+        /// List of attributes that can be cast to bool
+        #[args]
+        conds: &[Attribute],
+    ) -> bool {
         let mut ans = true;
         for c in conds {
             ans = ans && bool::from_attr_relaxed(c).unwrap();
@@ -71,7 +114,12 @@ mod attrs {
 
     /// boolean or
     #[node_func]
-    fn or(_node: &mut NodeInner, #[args] conds: &[Attribute]) -> bool {
+    fn or(
+        _node: &mut NodeInner,
+        /// List of attributes that can be cast to bool
+        #[args]
+        conds: &[Attribute],
+    ) -> bool {
         let mut ans = false;
         for c in conds {
             ans = ans || bool::from_attr_relaxed(c).unwrap();
@@ -83,8 +131,11 @@ mod attrs {
     #[node_func]
     fn strmap(
         node: &mut NodeInner,
+        /// Name of the attribute to check the value
         attr: &str,
+        /// Dictionary of key=value to map the data to
         attrmap: &AttrMap,
+        /// Default value if key not found in `attrmap`
         default: Option<Attribute>,
     ) -> Option<Attribute> {
         let attr = String::from_attr_relaxed(node.attr(attr)?)?;
