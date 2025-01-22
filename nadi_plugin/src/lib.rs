@@ -12,6 +12,24 @@ use syn::{
     Ident, ItemFn, ItemMod, Lit, MetaNameValue, Type, TypeReference,
 };
 
+#[derive(PartialEq)]
+enum FuncType {
+    Env,
+    Node,
+    Network,
+}
+
+impl ToString for FuncType {
+    fn to_string(&self) -> String {
+        match self {
+            FuncType::Env => "Env",
+            FuncType::Node => "Node",
+            FuncType::Network => "Network",
+        }
+        .to_string()
+    }
+}
+
 /// Idents and Path for from_attr and try_from_attr
 fn nadi_trait_idents(relaxed: bool) -> (proc_macro2::TokenStream, Ident, Ident) {
     let (tr, func1, func2) = if relaxed {
@@ -34,11 +52,11 @@ fn nadi_struct_name(name: &Ident, suff: &str) -> Ident {
     format_ident!("{}{suff}", name.to_string().to_case(Case::UpperCamel))
 }
 
-fn nadi_func_impl(node: bool) -> proc_macro2::TokenStream {
-    if node {
-        quote! {::nadi_core::functions::NodeFunction}
-    } else {
-        quote! {::nadi_core::functions::NetworkFunction}
+fn nadi_func_impl(ft: &FuncType) -> proc_macro2::TokenStream {
+    match ft {
+        FuncType::Env => quote! {::nadi_core::functions::EnvFunction},
+        FuncType::Node => quote! {::nadi_core::functions::NodeFunction},
+        FuncType::Network => quote! {::nadi_core::functions::NetworkFunction},
     }
 }
 
@@ -140,91 +158,102 @@ fn from_attr_derive(input: TokenStream, relaxed: bool) -> TokenStream {
     TokenStream::from(expanded)
 }
 
-// todo make a new category of functions that can be called from both
-/// register this function as a node function and network function on nadi plugin
+// // This needs more thought, Preferably written as dyn HasAttributes + HasTimeseries
+
+// /// register this function as a node function and network function on nadi plugin
+// #[proc_macro_attribute]
+// pub fn nadi_func(args: TokenStream, mut item: TokenStream) -> TokenStream {
+//     let mut item = parse_macro_input!(item as ItemFn);
+//     let mut item_n = item.clone();
+//     let narg = quote!(_node: &mut ::nadi_core::node::NodeInner).into();
+//     item_n
+//         .sig
+//         .inputs
+//         .insert(0, parse_macro_input!(narg as FnArg).into());
+//     let mut node_f = nadi_func_inner(args.clone(), item_n, FuncType::Node);
+//     let narg = quote!(_net: &mut ::nadi_core::network::Network).into();
+//     item.sig
+//         .inputs
+//         .insert(0, parse_macro_input!(narg as FnArg).into());
+//     let net_f = nadi_func_inner(args, item, FuncType::Network);
+//     node_f.extend([net_f]);
+//     node_f
+// }
+
+/// register this function as a node function on nadi plugin
 #[proc_macro_attribute]
-pub fn nadi_func(args: TokenStream, mut item: TokenStream) -> TokenStream {
-    let mut item = parse_macro_input!(item as ItemFn);
-    let mut item_n = item.clone();
-    let narg = quote!(_node: &mut ::nadi_core::node::NodeInner).into();
-    item_n
-        .sig
-        .inputs
-        .insert(0, parse_macro_input!(narg as FnArg).into());
-    let mut node_f = nadi_func_inner(args.clone(), item_n, true);
-    let narg = quote!(_net: &mut ::nadi_core::network::Network).into();
-    item.sig
-        .inputs
-        .insert(0, parse_macro_input!(narg as FnArg).into());
-    let net_f = nadi_func_inner(args, item, false);
-    node_f.extend([net_f]);
-    node_f
+pub fn env_func(args: TokenStream, item: TokenStream) -> TokenStream {
+    let item = parse_macro_input!(item as ItemFn);
+    nadi_func_inner(args, item, FuncType::Env).into()
 }
 
 /// register this function as a node function on nadi plugin
 #[proc_macro_attribute]
 pub fn node_func(args: TokenStream, item: TokenStream) -> TokenStream {
     let item = parse_macro_input!(item as ItemFn);
-    nadi_func_inner(args, item, true).into()
+    nadi_func_inner(args, item, FuncType::Node).into()
 }
 
 /// register this function as a network function on nadi plugin
 #[proc_macro_attribute]
 pub fn network_func(args: TokenStream, item: TokenStream) -> TokenStream {
     let item = parse_macro_input!(item as ItemFn);
-    nadi_func_inner(args, item, false).into()
+    nadi_func_inner(args, item, FuncType::Network).into()
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, PartialEq)]
 enum FuncArgType {
     #[default]
     Arg,
     Relaxed,
     Args,
     KwArgs,
+    Prop,
 }
 
-const FUNC_ARG_ATTRS: [(&str, FuncArgType); 3] = [
+const FUNC_ARG_ATTRS: [(&str, FuncArgType); 4] = [
     ("args", FuncArgType::Args),
     ("kwargs", FuncArgType::KwArgs),
     ("relaxed", FuncArgType::Relaxed),
+    ("prop", FuncArgType::Prop),
 ];
 
-fn nadi_func_inner(args: TokenStream, item: ItemFn, node: bool) -> TokenStream {
+fn nadi_func_inner(args: TokenStream, item: ItemFn, ft: FuncType) -> TokenStream {
     let args = parse_macro_input!(args with Punctuated<MetaNameValue, Comma>::parse_terminated);
     let default_args: HashMap<Ident, Expr> = args
         .into_iter()
         .map(|p| (p.path.segments.first().unwrap().ident.clone(), p.value))
         .collect();
-    let arg0 = item
-        .sig
-        .inputs
-        .first()
-        .expect("Needs at least one parameter");
+    let arg0 = if FuncType::Env == ft {
+        None
+    } else {
+        item.sig.inputs.first()
+    };
     let func_args: Vec<(&Ident, &Type, FuncArgType)> = item
         .sig
         .inputs
         .iter()
-        .skip(1) // skip first argument, which is probably node or network
+        // skip first argument, node or network
+        .skip((FuncType::Env != ft) as usize)
         .map(get_fn_arg)
         .collect();
     let warnings = check_args_kwargs_order(&func_args, &default_args);
 
-    let func_struct_name = nadi_struct_name(&item.sig.ident, if node { "Node" } else { "Network" });
+    let func_struct_name = nadi_struct_name(&item.sig.ident, &ft.to_string());
 
     let name_func = get_name_func(&item);
     let code_func = get_code_func(&item);
     let (call_func, default_exprs) = get_call_func(
         &item,
         arg0,
-        node,
+        &ft,
         &func_args,
         &default_args,
         &func_struct_name,
     );
     let help_func = get_help_func(&item);
-    let signature_func = get_signature_func(&item, &default_args, default_exprs);
-    let impl_trait = nadi_func_impl(node);
+    let signature_func = get_signature_func(&item, &ft, &default_args, default_exprs);
+    let impl_trait = nadi_func_impl(&ft);
 
     let clean_func = clean_function(&item);
 
@@ -395,12 +424,25 @@ fn nadi_export_plugin(_args: TokenStream, item: TokenStream, external: bool) -> 
     let name = &item.ident;
     let name_s = name.to_string();
     let name_mod = nadi_struct_name(name, "Mod");
+    let env_funcs = get_nadi_functions(&item, "env_func");
     let node_funcs = get_nadi_functions(&item, "node_func");
     let network_funcs = get_nadi_functions(&item, "network_func");
-    let both_funcs = get_nadi_functions(&item, "nadi_func");
+    let regis_env_funcs = env_funcs
+        .iter()
+        .map(|n| nadi_struct_name(n, "Env"))
+        .map(|n| {
+            quote! {
+                    nf.register_env_function(
+                #name_s,
+                        ::nadi_core::functions::EnvFunction_TO::from_value(
+                #n,
+                ::nadi_core::abi_stable::sabi_trait::TD_CanDowncast
+                        )
+            );
+                }
+        });
     let regis_node_funcs = node_funcs
         .iter()
-        .chain(&both_funcs)
         .map(|n| nadi_struct_name(n, "Node"))
         .map(|n| {
             quote! {
@@ -413,10 +455,8 @@ fn nadi_export_plugin(_args: TokenStream, item: TokenStream, external: bool) -> 
             );
                 }
         });
-
     let regis_network_funcs = network_funcs
         .iter()
-        .chain(&both_funcs)
         .map(|n| nadi_struct_name(n, "Network"))
         .map(|n| {
             quote! {
@@ -449,6 +489,8 @@ fn nadi_export_plugin(_args: TokenStream, item: TokenStream, external: bool) -> 
             #[::nadi_core::abi_stable::sabi_extern_fn]
             fn register_functions(nf: &mut ::nadi_core::functions::NadiFunctions) {
 
+                #(#regis_env_funcs)*
+
                 #(#regis_node_funcs)*
 
                 #(#regis_network_funcs)*
@@ -468,9 +510,11 @@ fn nadi_export_plugin(_args: TokenStream, item: TokenStream, external: bool) -> 
         }
         fn register(&self, nf: &mut ::nadi_core::functions::NadiFunctions) {
 
-                    #(#regis_node_funcs)*
+            #(#regis_env_funcs)*
 
-                    #(#regis_network_funcs)*
+            #(#regis_node_funcs)*
+
+            #(#regis_network_funcs)*
         }
             }
 
@@ -571,20 +615,41 @@ fn get_code_func(item: &ItemFn) -> proc_macro2::TokenStream {
 
 fn get_call_func(
     item: &ItemFn,
-    arg0: &FnArg,
-    node: bool,
+    arg0: Option<&FnArg>,
+    ft: &FuncType,
     args: &[(&Ident, &Type, FuncArgType)],
     defaults: &HashMap<Ident, Expr>,
     func_struct_name: &Ident,
 ) -> (proc_macro2::TokenStream, proc_macro2::TokenStream) {
     let mut defaults_expr: Vec<proc_macro2::TokenStream> = Vec::new();
     let ret_err = quote! { ::nadi_core::functions::FunctionRet::Error };
+    let mut argc: usize = 0;
     let extract_args: Vec<proc_macro2::TokenStream> = args
         .iter()
-        .enumerate()
-        .map(|(i, (arg, ty, at))| {
+        .map(|(arg, ty, at)| {
+            argc += 1;
             let arg_name = arg.to_string();
             let ty_name = ty.to_token_stream().to_string();
+            let arg_func = match at {
+                FuncArgType::Arg => quote! { ctx.arg_kwarg },
+                FuncArgType::Relaxed => quote! { ctx.arg_kwarg_relaxed },
+                FuncArgType::Args => {
+                    return quote! {
+                        let #arg: #ty = ctx.args().into();
+                    };
+                }
+                FuncArgType::KwArgs => {
+                    return quote! {
+                        let #arg: #ty = ctx.kwargs().into();
+                    };
+                }
+                FuncArgType::Prop => {
+                    argc -= 1;
+                    return quote! {
+                        let #arg: #ty = ctx.propagation();
+                    };
+                }
+            };
             let def = if let Some(val) = defaults.get(arg) {
                 match ty {
                     Type::Reference(r) => {
@@ -623,23 +688,9 @@ fn get_call_func(
             } else {
                 quote! {
                         return #ret_err (
-                format!("Argument {} ({} [{}]) is required", #i + 1, #arg_name, #ty_name).into()
+                format!("Argument {} ({} [{}]) is required", #argc, #arg_name, #ty_name).into()
                         );
                     }
-            };
-            let arg_func = match at {
-                FuncArgType::Arg => quote! { ctx.arg_kwarg },
-                FuncArgType::Relaxed => quote! { ctx.arg_kwarg_relaxed },
-                FuncArgType::Args => {
-                    return quote! {
-                        let #arg: #ty = ctx.args().into();
-                    }
-                }
-                FuncArgType::KwArgs => {
-                    return quote! {
-                        let #arg: #ty = ctx.kwargs().into();
-                    }
-                }
             };
             let isopt = type_is_opt(ty);
             let patterns = if isopt {
@@ -661,7 +712,7 @@ fn get_call_func(
                     let inner_ty = ref_type_inner(&r, false).0;
                     let m = r.mutability;
                     quote! {
-                    let #m #arg_o : #inner_ty = match #arg_func (#i, #arg_name) {
+                    let #m #arg_o : #inner_ty = match #arg_func (#argc - 1, #arg_name) {
                         #patterns
                     };
                     let #arg : #ty = & #arg_o;
@@ -680,14 +731,14 @@ fn get_call_func(
                             (true, false) => quote!(std::option::Option::as_deref),
                         };
                         quote! {
-                            let #m #arg_o : Option<#inner_ty> = match #arg_func (#i, #arg_name) {
+                            let #m #arg_o : Option<#inner_ty> = match #arg_func (#argc - 1, #arg_name) {
                             #patterns
                             };
                             let #arg : #ty = #asref (& #m #arg_o);
                         }
                     } else {
                         quote! {
-                            let #arg : #ty = match #arg_func (#i, #arg_name) {
+                            let #arg : #ty = match #arg_func (#argc - 1, #arg_name) {
                             #patterns
                             };
                         }
@@ -701,25 +752,27 @@ fn get_call_func(
         .map(|(arg, _, _)| arg.into_token_stream())
         .collect();
     let func_name = &item.sig.ident;
-    let arg0_name = get_fn_arg(arg0).0;
-    let arg0_ty = if node {
-        quote! {
-            &mut ::nadi_core::node::NodeInner
-        }
-    } else {
-        quote! {
-            &mut ::nadi_core::network::Network
+    let (arg0, fcall) = match ft {
+        FuncType::Env => (quote! {}, quote! {#func_name(#(#args_n),*)}),
+        _ => {
+            let a0 = get_fn_arg(arg0.expect("Should have at least one argument"));
+            let arg0_name = a0.0;
+            let arg0_ty = a0.1;
+            (
+                quote! {#arg0_name : #arg0_ty,},
+                quote! {#func_name(#arg0_name, #(#args_n),*)},
+            )
         }
     };
     let call_func = quote! {
             fn call(&self,
-                    #arg0_name : #arg0_ty,
+                    #arg0
                     ctx: &::nadi_core::functions::FunctionCtx)
                     -> ::nadi_core::functions::FunctionRet {
 
                 #(#extract_args)*
         ::nadi_core::functions::FunctionRet::from(
-                    #func_struct_name :: #func_name(#arg0_name, #(#args_n),*)
+                    #func_struct_name :: #fcall
                 )
             }
     };
@@ -740,6 +793,7 @@ fn get_help_func(item: &ItemFn) -> proc_macro2::TokenStream {
 
 fn get_signature_func(
     item: &ItemFn,
+    ft: &FuncType,
     default_args: &HashMap<Ident, Expr>,
     default_exprs: proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
@@ -747,8 +801,8 @@ fn get_signature_func(
         .sig
         .inputs
         .iter()
-        .skip(1) // skip first argument, which should be node or network
-        .map(|a| {
+        .skip((FuncType::Env != *ft) as usize)
+        .filter_map(|a| {
             match a {
                 syn::FnArg::Typed(a) => {
                     match a.pat.as_ref() {
@@ -759,7 +813,9 @@ fn get_signature_func(
                                 a.ty.as_ref().into_token_stream().to_string(),
                             );
                             // args and kwargs function signature
-                            let ft = if a.attrs.iter().any(|at| at.path().is_ident("args")) {
+                            let ft = if a.attrs.iter().any(|at| at.path().is_ident("prop")) {
+                                return None;
+                            } else if a.attrs.iter().any(|at| at.path().is_ident("args")) {
                                 quote! { Args }
                             } else if a.attrs.iter().any(|at| at.path().is_ident("kwargs")) {
                                 quote! { KwArgs }
@@ -774,14 +830,14 @@ fn get_signature_func(
                                 }
                             };
 
-                            quote! {
+                            Some(quote! {
                             ::nadi_core::functions::FuncArg {
                                             name: #n .into(),
                                             ty: #t .into(),
                                             help: #doc .into(),
                                 category: ::nadi_core::functions::FuncArgType:: #ft
                             }
-                            }
+                            })
                         }
                         _ => panic!("Not supported"),
                     }
