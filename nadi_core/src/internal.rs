@@ -4,6 +4,7 @@ mod attrs;
 mod attrs2;
 mod command;
 mod connections;
+mod core;
 mod debug;
 mod regex;
 mod render;
@@ -22,6 +23,7 @@ pub(crate) fn register_internal(funcs: &mut NadiFunctions) {
     attrs2::AttrsMod {}.register(funcs);
     command::CommandMod {}.register(funcs);
     connections::ConnectionsMod {}.register(funcs);
+    core::CoreMod {}.register(funcs);
     debug::DebugMod {}.register(funcs);
     regex::RegexMod {}.register(funcs);
     render::RenderMod {}.register(funcs);

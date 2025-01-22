@@ -160,6 +160,32 @@ pub enum FuncArgType {
     KwArgs,
 }
 
+/// Environmental functions that can be applied anywhere
+#[sabi_trait]
+pub trait EnvFunction: Debug + Clone {
+    fn name(&self) -> RString;
+    fn help(&self) -> RString;
+    fn short_help(&self) -> RString {
+        self.help()
+            .trim()
+            .split('\n')
+            .next()
+            .unwrap_or("No Help")
+            .into()
+    }
+    fn args(&self) -> RVec<FuncArg>;
+    fn signature(&self) -> RString {
+        self.args()
+            .iter()
+            .map(|f| f.to_string())
+            .collect::<Vec<String>>()
+            .join(", ")
+            .into()
+    }
+    fn code(&self) -> RString;
+    fn call(&self, ctx: &FunctionCtx) -> FunctionRet;
+}
+
 #[sabi_trait]
 pub trait NodeFunction: Debug + Clone {
     fn name(&self) -> RString;
@@ -212,13 +238,14 @@ pub trait NetworkFunction: Debug + Clone {
 }
 
 // A trait object for the `State` Trait Object
+pub type EnvFunctionBox = EnvFunction_TO<'static, RBox<()>>;
 pub type NodeFunctionBox = NodeFunction_TO<'static, RBox<()>>;
-
 pub type NetworkFunctionBox = NetworkFunction_TO<'static, RBox<()>>;
 
 #[repr(C)]
 #[derive(StableAbi, Default)]
 pub struct PluginFunctions {
+    env: RVec<RString>,
     node: RVec<RString>,
     network: RVec<RString>,
 }
@@ -234,12 +261,21 @@ impl PluginFunctions {
         self
     }
 
+    pub fn with_env(mut self, func: RString) -> Self {
+        self.env.push(func);
+        self
+    }
+
     pub fn push_network(&mut self, func: RString) {
         self.network.push(func);
     }
 
     pub fn push_node(&mut self, func: RString) {
         self.node.push(func);
+    }
+
+    pub fn push_env(&mut self, func: RString) {
+        self.env.push(func);
     }
 
     pub fn network(&self) -> &RVec<RString> {
@@ -249,6 +285,10 @@ impl PluginFunctions {
     pub fn node(&self) -> &RVec<RString> {
         &self.node
     }
+
+    pub fn env(&self) -> &RVec<RString> {
+        &self.env
+    }
 }
 
 // TODO: add environmental variables, like verbose, progress, debug,
@@ -257,6 +297,8 @@ impl PluginFunctions {
 #[repr(C)]
 #[derive(StableAbi, Default)]
 pub struct NadiFunctions {
+    env: RHashMap<RString, EnvFunctionBox>,
+    env_alias: RHashMap<RString, RString>,
     node: RHashMap<RString, NodeFunctionBox>,
     node_alias: RHashMap<RString, RString>,
     network: RHashMap<RString, NetworkFunctionBox>,
@@ -310,6 +352,25 @@ impl NadiFunctions {
             REntry::Occupied(mut o) => o.get_mut().push_node(name),
             REntry::Vacant(v) => {
                 v.insert(PluginFunctions::default().with_node(name));
+            }
+        };
+    }
+    pub fn register_env_function(&mut self, prefix: &str, func: EnvFunctionBox) {
+        let name = func.name();
+        let fullname = RString::from(format!("{}.{}", prefix, name));
+        self.env.insert(fullname.clone(), func);
+        if let RSome(oldname) = self.env_alias.insert(name.clone(), fullname.clone()) {
+            if fullname != oldname {
+                eprintln!(
+                    "WARN Function {} now uses {} instead of {}, use full name for disambiguity",
+                    name, fullname, oldname
+                );
+            }
+        }
+        match self.plugins.entry(prefix.into()) {
+            REntry::Occupied(mut o) => o.get_mut().push_env(name),
+            REntry::Vacant(v) => {
+                v.insert(PluginFunctions::default().with_env(name));
             }
         };
     }
@@ -541,6 +602,13 @@ impl NadiFunctions {
     //     }
     // }
 
+    pub fn env(&self, func: &str) -> Option<&EnvFunctionBox> {
+        if func.contains('.') {
+            self.env.get(func)
+        } else {
+            self.env_alias.get(func).and_then(|f| self.env.get(f))
+        }
+    }
     pub fn node(&self, func: &str) -> Option<&NodeFunctionBox> {
         if func.contains('.') {
             self.node.get(func)
@@ -589,6 +657,7 @@ impl NadiFunctions {
 pub struct FunctionCtx {
     pub args: RVec<Attribute>,
     pub kwargs: AttrMap,
+    pub propagation: Propagation,
 }
 
 impl FunctionCtx {
@@ -598,48 +667,16 @@ impl FunctionCtx {
             .into_iter()
             .map(|(k, v)| (RString::from(k), v))
             .collect();
-        Self { args, kwargs }
+        Self {
+            args,
+            kwargs,
+            propagation: Propagation::default(),
+        }
     }
 
-    // pub fn node_task(node: &NodeInner, args: &[TaskInput], kwargs: &HashMap<String, TaskInput>, out: &Option<String>) -> anyhow::Result<Self> {
-    // 	let args = args.iter().map(|a| {
-    // 	    match a {
-    // 		TaskInput::Literal(v) => Ok(v),
-    // 		TaskInput::Variable(v) => node.try_attr(v),
-    // 		_ => Err(anyhow::Error::msg("Invalid output")),
-    // 	    }
-    // 	}).collect::<anyhow::Result<Vec<Attribute>>>()?.into();
-    // 	let kwargs = kwargs.iter().map(|(k, a)| {
-    // 	    let k = RString::from(k);
-    // 	    match a {
-    // 		TaskInput::Literal(v) => Ok((k, v)),
-    // 		TaskInput::Variable(v) => Ok((k, node.try_attr(v)?)),
-    // 	    _ => Err(anyhow::Error::msg("Invalid output")),
-    // 	    }
-    // 	}).collect::<anyhow::Result<HashMap<String, Attribute>>>()?.into();
-    // 	let outattr = out.map(|s| s.into()).into();
-    //     Ok(Self { args, kwargs, outattr })
-    // }
-
-    // pub fn network_task(net: &Network, args: &[TaskInput], kwargs: &HashMap<String, TaskInput>, out: &Option<String>) -> anyhow::Result<Self> {
-    // 	let args = args.iter().map(|a| {
-    // 	    match a {
-    // 		TaskInput::Literal(v) => Ok(v),
-    // 		TaskInput::Variable(v) => net.try_attr(v),
-    // 		_ => Err(anyhow::Error::msg("Invalid output")),
-    // 	    }
-    // 	}).collect::<anyhow::Result<Vec<Attribute>>>()?.into();
-    // 	let kwargs = kwargs.iter().map(|(k, a)| {
-    // 	    let k = RString::from(k);
-    // 	    match a {
-    // 		TaskInput::Literal(v) => Ok((k, v)),
-    // 		TaskInput::Variable(v) => Ok((k, net.try_attr(v)?)),
-    // 	    _ => Err(anyhow::Error::msg("Invalid output")),
-    // 	    }
-    // 	}).collect::<anyhow::Result<HashMap<String, Attribute>>>()?.into();
-    // 	let outattr = out.map(|s| s.into()).into();
-    //     Ok(Self { args, kwargs, outattr })
-    // }
+    pub fn propagation(&self) -> &Propagation {
+        &self.propagation
+    }
 
     pub fn args(&self) -> AttrSlice {
         self.args.as_rslice()
@@ -695,17 +732,61 @@ impl FunctionCtx {
 #[repr(C)]
 #[derive(StableAbi, Debug, Clone, PartialEq)]
 pub enum Condition {
-    Single(RString),
+    Variable(RString),
+    Literal(Attribute),
+    Eq(RString, RBox<Condition>),
+    Gt(RString, RBox<Condition>),
+    Lt(RString, RBox<Condition>),
     Not(RBox<Condition>),
     And(RBox<Condition>, RBox<Condition>),
     Or(RBox<Condition>, RBox<Condition>),
+}
+
+fn partial_ord(
+    node: &NodeInner,
+    var: &RString,
+    cond: &Condition,
+    strict: bool,
+) -> Result<Option<std::cmp::Ordering>, String> {
+    let a = match node.attr_dot(var)? {
+        Some(v) => v,
+        None => return Ok(None),
+    };
+    let b = match cond {
+        Condition::Variable(v) => match node.attr_dot(v)? {
+            Some(v) => v,
+            None => return Ok(None),
+        },
+        Condition::Literal(v) => v,
+        _ => return Err(String::from("Comparision of conditions not supported")),
+    };
+    if strict {
+        let (x, y) = (a.type_name(), b.type_name());
+        if x != y {
+            return Err(format!("Cannot compare {x} with {y}"));
+        }
+    }
+    Ok(a.partial_cmp(b))
 }
 
 impl NodeInner {
     /// check if the condition is true
     pub fn check(&self, cond: &Condition) -> bool {
         match cond {
-            Condition::Single(v) => self.try_attr_relaxed(v.as_str()).unwrap_or(false),
+            Condition::Eq(var, val) => match partial_ord(self, var, val, false) {
+                Ok(Some(x)) => x.is_eq(),
+                _ => false,
+            },
+            Condition::Gt(var, val) => match partial_ord(self, var, val, false) {
+                Ok(Some(x)) => x.is_gt(),
+                _ => false,
+            },
+            Condition::Lt(var, val) => match partial_ord(self, var, val, false) {
+                Ok(Some(x)) => x.is_lt(),
+                _ => false,
+            },
+            Condition::Variable(v) => self.try_attr_relaxed(v.as_str()).unwrap_or(false),
+            Condition::Literal(v) => bool::from_attr_relaxed(v).unwrap_or(false),
             Condition::Not(v) => !self.check(v),
             Condition::And(a, b) => self.check(a) & self.check(b),
             Condition::Or(a, b) => self.check(a) | self.check(b),
@@ -714,7 +795,20 @@ impl NodeInner {
     /// check if condition is true only if attributes exist
     pub fn check_strict(&self, cond: &Condition) -> Result<bool, String> {
         match cond {
-            Condition::Single(v) => self.try_attr_relaxed(v.as_str()),
+            Condition::Eq(var, val) => match partial_ord(self, var, val, false)? {
+                Some(x) => Ok(x.is_eq()),
+                _ => Err(format!("Attrbute {var} doesn't exist")),
+            },
+            Condition::Gt(var, val) => match partial_ord(self, var, val, false)? {
+                Some(x) => Ok(x.is_gt()),
+                _ => Err(format!("Attrbute {var} doesn't exist")),
+            },
+            Condition::Lt(var, val) => match partial_ord(self, var, val, false)? {
+                Some(x) => Ok(x.is_lt()),
+                _ => Err(format!("Attrbute {var} doesn't exist")),
+            },
+            Condition::Variable(v) => self.try_attr_relaxed(v.as_str()),
+            Condition::Literal(v) => bool::try_from_attr_relaxed(v),
             Condition::Not(v) => self.check_strict(v).map(|b| !b),
             Condition::And(a, b) => {
                 let a = self.check_strict(a)?;
@@ -731,7 +825,20 @@ impl NodeInner {
     /// check if condition is true only if attributes are bool
     pub fn check_super_strict(&self, cond: &Condition) -> Result<bool, String> {
         match cond {
-            Condition::Single(v) => self.try_attr(v.as_str()),
+            Condition::Eq(var, val) => match partial_ord(self, var, val, true)? {
+                Some(x) => Ok(x.is_eq()),
+                _ => Err(format!("Attrbute {var} doesn't exist")),
+            },
+            Condition::Gt(var, val) => match partial_ord(self, var, val, true)? {
+                Some(x) => Ok(x.is_gt()),
+                _ => Err(format!("Attrbute {var} doesn't exist")),
+            },
+            Condition::Lt(var, val) => match partial_ord(self, var, val, true)? {
+                Some(x) => Ok(x.is_lt()),
+                _ => Err(format!("Attrbute {var} doesn't exist")),
+            },
+            Condition::Variable(v) => self.try_attr(v.as_str()),
+            Condition::Literal(v) => bool::try_from_attr(v),
             Condition::Not(v) => self.check_super_strict(v).map(|b| !b),
             Condition::And(a, b) => {
                 let a = self.check_super_strict(a)?;
@@ -750,21 +857,25 @@ impl NodeInner {
 impl Condition {
     fn maybe_paren(&self) -> String {
         match self {
-            Condition::Single(_) => self.to_string(),
+            Condition::Variable(_) => self.to_string(),
             _ => format!("({})", self.to_string()),
         }
     }
 
     fn maybe_paren_colored(&self) -> String {
         match self {
-            Condition::Single(_) => self.to_colored_string(),
+            Condition::Variable(_) => self.to_colored_string(),
             _ => format!("{}{}{}", "(".red(), self.to_colored_string(), ")".red()),
         }
     }
 
     pub fn to_colored_string(&self) -> String {
         match self {
-            Condition::Single(v) => v.to_string(),
+            Condition::Variable(v) => v.to_string(),
+            Condition::Literal(v) => v.to_colored_string(),
+            Condition::Eq(var, val) => format!("{} == {}", var.green(), val.to_colored_string()),
+            Condition::Gt(var, val) => format!("{} > {}", var.green(), val.to_colored_string()),
+            Condition::Lt(var, val) => format!("{} < {}", var.green(), val.to_colored_string()),
             Condition::Not(v) => format!("{}{}", "!".yellow(), v.maybe_paren_colored()),
             Condition::And(a, b) => {
                 format!(
@@ -789,7 +900,11 @@ impl Condition {
 impl ToString for Condition {
     fn to_string(&self) -> String {
         match self {
-            Condition::Single(v) => v.to_string(),
+            Condition::Variable(v) => v.to_string(),
+            Condition::Literal(v) => v.to_string(),
+            Condition::Eq(var, val) => format!("{} = {}", var, val.to_string()),
+            Condition::Gt(var, val) => format!("{} > {}", var, val.to_string()),
+            Condition::Lt(var, val) => format!("{} < {}", var, val.to_string()),
             Condition::Not(v) => format!("!{}", v.maybe_paren()),
             Condition::And(a, b) => format!("{} & {}", a.maybe_paren(), b.maybe_paren()),
             Condition::Or(a, b) => format!("{} | {}", a.maybe_paren(), b.maybe_paren()),

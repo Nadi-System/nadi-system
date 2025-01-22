@@ -116,6 +116,10 @@ impl<'a> VecTokens<'a> {
         }
     }
 
+    pub fn peek_next(&self) -> Option<&Token<'a>> {
+        self.tokens.iter().rev().next()
+    }
+
     pub fn next_no_ws(&mut self, newline: bool) -> Option<Token<'a>> {
         loop {
             let t = self.next()?;
@@ -136,6 +140,24 @@ impl<'a> VecTokens<'a> {
             }
         }
         None
+    }
+
+    pub fn next_if(&mut self, token: TaskToken) -> Option<Token<'a>> {
+        let t = self.peek_next()?;
+        if t.ty == token {
+            self.next()
+        } else {
+            None
+        }
+    }
+
+    pub fn next_no_ws_if(&mut self, newline: bool, token: TaskToken) -> Option<Token<'a>> {
+        let t = self.peek_next_no_ws(newline)?;
+        if t.ty == token {
+            self.next_no_ws(newline)
+        } else {
+            None
+        }
     }
 
     pub fn linestr_eol(&self) -> String {
@@ -228,23 +250,31 @@ impl<'a> Token<'a> {
         }
     }
 
-    pub fn attribute(&self) -> Option<Attribute> {
+    pub fn attribute(&self) -> Result<Option<Attribute>, &'static str> {
         let val = match self.ty {
             TaskToken::Bool => match self.content {
                 "true" => true,
                 "false" => false,
-                _ => panic!("Invalid Boolean"),
+                _ => return Err("Boolean can only be true or false"),
             }
             .into(),
             TaskToken::String(ref s) => s.to_string().into(),
-            TaskToken::Integer => self.content.parse::<i64>().unwrap().into(),
-            TaskToken::Float => self.content.parse::<f64>().unwrap().into(),
-            TaskToken::Date => Attribute::Date(Date::from_str(self.content).unwrap()),
-            TaskToken::Time => Attribute::Time(Time::from_str(self.content).unwrap()),
-            TaskToken::DateTime => Attribute::DateTime(DateTime::from_str(self.content).unwrap()),
-            _ => return None,
+            TaskToken::Integer => self
+                .content
+                .parse::<i64>()
+                .map_err(|_| "Invalid Integer")?
+                .into(),
+            TaskToken::Float => self
+                .content
+                .parse::<f64>()
+                .map_err(|_| "Invalid Float")?
+                .into(),
+            TaskToken::Date => Attribute::Date(Date::from_str(self.content)?),
+            TaskToken::Time => Attribute::Time(Time::from_str(self.content)?),
+            TaskToken::DateTime => Attribute::DateTime(DateTime::from_str(self.content)?),
+            _ => return Ok(None),
         };
-        Some(val)
+        Ok(Some(val))
     }
 }
 

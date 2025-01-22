@@ -72,13 +72,17 @@ impl NadiError for ParseError {
             self.ty.message().yellow(),
             self.col + 1
         ));
+        if let ParseErrorType::LogicalError(s) = &self.ty {
+            msg.push_str(&format!("\n  {}", s.red()))
+        }
         msg
     }
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ParseErrorType {
-    ValueError,
+    LogicalError(&'static str),
+    ValueError(&'static str),
     InvalidLineStart,
     Unclosed,
     InvalidPropagation,
@@ -87,20 +91,21 @@ pub enum ParseErrorType {
 }
 
 impl ParseErrorType {
-    pub fn message(&self) -> &str {
+    pub fn message(&self) -> String {
         match self {
-            Self::ValueError => "Invalid Value",
-            Self::InvalidLineStart => "Lines should start with a keyword",
-            Self::Unclosed => "Incomplete Input",
-            Self::InvalidPropagation => "Invalid propagation value",
-            Self::SyntaxError => "Invalid Syntax",
-            Self::InvalidToken => "Invalid Token",
+            Self::LogicalError(v) => format!("Unexpected Logic problem: {v}, please contact dev"),
+            Self::ValueError(v) => format!("Invalid Value: {v}"),
+            Self::InvalidLineStart => "Lines should start with a keyword".to_string(),
+            Self::Unclosed => "Incomplete Input".to_string(),
+            Self::InvalidPropagation => "Invalid propagation value".to_string(),
+            Self::SyntaxError => "Invalid Syntax".to_string(),
+            Self::InvalidToken => "Invalid Token".to_string(),
         }
     }
 }
 
 impl std::str::FromStr for Date {
-    type Err = String;
+    type Err = &'static str;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut parts = s.split('-');
         let year = parts
@@ -119,19 +124,19 @@ impl std::str::FromStr for Date {
             .parse::<u8>()
             .map_err(|_| "Invalid Day")?;
         if month < 1 && month > 12 {
-            return Err(String::from("Invalid Month (use 1-12)"));
+            return Err("Invalid Month (use 1-12)");
         }
         // doesn't make too many assumption on calendar type (leap
         // year or others)
         if day < 1 && day > 31 {
-            return Err(String::from("Invalid Day (use 1-31)"));
+            return Err("Invalid Day (use 1-31)");
         }
         Ok(Date::new(year, month, day))
     }
 }
 
 impl std::str::FromStr for Time {
-    type Err = String;
+    type Err = &'static str;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut parts = s.split(':');
         let hour = parts
@@ -152,20 +157,20 @@ impl std::str::FromStr for Time {
             (ss.parse::<u8>().map_err(|_| "Invalid Second")?, 0)
         };
         if hour >= 24 {
-            return Err(String::from("Invalid Hour (use 0-23)"));
+            return Err("Invalid Hour (use 0-23)");
         }
         if min >= 60 {
-            return Err(String::from("Invalid Minute (use 0-59)"));
+            return Err("Invalid Minute (use 0-59)");
         }
         if sec >= 60 {
-            return Err(String::from("Invalid Second (use 0-59)"));
+            return Err("Invalid Second (use 0-59)");
         }
         Ok(Time::new(hour, min, sec, nanosecond))
     }
 }
 
 impl std::str::FromStr for DateTime {
-    type Err = String;
+    type Err = &'static str;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let (d, t) = if let Some((d, t)) = s.split_once(' ') {
             (d.trim(), t.trim())
@@ -173,7 +178,7 @@ impl std::str::FromStr for DateTime {
             if let Some((d, t)) = s.split_once('T') {
                 (d.trim(), t.trim())
             } else {
-                return Err(String::from("Invalid DateTime use YYYY-mm-dd HH:MM[:SS]"));
+                return Err("Invalid DateTime use YYYY-mm-dd HH:MM[:SS]");
             }
         };
         Ok(DateTime::new(Date::from_str(d)?, Time::from_str(t)?, None))

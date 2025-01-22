@@ -4,7 +4,7 @@ use nadi_plugin::nadi_internal_plugin;
 mod timeseries {
 
     use crate::prelude::*;
-    use abi_stable::std_types::{ROption, RString};
+    use abi_stable::std_types::RString;
     use nadi_plugin::{network_func, node_func};
     use std::collections::HashSet;
 

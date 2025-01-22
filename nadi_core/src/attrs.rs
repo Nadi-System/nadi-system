@@ -24,15 +24,56 @@ pub trait HasAttributes {
     fn attr(&self, name: &str) -> Option<&Attribute> {
         self.attr_map().get(name)
     }
+    fn attr_mut(&mut self, name: &str) -> Option<&mut Attribute> {
+        self.attr_map_mut().get_mut(name)
+    }
     fn del_attr(&mut self, name: &str) -> Option<Attribute> {
         self.attr_map_mut().remove(name.into()).into()
     }
     fn set_attr(&mut self, name: &str, val: Attribute) -> Option<Attribute> {
+        if let Some(v) = self.attr(name) {
+            if v == &val {
+                return None;
+            }
+        }
         self.attr_map_mut().insert(name.into(), val).into()
     }
 
+    fn attr_dot(&self, name: &str) -> Result<Option<&Attribute>, String> {
+        let (pre, name) = match name.rsplit_once('.') {
+            Some(x) => x,
+            None => return Ok(self.attr(name)),
+        };
+        let mut map = self.attr_map();
+        for m in pre.split('.') {
+            map = match map.attr(m) {
+                Some(Attribute::Table(mp)) => mp,
+                Some(_) => return Err(format!("Key {m} is not a Table")),
+                None => return Err(format!("Key {m} not found")),
+            };
+        }
+        Ok(map.attr(name))
+    }
+    fn set_attr_dot(&mut self, name: &str, val: Attribute) -> Result<Option<Attribute>, String> {
+        let (pre, name) = match name.rsplit_once('.') {
+            Some(x) => x,
+            None => return Ok(self.set_attr(name, val)),
+        };
+        let mut map = self.attr_map_mut();
+        for m in pre.split('.') {
+            map = match map
+                .entry(m.to_string().into())
+                .or_insert(Attribute::Table(AttrMap::new()))
+            {
+                Attribute::Table(ref mut mp) => mp,
+                _ => return Err(format!("Key {m} is not a Table")),
+            };
+        }
+        Ok(map.set_attr(name, val))
+    }
+
     fn try_attr<T: FromAttribute>(&self, name: &str) -> Result<T, String> {
-        match self.attr(name) {
+        match self.attr_dot(name)? {
             Some(v) => FromAttribute::try_from_attr(v),
             None => Err(format!(
                 "Attribute Error: Attribute {name} not found in Node"
@@ -40,7 +81,7 @@ pub trait HasAttributes {
         }
     }
     fn try_attr_relaxed<T: FromAttributeRelaxed>(&self, name: &str) -> Result<T, String> {
-        match self.attr(name) {
+        match self.attr_dot(name)? {
             Some(v) => FromAttributeRelaxed::try_from_attr_relaxed(v),
             None => Err(format!(
                 "Attribute Error: Attribute {name} not found in Node"
@@ -62,6 +103,15 @@ pub trait HasAttributes {
             }
         }
         template.render(&op)
+    }
+}
+
+impl HasAttributes for AttrMap {
+    fn attr_map(&self) -> &AttrMap {
+        self
+    }
+    fn attr_map_mut(&mut self) -> &mut AttrMap {
+        self
     }
 }
 
@@ -98,6 +148,58 @@ impl ToString for Attribute {
             Self::Array(v) => format!("{v:?}"),
             Self::Table(v) => format!("{v:?}"),
         }
+    }
+}
+
+impl PartialOrd for Attribute {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self {
+            Self::Bool(b) => {
+                if let Self::Bool(v) = other {
+                    return b.partial_cmp(v);
+                }
+            }
+            Self::String(b) => {
+                if let Self::String(v) = other {
+                    return b.partial_cmp(v);
+                }
+            }
+            Self::Integer(b) => {
+                return match other {
+                    Self::Integer(v) => b.partial_cmp(v),
+                    Self::Float(v) => (*b as f64).partial_cmp(v),
+                    _ => None,
+                }
+            }
+            Self::Float(b) => {
+                return match other {
+                    Self::Float(v) => b.partial_cmp(v),
+                    Self::Integer(v) => b.partial_cmp(&(*v as f64)),
+                    _ => None,
+                }
+            }
+            Self::Date(b) => {
+                return match other {
+                    Self::Date(v) => b.partial_cmp(v),
+                    Self::DateTime(v) => b.partial_cmp(v),
+                    _ => None,
+                }
+            }
+            Self::Time(b) => {
+                if let Self::Time(v) = other {
+                    return b.partial_cmp(v);
+                }
+            }
+            Self::DateTime(b) => {
+                return match other {
+                    Self::DateTime(v) => b.partial_cmp(v),
+                    Self::Date(v) => b.partial_cmp(v),
+                    _ => None,
+                }
+            }
+            _ => (),
+        };
+        None
     }
 }
 
@@ -256,7 +358,13 @@ impl_from_attr!(bool, Attribute::Bool,
 		Attribute::String(s) => !s.is_empty(),
 		Attribute::Array(s) => !s.is_empty(),
 		Attribute::Table(s) => !s.is_empty());
-impl_from_attr!(RString, Attribute::String,);
+impl_from_attr!(RString, Attribute::String,
+        Attribute::Bool(s) => s.to_string().into(),
+        Attribute::Integer(s) => s.to_string().into(),
+        Attribute::Float(s) => s.to_string().into(),
+        Attribute::Date(s) => s.to_string().into(),
+        Attribute::Time(s) => s.to_string().into(),
+        Attribute::DateTime(s) => s.to_string().into());
 impl_from_attr!(i64, Attribute::Integer,
 		Attribute::Bool(v) => *v as i64);
 impl_from_attr!(f64, Attribute::Float,
@@ -499,6 +607,27 @@ pub struct DateTime {
     pub offset: ROption<Offset>,
 }
 
+impl PartialOrd for DateTime {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        // TODO don't ignore offset
+        Some(self.date.cmp(&other.date).then(self.time.cmp(&other.time)))
+    }
+}
+
+impl PartialEq<Date> for DateTime {
+    fn eq(&self, other: &Date) -> bool {
+        // TODO don't ignore offset
+        self.date.eq(other) && self.time.eq(&Time::default())
+    }
+}
+
+impl PartialOrd<Date> for DateTime {
+    fn partial_cmp(&self, other: &Date) -> Option<std::cmp::Ordering> {
+        // TODO don't ignore offset
+        Some(self.date.cmp(&other).then(self.time.cmp(&Time::default())))
+    }
+}
+
 impl std::fmt::Display for DateTime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} {}", self.date, self.time)
@@ -560,12 +689,41 @@ impl DateTime {
 }
 
 #[repr(C)]
-#[derive(StableAbi, Default, Clone, PartialEq, Debug)]
+#[derive(StableAbi, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Date {
     pub year: u16,
     pub month: u8,
     pub day: u8,
 }
+
+impl PartialEq<DateTime> for Date {
+    fn eq(&self, other: &DateTime) -> bool {
+        // TODO don't ignore offset
+        other.eq(self)
+    }
+}
+
+impl PartialOrd<DateTime> for Date {
+    fn partial_cmp(&self, other: &DateTime) -> Option<std::cmp::Ordering> {
+        // TODO don't ignore offset
+        other.partial_cmp(self).map(|o| o.reverse())
+    }
+}
+
+// impl PartialOrd for Date {
+//     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+//         Some(self.cmp(other))
+//     }
+// }
+
+// impl Ord for Date {
+//     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+//         self.year
+//             .cmp(&other.year)
+//             .then(self.month.cmp(&other.month))
+//             .then(self.day.cmp(&other.day))
+//     }
+// }
 
 impl std::fmt::Display for Date {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -626,7 +784,7 @@ impl Date {
 }
 
 #[repr(C)]
-#[derive(StableAbi, Default, Clone, PartialEq, Debug)]
+#[derive(StableAbi, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Time {
     pub hour: u8,
     pub min: u8,
@@ -695,7 +853,7 @@ impl Time {
 }
 
 #[repr(C)]
-#[derive(StableAbi, Default, Clone, PartialEq, Debug)]
+#[derive(StableAbi, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Offset {
     pub hour: u8,
     pub min: u8,

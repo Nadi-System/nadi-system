@@ -5,13 +5,13 @@ mod regex {
     use crate::convert_impls;
     use crate::prelude::*;
     use anyhow::Result;
-    use nadi_plugin::nadi_func;
+    use nadi_plugin::env_func;
     use regex::Regex;
 
     convert_impls!(String => Regex);
 
     /// Check if the given pattern matches the value or not
-    #[nadi_func]
+    #[env_func]
     fn str_match(
         /// Regex pattern to match
         pattern: Regex,
@@ -23,7 +23,7 @@ mod regex {
     }
 
     /// Replace the occurances of the given match
-    #[nadi_func]
+    #[env_func]
     fn str_replace(
         /// Regex pattern to match
         pattern: Regex,
@@ -38,7 +38,7 @@ mod regex {
     }
 
     /// Find the given pattern in the value
-    #[nadi_func]
+    #[env_func]
     fn str_find(
         /// Regex pattern to match
         pattern: Regex,
@@ -50,7 +50,7 @@ mod regex {
     }
 
     /// Find all the matches of the given pattern in the value
-    #[nadi_func]
+    #[env_func]
     fn str_find_all(
         /// Regex pattern to match
         pattern: Regex,
@@ -65,7 +65,7 @@ mod regex {
     }
 
     /// Count the number of matches of given pattern in the value
-    #[nadi_func]
+    #[env_func]
     fn str_count(
         /// Regex pattern to match
         pattern: Regex,

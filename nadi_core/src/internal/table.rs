@@ -2,13 +2,47 @@ use nadi_plugin::nadi_internal_plugin;
 
 #[nadi_internal_plugin]
 mod table {
-    use crate::network::Network;
+    use crate::functions::Propagation;
+    use crate::prelude::*;
     use crate::table::Table;
 
     use nadi_plugin::network_func;
-    use std::io::Write;
     use std::path::PathBuf;
     use std::str::FromStr;
+
+    use std::{fs::File, io::Write, path::Path};
+
+    /// Save CSV
+    #[network_func]
+    fn save_csv(
+        net: &mut Network,
+        path: &Path,
+        #[args] fields: &[Attribute],
+        #[prop] prop: &Propagation,
+    ) -> anyhow::Result<()> {
+        let mut file = File::create(path)?;
+        let fields = fields
+            .iter()
+            .skip(1) // args include everything, skip path
+            .map(|a| String::try_from_attr(a))
+            .collect::<Result<Vec<String>, String>>()
+            .map_err(anyhow::Error::msg)?;
+        writeln!(file, "{}", fields.join(","))?;
+        for node in net.nodes_propagation(prop).map_err(anyhow::Error::msg)? {
+            let values = fields
+                .iter()
+                .map(|a| {
+                    node.lock().attr_dot(a).map(|a| match a {
+                        Some(v) => v.to_string(),
+                        None => String::new(),
+                    })
+                })
+                .collect::<Result<Vec<String>, String>>()
+                .map_err(anyhow::Error::msg)?;
+            writeln!(file, "{}", values.join(","))?;
+        }
+        Ok(())
+    }
 
     /** Render the Table as a rendered markdown
 

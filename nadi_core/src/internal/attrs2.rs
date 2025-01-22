@@ -4,7 +4,7 @@ use nadi_plugin::nadi_internal_plugin;
 mod attrs {
     use crate::prelude::*;
     use abi_stable::std_types::Tuple2;
-    use nadi_plugin::{network_func, node_func};
+    use nadi_plugin::{env_func, network_func, node_func};
 
     use string_template_plus::Template;
 
@@ -60,9 +60,8 @@ mod attrs {
     }
 
     /// Simple if else condition
-    #[node_func]
+    #[env_func]
     fn ifelse(
-        _node: &mut NodeInner,
         /// Attribute that can be cast to bool value
         #[relaxed]
         cond: bool,
@@ -75,32 +74,9 @@ mod attrs {
         Ok(v)
     }
 
-    /// make an array from the arguments
-    #[node_func]
-    fn array(
-        _node: &mut NodeInner,
-        /// List of attributes
-        #[args]
-        attributes: &[Attribute],
-    ) -> Attribute {
-        Attribute::Array(attributes.to_vec().into())
-    }
-
-    /// make an array from the arguments
-    #[node_func]
-    fn attrmap(
-        _node: &mut NodeInner,
-        /// name and values of attributes
-        #[kwargs]
-        attributes: &AttrMap,
-    ) -> Attribute {
-        Attribute::Table(attributes.clone())
-    }
-
     /// Boolean and
-    #[node_func]
+    #[env_func]
     fn and(
-        _node: &mut NodeInner,
         /// List of attributes that can be cast to bool
         #[args]
         conds: &[Attribute],
@@ -113,9 +89,8 @@ mod attrs {
     }
 
     /// boolean or
-    #[node_func]
+    #[env_func]
     fn or(
-        _node: &mut NodeInner,
         /// List of attributes that can be cast to bool
         #[args]
         conds: &[Attribute],
@@ -127,19 +102,28 @@ mod attrs {
         ans
     }
 
+    /// boolean not
+    #[env_func]
+    fn not(
+        /// attribute that can be cast to bool
+        #[relaxed]
+        cond: bool,
+    ) -> bool {
+        !cond
+    }
+
     /// map values from the attribute based on the given table
-    #[node_func]
+    #[env_func]
     fn strmap(
-        node: &mut NodeInner,
-        /// Name of the attribute to check the value
+        /// Value to transform the attribute
+        #[relaxed]
         attr: &str,
         /// Dictionary of key=value to map the data to
         attrmap: &AttrMap,
         /// Default value if key not found in `attrmap`
         default: Option<Attribute>,
     ) -> Option<Attribute> {
-        let attr = String::from_attr_relaxed(node.attr(attr)?)?;
-        attrmap.get(attr.as_str()).cloned().or(default)
+        attrmap.get(attr).cloned().or(default)
     }
 
     /// if else condition with multiple attributes
@@ -197,9 +181,8 @@ mod attrs {
     }
 
     /// map values from the attribute based on the given table
-    #[node_func]
+    #[env_func]
     fn float_transform(
-        _node: &mut NodeInner,
         /// value to transform
         #[relaxed]
         value: f64,

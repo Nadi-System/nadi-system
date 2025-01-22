@@ -19,6 +19,7 @@ pub mod prelude {
     pub use crate::attrs::{
         AttrMap, AttrSlice, Attribute, FromAttribute, FromAttributeRelaxed, HasAttributes,
     };
+    pub use crate::functions::Propagation;
     pub use crate::network::Network;
     pub use crate::node::{Node, NodeInner};
     pub use crate::timeseries::HasTimeSeries;

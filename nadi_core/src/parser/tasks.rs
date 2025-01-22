@@ -28,6 +28,7 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
     let mut data: Vec<String> = vec![];
     let mut propagation: Option<Propagation> = None;
     let mut output: Option<String> = None;
+    let mut prev_states = vec![];
     let mut state = State::None;
     let mut tasks: Vec<Task> = vec![];
     let mut token;
@@ -45,9 +46,9 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                     State::Attribute | State::Assignment => {
                         let last_kw = match curr_keyword.replace(kw.clone()) {
                             Some(k) => k,
-                            None => panic!(
-                                "Last kw can't be none if it's in Attribute or Assignment state"
-                            ),
+                            None => return Err(tokens.parse_error(ParseErrorType::LogicalError(
+                                "Last kw can't be none if it's in Attribute or Assignment state",
+                            ))),
                         };
                         match last_kw {
                             TaskKeyword::Exit => (), // last one shouldn't be exit as it'd exit earlier
@@ -62,8 +63,11 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                                 });
                             }
                             TaskKeyword::Network => {
+                                let prop = propagation
+                                    .replace(Propagation::default())
+                                    .unwrap_or_default();
                                 tasks.push(Task {
-                                    ty: TaskType::Network,
+                                    ty: TaskType::Network(prop),
                                     attribute: output.take(),
                                     input: TaskInput::None,
                                 });
@@ -88,10 +92,10 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                     _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
                 }
                 match kw {
-                    TaskKeyword::Node => {
+                    TaskKeyword::Node | TaskKeyword::Network => {
                         state = State::Propagation;
                     }
-                    TaskKeyword::Network | TaskKeyword::Env => {
+                    TaskKeyword::Env => {
                         state = State::Attribute;
                     }
                     TaskKeyword::Help => {
@@ -149,7 +153,12 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                                 .unwrap_or_default();
                             TaskType::Node(prop)
                         }
-                        Some(TaskKeyword::Network) => TaskType::Network,
+                        Some(TaskKeyword::Network) => {
+                            let prop = propagation
+                                .replace(Propagation::default())
+                                .unwrap_or_default();
+                            TaskType::Network(prop)
+                        }
                         _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
                     };
                     tasks.push(Task {
@@ -177,7 +186,11 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                 }
 
                 State::FuncKeyArgs(ref mut name, mut fc) => {
-                    let name = name.take().expect("should be Some based on prev pattern");
+                    let name =
+                        name.take()
+                            .ok_or(tokens.parse_error(ParseErrorType::LogicalError(
+                                "should be Some based on prev pattern",
+                            )))?;
                     let inp = read_input(Some(token.clone()), &mut tokens)?;
                     fc.kwargs.insert(name, inp);
 
@@ -201,7 +214,12 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                                 .unwrap_or_default();
                             TaskType::Node(prop)
                         }
-                        Some(TaskKeyword::Network) => TaskType::Network,
+                        Some(TaskKeyword::Network) => {
+                            let prop = propagation
+                                .replace(Propagation::default())
+                                .unwrap_or_default();
+                            TaskType::Network(prop)
+                        }
                         _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
                     };
                     tasks.push(Task {
@@ -230,7 +248,11 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                 }
 
                 State::FuncKeyArgs(ref mut name, mut fc) => {
-                    let name = name.take().expect("should be Some based on prev pattern");
+                    let name =
+                        name.take()
+                            .ok_or(tokens.parse_error(ParseErrorType::LogicalError(
+                                "should be Some based on prev pattern",
+                            )))?;
                     let inp = read_input(Some(token.clone()), &mut tokens)?;
                     fc.kwargs.insert(name, inp);
 
@@ -258,24 +280,56 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
             TaskToken::ParenEnd => {
                 // propagation ParenEnd doesn't reach here
                 match state {
-                    State::FuncArgs(ref fc) | State::FuncKeyArgs(None, ref fc) => {
-                        let ty = match curr_keyword.take().expect("current keyword can't be empty")
-                        {
+                    State::FuncArgs(fc) | State::FuncKeyArgs(None, fc) => {
+                        let kw = if prev_states.is_empty() {
+                            curr_keyword.take()
+                        } else {
+                            curr_keyword.clone()
+                        }
+                        .ok_or(tokens.parse_error(
+                            ParseErrorType::LogicalError("current keyword can't be empty"),
+                        ))?;
+                        let ty = match kw {
                             TaskKeyword::Node => {
                                 let prop = propagation
                                     .replace(Propagation::default())
                                     .unwrap_or_default();
                                 TaskType::Node(prop)
                             }
-                            TaskKeyword::Network => TaskType::Network,
+                            TaskKeyword::Network => {
+                                let prop = propagation
+                                    .replace(Propagation::default())
+                                    .unwrap_or_default();
+                                TaskType::Network(prop)
+                            }
                             _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
                         };
-                        tasks.push(Task {
-                            ty,
-                            attribute: output.take(),
-                            input: TaskInput::Function(fc.clone()),
-                        });
-                        state = State::None;
+                        match prev_states.pop() {
+                            Some(s) => match s {
+                                State::FuncArgs(mut pfc) => {
+                                    pfc.args.push(TaskInput::Function(fc));
+                                    state = State::FuncArgs(pfc);
+                                }
+                                State::FuncKeyArgs(Some(a), mut pfc) => {
+                                    pfc.kwargs.insert(a.into(), TaskInput::Function(fc));
+                                    state = State::FuncKeyArgs(None, pfc);
+                                }
+                                _ => {
+                                    return Err(tokens.parse_error(ParseErrorType::LogicalError(
+                                        "Prev State should be function arg to get here",
+                                    )))
+                                }
+                            },
+                            None => {
+                                let tsk = Task {
+                                    ty,
+                                    attribute: output.take(),
+                                    input: TaskInput::Function(fc),
+                                };
+                                tasks.push(tsk);
+                                state = State::None;
+                            }
+                        }
                     }
                     _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
                 }
@@ -307,16 +361,17 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                 }
             }
             TaskToken::Variable => {
+                let var = read_variable(token.content, &mut tokens)?;
                 match state {
                     State::Help(hkw) => {
-                        tasks.push(Task::help(hkw, Some(token.content.to_string())));
+                        tasks.push(Task::help(hkw, Some(var)));
                         state = State::None;
                     }
                     State::PropagationList | State::PropagationPath => {
-                        data.push(token.content.to_string());
+                        data.push(var);
                     }
                     State::Attribute => {
-                        output = Some(token.content.to_string());
+                        output = Some(var);
                         state = State::Assignment;
                     }
                     State::Rhs => {
@@ -327,13 +382,18 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                                     .unwrap_or_default();
                                 TaskType::Node(prop)
                             }
-                            Some(TaskKeyword::Network) => TaskType::Network,
+                            Some(TaskKeyword::Network) => {
+                                let prop = propagation
+                                    .replace(Propagation::default())
+                                    .unwrap_or_default();
+                                TaskType::Network(prop)
+                            }
                             _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
                         };
                         tasks.push(Task {
                             ty,
                             attribute: output.take(),
-                            input: TaskInput::Variable(token.content.to_string()),
+                            input: TaskInput::Variable(var),
                         });
                         state = State::None;
                     }
@@ -341,27 +401,21 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                         if let Some(t) = tokens.peek_next_no_ws(true) {
                             match t.ty {
                                 TaskToken::Comma | TaskToken::ParenEnd => {
-                                    fc.args.push(TaskInput::Variable(token.content.to_string()));
+                                    fc.args.push(TaskInput::Variable(var));
                                 }
                                 TaskToken::Assignment => {
-                                    state = State::FuncKeyArgs(
-                                        Some(token.content.to_string()),
-                                        fc.clone(),
-                                    )
+                                    state = State::FuncKeyArgs(Some(var), fc.clone())
                                 }
                                 _ => (), // is an error anyway
                             }
                         }
                     }
-                    State::FuncKeyArgs(None, fc) => {
-                        state = State::FuncKeyArgs(Some(token.content.to_string()), fc)
-                    }
+                    State::FuncKeyArgs(None, fc) => state = State::FuncKeyArgs(Some(var), fc),
                     State::FuncKeyArgs(ref mut name, ref mut fc) => {
                         let name = name
                             .take()
                             .expect("has to be Some based on the pattern above");
-                        fc.kwargs
-                            .insert(name.into(), TaskInput::Variable(token.content.to_string()));
+                        fc.kwargs.insert(name.into(), TaskInput::Variable(var));
                     }
                     _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
                 }
@@ -369,11 +423,16 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
             TaskToken::Function => match state {
                 State::Attribute | State::Propagation | State::Rhs => {
                     if let Some(TaskKeyword::Env) = curr_keyword {
-                        // env rhs can only be literal values
-                        return Err(tokens.parse_error(ParseErrorType::ValueError));
+                        return Err(tokens.parse_error(ParseErrorType::ValueError(
+                            "Env Rhs can only be literal for now",
+                        )));
                     } else {
                         state = State::Function(token.content.to_string());
                     }
+                }
+                State::FuncArgs(_) | State::FuncKeyArgs(Some(_), _) => {
+                    prev_states.push(state);
+                    state = State::Function(token.content.to_string());
                 }
                 _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
             },
@@ -399,7 +458,12 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                                 .unwrap_or_default();
                             TaskType::Node(prop)
                         }
-                        Some(TaskKeyword::Network) => TaskType::Network,
+                        Some(TaskKeyword::Network) => {
+                            let prop = propagation
+                                .replace(Propagation::default())
+                                .unwrap_or_default();
+                            TaskType::Network(prop)
+                        }
                         Some(TaskKeyword::Env) => TaskType::Env,
                         _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
                     };
@@ -443,7 +507,11 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                     TaskToken::Bool | TaskToken::Integer => {
                         data.push(token.content.to_string());
                     }
-                    _ => return Err(tokens.parse_error(ParseErrorType::ValueError)),
+                    _ => {
+                        return Err(
+                            tokens.parse_error(ParseErrorType::ValueError("Invalid Node Name"))
+                        )
+                    }
                 },
                 State::Rhs => {
                     let ty = match curr_keyword {
@@ -453,36 +521,56 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                                 .unwrap_or_default();
                             TaskType::Node(prop)
                         }
-                        Some(TaskKeyword::Network) => TaskType::Network,
+                        Some(TaskKeyword::Network) => {
+                            let prop = propagation
+                                .replace(Propagation::default())
+                                .unwrap_or_default();
+                            TaskType::Network(prop)
+                        }
                         Some(TaskKeyword::Env) => TaskType::Env,
                         _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
                     };
                     match token.attribute() {
-                        Some(v) => {
+                        Ok(Some(v)) => {
                             tasks.push(Task {
                                 ty,
                                 attribute: output.take(),
                                 input: TaskInput::Literal(v),
                             });
                         }
-                        None => return Err(tokens.parse_error(ParseErrorType::ValueError)),
+                        Ok(None) => {
+                            return Err(
+                                tokens.parse_error(ParseErrorType::ValueError("Not an Attribute"))
+                            )
+                        }
+                        Err(e) => return Err(tokens.parse_error(ParseErrorType::ValueError(e))),
                     }
                     state = State::None;
                 }
                 State::FuncArgs(ref mut fc) => match token.attribute() {
-                    Some(v) => {
+                    Ok(Some(v)) => {
                         fc.args.push(TaskInput::Literal(v));
                     }
-                    None => return Err(tokens.parse_error(ParseErrorType::ValueError)),
+                    Ok(None) => {
+                        return Err(
+                            tokens.parse_error(ParseErrorType::ValueError("Not an Attribute"))
+                        )
+                    }
+                    Err(e) => return Err(tokens.parse_error(ParseErrorType::ValueError(e))),
                 },
                 State::FuncKeyArgs(ref mut var, ref mut fc) => match token.attribute() {
-                    Some(v) => match var.take() {
+                    Ok(Some(v)) => match var.take() {
                         Some(var) => {
                             fc.kwargs.insert(var.into(), TaskInput::Literal(v));
                         }
                         None => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
                     },
-                    None => return Err(tokens.parse_error(ParseErrorType::ValueError)),
+                    Ok(None) => {
+                        return Err(
+                            tokens.parse_error(ParseErrorType::ValueError("Not an Attribute"))
+                        )
+                    }
+                    Err(e) => return Err(tokens.parse_error(ParseErrorType::ValueError(e))),
                 },
                 _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
             },
@@ -494,7 +582,7 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
             let ty = match kw {
                 TaskKeyword::Env => TaskType::Env,
                 TaskKeyword::Node => TaskType::Node(propagation.take().unwrap_or_default()),
-                TaskKeyword::Network => TaskType::Network,
+                TaskKeyword::Network => TaskType::Network(propagation.take().unwrap_or_default()),
                 TaskKeyword::Help => TaskType::Help(None, None),
                 TaskKeyword::Exit => TaskType::Exit,
             };
@@ -603,15 +691,19 @@ pub fn read_attribute(
                         TaskToken::String(ref s) => {
                             name = Some(s.to_string().into());
                         }
-                        _ => return Err(tokens.parse_error(ParseErrorType::ValueError)),
+                        _ => {
+                            return Err(tokens
+                                .parse_error(ParseErrorType::ValueError("Key can only be string")))
+                        }
                     }
                 }
             }
             Err(tokens.parse_error(ParseErrorType::Unclosed))
         }
         _ => match tk.attribute() {
-            Some(a) => Ok(Some(a)),
-            None => Err(tokens.parse_error(ParseErrorType::ValueError)),
+            Ok(Some(v)) => Ok(Some(v)),
+            Ok(None) => Err(tokens.parse_error(ParseErrorType::ValueError("Not an Attribute"))),
+            Err(e) => Err(tokens.parse_error(ParseErrorType::ValueError(e))),
         },
     }
 }
@@ -642,11 +734,18 @@ fn read_propagation(tokens: &mut VecTokens) -> Result<Option<Propagation>, Parse
     }
 }
 
+enum CompType {
+    Eq,
+    Lt,
+    Gt,
+}
+
 enum CondState {
     FirstVar(i64),
     Not,
     Cond(Condition),
     SecondVar(Condition, bool),
+    SecondValue(Condition, CompType),
 }
 
 fn read_conditional(tokens: &mut VecTokens) -> Result<Option<Propagation>, ParseError> {
@@ -664,6 +763,21 @@ fn read_conditional(tokens: &mut VecTokens) -> Result<Option<Propagation>, Parse
                         return Err(tokens.parse_error(ParseErrorType::SyntaxError));
                     }
                     state = CondState::FirstVar(i + 1);
+                }
+                CondState::Cond(s) => {
+                    state = CondState::SecondValue(s, CompType::Eq);
+                }
+                _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
+            },
+            TaskToken::AngleStart => match state {
+                CondState::Cond(s) => {
+                    state = CondState::SecondValue(s, CompType::Lt);
+                }
+                _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
+            },
+            TaskToken::AngleEnd => match state {
+                CondState::Cond(s) => {
+                    state = CondState::SecondValue(s, CompType::Gt);
                 }
                 _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
             },
@@ -691,7 +805,7 @@ fn read_conditional(tokens: &mut VecTokens) -> Result<Option<Propagation>, Parse
                             TaskToken::String(s) => s,
                             _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
                         };
-                        let cv = Condition::Not(RBox::new(Condition::Single(var.into())));
+                        let cv = Condition::Not(RBox::new(Condition::Variable(var.into())));
                         let cond = if a {
                             Condition::And(RBox::new(f), RBox::new(cv))
                         } else {
@@ -710,26 +824,44 @@ fn read_conditional(tokens: &mut VecTokens) -> Result<Option<Propagation>, Parse
                     return Err(tokens.parse_error(ParseErrorType::Unclosed));
                 }
             }
-            ty => {
-                let s = match ty {
-                    TaskToken::Variable => tk.content.to_string(),
-                    TaskToken::String(s) => s,
-                    _ => return Err(tokens.parse_error(ParseErrorType::InvalidPropagation)),
+            ref ty => {
+                let cd = match ty {
+                    TaskToken::Variable => {
+                        Condition::Variable(read_variable(tk.content, tokens)?.into())
+                    }
+                    _ => match tk.attribute() {
+                        Ok(Some(a)) => Condition::Literal(a),
+                        Ok(None) => {
+                            return Err(tokens.parse_error(ParseErrorType::InvalidPropagation))
+                        }
+                        Err(e) => return Err(tokens.parse_error(ParseErrorType::ValueError(e))),
+                    },
                 };
                 match state {
                     CondState::FirstVar(i) => {
                         strict = i;
-                        state = CondState::Cond(Condition::Single(s.into()));
+                        state = CondState::Cond(cd);
                     }
                     CondState::Not => {
-                        state =
-                            CondState::Cond(Condition::Not(RBox::new(Condition::Single(s.into()))));
+                        state = CondState::Cond(Condition::Not(RBox::new(cd)));
                     }
                     CondState::SecondVar(f, a) => {
                         let cond = if a {
-                            Condition::And(RBox::new(f), RBox::new(Condition::Single(s.into())))
+                            Condition::And(RBox::new(f), RBox::new(cd))
                         } else {
-                            Condition::Or(RBox::new(f), RBox::new(Condition::Single(s.into())))
+                            Condition::Or(RBox::new(f), RBox::new(cd))
+                        };
+                        state = CondState::Cond(cond);
+                    }
+                    CondState::SecondValue(s, ct) => {
+                        let var = match s {
+                            Condition::Variable(v) => v,
+                            _ => return Err(tokens.parse_error(ParseErrorType::InvalidPropagation)),
+                        };
+                        let cond = match ct {
+                            CompType::Eq => Condition::Eq(var, RBox::new(cd)),
+                            CompType::Lt => Condition::Lt(var, RBox::new(cd)),
+                            CompType::Gt => Condition::Gt(var, RBox::new(cd)),
                         };
                         state = CondState::Cond(cond);
                     }
@@ -744,4 +876,19 @@ fn read_conditional(tokens: &mut VecTokens) -> Result<Option<Propagation>, Parse
         _ => Propagation::ConditionalSuperStrict(cond),
     };
     Ok(Some(prop))
+}
+
+fn read_variable(pre: &str, tokens: &mut VecTokens) -> Result<String, ParseError> {
+    let mut names = vec![pre];
+    loop {
+        if tokens.next_no_ws_if(true, TaskToken::Dot).is_some() {
+            match tokens.next_no_ws_if(true, TaskToken::Variable) {
+                Some(t) => names.push(&t.content),
+                None => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
+            }
+        } else {
+            break;
+        }
+    }
+    Ok(names.join("."))
 }
