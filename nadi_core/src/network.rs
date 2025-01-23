@@ -6,7 +6,7 @@ use std::fmt::Debug;
 use crate::attrs::{AttrMap, HasAttributes};
 use crate::functions::Propagation;
 use crate::node::{new_node, Node, NodeInner};
-use crate::timeseries::{HasTimeSeries, TsMap};
+use crate::timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap};
 use abi_stable::{
     std_types::{
         RHashMap,
@@ -62,6 +62,8 @@ pub struct Network {
     pub(crate) nodes_map: RHashMap<RString, Node>,
     /// Network Attributes
     pub(crate) attributes: AttrMap,
+    /// Network Series
+    pub(crate) series: SeriesMap,
     /// Network TimeSeries
     pub(crate) timeseries: TsMap,
     /// Output [`Node`] of the network if present
@@ -91,6 +93,16 @@ impl HasAttributes for Network {
 
     fn attr_map_mut(&mut self) -> &mut AttrMap {
         &mut self.attributes
+    }
+}
+
+impl HasSeries for Network {
+    fn series_map(&self) -> &SeriesMap {
+        &self.series
+    }
+
+    fn series_map_mut(&mut self) -> &mut SeriesMap {
+        &mut self.series
     }
 }
 

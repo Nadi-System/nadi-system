@@ -22,7 +22,7 @@ pub mod prelude {
     pub use crate::functions::Propagation;
     pub use crate::network::Network;
     pub use crate::node::{Node, NodeInner};
-    pub use crate::timeseries::HasTimeSeries;
+    pub use crate::timeseries::{HasSeries, HasTimeSeries};
 }
 
 // workaround for nadi_plugin_macros to work with ::nadi_core:: style

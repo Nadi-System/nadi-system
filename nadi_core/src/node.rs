@@ -1,7 +1,6 @@
 use crate::{
     attrs::{AttrMap, Attribute, HasAttributes},
-    prelude::HasTimeSeries,
-    timeseries::TsMap,
+    timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap},
 };
 use abi_stable::{
     external_types::RMutex,
@@ -57,6 +56,8 @@ pub struct NodeInner {
     pub(crate) order: u64,
     /// Node attributes in a  Hashmap of [`RString`] to [`Attribute`]
     pub(crate) attributes: AttrMap,
+    /// Hashmap of [`RString`] to [`Series`]
+    pub(crate) series: SeriesMap,
     /// Hashmap of [`RString`] to [`TimeSeries`]
     pub(crate) timeseries: TsMap,
     /// List of immediate inputs
@@ -72,6 +73,16 @@ impl HasAttributes for NodeInner {
 
     fn attr_map_mut(&mut self) -> &mut AttrMap {
         &mut self.attributes
+    }
+}
+
+impl HasSeries for NodeInner {
+    fn series_map(&self) -> &SeriesMap {
+        &self.series
+    }
+
+    fn series_map_mut(&mut self) -> &mut SeriesMap {
+        &mut self.series
     }
 }
 

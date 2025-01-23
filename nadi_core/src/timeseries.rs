@@ -8,6 +8,7 @@ use abi_stable::{
 
 pub type TimeLine = RArc<RMutex<TimeLineInner>>;
 pub type TsMap = RHashMap<RString, TimeSeries>;
+pub type SeriesMap = RHashMap<RString, Series>;
 
 pub trait HasTimeSeries {
     fn ts_map(&self) -> &TsMap;
@@ -26,6 +27,26 @@ pub trait HasTimeSeries {
         self.ts_map()
             .get(name)
             .ok_or(format!("Timeseries `{name}` not found"))
+    }
+}
+
+pub trait HasSeries {
+    fn series_map(&self) -> &SeriesMap;
+    fn series_map_mut(&mut self) -> &mut SeriesMap;
+    fn series(&self, name: &str) -> Option<&Series> {
+        self.series_map().get(name)
+    }
+    fn del_series(&mut self, name: &str) -> Option<Series> {
+        self.series_map_mut().remove(name.into()).into()
+    }
+    fn set_series(&mut self, name: &str, val: Series) -> Option<Series> {
+        self.series_map_mut().insert(name.into(), val).into()
+    }
+
+    fn try_series(&self, name: &str) -> Result<&Series, String> {
+        self.series_map()
+            .get(name)
+            .ok_or(format!("Series `{name}` not found"))
     }
 }
 
@@ -105,11 +126,11 @@ impl<'a> TimeLineInner {
 #[derive(StableAbi, Clone)]
 pub struct TimeSeries {
     timeline: TimeLine,
-    values: TimeSeriesValues,
+    values: Series,
 }
 
 impl TimeSeries {
-    pub fn new(timeline: TimeLine, values: TimeSeriesValues) -> Self {
+    pub fn new(timeline: TimeLine, values: Series) -> Self {
         Self { timeline, values }
     }
 
@@ -127,30 +148,30 @@ impl TimeSeries {
 
     pub fn values_as_attributes(&self) -> Vec<Attribute> {
         match self.values.clone() {
-            TimeSeriesValues::Floats(v) => v.into_iter().map(Attribute::Float).collect(),
-            TimeSeriesValues::Integers(v) => v.into_iter().map(Attribute::Integer).collect(),
-            TimeSeriesValues::Strings(v) => v.into_iter().map(Attribute::String).collect(),
-            TimeSeriesValues::Booleans(v) => v.into_iter().map(Attribute::Bool).collect(),
-            TimeSeriesValues::Dates(v) => v.into_iter().map(Attribute::Date).collect(),
-            TimeSeriesValues::Times(v) => v.into_iter().map(Attribute::Time).collect(),
-            TimeSeriesValues::DateTimes(v) => v.into_iter().map(Attribute::DateTime).collect(),
-            TimeSeriesValues::Attributes(v) => v.into(),
+            Series::Floats(v) => v.into_iter().map(Attribute::Float).collect(),
+            Series::Integers(v) => v.into_iter().map(Attribute::Integer).collect(),
+            Series::Strings(v) => v.into_iter().map(Attribute::String).collect(),
+            Series::Booleans(v) => v.into_iter().map(Attribute::Bool).collect(),
+            Series::Dates(v) => v.into_iter().map(Attribute::Date).collect(),
+            Series::Times(v) => v.into_iter().map(Attribute::Time).collect(),
+            Series::DateTimes(v) => v.into_iter().map(Attribute::DateTime).collect(),
+            Series::Attributes(v) => v.into(),
         }
     }
 
-    pub fn values<'a, T: FromTimeSeries<'a>>(&'a self) -> Option<&'a [T]> {
-        FromTimeSeries::from_ts(&self.values)
+    pub fn values<'a, T: FromSeries<'a>>(&'a self) -> Option<&'a [T]> {
+        FromSeries::from_series(&self.values)
     }
 
-    pub fn values_mut<'a, T: FromTimeSeries<'a>>(&'a mut self) -> Option<&'a mut [T]> {
-        FromTimeSeries::from_ts_mut(&mut self.values)
+    pub fn values_mut<'a, T: FromSeries<'a>>(&'a mut self) -> Option<&'a mut [T]> {
+        FromSeries::from_series_mut(&mut self.values)
     }
 
-    pub fn try_values<'a, T: FromTimeSeries<'a>>(&'a self) -> Result<&'a [T], String> {
-        FromTimeSeries::try_from_ts(&self.values)
+    pub fn try_values<'a, T: FromSeries<'a>>(&'a self) -> Result<&'a [T], String> {
+        FromSeries::try_from_series(&self.values)
     }
-    pub fn try_values_mut<'a, T: FromTimeSeries<'a>>(&'a mut self) -> Result<&'a mut [T], String> {
-        FromTimeSeries::try_from_ts_mut(&mut self.values)
+    pub fn try_values_mut<'a, T: FromSeries<'a>>(&'a mut self) -> Result<&'a mut [T], String> {
+        FromSeries::try_from_series_mut(&mut self.values)
     }
 
     pub fn values_type(&self) -> &str {
@@ -170,7 +191,7 @@ impl TimeSeries {
 
 #[repr(C)]
 #[derive(StableAbi, Clone, PartialEq, Debug)]
-pub enum TimeSeriesValues {
+pub enum Series {
     Floats(RVec<f64>),
     Integers(RVec<i64>),
     Strings(RVec<RString>),
@@ -181,7 +202,7 @@ pub enum TimeSeriesValues {
     Attributes(RVec<Attribute>),
 }
 
-impl TimeSeriesValues {
+impl Series {
     pub fn floats(v: Vec<f64>) -> Self {
         Self::Floats(v.into())
     }
@@ -238,37 +259,37 @@ impl TimeSeriesValues {
     }
 }
 
-pub trait FromTimeSeries<'a>: Sized {
-    fn from_ts(value: &'a TimeSeriesValues) -> Option<&'a [Self]>;
-    fn from_ts_mut(value: &'a mut TimeSeriesValues) -> Option<&'a mut [Self]>;
-    fn try_from_ts(value: &'a TimeSeriesValues) -> Result<&'a [Self], String> {
+pub trait FromSeries<'a>: Sized {
+    fn from_series(value: &'a Series) -> Option<&'a [Self]>;
+    fn from_series_mut(value: &'a mut Series) -> Option<&'a mut [Self]>;
+    fn try_from_series(value: &'a Series) -> Result<&'a [Self], String> {
         let ermsg = format!(
             "Incorrect Type: timeseries of `{}` cannot be converted to `{}`",
             value.type_name(),
             type_name::<Self>()
         );
-        FromTimeSeries::from_ts(value).ok_or(ermsg)
+        FromSeries::from_series(value).ok_or(ermsg)
     }
-    fn try_from_ts_mut(value: &'a mut TimeSeriesValues) -> Result<&'a mut [Self], String> {
+    fn try_from_series_mut(value: &'a mut Series) -> Result<&'a mut [Self], String> {
         let ermsg = format!(
             "Incorrect Type: timeseries of `{}` cannot be converted to `{}`",
             value.type_name(),
             type_name::<Self>()
         );
-        FromTimeSeries::from_ts_mut(value).ok_or(ermsg)
+        FromSeries::from_series_mut(value).ok_or(ermsg)
     }
 }
 
-macro_rules! impl_from_ts {
+macro_rules! impl_from_series {
     ($t: tt, $x: path) => {
-        impl<'a> FromTimeSeries<'a> for $t {
-            fn from_ts(value: &TimeSeriesValues) -> Option<&[$t]> {
+        impl<'a> FromSeries<'a> for $t {
+            fn from_series(value: &Series) -> Option<&[$t]> {
                 match value {
                     $x(v) => Some(v.as_slice()),
                     _ => None,
                 }
             }
-            fn from_ts_mut(value: &mut TimeSeriesValues) -> Option<&mut [$t]> {
+            fn from_series_mut(value: &mut Series) -> Option<&mut [$t]> {
                 match value {
                     $x(v) => Some(v.as_mut_slice()),
                     _ => None,
@@ -276,24 +297,29 @@ macro_rules! impl_from_ts {
             }
         }
 
-        impl From<&[$t]> for TimeSeriesValues {
+        impl From<&[$t]> for Series {
             fn from(item: &[$t]) -> Self {
                 $x(item.into())
             }
         }
-        impl From<Vec<$t>> for TimeSeriesValues {
+        impl From<Vec<$t>> for Series {
             fn from(item: Vec<$t>) -> Self {
                 $x(RVec::from(item))
+            }
+        }
+        impl From<RVec<$t>> for Series {
+            fn from(item: RVec<$t>) -> Self {
+                $x(item)
             }
         }
     };
 }
 
-impl_from_ts!(f64, TimeSeriesValues::Floats);
-impl_from_ts!(i64, TimeSeriesValues::Integers);
-impl_from_ts!(RString, TimeSeriesValues::Strings);
-impl_from_ts!(bool, TimeSeriesValues::Booleans);
-impl_from_ts!(Date, TimeSeriesValues::Dates);
-impl_from_ts!(Time, TimeSeriesValues::Times);
-impl_from_ts!(DateTime, TimeSeriesValues::DateTimes);
-impl_from_ts!(Attribute, TimeSeriesValues::Attributes);
+impl_from_series!(f64, Series::Floats);
+impl_from_series!(i64, Series::Integers);
+impl_from_series!(RString, Series::Strings);
+impl_from_series!(bool, Series::Booleans);
+impl_from_series!(Date, Series::Dates);
+impl_from_series!(Time, Series::Times);
+impl_from_series!(DateTime, Series::DateTimes);
+impl_from_series!(Attribute, Series::Attributes);
