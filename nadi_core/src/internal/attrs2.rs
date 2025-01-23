@@ -59,57 +59,21 @@ mod attrs {
         node.attr(attr).is_some()
     }
 
-    /// Simple if else condition
-    #[env_func]
-    fn ifelse(
-        /// Attribute that can be cast to bool value
-        #[relaxed]
-        cond: bool,
-        /// Output if `cond` is true
-        iftrue: Attribute,
-        /// Output if `cond` is false
-        iffalse: Attribute,
-    ) -> Result<Attribute, String> {
-        let v = if cond { iftrue } else { iffalse };
-        Ok(v)
-    }
-
-    /// Boolean and
-    #[env_func]
-    fn and(
-        /// List of attributes that can be cast to bool
-        #[args]
-        conds: &[Attribute],
-    ) -> bool {
-        let mut ans = true;
-        for c in conds {
-            ans = ans && bool::from_attr_relaxed(c).unwrap();
+    /// Return the first Attribute that exists
+    #[node_func]
+    fn first_attr(
+        node: &mut NodeInner,
+        /// attribute names
+        attrs: &[String],
+        /// Default value if not found
+        default: Option<Attribute>,
+    ) -> Option<Attribute> {
+        for attr in attrs {
+            if let Ok(Some(v)) = node.attr_dot(&attr) {
+                return Some(v.clone());
+            }
         }
-        ans
-    }
-
-    /// boolean or
-    #[env_func]
-    fn or(
-        /// List of attributes that can be cast to bool
-        #[args]
-        conds: &[Attribute],
-    ) -> bool {
-        let mut ans = false;
-        for c in conds {
-            ans = ans || bool::from_attr_relaxed(c).unwrap();
-        }
-        ans
-    }
-
-    /// boolean not
-    #[env_func]
-    fn not(
-        /// attribute that can be cast to bool
-        #[relaxed]
-        cond: bool,
-    ) -> bool {
-        !cond
+        default
     }
 
     /// map values from the attribute based on the given table

@@ -3,7 +3,50 @@ use nadi_plugin::nadi_internal_plugin;
 #[nadi_internal_plugin]
 mod core {
     use crate::prelude::*;
-    use nadi_plugin::env_func;
+    use abi_stable::std_types::{RString, Tuple2};
+    use nadi_plugin::{env_func, network_func};
+    use std::collections::HashMap;
+
+    /// Count the number of nodes in the network
+    ///
+    /// If propagation is present, only counts those nodes
+    #[network_func]
+    fn count(net: &mut Network, #[prop] prop: &Propagation) -> Result<usize, String> {
+        net.nodes_propagation(prop).map(|v| v.len())
+    }
+
+    fn get_type_recur(attr: &Attribute) -> Attribute {
+        match attr {
+            Attribute::Array(a) => Attribute::Array(
+                a.iter()
+                    .map(get_type_recur)
+                    .collect::<Vec<Attribute>>()
+                    .into(),
+            ),
+            Attribute::Table(a) => Attribute::Table(
+                a.iter()
+                    .map(|Tuple2(k, v)| (k.clone(), get_type_recur(v)))
+                    .collect::<HashMap<RString, Attribute>>()
+                    .into(),
+            ),
+            a => Attribute::String(a.type_name().into()),
+        }
+    }
+
+    /// Type name of the arguments
+    #[env_func(recursive = false)]
+    fn type_name(
+        /// Argument to get type
+        value: Attribute,
+        /// Recursively check types for array and table
+        recursive: bool,
+    ) -> Attribute {
+        if recursive {
+            get_type_recur(&value)
+        } else {
+            Attribute::String(RString::from(value.type_name()))
+        }
+    }
 
     /// make a float from value
     #[env_func(parse = true)]

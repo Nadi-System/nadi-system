@@ -289,19 +289,16 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                         .ok_or(tokens.parse_error(
                             ParseErrorType::LogicalError("current keyword can't be empty"),
                         ))?;
+                        let prop = if prev_states.is_empty() {
+                            propagation
+                                .replace(Propagation::default())
+                                .unwrap_or_default()
+                        } else {
+                            propagation.clone().unwrap_or_default()
+                        };
                         let ty = match kw {
-                            TaskKeyword::Node => {
-                                let prop = propagation
-                                    .replace(Propagation::default())
-                                    .unwrap_or_default();
-                                TaskType::Node(prop)
-                            }
-                            TaskKeyword::Network => {
-                                let prop = propagation
-                                    .replace(Propagation::default())
-                                    .unwrap_or_default();
-                                TaskType::Network(prop)
-                            }
+                            TaskKeyword::Node => TaskType::Node(prop),
+                            TaskKeyword::Network => TaskType::Network(prop),
                             _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
                         };
                         match prev_states.pop() {
