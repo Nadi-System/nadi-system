@@ -9,6 +9,7 @@ mod debug;
 mod logic;
 mod regex;
 mod render;
+mod series;
 mod table;
 mod timeseries;
 mod visuals;
@@ -29,6 +30,7 @@ pub(crate) fn register_internal(funcs: &mut NadiFunctions) {
     logic::LogicMod {}.register(funcs);
     regex::RegexMod {}.register(funcs);
     render::RenderMod {}.register(funcs);
+    series::SeriesMod {}.register(funcs);
     table::TableMod {}.register(funcs);
     timeseries::TimeseriesMod {}.register(funcs);
     visuals::VisualsMod {}.register(funcs);

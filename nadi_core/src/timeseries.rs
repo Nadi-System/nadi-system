@@ -1,4 +1,4 @@
-use crate::attrs::{type_name, Attribute, Date, DateTime, Time};
+use crate::attrs::{type_name, Attribute, Date, DateTime, FromAttribute, Time};
 
 use abi_stable::{
     external_types::RMutex,
@@ -147,16 +147,11 @@ impl TimeSeries {
     }
 
     pub fn values_as_attributes(&self) -> Vec<Attribute> {
-        match self.values.clone() {
-            Series::Floats(v) => v.into_iter().map(Attribute::Float).collect(),
-            Series::Integers(v) => v.into_iter().map(Attribute::Integer).collect(),
-            Series::Strings(v) => v.into_iter().map(Attribute::String).collect(),
-            Series::Booleans(v) => v.into_iter().map(Attribute::Bool).collect(),
-            Series::Dates(v) => v.into_iter().map(Attribute::Date).collect(),
-            Series::Times(v) => v.into_iter().map(Attribute::Time).collect(),
-            Series::DateTimes(v) => v.into_iter().map(Attribute::DateTime).collect(),
-            Series::Attributes(v) => v.into(),
-        }
+        self.values.clone().to_attributes()
+    }
+
+    pub fn series(&self) -> &Series {
+        &self.values
     }
 
     pub fn values<'a, T: FromSeries<'a>>(&'a self) -> Option<&'a [T]> {
@@ -245,6 +240,58 @@ impl Series {
         self.len() == 0
     }
 
+    pub fn from_attr(vals: &Attribute, dtype: &str) -> Result<Self, String> {
+        let sr = match dtype {
+            "Floats" => {
+                let vals: Vec<f64> = FromAttribute::try_from_attr(vals)?;
+                Self::Floats(vals.into())
+            }
+            "Integers" => {
+                let vals: Vec<i64> = FromAttribute::try_from_attr(vals)?;
+                Self::Integers(vals.into())
+            }
+            "Strings" => {
+                let vals: Vec<RString> = FromAttribute::try_from_attr(vals)?;
+                Self::Strings(vals.into())
+            }
+            "Booleans" => {
+                let vals: Vec<bool> = FromAttribute::try_from_attr(vals)?;
+                Self::Booleans(vals.into())
+            }
+            "Dates" => {
+                let vals: Vec<Date> = FromAttribute::try_from_attr(vals)?;
+                Self::Dates(vals.into())
+            }
+            "Times" => {
+                let vals: Vec<Time> = FromAttribute::try_from_attr(vals)?;
+                Self::Times(vals.into())
+            }
+            "DateTimes" => {
+                let vals: Vec<DateTime> = FromAttribute::try_from_attr(vals)?;
+                Self::DateTimes(vals.into())
+            }
+            "Attributes" => {
+                let vals: Vec<Attribute> = FromAttribute::try_from_attr(vals)?;
+                Self::Attributes(vals.into())
+            }
+            t => return Err(format!("Unknown Series dtype {t}")),
+        };
+        Ok(sr)
+    }
+
+    pub fn to_attributes(self) -> Vec<Attribute> {
+        match self {
+            Series::Floats(v) => v.into_iter().map(Attribute::Float).collect(),
+            Series::Integers(v) => v.into_iter().map(Attribute::Integer).collect(),
+            Series::Strings(v) => v.into_iter().map(Attribute::String).collect(),
+            Series::Booleans(v) => v.into_iter().map(Attribute::Bool).collect(),
+            Series::Dates(v) => v.into_iter().map(Attribute::Date).collect(),
+            Series::Times(v) => v.into_iter().map(Attribute::Time).collect(),
+            Series::DateTimes(v) => v.into_iter().map(Attribute::DateTime).collect(),
+            Series::Attributes(v) => v.into(),
+        }
+    }
+
     pub fn type_name(&self) -> &str {
         match self {
             Self::Floats(_) => "Floats",
@@ -264,7 +311,7 @@ pub trait FromSeries<'a>: Sized {
     fn from_series_mut(value: &'a mut Series) -> Option<&'a mut [Self]>;
     fn try_from_series(value: &'a Series) -> Result<&'a [Self], String> {
         let ermsg = format!(
-            "Incorrect Type: timeseries of `{}` cannot be converted to `{}`",
+            "Incorrect Type: series of `{}` cannot be converted to `{}`",
             value.type_name(),
             type_name::<Self>()
         );
@@ -272,7 +319,7 @@ pub trait FromSeries<'a>: Sized {
     }
     fn try_from_series_mut(value: &'a mut Series) -> Result<&'a mut [Self], String> {
         let ermsg = format!(
-            "Incorrect Type: timeseries of `{}` cannot be converted to `{}`",
+            "Incorrect Type: series of `{}` cannot be converted to `{}`",
             value.type_name(),
             type_name::<Self>()
         );

@@ -8,20 +8,48 @@ mod timeseries {
     use nadi_plugin::{network_func, node_func};
     use std::collections::HashSet;
 
-    /// Print the list of available timeseries for the node
-    #[node_func(label = true)]
-    fn list_ts(
+    /// Number of timeseries in the node
+    #[node_func]
+    fn ts_count(node: &mut NodeInner) -> usize {
+        node.ts_map().len()
+    }
+
+    /// List all timeseries in the node
+    #[node_func]
+    fn ts_list(node: &mut NodeInner) -> Vec<String> {
+        node.ts_map().keys().map(|s| s.to_string()).collect()
+    }
+
+    /// Type name of the timeseries
+    #[node_func(safe = false)]
+    fn ts_dtype(
         node: &mut NodeInner,
-        /// Label the line with node name
-        label: bool,
-    ) {
-        if label {
-            print!("{}: ", node.name());
+        /// Name of the timeseries
+        name: &str,
+        /// Do not error if timeseries does't exist
+        safe: bool,
+    ) -> Result<Option<String>, String> {
+        match node.try_ts(name) {
+            Ok(s) => Ok(Some(s.values_type().to_string())),
+            Err(_) if safe => Ok(None),
+            Err(e) => Err(e),
         }
-        for ts in node.ts_map() {
-            print!("{}", ts.0);
+    }
+
+    /// Length of the timeseries
+    #[node_func(safe = false)]
+    fn ts_len(
+        node: &mut NodeInner,
+        /// Name of the timeseries
+        name: &str,
+        /// Do not error if timeseries does't exist
+        safe: bool,
+    ) -> Result<Option<usize>, String> {
+        match node.try_ts(name) {
+            Ok(s) => Ok(Some(s.series().len())),
+            Err(_) if safe => Ok(None),
+            Err(e) => Err(e),
         }
-        println!();
     }
 
     /** Print the given timeseries values in csv format
@@ -29,7 +57,7 @@ mod timeseries {
     - save to file instead of showing with `outfile: Option<PathBuf>`
     */
     #[node_func(header = true)]
-    fn show_ts(
+    fn ts_print(
         node: &mut NodeInner,
         /// name of the timeseries
         name: &String,
@@ -71,7 +99,7 @@ mod timeseries {
     /// TODO: error/not on no timeseries, etc...
     /// TODO: output to `file: PathBuf`
     #[network_func]
-    fn show_ts_csv(
+    fn ts_print_csv(
         net: &mut Network,
         /// Name of the timeseries to save
         name: String,
