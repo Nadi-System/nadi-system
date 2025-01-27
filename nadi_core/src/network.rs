@@ -1,6 +1,6 @@
 use abi_stable::std_types::{RDuration, Tuple2};
 use colored::Colorize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 
 use crate::attrs::{AttrMap, HasAttributes};
@@ -377,28 +377,39 @@ impl Network {
     }
 
     fn remove_node_single(&mut self, node: &Node) {
-        let n = node.lock();
-        let ind = n.index();
-        self.nodes.remove(ind);
-        self.nodes_map.remove(n.name());
-        // make sure the block below doesn't hang for long
-        if let RSome(out) = n.output() {
+        let (ind, out) = {
+            let n = node.try_lock().expect("mutex problem 1");
+            let ind = n.index();
+            self.nodes.remove(ind);
+            self.nodes_map.remove(n.name());
+            // make sure the block below doesn't hang for long
+            (ind, n.output().map(|o| o.clone()))
+        };
+        if let RSome(out) = out {
             let pos = out
-                .lock()
+                .try_lock()
+                .expect("mutex problem 2")
                 .inputs()
                 .iter()
-                .position(|i| i.lock().index() == ind)
+                .position(|i| i.try_lock().expect("mutex problem 3").index() == ind)
                 .expect("Node should be in input list of output");
-            out.lock().inputs_mut().remove(pos);
-            for inp in n.inputs() {
-                inp.lock().set_output(out.clone());
-                out.lock().add_input(inp.clone());
+            out.try_lock()
+                .expect("mutex problem 4")
+                .inputs_mut()
+                .remove(pos);
+            for inp in node.lock().inputs() {
+                inp.try_lock()
+                    .expect("mutex problem 5")
+                    .set_output(out.clone());
+                out.try_lock()
+                    .expect("mutex problem 6")
+                    .add_input(inp.clone());
             }
         } else {
-            for inp in n.inputs() {
-                inp.lock().unset_output();
+            for inp in node.lock().inputs() {
+                inp.try_lock().expect("mutex problem 7").unset_output();
             }
-            if n.inputs().len() > 1 {
+            if node.lock().inputs().len() > 1 {
                 eprintln!("WARN: Node with multiple inputs and no output Removed");
             }
         }
@@ -409,6 +420,27 @@ impl Network {
         self.remove_node_single(node);
         self.reorder();
         self.set_levels();
+    }
+
+    pub fn subset(&mut self, prop: &Propagation, keep: bool) -> Result<(), String> {
+        // rewrite it, too slow
+        let nodes: Vec<Node> = self.nodes_propagation(prop)?;
+        let given_nodes: HashSet<String> = nodes
+            .iter()
+            .map(|n| n.try_lock().expect("mutex problem").name().to_string())
+            .collect();
+        let remove_nodes: Vec<Node> = self
+            .nodes_map
+            .iter()
+            .filter(|n| given_nodes.contains(n.0.as_str()) ^ keep)
+            .map(|n| n.1.clone())
+            .collect();
+        for node in remove_nodes {
+            self.remove_node_single(&node);
+        }
+        self.reorder();
+        self.set_levels();
+        Ok(())
     }
 
     pub fn connections_utf8(&self) -> Vec<String> {

@@ -105,6 +105,9 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                         tasks.push(Task::exit());
                         return Ok(tasks);
                     }
+                    TaskKeyword::In | TaskKeyword::Match => {
+                        return Err(tokens.parse_error(ParseErrorType::SyntaxError));
+                    }
                 }
                 curr_keyword = Some(kw.clone());
             }
@@ -536,9 +539,12 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                             });
                         }
                         Ok(None) => {
-                            return Err(
-                                tokens.parse_error(ParseErrorType::ValueError("Not an Attribute"))
-                            )
+                            return Err(tokens.parse_error(if token.ty == TaskToken::Quote {
+                                // single quote without complete string
+                                ParseErrorType::Unclosed
+                            } else {
+                                ParseErrorType::ValueError("Not an Attribute")
+                            }));
                         }
                         Err(e) => return Err(tokens.parse_error(ParseErrorType::ValueError(e))),
                     }
@@ -582,6 +588,9 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                 TaskKeyword::Network => TaskType::Network(propagation.take().unwrap_or_default()),
                 TaskKeyword::Help => TaskType::Help(None, None),
                 TaskKeyword::Exit => TaskType::Exit,
+                TaskKeyword::In | TaskKeyword::Match => {
+                    return Err(tokens.parse_error(ParseErrorType::SyntaxError));
+                }
             };
             tasks.push(Task {
                 ty,
@@ -784,6 +793,16 @@ fn read_conditional(tokens: &mut VecTokens) -> Result<Option<Propagation>, Parse
                 }
                 _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
             },
+            TaskToken::Keyword(TaskKeyword::In) | TaskToken::Keyword(TaskKeyword::Match) => {
+                match state {
+                    CondState::Cond(_) => {
+                        return Err(tokens.parse_error(ParseErrorType::LogicalError(
+                            "in and match keywords are not implemented yet",
+                        )))
+                    }
+                    _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
+                }
+            }
             TaskToken::Or => match state {
                 CondState::Cond(s) => {
                     state = CondState::SecondVar(s, false);

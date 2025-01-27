@@ -538,6 +538,25 @@ pub enum TaskKeyword {
     Env,
     Exit,
     Help,
+    In,
+    Match,
+}
+
+impl std::str::FromStr for TaskKeyword {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "node" => TaskKeyword::Node,
+            "network" => TaskKeyword::Network,
+            "net" => TaskKeyword::Network,
+            "env" => TaskKeyword::Env,
+            "exit" => TaskKeyword::Exit,
+            "help" => TaskKeyword::Help,
+            "in" => TaskKeyword::In,
+            "match" => TaskKeyword::Match,
+            k => return Err(format!("{k} is not a keyword")),
+        })
+    }
 }
 
 impl ToString for TaskKeyword {
@@ -548,6 +567,8 @@ impl ToString for TaskKeyword {
             TaskKeyword::Env => "env",
             TaskKeyword::Exit => "exit",
             TaskKeyword::Help => "help",
+            TaskKeyword::In => "in",
+            TaskKeyword::Match => "match",
         }
         .to_string()
     }
@@ -561,6 +582,8 @@ impl TaskKeyword {
             TaskKeyword::Env => "environmental variables",
             TaskKeyword::Exit => "exit",
             TaskKeyword::Help => "help",
+            TaskKeyword::In => "Check if value is in an array/table",
+            TaskKeyword::Match => "match regex pattern with strings",
         }
         .to_string()
     }

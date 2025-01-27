@@ -93,14 +93,17 @@ pub enum ParseErrorType {
 impl ParseErrorType {
     pub fn message(&self) -> String {
         match self {
-            Self::LogicalError(v) => format!("Unexpected Logic problem: {v}, please contact dev"),
-            Self::ValueError(v) => format!("Invalid Value: {v}"),
-            Self::InvalidLineStart => "Lines should start with a keyword".to_string(),
-            Self::Unclosed => "Incomplete Input".to_string(),
-            Self::InvalidPropagation => "Invalid propagation value".to_string(),
-            Self::SyntaxError => "Invalid Syntax".to_string(),
-            Self::InvalidToken => "Invalid Token".to_string(),
+            Self::LogicalError(v) => {
+                return format!("Unexpected Logic problem: {v}, please contact dev")
+            }
+            Self::ValueError(v) => return format!("Invalid Value: {v}"),
+            Self::InvalidLineStart => "Lines should start with a keyword",
+            Self::Unclosed => "Incomplete Input",
+            Self::InvalidPropagation => "Invalid propagation value",
+            Self::SyntaxError => "Invalid Syntax",
+            Self::InvalidToken => "Invalid Token",
         }
+        .to_string()
     }
 }
 

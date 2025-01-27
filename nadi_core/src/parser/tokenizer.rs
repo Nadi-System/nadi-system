@@ -211,6 +211,9 @@ pub enum TaskToken {
     Date,
     Time,
     DateTime,
+    Quote, // strings within "" include the quote in
+           // String token, this is for single quote,
+           // that is not matched
 }
 
 impl<'a> Token<'a> {
@@ -247,6 +250,7 @@ impl<'a> Token<'a> {
             TaskToken::Date => format!("{}", self.content.cyan()),
             TaskToken::Time => format!("{}", self.content.cyan()),
             TaskToken::DateTime => format!("{}", self.content.cyan()),
+            TaskToken::Quote => format!("{}", self.content.red()),
         }
     }
 
@@ -318,6 +322,7 @@ fn symbols<'a>(i: &'a str) -> TokenRes<'a> {
         map(tag("&"), |s| Token::new(TaskToken::And, s)),
         map(tag("|"), |s| Token::new(TaskToken::Or, s)),
         map(tag("!"), |s| Token::new(TaskToken::Not, s)),
+        map(tag("\""), |s| Token::new(TaskToken::Quote, s)),
     ))(i)
 }
 
@@ -334,14 +339,9 @@ fn variable<'a>(i: &'a str) -> TokenRes<'a> {
         many0(pair(opt(tag("-")), many1(alt((alphanumeric1, tag("_")))))),
     ));
     let (mut rest, mut var) = get_var(i)?;
-    let ty = match var {
-        "node" => TaskToken::Keyword(TaskKeyword::Node),
-        "network" => TaskToken::Keyword(TaskKeyword::Network),
-        "net" => TaskToken::Keyword(TaskKeyword::Network),
-        "env" => TaskToken::Keyword(TaskKeyword::Env),
-        "exit" => TaskToken::Keyword(TaskKeyword::Exit),
-        "help" => TaskToken::Keyword(TaskKeyword::Help),
-        _ => {
+    let ty = match TaskKeyword::from_str(var) {
+        Ok(kw) => TaskToken::Keyword(kw),
+        Err(_) => {
             if rest.trim_start().starts_with('(') {
                 TaskToken::Function
             } else {
@@ -433,8 +433,8 @@ fn task_script<'a>(i: &'a str) -> VecTokenRes<'a> {
     context(
         "task script",
         many0(alt((
-            whitespace, newline, comment, symbols, string, datetime, date, time, boolean, float,
-            integer, variable,
+            whitespace, newline, comment, string, datetime, date, time, boolean, float, integer,
+            variable, symbols,
         ))),
     )(i)
 }
