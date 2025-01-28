@@ -265,18 +265,12 @@ impl FromStr for Propagation {
         };
         match tk.ty {
             TaskToken::Variable => Ok(propagation(tk.content)?),
-            TaskToken::ParenStart => {
-                let tt = match tokens.next_no_ws(false) {
-                    None => return Err(anyhow::Error::msg("No propagation")),
-                    Some(t) => t,
-                };
-                match tt.ty {
-                    TaskToken::Variable => Ok(propagation(tt.content)?),
-                    _ => Err(tokens
-                        .parse_error(ParseErrorType::InvalidPropagation)
-                        .into()),
-                }
-            }
+            TaskToken::AngleStart => tasks::read_propagation(&mut tokens)
+                .map_err(|e| anyhow::Error::msg(e.user_msg(None)))?
+                .ok_or(anyhow::Error::msg("No propagation")),
+            TaskToken::ParenStart => tasks::read_conditional(&mut tokens)
+                .map_err(|e| anyhow::Error::msg(e.user_msg(None)))?
+                .ok_or(anyhow::Error::msg("No propagation")),
             TaskToken::BracketStart => {
                 let mut path = false;
                 let mut comma = false;
@@ -289,8 +283,12 @@ impl FromStr for Propagation {
                                 continue;
                             }
                             TaskToken::PathSep => {
+                                comma = false;
                                 path = true;
                                 continue;
+                            }
+                            TaskToken::BracketEnd => {
+                                break;
                             }
                             _ => {
                                 return Err(tokens

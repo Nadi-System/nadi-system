@@ -149,6 +149,19 @@ impl ToString for FuncArg {
         }
     }
 }
+impl FuncArg {
+    fn to_colored_string(&self) -> String {
+        match &self.category {
+            FuncArgType::Arg => format!("{}: '{}'", self.name, self.ty.green()),
+            FuncArgType::OptArg => format!("{}: '{}'", self.name, self.ty.green()),
+            FuncArgType::DefArg(val) => {
+                format!("{}: '{}' = {}", self.name, self.ty.green(), val.yellow())
+            }
+            FuncArgType::Args => format!("*{}", self.name.red()),
+            FuncArgType::KwArgs => format!("**{}", self.name.red()),
+        }
+    }
+}
 
 #[repr(C)]
 #[derive(StableAbi)]
@@ -419,28 +432,48 @@ impl NadiFunctions {
             doc,
             "All the functions available on this instance of nadi, are listed here.\n"
         )?;
-        let (node_funcs, net_funcs) = self.list_functions_md(true);
+        let (node_funcs, net_funcs, env_funcs) = self.list_functions_md(true);
 
         writeln!(
             doc,
-            "## Node Functions\n{}\n\n## Network Functions\n{}",
-            node_funcs, net_funcs
+            "## Env Functions\n{}\n\n## Node Functions\n{}\n\n## Network Functions\n{}",
+            env_funcs, node_funcs, net_funcs
         )?;
 
-        fn func_sig(sig: RString) -> String {
-            let sig2 = sig.trim_start_matches('(').trim_end_matches(')');
-            let args: Vec<&str> = sig2.split(",").map(|s| s.trim()).collect();
-            if args.len() < 3 {
-                sig.to_string()
-            } else {
-                format!("(\n    {}\n)", args.join(",\n    "))
-            }
+        fn func_sig(fargs: RVec<FuncArg>) -> (String, String) {
+            let args: Vec<String> = fargs.iter().map(|s| s.to_string()).collect();
+            let args_help: Vec<String> = fargs
+                .iter()
+                .map(|s| format!("- `{}` => {}", s.to_string(), s.help))
+                .collect();
+            (
+                if args.len() < 3 {
+                    format!("({})", args.join(", "))
+                } else {
+                    format!("(\n    {}\n)", args.join(",\n    "))
+                },
+                args_help.join("\n"),
+            )
         }
 
         for Tuple2(plug, funcs) in self.plugins() {
             let mut doc = BufWriter::new(File::create(
                 outdir.as_ref().join(plug.as_str()).with_extension("md"),
             )?);
+            if !funcs.env().is_empty() {
+                writeln!(doc, "# Env Functions")?;
+                for func in funcs.env() {
+                    let fname = format!("{plug}.{func}");
+                    let func_obj = self.env(&fname).expect("Func Should Exist");
+                    writeln!(doc, "## {func} {{#env.{func}}}")?;
+                    writeln!(doc, "```sig")?;
+                    let (s, h) = func_sig(func_obj.args());
+                    writeln!(doc, "env {}.{}{}", plug, func, s)?;
+                    writeln!(doc, "```\n")?;
+                    writeln!(doc, "### Arguments\n{}\n", h)?;
+                    writeln!(doc, "{}", func_obj.help().replace("\n#", "\n###"))?;
+                }
+            }
             if !funcs.node().is_empty() {
                 writeln!(doc, "# Node Functions")?;
                 for func in funcs.node() {
@@ -448,14 +481,10 @@ impl NadiFunctions {
                     let func_obj = self.node(&fname).expect("Func Should Exist");
                     writeln!(doc, "## {func} {{#node.{func}}}")?;
                     writeln!(doc, "```sig")?;
-                    writeln!(
-                        doc,
-                        "node {}.{}{}",
-                        plug,
-                        func,
-                        func_sig(func_obj.signature())
-                    )?;
+                    let (s, h) = func_sig(func_obj.args());
+                    writeln!(doc, "node {}.{}{}", plug, func, s)?;
                     writeln!(doc, "```\n")?;
+                    writeln!(doc, "### Arguments\n{}\n", h)?;
                     writeln!(doc, "{}", func_obj.help().replace("\n#", "\n###"))?;
                 }
             }
@@ -466,14 +495,10 @@ impl NadiFunctions {
                     let func_obj = self.network(&fname).expect("Func Should Exist");
                     writeln!(doc, "## {func} {{#network.{func}}}")?;
                     writeln!(doc, "```sig")?;
-                    writeln!(
-                        doc,
-                        "network {}.{}{}",
-                        plug,
-                        func,
-                        func_sig(func_obj.signature())
-                    )?;
+                    let (s, h) = func_sig(func_obj.args());
+                    writeln!(doc, "network {}.{}{}", plug, func, s)?;
                     writeln!(doc, "```\n")?;
+                    writeln!(doc, "### Arguments\n{}\n", h)?;
                     writeln!(doc, "{}", func_obj.help().replace("\n#", "\n###"))?;
                 }
             }
@@ -482,26 +507,9 @@ impl NadiFunctions {
     }
 
     pub fn list_functions(&self) {
-        fn print_func(p: &RString, t: &str, f: &RString, sig: RString) {
+        fn print_func(p: &RString, t: &str, f: &RString, args: RVec<FuncArg>) {
             print!("{} {}.{}", t, p.as_str().red(), f.as_str().blue(),);
-            let args: Vec<String> = sig
-                .trim_start_matches('(')
-                .trim_end_matches(')')
-                .replace(" ", "")
-                .split(",")
-                .map(|a| match a.split_once(":") {
-                    Some((key, tyval)) => match tyval.split_once("=") {
-                        Some((ty, val)) => {
-                            format!("{} : {} = {}", key.bright_red(), ty.green(), val.yellow())
-                        }
-                        None => format!("{} : {}", key.bright_red(), tyval.green()),
-                    },
-                    None => match a.split_once("=") {
-                        Some((key, val)) => format!("{} = {}", key.bright_red(), val.yellow()),
-                        None => format!("{}", a.bright_red()),
-                    },
-                })
-                .collect();
+            let args: Vec<String> = args.iter().map(|s| s.to_colored_string()).collect();
             if args.len() < 3 {
                 println!("({})", args.join(", "));
             } else {
@@ -514,24 +522,25 @@ impl NadiFunctions {
                 for func in funcs.node() {
                     let fname = format!("{plug}.{func}");
                     let func_obj = self.node(&fname).expect("Func Should Exist");
-                    print_func(plug, "node", func, func_obj.signature());
+                    print_func(plug, "node", func, func_obj.args());
                 }
             }
             if !funcs.network().is_empty() {
                 for func in funcs.network() {
                     let fname = format!("{plug}.{func}");
                     let func_obj = self.network(&fname).expect("Func Should Exist");
-                    print_func(plug, "network", func, func_obj.signature());
+                    print_func(plug, "network", func, func_obj.args());
                 }
             }
         }
     }
 
-    pub fn list_functions_md(&self, link: bool) -> (String, String) {
+    pub fn list_functions_md(&self, link: bool) -> (String, String, String) {
         let mut node_functions = vec![];
         let mut net_functions = vec![];
+        let mut env_functions = vec![];
         let fname = if link {
-            |p: &str, t: &str, n: &str, h: &str| {
+            |p: &str, t: &str, n: &str, h: RString| {
                 vec![
                     format!("[`{p}`]({p}.md)"),
                     format!("[`{n}`]({p}.md#{t}.{n})"),
@@ -539,25 +548,21 @@ impl NadiFunctions {
                 ]
             }
         } else {
-            |p: &str, _t: &str, n: &str, h: &str| vec![p.to_string(), n.to_string(), h.to_string()]
+            |p: &str, _t: &str, n: &str, h: RString| {
+                vec![p.to_string(), n.to_string(), h.to_string()]
+            }
         };
         for Tuple2(func, fobj) in &self.node {
             let (plug, name) = func.split_once('.').unwrap_or(("null", func.as_str()));
-            node_functions.push(fname(
-                plug,
-                "network",
-                name,
-                fobj.help().lines().next().unwrap_or_default(),
-            ));
+            node_functions.push(fname(plug, "network", name, fobj.short_help()));
         }
         for Tuple2(func, fobj) in &self.network {
             let (plug, name) = func.split_once('.').unwrap_or(("null", func.as_str()));
-            net_functions.push(fname(
-                plug,
-                "node",
-                name,
-                fobj.help().lines().next().unwrap_or_default(),
-            ));
+            net_functions.push(fname(plug, "node", name, fobj.short_help()));
+        }
+        for Tuple2(func, fobj) in &self.env {
+            let (plug, name) = func.split_once('.').unwrap_or(("null", func.as_str()));
+            env_functions.push(fname(plug, "env", name, fobj.short_help()));
         }
         (
             contents_2_md(
@@ -569,6 +574,11 @@ impl NadiFunctions {
                 &["Plugin", "Function", "Help"],
                 &[&ColumnAlign::Left, &ColumnAlign::Left, &ColumnAlign::Left],
                 net_functions,
+            ),
+            contents_2_md(
+                &["Plugin", "Function", "Help"],
+                &[&ColumnAlign::Left, &ColumnAlign::Left, &ColumnAlign::Left],
+                env_functions,
             ),
         )
     }

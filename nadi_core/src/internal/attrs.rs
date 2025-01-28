@@ -155,7 +155,7 @@ The function will error if
 
 The attributes will be printed in `key=val` format.
 */
-#[node_func]
+#[node_func(name = false)]
 fn print_attrs(node: &mut NodeInner, #[args] attrs: AttrSlice, name: bool) -> FunctionRet {
     let attrs = return_on_err!(attrs
         .iter()

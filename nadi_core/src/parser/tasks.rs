@@ -51,7 +51,7 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                             ))),
                         };
                         match last_kw {
-                            TaskKeyword::Exit => (), // last one shouldn't be exit as it'd exit earlier
+                            TaskKeyword::Exit | TaskKeyword::End => (), // last one shouldn't be these as it'd exit earlier
                             TaskKeyword::Node => {
                                 let prop = propagation
                                     .replace(Propagation::default())
@@ -103,6 +103,9 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                     }
                     TaskKeyword::Exit => {
                         tasks.push(Task::exit());
+                        return Ok(tasks);
+                    }
+                    TaskKeyword::End => {
                         return Ok(tasks);
                     }
                     TaskKeyword::In | TaskKeyword::Match => {
@@ -588,6 +591,11 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                 TaskKeyword::Network => TaskType::Network(propagation.take().unwrap_or_default()),
                 TaskKeyword::Help => TaskType::Help(None, None),
                 TaskKeyword::Exit => TaskType::Exit,
+                TaskKeyword::End => {
+                    return Err(tokens.parse_error(ParseErrorType::LogicalError(
+                        "End should end the task parsing",
+                    )));
+                }
                 TaskKeyword::In | TaskKeyword::Match => {
                     return Err(tokens.parse_error(ParseErrorType::SyntaxError));
                 }
@@ -714,7 +722,7 @@ pub fn read_attribute(
     }
 }
 
-fn read_propagation(tokens: &mut VecTokens) -> Result<Option<Propagation>, ParseError> {
+pub(crate) fn read_propagation(tokens: &mut VecTokens) -> Result<Option<Propagation>, ParseError> {
     let tk = match tokens.next_no_ws(true) {
         None => return Ok(None),
         Some(t) => t,
@@ -754,7 +762,7 @@ enum CondState {
     SecondValue(Condition, CompType),
 }
 
-fn read_conditional(tokens: &mut VecTokens) -> Result<Option<Propagation>, ParseError> {
+pub(crate) fn read_conditional(tokens: &mut VecTokens) -> Result<Option<Propagation>, ParseError> {
     let mut state = CondState::FirstVar(0);
     let mut strict = 0;
     let cond = loop {

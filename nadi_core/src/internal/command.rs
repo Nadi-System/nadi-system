@@ -6,8 +6,9 @@ mod command {
     use crate::prelude::*;
     use anyhow::Context;
     use colored::Colorize;
-    use nadi_core::nadi_plugin::{network_func, node_func};
-    use std::io::BufRead;
+    use nadi_core::nadi_plugin::{env_func, network_func, node_func};
+    use std::io::{BufRead, BufReader};
+    use std::path::{Path, PathBuf};
     use std::sync::mpsc::{self, Receiver, Sender};
     use std::thread;
     use string_template_plus::Template;
@@ -21,6 +22,41 @@ mod command {
             .map(|v| (v.0.to_string(), v.1))
             .next()
             .context("No values read")
+    }
+
+    fn file_exists(path: &Path, min_lines: Option<usize>) -> bool {
+        if let Some(ml) = min_lines {
+            match std::fs::File::open(path) {
+                Ok(f) => BufReader::new(f).lines().count() > ml,
+                _ => false,
+            }
+        } else {
+            path.exists()
+        }
+    }
+
+    /// Checks if the given path exists
+    #[env_func]
+    fn exists(
+        /// Path to check
+        path: PathBuf,
+        /// Minimum number of lines the file should have
+        min_lines: Option<usize>,
+    ) -> bool {
+        file_exists(&path, min_lines)
+    }
+
+    /// Checks if the given path exists when rendering the template
+    #[node_func]
+    fn exists(
+        node: &mut NodeInner,
+        /// Path to check
+        path: Template,
+        /// Minimum number of lines the file should have
+        min_lines: Option<usize>,
+    ) -> anyhow::Result<bool> {
+        let p = node.render(&path)?;
+        Ok(file_exists(p.as_ref(), min_lines))
     }
 
     /** Run the given template as a shell command.

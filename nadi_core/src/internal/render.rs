@@ -131,6 +131,7 @@ mod render_utils {
                         // if in a snippet already, we're exiting
                         None
                     } else if let Some((_, s)) = l.split_once(':') {
+                        let s = s.split_once(':').map(|(s, _)| s).unwrap_or(s);
                         let prop = Propagation::from_str(s)?;
                         Some(prop)
                     } else {
