@@ -164,6 +164,7 @@ impl PartialOrd for Attribute {
                     return b.partial_cmp(v);
                 }
             }
+            // FIXME: PartialEq is derived and doesn't have this
             Self::Integer(b) => {
                 return match other {
                     Self::Integer(v) => b.partial_cmp(v),
@@ -439,9 +440,38 @@ tuple_impls!(a A 0, b B 1, c C 2, d D 3);
 tuple_impls!(a A 0, b B 1, c C 2, d D 3, e E 4);
 tuple_impls!(a A 0, b B 1, c C 2, d D 3, e E 4, f F 5);
 
+#[macro_export]
+macro_rules! attr_array {
+    ( $($val:expr),+ ) => {
+	::nadi_core::attrs::Attribute::Array(
+	    vec![
+		$(Attribute::from($val),)+
+	    ].into()
+	)
+    }
+}
+
 impl From<usize> for Attribute {
     fn from(value: usize) -> Self {
         Self::Integer(value as i64)
+    }
+}
+
+impl From<i32> for Attribute {
+    fn from(value: i32) -> Self {
+        Self::Integer(value as i64)
+    }
+}
+
+impl From<f32> for Attribute {
+    fn from(value: f32) -> Self {
+        Self::Float(value as f64)
+    }
+}
+
+impl From<&str> for Attribute {
+    fn from(value: &str) -> Self {
+        Self::String(RString::from(value))
     }
 }
 
@@ -895,6 +925,66 @@ impl Into<chrono::FixedOffset> for Offset {
 mod tests {
     use super::*;
     use rstest::rstest;
+
+    // this tests the conversion using into, as well as the type name
+    #[rstest]
+    #[case(true.into(), "Bool")]
+    #[case(1i32.into(), "Integer")]
+    #[case(1usize.into(), "Integer")]
+    #[case(1i64.into(), "Integer")]
+    #[case(1.0f32.into(), "Float")]
+    #[case(1.0f64.into(), "Float")]
+    #[case(String::new().into(), "String")]
+    #[case(Vec::<Attribute>::new().into(), "Array")]
+    #[case(AttrMap::new().into(), "Table")]
+    fn test_into_data_type(#[case] v: Attribute, #[case] t: &str) {
+        assert_eq!(v.type_name(), t)
+    }
+
+    #[rstest]
+    #[case(1usize.into(), 1i32.into())]
+    #[case(true.into(), true.into())]
+    #[case(1i32.into(), 1i64.into())]
+    #[case(String::new().into(), String::new().into())]
+    fn test_partial_eq(#[case] a: Attribute, #[case] b: Attribute) {
+        assert!(a == b)
+    }
+
+    #[rstest]
+    #[case(true.into(), 1i32.into())]
+    #[case(true.into(), false.into())]
+    #[case(1i32.into(), 2i64.into())]
+    #[case(1usize.into(), 1.0.into())]
+    #[case(String::new().into(), String::from("hi").into())]
+    fn test_partial_neq(#[case] a: Attribute, #[case] b: Attribute) {
+        assert!(a != b)
+    }
+
+    #[rstest]
+    #[case(true.into(), false.into())]
+    #[case(3i32.into(), 2i64.into())]
+    #[case(2usize.into(), 1.0.into())]
+    #[case(String::from("hi").into(), String::new().into())]
+    #[case(String::from("hi").into(), String::from("ha").into())]
+    fn test_partial_gt(#[case] a: Attribute, #[case] b: Attribute) {
+        assert!(a > b)
+    }
+
+    #[rstest]
+    fn test_tuple_impl() {
+        let vals = Attribute::Array(vec![Attribute::Integer(0), Attribute::Bool(true)].into());
+        let (val, flag): (i64, bool) = FromAttribute::from_attr(&vals).unwrap();
+        assert!(val == 0);
+        assert!(flag);
+
+        let vals = attr_array!(true, 1.0, "values");
+        let (flag, flt, st): (bool, f64, String) = FromAttribute::from_attr(&vals).unwrap();
+        assert!(flt == 1.0);
+        assert!(flag);
+        assert_eq!(st, "values");
+
+        assert!(<(bool, f64, i64) as FromAttribute>::from_attr(&vals).is_none());
+    }
 
     #[rstest]
     fn from_attr_test() {
