@@ -7,6 +7,9 @@ mod timeseries {
     use abi_stable::std_types::RString;
     use nadi_plugin::{network_func, node_func};
     use std::collections::HashSet;
+    use std::fs::File;
+    use std::io::{BufWriter, Write};
+    use std::path::PathBuf;
 
     /// Number of timeseries in the node
     #[node_func]
@@ -142,6 +145,73 @@ mod timeseries {
                 }
                 let row: Vec<String> = values.iter().map(|v| v[i].to_string()).collect();
                 println!("{t},{}", row.join(","));
+            }
+        }
+        Ok(())
+    }
+
+    /// Write the given nodes to csv with given attributes and series
+    #[network_func]
+    fn series_csv(
+        net: &mut Network,
+        #[prop] prop: &Propagation,
+        /// Path to the output csv
+        outfile: PathBuf,
+        /// list of attributes to write
+        attrs: Vec<String>,
+        /// list of series to write
+        series: Vec<String>,
+    ) -> anyhow::Result<()> {
+        let mut f = File::create(&outfile)?;
+        let mut w = BufWriter::new(f);
+        let middle = !attrs.is_empty() && !series.is_empty();
+        // headers for the csv
+        writeln!(
+            w,
+            "{}{}{}",
+            attrs.join(","),
+            if middle { "," } else { "" },
+            series.join(",")
+        )?;
+        for node in net.nodes_propagation(prop).map_err(anyhow::Error::msg)? {
+            let node = node.lock();
+            let attrs: Vec<String> = attrs
+                .iter()
+                .map(|a| node.attr(a).map(|a| a.to_string()).unwrap_or_default())
+                .collect();
+            let series: Vec<Vec<String>> = series
+                .iter()
+                .map(|a| {
+                    node.series(a)
+                        .map(|s| {
+                            s.clone()
+                                .to_attributes()
+                                .into_iter()
+                                .map(|a| a.to_string())
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                })
+                .collect();
+            let lengths: Vec<usize> = series.iter().map(|s| s.len()).collect();
+            if lengths.is_empty() {
+                writeln!(w, "{}", attrs.join(","))?;
+                continue;
+            } else if lengths.iter().any(|l| *l != lengths[0]) {
+                return Err(anyhow::Error::msg(format!(
+                    "Node {}: Series lengths don't match: {lengths:?}",
+                    node.name()
+                )));
+            }
+            for i in 0..lengths[0] {
+                let values: Vec<&str> = series.iter().map(|s| s[i].as_str()).collect();
+                writeln!(
+                    w,
+                    "{}{}{}",
+                    attrs.join(","),
+                    if middle { "," } else { "" },
+                    values.join(",")
+                )?;
             }
         }
         Ok(())

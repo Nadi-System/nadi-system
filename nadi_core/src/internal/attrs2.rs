@@ -163,6 +163,32 @@ mod attrs {
         }))
     }
 
+    /// map values from the attribute based on the given table
+    #[env_func]
+    fn float_div(
+        /// numerator
+        #[relaxed]
+        value1: f64,
+        /// denominator
+        #[relaxed]
+        value2: f64,
+    ) -> f64 {
+        value1 / value2
+    }
+
+    /// map values from the attribute based on the given table
+    #[env_func]
+    fn float_mult(
+        /// numerator
+        #[relaxed]
+        value1: f64,
+        /// denominator
+        #[relaxed]
+        value2: f64,
+    ) -> f64 {
+        value1 * value2
+    }
+
     /// Set network attributes
     ///
     /// # Arguments

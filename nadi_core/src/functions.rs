@@ -405,6 +405,14 @@ impl NadiFunctions {
         Ok(())
     }
 
+    pub fn env_functions(&self) -> &RHashMap<RString, EnvFunctionBox> {
+        &self.env
+    }
+
+    pub fn env_alias(&self) -> &RHashMap<RString, RString> {
+        &self.env_alias
+    }
+
     pub fn node_functions(&self) -> &RHashMap<RString, NodeFunctionBox> {
         &self.node
     }

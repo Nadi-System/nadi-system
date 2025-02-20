@@ -3,8 +3,8 @@ use nadi_plugin::nadi_internal_plugin;
 #[nadi_internal_plugin]
 mod core {
     use crate::prelude::*;
-    use abi_stable::std_types::{RString, Tuple2};
-    use nadi_plugin::{env_func, network_func};
+    use abi_stable::std_types::{RNone, RSome, RString, Tuple2};
+    use nadi_plugin::{env_func, network_func, node_func};
     use std::collections::HashMap;
 
     /// Count the number of nodes in the network
@@ -13,6 +13,46 @@ mod core {
     #[network_func]
     fn count(net: &mut Network, #[prop] prop: &Propagation) -> Result<usize, String> {
         net.nodes_propagation(prop).map(|v| v.len())
+    }
+
+    /// Count the number of input nodes in the node
+    #[node_func]
+    fn inputs_len(node: &mut NodeInner) -> usize {
+        node.inputs().len()
+    }
+
+    /// Get attributes of the input nodes
+    #[node_func(attr = "NAME")]
+    fn inputs(
+        node: &mut NodeInner,
+        /// Attribute to get from inputs
+        attr: String,
+    ) -> Result<Attribute, String> {
+        let attrs: Vec<Attribute> = node
+            .inputs()
+            .iter()
+            .map(|n| n.lock().try_attr(&attr))
+            .collect::<Result<Vec<Attribute>, String>>()?;
+        Ok(Attribute::Array(attrs.into()))
+    }
+
+    /// Node has an outlet or not
+    #[node_func]
+    fn has_outlet(node: &mut NodeInner) -> bool {
+        node.output().is_some()
+    }
+
+    /// Get attributes of the output node
+    #[node_func(attr = "NAME")]
+    fn output(
+        node: &mut NodeInner,
+        /// Attribute to get from inputs
+        attr: String,
+    ) -> Result<Attribute, String> {
+        match node.output() {
+            RSome(n) => n.lock().try_attr(&attr),
+            RNone => Err(String::from("Output doesn't exist for the node")),
+        }
     }
 
     fn get_type_recur(attr: &Attribute) -> Attribute {
