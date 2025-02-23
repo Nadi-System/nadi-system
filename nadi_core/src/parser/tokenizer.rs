@@ -99,7 +99,7 @@ impl<'a> Iterator for VecTokens<'a> {
         } else {
             self.colstart = self.colend;
             self.colend += t.content.len();
-            self.linestr.push_str(&t.colored());
+            self.linestr.push_str(&t.content);
         }
         Some(t)
     }
@@ -166,7 +166,7 @@ impl<'a> VecTokens<'a> {
             if t.ty == TaskToken::NewLine {
                 break;
             }
-            linestr.push_str(&t.colored());
+            linestr.push_str(&t.content);
         }
         linestr
     }
@@ -214,6 +214,41 @@ pub enum TaskToken {
     Quote, // strings within "" include the quote in
            // String token, this is for single quote,
            // that is not matched
+}
+
+impl TaskToken {
+    pub fn syntax_color(&self) -> &'static str {
+        match self {
+            TaskToken::NewLine | TaskToken::WhiteSpace => "white",
+            TaskToken::Comment => "gray",
+            TaskToken::Keyword(_) => "red",
+            TaskToken::AngleStart => "blue",
+            TaskToken::ParenStart => "blue",
+            TaskToken::BraceStart => "blue",
+            TaskToken::BracketStart => "blue",
+            TaskToken::PathSep => "blue",
+            TaskToken::Comma => "blue",
+            TaskToken::Dot => "blue",
+            TaskToken::And => "yellow",
+            TaskToken::Or => "yellow",
+            TaskToken::Not => "yellow",
+            TaskToken::AngleEnd => "blue",
+            TaskToken::ParenEnd => "blue",
+            TaskToken::BraceEnd => "blue",
+            TaskToken::BracketEnd => "blue",
+            TaskToken::Variable => "green",
+            TaskToken::Function => "magenta",
+            TaskToken::Assignment => "blue",
+            TaskToken::Bool => "yellow",
+            TaskToken::String(_) => "yellow",
+            TaskToken::Integer => "yellow",
+            TaskToken::Float => "yellow",
+            TaskToken::Date => "cyan",
+            TaskToken::Time => "cyan",
+            TaskToken::DateTime => "cyan",
+            TaskToken::Quote => "red",
+        }
+    }
 }
 
 impl<'a> Token<'a> {

@@ -5,7 +5,13 @@ mod debug {
     use crate::prelude::*;
     use abi_stable::std_types::Tuple2;
     use colored::Colorize;
-    use nadi_plugin::network_func;
+    use nadi_plugin::{env_func, network_func};
+
+    /// sleep for given number of milliseconds
+    #[env_func(time = 1000u64)]
+    fn sleep(time: u64) {
+        std::thread::sleep(std::time::Duration::from_millis(time))
+    }
 
     /// Print the args and kwargs on this function
     ///

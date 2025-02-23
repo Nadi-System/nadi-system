@@ -750,7 +750,7 @@ dependencies = [
 
 [[package]]
 name = "nadi_core"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "abi_stable",
  "anyhow",
@@ -770,7 +770,7 @@ dependencies = [
 
 [[package]]
 name = "nadi_plugin"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "convert_case",
  "itertools 0.13.0",
