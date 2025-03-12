@@ -100,9 +100,9 @@ impl MdHelp {
                     .on_press(Message::Function(self.state.clone(), n.to_string()))
                     .width(Length::Fill)
                     .style(if (i % 2) == 0 {
-                        secondary_light
+                        secondary_even
                     } else {
-                        button::secondary
+                        secondary_odd
                     })
                     .into()
             })
@@ -243,13 +243,33 @@ fn md_style(light: bool) -> markdown::Style {
     }
 }
 
-fn secondary_light(theme: &Theme, status: button::Status) -> button::Style {
+fn secondary_odd(theme: &Theme, status: button::Status) -> button::Style {
+    let palette = theme.extended_palette();
+    let pair = palette.secondary.base;
+    let base = button::Style {
+        background: Some(iced::Background::Color(pair.color)),
+        text_color: pair.text,
+        border: iced::border::rounded(0),
+        ..button::Style::default()
+    };
+
+    match status {
+        button::Status::Active | button::Status::Pressed => base,
+        button::Status::Hovered => button::Style {
+            background: Some(iced::Background::Color(palette.secondary.strong.color)),
+            ..base
+        },
+        button::Status::Disabled => base,
+    }
+}
+
+fn secondary_even(theme: &Theme, status: button::Status) -> button::Style {
     let palette = theme.extended_palette();
     let pair = palette.secondary.base;
     let base = button::Style {
         background: Some(iced::Background::Color(pair.color.scale_alpha(0.5))),
         text_color: pair.text,
-        border: iced::border::rounded(2),
+        border: iced::border::rounded(0),
         ..button::Style::default()
     };
 
