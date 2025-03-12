@@ -1,0 +1,8 @@
+[package]
+name = "nadi-help"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+iced = { version = "0.13.1", features = ["highlighter", "markdown"] }
+nadi_core = { version = "0.6.0", features = ["functions"] }
