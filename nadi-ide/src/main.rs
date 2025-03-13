@@ -19,14 +19,17 @@ enum State {
     Env,
 }
 
-impl ToString for State {
-    fn to_string(&self) -> String {
-        match self {
-            Self::Node => "node",
-            Self::Network => "network",
-            Self::Env => "env",
-        }
-        .to_string()
+impl std::fmt::Display for State {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Node => "node",
+                Self::Network => "network",
+                Self::Env => "env",
+            }
+        )
     }
 }
 
@@ -118,7 +121,7 @@ impl MdHelp {
             .into_iter()
             .enumerate()
             .map(|(i, n)| {
-                button(text(format!("{}  {}", n.0.to_string(), n.1)))
+                button(text(format!("{}  {}", n.0, n.1)))
                     .on_press(Message::Function(n.0.clone(), n.1.to_string()))
                     .width(Length::Fill)
                     .style(if (i % 2) == 0 {
