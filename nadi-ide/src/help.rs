@@ -6,20 +6,14 @@ use nadi_core::functions::{FuncArg, NadiFunctions};
 
 static FUNC_WIDTH: f32 = 300.0;
 
-pub fn main() -> iced::Result {
-    iced::application("NADI Help", MdHelp::update, MdHelp::view)
-        .theme(MdHelp::theme)
-        .run()
-}
-
 #[derive(Clone, Debug)]
-enum State {
+pub enum FuncType {
     Node,
     Network,
     Env,
 }
 
-impl std::fmt::Display for State {
+impl std::fmt::Display for FuncType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -33,19 +27,19 @@ impl std::fmt::Display for State {
     }
 }
 
-struct MdHelp {
+pub struct MdHelp {
     light_theme: bool,
     functions: NadiFunctions,
-    state: Option<State>,
+    state: Option<FuncType>,
     search: String,
     markdown: Vec<markdown::Item>,
 }
 
 #[derive(Debug, Clone)]
-enum Message {
+pub enum Message {
     LinkClicked(markdown::Url),
-    Function(State, String),
-    StateChange(Option<State>),
+    Function(FuncType, String),
+    FuncTypeChange(Option<FuncType>),
     ThemeChange(bool),
     SearchChange(String),
 }
@@ -78,30 +72,30 @@ macro_rules! help {
 }
 
 impl MdHelp {
-    fn view(&self) -> Column<'_, Message> {
+    pub fn view(&self) -> Element<'_, Message> {
         let controls = row![
             button("All")
-                .on_press(Message::StateChange(None))
+                .on_press(Message::FuncTypeChange(None))
                 .style(match self.state {
                     None => button::success,
                     _ => button::primary,
                 }),
             button("Env")
-                .on_press(Message::StateChange(Some(State::Env)))
+                .on_press(Message::FuncTypeChange(Some(FuncType::Env)))
                 .style(match self.state {
-                    Some(State::Env) => button::success,
+                    Some(FuncType::Env) => button::success,
                     _ => button::primary,
                 }),
             button("Node")
-                .on_press(Message::StateChange(Some(State::Node)))
+                .on_press(Message::FuncTypeChange(Some(FuncType::Node)))
                 .style(match self.state {
-                    Some(State::Node) => button::success,
+                    Some(FuncType::Node) => button::success,
                     _ => button::primary,
                 }),
             button("Network")
-                .on_press(Message::StateChange(Some(State::Network)))
+                .on_press(Message::FuncTypeChange(Some(FuncType::Network)))
                 .style(match self.state {
-                    Some(State::Network) => button::success,
+                    Some(FuncType::Network) => button::success,
                     _ => button::primary,
                 }),
             horizontal_space(),
@@ -140,31 +134,31 @@ impl MdHelp {
             .width(FUNC_WIDTH);
         let functions = column![search, scrollable(list)].spacing(10);
         let main = row![functions, scrollable(md)].spacing(10).padding(10);
-        column![controls, main].spacing(10)
+        column![controls, main].spacing(10).into()
     }
 
-    fn update(&mut self, message: Message) {
+    pub fn update(&mut self, message: Message) {
         match message {
             Message::LinkClicked(_url) => (),
             Message::SearchChange(s) => {
                 self.search = s;
             }
-            Message::Function(State::Node, func) => {
+            Message::Function(FuncType::Node, func) => {
                 if let Some(f) = self.functions.node(&func) {
                     self.markdown = help!("node", func, f);
                 }
             }
-            Message::Function(State::Network, func) => {
+            Message::Function(FuncType::Network, func) => {
                 if let Some(f) = self.functions.network(&func) {
                     self.markdown = help!("network", func, f);
                 }
             }
-            Message::Function(State::Env, func) => {
+            Message::Function(FuncType::Env, func) => {
                 if let Some(f) = self.functions.env(&func) {
                     self.markdown = help!("env", func, f);
                 }
             }
-            Message::StateChange(state) => {
+            Message::FuncTypeChange(state) => {
                 self.state = state;
             }
             Message::ThemeChange(t) => {
@@ -173,7 +167,7 @@ impl MdHelp {
         }
     }
 
-    fn theme(&self) -> Theme {
+    pub fn theme(&self) -> Theme {
         if self.light_theme {
             Theme::Light
         } else {
@@ -182,35 +176,35 @@ impl MdHelp {
     }
 }
 
-fn list_functions<'a>(
+pub fn list_functions<'a>(
     functions: &'a NadiFunctions,
-    state: &Option<State>,
+    state: &Option<FuncType>,
     search: &str,
-) -> Vec<(State, &'a str)> {
-    let mut func: Vec<(State, &str)> = match state {
-        Some(State::Node) => functions
+) -> Vec<(FuncType, &'a str)> {
+    let mut func: Vec<(FuncType, &str)> = match state {
+        Some(FuncType::Node) => functions
             .node_functions()
             .iter()
             .filter(|n| n.0.contains(search))
-            .map(|n| (State::Node, n.0.as_str()))
+            .map(|n| (FuncType::Node, n.0.as_str()))
             .collect(),
-        Some(State::Network) => functions
+        Some(FuncType::Network) => functions
             .network_functions()
             .iter()
             .filter(|n| n.0.contains(search))
-            .map(|n| (State::Network, n.0.as_str()))
+            .map(|n| (FuncType::Network, n.0.as_str()))
             .collect(),
-        Some(State::Env) => functions
+        Some(FuncType::Env) => functions
             .env_functions()
             .iter()
             .filter(|n| n.0.contains(search))
-            .map(|n| (State::Env, n.0.as_str()))
+            .map(|n| (FuncType::Env, n.0.as_str()))
             .collect(),
         None => {
             return vec![
-                list_functions(functions, &Some(State::Env), search),
-                list_functions(functions, &Some(State::Node), search),
-                list_functions(functions, &Some(State::Network), search),
+                list_functions(functions, &Some(FuncType::Env), search),
+                list_functions(functions, &Some(FuncType::Node), search),
+                list_functions(functions, &Some(FuncType::Network), search),
             ]
             .into_iter()
             .flatten()
@@ -221,7 +215,7 @@ fn list_functions<'a>(
     func
 }
 
-fn help_to_markdown(
+pub fn help_to_markdown(
     ty: &str,
     name: &str,
     args: &[FuncArg],
@@ -247,7 +241,7 @@ fn help_to_markdown(
     markdown::parse(&items.join("\n")).collect()
 }
 
-fn md_style(light: bool) -> markdown::Style {
+pub fn md_style(light: bool) -> markdown::Style {
     let pc = if light { 0.0 } else { 1.0 };
     let inline_code_highlight = markdown::Highlight {
         background: iced::Background::Color(Color {
@@ -289,7 +283,7 @@ fn md_style(light: bool) -> markdown::Style {
     }
 }
 
-fn secondary_odd(theme: &Theme, status: button::Status) -> button::Style {
+pub fn secondary_odd(theme: &Theme, status: button::Status) -> button::Style {
     let palette = theme.extended_palette();
     let pair = palette.secondary.base;
     let base = button::Style {
@@ -309,7 +303,7 @@ fn secondary_odd(theme: &Theme, status: button::Status) -> button::Style {
     }
 }
 
-fn secondary_even(theme: &Theme, status: button::Status) -> button::Style {
+pub fn secondary_even(theme: &Theme, status: button::Status) -> button::Style {
     let palette = theme.extended_palette();
     let pair = palette.secondary.base;
     let base = button::Style {
