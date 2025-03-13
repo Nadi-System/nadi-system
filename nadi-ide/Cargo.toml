@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-iced = { version = "0.13.1", features = ["highlighter", "markdown"] }
+iced = { version = "0.13.1", features = ["highlighter", "markdown", "lazy"] }
 nadi_core = { version = "0.6.0", features = ["functions"] }
