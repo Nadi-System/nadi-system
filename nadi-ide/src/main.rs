@@ -1,4 +1,6 @@
-use iced::widget::{button, column, horizontal_space, markdown, row, scrollable, toggler};
+use iced::widget::{
+    button, column, horizontal_space, markdown, row, scrollable, text, text_input, toggler,
+};
 use iced::{widget::Column, Color, Element, Length, Theme};
 use nadi_core::functions::{FuncArg, NadiFunctions};
 
@@ -17,10 +19,22 @@ enum State {
     Env,
 }
 
+impl ToString for State {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Node => "node",
+            Self::Network => "network",
+            Self::Env => "env",
+        }
+        .to_string()
+    }
+}
+
 struct MdHelp {
     light_theme: bool,
     functions: NadiFunctions,
-    state: State,
+    state: Option<State>,
+    search: String,
     markdown: Vec<markdown::Item>,
 }
 
@@ -28,8 +42,9 @@ struct MdHelp {
 enum Message {
     LinkClicked(markdown::Url),
     Function(State, String),
-    StateChange(State),
+    StateChange(Option<State>),
     ThemeChange(bool),
+    SearchChange(String),
 }
 
 impl Default for MdHelp {
@@ -37,7 +52,8 @@ impl Default for MdHelp {
         Self {
             light_theme: false,
             functions: NadiFunctions::new(),
-            state: State::Node,
+            state: None,
+            search: String::new(),
             markdown: markdown::parse("**Click** on a function to see the help!").collect(),
         }
     }
@@ -46,7 +62,7 @@ impl Default for MdHelp {
 // Macro instead of function as func are different types, but the
 // traits have same functions
 macro_rules! help {
-    ($ty:literal, $name:expr, $func:expr) => {
+    ($ty:expr, $name:expr, $func:expr) => {
         help_to_markdown(
             $ty,
             &$name,
@@ -61,22 +77,28 @@ macro_rules! help {
 impl MdHelp {
     fn view(&self) -> Column<'_, Message> {
         let controls = row![
-            button("Env")
-                .on_press(Message::StateChange(State::Env))
+            button("All")
+                .on_press(Message::StateChange(None))
                 .style(match self.state {
-                    State::Env => button::success,
+                    None => button::success,
+                    _ => button::primary,
+                }),
+            button("Env")
+                .on_press(Message::StateChange(Some(State::Env)))
+                .style(match self.state {
+                    Some(State::Env) => button::success,
                     _ => button::primary,
                 }),
             button("Node")
-                .on_press(Message::StateChange(State::Node))
+                .on_press(Message::StateChange(Some(State::Node)))
                 .style(match self.state {
-                    State::Node => button::success,
+                    Some(State::Node) => button::success,
                     _ => button::primary,
                 }),
             button("Network")
-                .on_press(Message::StateChange(State::Network))
+                .on_press(Message::StateChange(Some(State::Network)))
                 .style(match self.state {
-                    State::Network => button::success,
+                    Some(State::Network) => button::success,
                     _ => button::primary,
                 }),
             horizontal_space(),
@@ -92,12 +114,12 @@ impl MdHelp {
             md_style(self.light_theme),
         )
         .map(Message::LinkClicked);
-        let funcs: Vec<Element<_>> = list_functions(&self.functions, &self.state)
+        let funcs: Vec<Element<_>> = list_functions(&self.functions, &self.state, &self.search)
             .into_iter()
             .enumerate()
             .map(|(i, n)| {
-                button(n)
-                    .on_press(Message::Function(self.state.clone(), n.to_string()))
+                button(text(format!("{}  {}", n.0.to_string(), n.1)))
+                    .on_press(Message::Function(n.0.clone(), n.1.to_string()))
                     .width(Length::Fill)
                     .style(if (i % 2) == 0 {
                         secondary_even
@@ -109,16 +131,20 @@ impl MdHelp {
             .collect();
 
         let list = Column::from_vec(funcs).width(FUNC_WIDTH);
-        let main = row![scrollable(list), scrollable(md)]
-            .spacing(10)
-            .padding(10);
+        let search = text_input("Search", &self.search)
+            .on_input(Message::SearchChange)
+            .padding(10)
+            .width(FUNC_WIDTH);
+        let functions = column![search, scrollable(list)].spacing(10);
+        let main = row![functions, scrollable(md)].spacing(10).padding(10);
         column![controls, main].spacing(10)
     }
 
     fn update(&mut self, message: Message) {
         match message {
-            Message::LinkClicked(url) => {
-                println!("The following url was clicked: {url}");
+            Message::LinkClicked(_url) => (),
+            Message::SearchChange(s) => {
+                self.search = s;
             }
             Message::Function(State::Node, func) => {
                 if let Some(f) = self.functions.node(&func) {
@@ -153,25 +179,42 @@ impl MdHelp {
     }
 }
 
-fn list_functions<'a>(functions: &'a NadiFunctions, state: &State) -> Vec<&'a str> {
-    let mut func: Vec<&str> = match state {
-        State::Node => functions
+fn list_functions<'a>(
+    functions: &'a NadiFunctions,
+    state: &Option<State>,
+    search: &str,
+) -> Vec<(State, &'a str)> {
+    let mut func: Vec<(State, &str)> = match state {
+        Some(State::Node) => functions
             .node_functions()
             .iter()
-            .map(|n| n.0.as_str())
+            .filter(|n| n.0.contains(search))
+            .map(|n| (State::Node, n.0.as_str()))
             .collect(),
-        State::Network => functions
+        Some(State::Network) => functions
             .network_functions()
             .iter()
-            .map(|n| n.0.as_str())
+            .filter(|n| n.0.contains(search))
+            .map(|n| (State::Network, n.0.as_str()))
             .collect(),
-        State::Env => functions
+        Some(State::Env) => functions
             .env_functions()
             .iter()
-            .map(|n| n.0.as_str())
+            .filter(|n| n.0.contains(search))
+            .map(|n| (State::Env, n.0.as_str()))
             .collect(),
+        None => {
+            return vec![
+                list_functions(functions, &Some(State::Env), search),
+                list_functions(functions, &Some(State::Node), search),
+                list_functions(functions, &Some(State::Network), search),
+            ]
+            .into_iter()
+            .flatten()
+            .collect()
+        }
     };
-    func.sort();
+    func.sort_by(|a, b| a.1.cmp(b.1));
     func
 }
 
