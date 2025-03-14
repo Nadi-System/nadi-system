@@ -3,12 +3,11 @@ use iced::widget::pane_grid::{self, PaneGrid};
 use iced::widget::{
     button, column, container, horizontal_space, pick_list, responsive, row, scrollable, text,
 };
-use iced::{Center, Color, Element, Fill, Size, Subscription};
+use iced::{Center, Color, Element, Fill, Size, Subscription, Theme};
 
-mod help;
-mod style;
-
-use crate::help::MdHelp;
+use nadi::editor::Editor;
+use nadi::help::MdHelp;
+use nadi::style;
 
 pub fn main() -> iced::Result {
     iced::application("NADI", MainWindow::update, MainWindow::view)
@@ -22,6 +21,7 @@ struct MainWindow {
     panes_count: usize,
     focus: Option<pane_grid::Pane>,
     funchelp: MdHelp,
+    editor: Editor,
 }
 
 impl Default for MainWindow {
@@ -33,6 +33,7 @@ impl Default for MainWindow {
             panes_count: 1,
             focus: None,
             funchelp: MdHelp::default(),
+            editor: Editor::default(),
         }
     }
 }
@@ -40,6 +41,7 @@ impl Default for MainWindow {
 impl MainWindow {
     fn update(&mut self, message: Message) {
         match message {
+            Message::Editor(m) => self.editor.update(m),
             Message::FuncHelp(m) => self.funchelp.update(m),
             Message::PaneTypeChanged(p, typ) => {
                 if let Some(Pane { ty, .. }) = self.panes.get_mut(p) {
@@ -162,13 +164,18 @@ impl MainWindow {
             .padding(10)
             .into()
     }
+
+    fn theme(&self) -> Theme {
+        Theme::Light
+    }
 }
 
 #[derive(Debug, Clone)]
 enum Message {
     PaneAction(PaneMessage),
     PaneTypeChanged(pane_grid::Pane, PaneType),
-    FuncHelp(help::Message),
+    FuncHelp(nadi::help::Message),
+    Editor(nadi::editor::Message),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -262,7 +269,7 @@ fn pane_content<'a>(
     match ty {
         None => text("Select a Pane Type").into(),
         Some(PaneType::FunctionHelp) => win.funchelp.view().map(Message::FuncHelp).into(),
-        _ => text("TODO").into(),
+        Some(PaneType::TextEditor) => win.editor.view().map(Message::Editor).into(),
     }
 }
 
