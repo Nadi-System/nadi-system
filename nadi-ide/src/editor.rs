@@ -15,6 +15,7 @@ pub struct Editor {
     file: Option<PathBuf>,
     is_dirty: bool,
     content: text_editor::Content,
+    embedded: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -27,6 +28,11 @@ pub enum Message {
 }
 
 impl Editor {
+    pub fn embed(mut self) -> Self {
+        self.embedded = true;
+        self
+    }
+
     pub fn update(&mut self, message: Message) {
         match message {
             Message::ThemeChange(theme) => {
@@ -48,7 +54,8 @@ impl Editor {
             button("Open").on_press(Message::OpenFile),
             button("Save").on_press_maybe(self.is_dirty.then(|| Message::SaveFile)),
             horizontal_space(),
-            toggler(self.light_theme).on_toggle(Message::ThemeChange),
+            toggler(self.light_theme)
+                .on_toggle_maybe((!self.embedded).then(|| Message::ThemeChange)),
         ]
         .spacing(10)
         .padding(10);

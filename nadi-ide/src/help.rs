@@ -33,6 +33,7 @@ pub struct MdHelp {
     state: Option<FuncType>,
     search: String,
     markdown: Vec<markdown::Item>,
+    embedded: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -52,6 +53,7 @@ impl Default for MdHelp {
             state: None,
             search: String::new(),
             markdown: markdown::parse("**Click** on a function to see the help!").collect(),
+            embedded: false,
         }
     }
 }
@@ -72,6 +74,10 @@ macro_rules! help {
 }
 
 impl MdHelp {
+    pub fn embed(mut self) -> Self {
+        self.embedded = true;
+        self
+    }
     pub fn view(&self) -> Element<'_, Message> {
         let controls = row![
             button("All")
@@ -100,8 +106,7 @@ impl MdHelp {
                 }),
             horizontal_space(),
             toggler(self.light_theme)
-                .label(if self.light_theme { "Light" } else { "Dark" })
-                .on_toggle(Message::ThemeChange)
+                .on_toggle_maybe((!self.embedded).then(|| Message::ThemeChange)),
         ]
         .spacing(20)
         .padding(10);

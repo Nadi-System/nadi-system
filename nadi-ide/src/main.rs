@@ -2,15 +2,18 @@ use iced::keyboard;
 use iced::widget::pane_grid::{self, PaneGrid};
 use iced::widget::{
     button, column, container, horizontal_space, pick_list, responsive, row, scrollable, text,
+    toggler,
 };
 use iced::{Center, Color, Element, Fill, Size, Subscription, Theme};
 
 use nadi::editor::Editor;
 use nadi::help::MdHelp;
+use nadi::icons;
 use nadi::style;
 
 pub fn main() -> iced::Result {
     iced::application("NADI", MainWindow::update, MainWindow::view)
+        .font(include_bytes!("../fonts/icons.ttf").as_slice())
         .theme(MainWindow::theme)
         .run()
 }
@@ -32,8 +35,8 @@ impl Default for MainWindow {
             panes,
             panes_count: 1,
             focus: None,
-            funchelp: MdHelp::default(),
-            editor: Editor::default(),
+            funchelp: MdHelp::default().embed(),
+            editor: Editor::default().embed(),
         }
     }
 }
@@ -41,6 +44,9 @@ impl Default for MainWindow {
 impl MainWindow {
     fn update(&mut self, message: Message) {
         match message {
+            Message::ThemeChange(t) => {
+                self.light_theme = t;
+            }
             Message::Editor(m) => self.editor.update(m),
             Message::FuncHelp(m) => self.funchelp.update(m),
             Message::PaneTypeChanged(p, typ) => {
@@ -121,22 +127,15 @@ impl MainWindow {
 
         let pane_grid = PaneGrid::new(&self.panes, |id, pane, is_maximized| {
             let is_focused = focus == Some(id);
-            let pin_button = button(text(if pane.is_pinned { "U" } else { "P" }).size(14))
-                .on_press(Message::PaneAction(PaneMessage::TogglePin(id)))
-                .padding(3);
-            let title = row![
-                pin_button,
-                "Pane",
-                text(pane.id.to_string()).color(if is_focused {
-                    PANE_ID_COLOR_FOCUSED
-                } else {
-                    PANE_ID_COLOR_UNFOCUSED
-                }),
-            ]
-            .spacing(5);
+            let pin_button = icons::action(
+                icons::pin_icon(),
+                "Pin/Unpin",
+                Some(Message::PaneAction(PaneMessage::TogglePin(id))),
+            );
+            let title = row![pin_button, "Pane", text(pane.id.to_string()),].spacing(5);
             let title_bar = pane_grid::TitleBar::new(title)
-                .controls(pane_controls(id, pane, self.panes_count))
-                .padding(10)
+                .controls(pane_controls(id, pane, self.panes_count, is_maximized))
+                .padding(1)
                 .style(if is_focused {
                     style::title_bar_focused
                 } else {
@@ -158,15 +157,25 @@ impl MainWindow {
         .on_click(|p| Message::PaneAction(PaneMessage::Clicked(p)))
         .on_drag(|p| Message::PaneAction(PaneMessage::Dragged(p)))
         .on_resize(10, |p| Message::PaneAction(PaneMessage::Resized(p)));
-        container(pane_grid)
-            .width(Fill)
-            .height(Fill)
-            .padding(10)
-            .into()
+        let controls = row![
+            horizontal_space(),
+            toggler(self.light_theme).on_toggle(Message::ThemeChange),
+        ]
+        .spacing(20)
+        .padding(10);
+        column![
+            controls,
+            container(pane_grid).width(Fill).height(Fill).padding(10),
+        ]
+        .into()
     }
 
     fn theme(&self) -> Theme {
-        Theme::Light
+        if self.light_theme {
+            Theme::Light
+        } else {
+            Theme::Dark
+        }
     }
 }
 
@@ -176,6 +185,7 @@ enum Message {
     PaneTypeChanged(pane_grid::Pane, PaneType),
     FuncHelp(nadi::help::Message),
     Editor(nadi::editor::Message),
+    ThemeChange(bool),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -227,33 +237,52 @@ impl Pane {
         }
     }
 }
-fn pane_controls<'a>(id: pane_grid::Pane, pane: &Pane, panes_count: usize) -> Element<'a, Message> {
+fn pane_controls<'a>(
+    id: pane_grid::Pane,
+    pane: &Pane,
+    panes_count: usize,
+    is_maximized: bool,
+) -> Element<'a, Message> {
     row![
         pick_list(
             [PaneType::FunctionHelp, PaneType::TextEditor],
             pane.ty,
             move |t| Message::PaneTypeChanged(id, t),
         ),
-        button("H")
-            .padding(3)
-            .on_press(Message::PaneAction(PaneMessage::Split(
+        icons::action(
+            "H",
+            "Horizontal Split",
+            Some(Message::PaneAction(PaneMessage::Split(
                 pane_grid::Axis::Horizontal,
                 id
             ))),
-        button("V")
-            .padding(3)
-            .on_press(Message::PaneAction(PaneMessage::Split(
+        ),
+        icons::action(
+            "V",
+            "Vertical Split",
+            Some(Message::PaneAction(PaneMessage::Split(
                 pane_grid::Axis::Vertical,
                 id
             ))),
-        button("X")
-            .padding(3)
-            .style(button::danger)
-            .on_press_maybe(if panes_count > 1 {
-                Some(Message::PaneAction(PaneMessage::Close(id)))
-            } else {
-                None
-            })
+        ),
+        if is_maximized {
+            icons::action(
+                icons::resize_small_icon(),
+                "Restore",
+                Some(Message::PaneAction(PaneMessage::Restore)),
+            )
+        } else {
+            icons::action(
+                icons::resize_full_icon(),
+                "Maximize",
+                (panes_count > 1).then(|| Message::PaneAction(PaneMessage::Maximize(id))),
+            )
+        },
+        icons::danger_action(
+            icons::cancel_icon(),
+            "Close",
+            (panes_count > 1).then(|| Message::PaneAction(PaneMessage::Close(id))),
+        ),
     ]
     .spacing(5)
     .into()
@@ -272,14 +301,3 @@ fn pane_content<'a>(
         Some(PaneType::TextEditor) => win.editor.view().map(Message::Editor).into(),
     }
 }
-
-const PANE_ID_COLOR_UNFOCUSED: Color = Color::from_rgb(
-    0xFF as f32 / 255.0,
-    0xC7 as f32 / 255.0,
-    0xC7 as f32 / 255.0,
-);
-const PANE_ID_COLOR_FOCUSED: Color = Color::from_rgb(
-    0xFF as f32 / 255.0,
-    0x47 as f32 / 255.0,
-    0x47 as f32 / 255.0,
-);
