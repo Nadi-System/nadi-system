@@ -1,3 +1,4 @@
+use crate::icons;
 use iced::widget::{
     button, column, horizontal_space, markdown, row, scrollable, text, text_editor, text_input,
     toggler,
@@ -117,13 +118,20 @@ impl Editor {
 
     pub fn view(&self) -> Element<'_, Message> {
         let mut controls = row![
-            button("New").on_press(Message::NewFile),
-            button("Open").on_press(Message::OpenFile),
-            button("Save").on_press_maybe(self.is_dirty.then(|| Message::SaveFile)),
+            icons::action(icons::trash_icon(), "New", Some(Message::NewFile)),
+            icons::action(
+                icons::folder_open_empty_icon(),
+                "Open",
+                Some(Message::OpenFile)
+            ),
+            icons::action(
+                icons::download_icon(),
+                "Save",
+                self.is_dirty.then(|| Message::SaveFile)
+            ),
             horizontal_space()
         ]
-        .spacing(10)
-        .padding(10);
+        .spacing(10);
         if !self.embedded {
             controls = controls.push(toggler(self.light_theme).on_toggle(Message::ThemeChange));
         }
@@ -180,10 +188,10 @@ pub enum Error {
 async fn open_file() -> Result<(PathBuf, Arc<String>), Error> {
     let picked_file = rfd::AsyncFileDialog::new()
         .set_title("Open a text file...")
-        .add_filter("Nadi Files", &["net", "network", "tasks"])
-        .add_filter("text", &["txt"])
+        .add_filter("Nadi Files", &["net", "network", "tasks", "toml"])
+        .add_filter("Text", &["txt", "md", "org", "tex", "html"])
         .add_filter("Code", &["rs", "py"])
-        .add_filter("Markdown", &["md", "org"])
+        .add_filter("All Files", &["*"])
         .pick_file()
         .await
         .ok_or(Error::DialogClosed)?;

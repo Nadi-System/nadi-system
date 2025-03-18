@@ -110,6 +110,21 @@ pub fn down_open_icon<'a, Message>() -> Element<'a, Message> {
 pub fn up_open_icon<'a, Message>() -> Element<'a, Message> {
     icon('\u{0E80F}')
 }
+pub fn refresh_icon<'a, Message>() -> Element<'a, Message> {
+    icon('\u{0E810}')
+}
+pub fn vsplit_icon<'a, Message>() -> Element<'a, Message> {
+    icon('\u{0E811}')
+}
+pub fn hsplit_icon<'a, Message>() -> Element<'a, Message> {
+    icon('\u{0E812}')
+}
+pub fn unpin_icon<'a, Message>() -> Element<'a, Message> {
+    icon('\u{0E813}')
+}
+pub fn nadi_icon<'a, Message>() -> Element<'a, Message> {
+    icon('\u{0E814}')
+}
 pub fn angle_double_up_icon<'a, Message>() -> Element<'a, Message> {
     icon('\u{0F102}')
 }

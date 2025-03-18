@@ -133,8 +133,12 @@ impl MainWindow {
         let pane_grid = PaneGrid::new(&self.panes, |id, pane, is_maximized| {
             let is_focused = focus == Some(id);
             let pin_button = icons::action(
-                icons::pin_icon(),
-                "Pin/Unpin",
+                if pane.is_pinned {
+                    icons::unpin_icon()
+                } else {
+                    icons::pin_icon()
+                },
+                if pane.is_pinned { "Unpin" } else { "Pin" },
                 Some(Message::PaneAction(PaneMessage::TogglePin(id))),
             );
             let title = row![pin_button, "Pane", text(pane.id.to_string()),].spacing(5);
@@ -262,7 +266,7 @@ fn pane_controls<'a>(
             move |t| Message::PaneTypeChanged(id, t),
         ),
         icons::action(
-            "H",
+            icons::hsplit_icon(),
             "Horizontal Split",
             Some(Message::PaneAction(PaneMessage::Split(
                 pane_grid::Axis::Horizontal,
@@ -270,7 +274,7 @@ fn pane_controls<'a>(
             ))),
         ),
         icons::action(
-            "V",
+            icons::vsplit_icon(),
             "Vertical Split",
             Some(Message::PaneAction(PaneMessage::Split(
                 pane_grid::Axis::Vertical,

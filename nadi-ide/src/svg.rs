@@ -1,24 +1,37 @@
+use crate::icons;
 use iced::widget::{
     button, column, horizontal_space, markdown, row, scrollable, svg, text, text_editor,
     text_input, toggler,
 };
 use iced::{Color, Element, Fill, Font, Length, Task, Theme, widget::Column};
 use std::path::PathBuf;
+use std::sync::Arc;
 
-#[derive(Default)]
 pub struct SvgView {
     light_theme: bool,
     file: Option<PathBuf>,
     is_loading: bool,
-    handle: Option<svg::Handle>,
+    handle: svg::Handle,
     embedded: bool,
+}
+
+impl Default for SvgView {
+    fn default() -> Self {
+        Self {
+            light_theme: false,
+            file: None,
+            is_loading: false,
+            handle: svg::Handle::from_memory(include_bytes!("../images/placeholder.svg")),
+            embedded: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
     OpenFile,
-    FileOpened(Option<PathBuf>),
-    // Refresh,
+    FileOpened(Result<(PathBuf, Arc<String>), Error>),
+    Refresh,
     ThemeChange(bool),
 }
 
@@ -42,20 +55,39 @@ impl SvgView {
                     Task::perform(open_file(), Message::FileOpened)
                 }
             }
-            Message::FileOpened(path) => {
+            Message::FileOpened(result) => {
                 self.is_loading = false;
-                if let Some(path) = path {
-                    self.file = Some(path);
+                match result {
+                    Ok((path, contents)) => {
+                        self.file = Some(path);
+                        self.handle =
+                            svg::Handle::from_memory(String::clone(&contents).into_bytes());
+                    }
+                    Err(e) => println!("{e:?}"),
                 }
                 Task::none()
-            } // Message::Refresh => Task::none(),
+            }
+            Message::Refresh => {
+                if self.is_loading {
+                    Task::none()
+                } else if let Some(f) = &self.file {
+                    self.is_loading = true;
+                    Task::perform(load_file(f.clone()), Message::FileOpened)
+                } else {
+                    Task::none()
+                }
+            }
         }
     }
 
     pub fn view(&self) -> Element<'_, Message> {
         let mut controls = row![
-            button("Open").on_press(Message::OpenFile),
-            // button("Refresh").on_press(Message::Refresh),
+            icons::action(
+                icons::folder_open_empty_icon(),
+                "Open SVG",
+                Some(Message::OpenFile)
+            ),
+            icons::action(icons::refresh_icon(), "Refresh", Some(Message::Refresh)),
             horizontal_space()
         ]
         .spacing(10)
@@ -72,11 +104,15 @@ impl SvgView {
             ),
             horizontal_space()
         ];
-        if let Some(h) = &self.file {
-            column![controls, svg(h).width(Fill).height(Fill), status]
-        } else {
-            column![controls, status]
-        }
+        // if let Some(h) = &self.handle {
+        column![
+            controls,
+            svg(self.handle.clone()).width(Fill).height(Fill),
+            status
+        ]
+        // } else {
+        //     column![controls, status]
+        // }
         .padding(10)
         .into()
     }
@@ -90,11 +126,29 @@ impl SvgView {
     }
 }
 
-async fn open_file() -> Option<PathBuf> {
+#[derive(Debug, Clone)]
+pub enum Error {
+    DialogClosed,
+    IoError(std::io::ErrorKind),
+}
+
+async fn open_file() -> Result<(PathBuf, Arc<String>), Error> {
     let path = rfd::AsyncFileDialog::new()
         .set_title("Open a SVG file...")
         .add_filter("SVG", &["svg"])
         .pick_file()
-        .await?;
-    Some(path.path().into())
+        .await
+        .ok_or(Error::DialogClosed)?;
+    load_file(path).await
+}
+
+async fn load_file(path: impl Into<PathBuf>) -> Result<(PathBuf, Arc<String>), Error> {
+    let path = path.into();
+
+    let contents = tokio::fs::read_to_string(&path)
+        .await
+        .map(Arc::new)
+        .map_err(|error| Error::IoError(error.kind()))?;
+
+    Ok((path, contents))
 }

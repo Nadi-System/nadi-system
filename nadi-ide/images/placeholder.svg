@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="203.46207mm"
+   height="116.74675mm"
+   viewBox="0 0 203.46207 116.74675"
+   version="1.1"
+   id="svg1"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs1" />
+  <g
+     id="layer1"
+     transform="translate(-2.5080108,-11.179543)">
+    <text
+       xml:space="preserve"
+       style="font-size:6.35px;line-height:0;font-family:FreeSans;-inkscape-font-specification:FreeSans;text-align:center;letter-spacing:0px;word-spacing:0px;text-anchor:middle;stroke-width:0.264583"
+       x="104.0803"
+       y="78.092613"
+       id="text1"><tspan
+         id="tspan1"
+         style="stroke-width:0.264583"
+         x="104.0803"
+         y="78.092613">Load SVG Image</tspan></text>
+    <g
+       id="g3"
+       transform="translate(4.4245815,7.8008345)">
+      <rect
+         style="fill:none;fill-opacity:0.394379;fill-rule:evenodd;stroke:#000000;stroke-width:0.765;stroke-opacity:1;paint-order:markers stroke fill"
+         id="rect2"
+         width="21.904881"
+         height="17.343065"
+         x="88.862022"
+         y="45.143047" />
+      <rect
+         style="fill:#800000;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:0.765;stroke-opacity:1;paint-order:markers stroke fill"
+         id="rect3"
+         width="11.563773"
+         height="6.2594438"
+         x="91.514893"
+         y="52.951748" />
+      <ellipse
+         style="fill:#0000a0;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:0.765;stroke-opacity:1;paint-order:markers stroke fill"
+         id="path3"
+         cx="103.98043"
+         cy="52.568516"
+         rx="4.4027209"
+         ry="4.0877995" />
+    </g>
+  </g>
+</svg>
