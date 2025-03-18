@@ -4,12 +4,13 @@ use iced::widget::{
     button, column, container, horizontal_space, pick_list, responsive, row, scrollable, text,
     toggler,
 };
-use iced::{Center, Color, Element, Fill, Size, Subscription, Theme};
+use iced::{Center, Color, Element, Fill, Size, Subscription, Task, Theme};
 
 use nadi::editor::Editor;
 use nadi::help::MdHelp;
 use nadi::icons;
 use nadi::style;
+use nadi::svg::SvgView;
 
 pub fn main() -> iced::Result {
     iced::application("NADI", MainWindow::update, MainWindow::view)
@@ -25,6 +26,7 @@ struct MainWindow {
     focus: Option<pane_grid::Pane>,
     funchelp: MdHelp,
     editor: Editor,
+    svg: SvgView,
 }
 
 impl Default for MainWindow {
@@ -37,17 +39,19 @@ impl Default for MainWindow {
             focus: None,
             funchelp: MdHelp::default().embed(),
             editor: Editor::default().embed(),
+            svg: SvgView::default().embed(),
         }
     }
 }
 
 impl MainWindow {
-    fn update(&mut self, message: Message) {
+    fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::ThemeChange(t) => {
                 self.light_theme = t;
             }
-            Message::Editor(m) => self.editor.update(m),
+            Message::SvgView(m) => return self.svg.update(m).map(Message::SvgView),
+            Message::Editor(m) => return self.editor.update(m).map(Message::Editor),
             Message::FuncHelp(m) => self.funchelp.update(m),
             Message::PaneTypeChanged(p, typ) => {
                 if let Some(Pane { ty, .. }) = self.panes.get_mut(p) {
@@ -119,6 +123,7 @@ impl MainWindow {
                 }
             },
         }
+        Task::none()
     }
 
     fn view(&self) -> Element<Message> {
@@ -185,6 +190,7 @@ enum Message {
     PaneTypeChanged(pane_grid::Pane, PaneType),
     FuncHelp(nadi::help::Message),
     Editor(nadi::editor::Message),
+    SvgView(nadi::svg::Message),
     ThemeChange(bool),
 }
 
@@ -192,6 +198,7 @@ enum Message {
 enum PaneType {
     FunctionHelp,
     TextEditor,
+    SvgView,
 }
 
 impl std::fmt::Display for PaneType {
@@ -202,6 +209,7 @@ impl std::fmt::Display for PaneType {
             match self {
                 Self::FunctionHelp => "Function Help",
                 Self::TextEditor => "Text Editor",
+                Self::SvgView => "Svg Viewer",
             }
         )
     }
@@ -245,7 +253,11 @@ fn pane_controls<'a>(
 ) -> Element<'a, Message> {
     row![
         pick_list(
-            [PaneType::FunctionHelp, PaneType::TextEditor],
+            [
+                PaneType::FunctionHelp,
+                PaneType::TextEditor,
+                PaneType::SvgView
+            ],
             pane.ty,
             move |t| Message::PaneTypeChanged(id, t),
         ),
@@ -299,5 +311,6 @@ fn pane_content<'a>(
         None => text("Select a Pane Type").into(),
         Some(PaneType::FunctionHelp) => win.funchelp.view().map(Message::FuncHelp).into(),
         Some(PaneType::TextEditor) => win.editor.view().map(Message::Editor).into(),
+        Some(PaneType::SvgView) => win.svg.view().map(Message::SvgView).into(),
     }
 }

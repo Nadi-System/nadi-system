@@ -1,7 +1,7 @@
 use iced::widget::{
     button, column, horizontal_space, markdown, row, scrollable, text, text_input, toggler,
 };
-use iced::{widget::Column, Color, Element, Length, Theme};
+use iced::{Color, Element, Length, Theme, widget::Column};
 use nadi_core::functions::{FuncArg, NadiFunctions};
 
 static FUNC_WIDTH: f32 = 300.0;
@@ -79,7 +79,7 @@ impl MdHelp {
         self
     }
     pub fn view(&self) -> Element<'_, Message> {
-        let controls = row![
+        let mut controls = row![
             button("All")
                 .on_press(Message::FuncTypeChange(None))
                 .style(match self.state {
@@ -105,11 +105,12 @@ impl MdHelp {
                     _ => button::primary,
                 }),
             horizontal_space(),
-            toggler(self.light_theme)
-                .on_toggle_maybe((!self.embedded).then(|| Message::ThemeChange)),
         ]
         .spacing(20)
         .padding(10);
+        if !self.embedded {
+            controls = controls.push(toggler(self.light_theme).on_toggle(Message::ThemeChange));
+        }
         let md = markdown::view(
             &self.markdown,
             markdown::Settings::default(),
@@ -213,7 +214,7 @@ pub fn list_functions<'a>(
             ]
             .into_iter()
             .flatten()
-            .collect()
+            .collect();
         }
     };
     func.sort_by(|a, b| a.1.cmp(b.1));

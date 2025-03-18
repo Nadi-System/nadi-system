@@ -116,17 +116,17 @@ impl Editor {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
-        let controls = row![
+        let mut controls = row![
             button("New").on_press(Message::NewFile),
             button("Open").on_press(Message::OpenFile),
             button("Save").on_press_maybe(self.is_dirty.then(|| Message::SaveFile)),
-            horizontal_space(),
-            toggler(self.light_theme)
-                .on_toggle_maybe((!self.embedded).then(|| Message::ThemeChange)),
+            horizontal_space()
         ]
         .spacing(10)
         .padding(10);
-
+        if !self.embedded {
+            controls = controls.push(toggler(self.light_theme).on_toggle(Message::ThemeChange));
+        }
         let signature = row![text(self.signature.clone())];
         let status = row![
             text(
