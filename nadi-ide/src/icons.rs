@@ -1,8 +1,7 @@
 use iced::widget::{
-    self, button, center, column, container, horizontal_space, pick_list, row, text, text_editor,
-    toggler, tooltip,
+    button, center, container, text, tooltip,
 };
-use iced::{Center, Element, Fill, Font, Task, Theme};
+use iced::{Element, Font};
 
 fn icon<'a, Message>(codepoint: char) -> Element<'a, Message> {
     const ICON_FONT: Font = Font::with_name("nadi-icons");

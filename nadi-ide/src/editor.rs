@@ -1,14 +1,8 @@
 use crate::icons;
-use iced::widget::{
-    button, column, horizontal_space, markdown, row, scrollable, text, text_editor, text_input,
-    toggler,
-};
-use iced::{Color, Element, Fill, Font, Length, Task, Theme, widget::Column};
-use nadi_core::functions::{FuncArg, NadiFunctions};
+use iced::widget::{column, horizontal_space, row, text, text_editor, toggler};
+use iced::{Element, Fill, Font, Task, Theme};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-
-static FUNC_WIDTH: f32 = 300.0;
 
 #[derive(Default)]
 pub struct Editor {
@@ -127,7 +121,7 @@ impl Editor {
             icons::action(
                 icons::download_icon(),
                 "Save",
-                self.is_dirty.then(|| Message::SaveFile)
+                self.is_dirty.then_some(Message::SaveFile)
             ),
             horizontal_space()
         ]

@@ -1,9 +1,8 @@
 use crate::icons;
 use iced::widget::{
-    button, column, horizontal_space, markdown, row, scrollable, svg, text, text_editor,
-    text_input, toggler,
+    column, horizontal_space, row, svg, text, toggler,
 };
-use iced::{Color, Element, Fill, Font, Length, Task, Theme, widget::Column};
+use iced::{Element, Fill, Task, Theme};
 use std::path::PathBuf;
 use std::sync::Arc;
 

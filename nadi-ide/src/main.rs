@@ -1,10 +1,6 @@
-use iced::keyboard;
 use iced::widget::pane_grid::{self, PaneGrid};
-use iced::widget::{
-    button, column, container, horizontal_space, pick_list, responsive, row, scrollable, text,
-    toggler,
-};
-use iced::{Center, Color, Element, Fill, Size, Subscription, Task, Theme};
+use iced::widget::{column, container, horizontal_space, pick_list, row, text, toggler};
+use iced::{Element, Fill, Task, Theme};
 
 use nadi::editor::Editor;
 use nadi::help::MdHelp;
@@ -128,8 +124,6 @@ impl MainWindow {
 
     fn view(&self) -> Element<Message> {
         let focus = self.focus;
-        let total_panes = self.panes.len();
-
         let pane_grid = PaneGrid::new(&self.panes, |id, pane, is_maximized| {
             let is_focused = focus == Some(id);
             let pin_button = icons::action(
@@ -150,15 +144,13 @@ impl MainWindow {
                 } else {
                     style::title_bar_active
                 });
-            pane_grid::Content::new(responsive(move |size| {
-                pane_content(&self, id, &pane.ty, total_panes, pane.is_pinned, size)
-            }))
-            .title_bar(title_bar)
-            .style(if is_focused {
-                style::pane_focused
-            } else {
-                style::pane_active
-            })
+            pane_grid::Content::new(pane_content(self, &pane.ty))
+                .title_bar(title_bar)
+                .style(if is_focused {
+                    style::pane_focused
+                } else {
+                    style::pane_active
+                })
         })
         .width(Fill)
         .height(Fill)
@@ -291,30 +283,23 @@ fn pane_controls<'a>(
             icons::action(
                 icons::resize_full_icon(),
                 "Maximize",
-                (panes_count > 1).then(|| Message::PaneAction(PaneMessage::Maximize(id))),
+                (panes_count > 1).then_some(Message::PaneAction(PaneMessage::Maximize(id))),
             )
         },
         icons::danger_action(
             icons::cancel_icon(),
             "Close",
-            (panes_count > 1).then(|| Message::PaneAction(PaneMessage::Close(id))),
+            (panes_count > 1).then_some(Message::PaneAction(PaneMessage::Close(id))),
         ),
     ]
     .spacing(5)
     .into()
 }
-fn pane_content<'a>(
-    win: &'a MainWindow,
-    pane: pane_grid::Pane,
-    ty: &'a Option<PaneType>,
-    total_panes: usize,
-    is_pinned: bool,
-    size: Size,
-) -> Element<'a, Message> {
+fn pane_content<'a>(win: &'a MainWindow, ty: &'a Option<PaneType>) -> Element<'a, Message> {
     match ty {
         None => text("Select a Pane Type").into(),
-        Some(PaneType::FunctionHelp) => win.funchelp.view().map(Message::FuncHelp).into(),
-        Some(PaneType::TextEditor) => win.editor.view().map(Message::Editor).into(),
-        Some(PaneType::SvgView) => win.svg.view().map(Message::SvgView).into(),
+        Some(PaneType::FunctionHelp) => win.funchelp.view().map(Message::FuncHelp),
+        Some(PaneType::TextEditor) => win.editor.view().map(Message::Editor),
+        Some(PaneType::SvgView) => win.svg.view().map(Message::SvgView),
     }
 }
