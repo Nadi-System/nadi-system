@@ -64,24 +64,6 @@ impl MainWindow {
 
                     self.panes_count += 1;
                 }
-                PaneMessage::SplitFocused(axis) => {
-                    if let Some(pane) = self.focus {
-                        let result = self.panes.split(axis, pane, Pane::new(self.panes_count));
-
-                        if let Some((pane, _)) = result {
-                            self.focus = Some(pane);
-                        }
-
-                        self.panes_count += 1;
-                    }
-                }
-                PaneMessage::FocusAdjacent(direction) => {
-                    if let Some(pane) = self.focus {
-                        if let Some(adjacent) = self.panes.adjacent(pane, direction) {
-                            self.focus = Some(adjacent);
-                        }
-                    }
-                }
                 PaneMessage::Clicked(pane) => {
                     self.focus = Some(pane);
                 }
@@ -104,17 +86,6 @@ impl MainWindow {
                 PaneMessage::Close(pane) => {
                     if let Some((_, sibling)) = self.panes.close(pane) {
                         self.focus = Some(sibling);
-                    }
-                }
-                PaneMessage::CloseFocused => {
-                    if let Some(pane) = self.focus {
-                        if let Some(Pane { is_pinned, .. }) = self.panes.get(pane) {
-                            if !is_pinned {
-                                if let Some((_, sibling)) = self.panes.close(pane) {
-                                    self.focus = Some(sibling);
-                                }
-                            }
-                        }
                     }
                 }
             },
@@ -214,8 +185,6 @@ impl std::fmt::Display for PaneType {
 #[derive(Debug, Clone, Copy)]
 enum PaneMessage {
     Split(pane_grid::Axis, pane_grid::Pane),
-    SplitFocused(pane_grid::Axis),
-    FocusAdjacent(pane_grid::Direction),
     Clicked(pane_grid::Pane),
     Dragged(pane_grid::DragEvent),
     Resized(pane_grid::ResizeEvent),
@@ -223,7 +192,6 @@ enum PaneMessage {
     Maximize(pane_grid::Pane),
     Restore,
     Close(pane_grid::Pane),
-    CloseFocused,
 }
 
 struct Pane {
