@@ -112,12 +112,8 @@ impl Editor {
 
     pub fn view(&self) -> Element<'_, Message> {
         let mut controls = row![
-            icons::action(icons::trash_icon(), "New", Some(Message::NewFile)),
-            icons::action(
-                icons::folder_open_empty_icon(),
-                "Open",
-                Some(Message::OpenFile)
-            ),
+            icons::danger_action(icons::trash_icon(), "New", Some(Message::NewFile)),
+            icons::action(icons::open_icon(), "Open", Some(Message::OpenFile)),
             icons::action(
                 icons::download_icon(),
                 "Save",

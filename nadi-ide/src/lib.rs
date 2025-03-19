@@ -3,3 +3,4 @@ pub mod help;
 pub mod icons;
 pub mod style;
 pub mod svg;
+pub mod terminal;

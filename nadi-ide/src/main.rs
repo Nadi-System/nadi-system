@@ -7,10 +7,11 @@ use nadi::help::MdHelp;
 use nadi::icons;
 use nadi::style;
 use nadi::svg::SvgView;
+use nadi::terminal::Terminal;
 
 pub fn main() -> iced::Result {
     iced::application("NADI", MainWindow::update, MainWindow::view)
-        .font(include_bytes!("../fonts/icons.ttf").as_slice())
+        .font(icons::FONT)
         .theme(MainWindow::theme)
         .run()
 }
@@ -23,6 +24,7 @@ struct MainWindow {
     funchelp: MdHelp,
     editor: Editor,
     svg: SvgView,
+    terminal: Terminal,
 }
 
 impl Default for MainWindow {
@@ -36,6 +38,7 @@ impl Default for MainWindow {
             funchelp: MdHelp::default().embed(),
             editor: Editor::default().embed(),
             svg: SvgView::default().embed(),
+            terminal: Terminal::default().embed(),
         }
     }
 }
@@ -46,6 +49,7 @@ impl MainWindow {
             Message::ThemeChange(t) => {
                 self.light_theme = t;
             }
+            Message::Terminal(m) => return self.terminal.update(m).map(Message::Terminal),
             Message::SvgView(m) => return self.svg.update(m).map(Message::SvgView),
             Message::Editor(m) => return self.editor.update(m).map(Message::Editor),
             Message::FuncHelp(m) => self.funchelp.update(m),
@@ -158,6 +162,7 @@ enum Message {
     FuncHelp(nadi::help::Message),
     Editor(nadi::editor::Message),
     SvgView(nadi::svg::Message),
+    Terminal(nadi::terminal::Message),
     ThemeChange(bool),
 }
 
@@ -166,6 +171,7 @@ enum PaneType {
     FunctionHelp,
     TextEditor,
     SvgView,
+    Terminal,
 }
 
 impl std::fmt::Display for PaneType {
@@ -177,6 +183,7 @@ impl std::fmt::Display for PaneType {
                 Self::FunctionHelp => "Function Help",
                 Self::TextEditor => "Text Editor",
                 Self::SvgView => "Svg Viewer",
+                Self::Terminal => "Terminal",
             }
         )
     }
@@ -220,7 +227,8 @@ fn pane_controls<'a>(
             [
                 PaneType::FunctionHelp,
                 PaneType::TextEditor,
-                PaneType::SvgView
+                PaneType::SvgView,
+                PaneType::Terminal
             ],
             pane.ty,
             move |t| Message::PaneTypeChanged(id, t),
@@ -269,5 +277,6 @@ fn pane_content<'a>(win: &'a MainWindow, ty: &'a Option<PaneType>) -> Element<'a
         Some(PaneType::FunctionHelp) => win.funchelp.view().map(Message::FuncHelp),
         Some(PaneType::TextEditor) => win.editor.view().map(Message::Editor),
         Some(PaneType::SvgView) => win.svg.view().map(Message::SvgView),
+        Some(PaneType::Terminal) => win.terminal.view().map(Message::Terminal),
     }
 }

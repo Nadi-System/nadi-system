@@ -1,7 +1,5 @@
 use crate::icons;
-use iced::widget::{
-    column, horizontal_space, row, svg, text, toggler,
-};
+use iced::widget::{column, horizontal_space, row, svg, text, toggler};
 use iced::{Element, Fill, Task, Theme};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -81,11 +79,7 @@ impl SvgView {
 
     pub fn view(&self) -> Element<'_, Message> {
         let mut controls = row![
-            icons::action(
-                icons::folder_open_empty_icon(),
-                "Open SVG",
-                Some(Message::OpenFile)
-            ),
+            icons::action(icons::open_icon(), "Open SVG", Some(Message::OpenFile)),
             icons::action(icons::refresh_icon(), "Refresh", Some(Message::Refresh)),
             horizontal_space()
         ]

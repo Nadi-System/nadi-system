@@ -1,8 +1,9 @@
 use nadi::editor::Editor;
+use nadi::icons;
 
 fn main() -> iced::Result {
     iced::application("NADI Editor", Editor::update, Editor::view)
-        .font(include_bytes!("../../fonts/icons.ttf").as_slice())
+        .font(icons::FONT)
         .theme(Editor::theme)
         .run()
 }
