@@ -34,7 +34,8 @@ pub enum Message {
     FileSaved(Result<PathBuf, Error>),
     Comment,
     FuncAtMark(Option<(FuncType, String)>),
-    // these messages are only sent when embedded
+    // these messages are only sent when embedded; and are handled in
+    // the main window
     RunAllTask,
     RunTask,
     SearchHelp,

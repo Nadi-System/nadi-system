@@ -55,11 +55,13 @@ impl MainWindow {
                 return match m {
                     editor::Message::RunAllTask => {
                         let buf = self.editor.content.text();
+                        self.spawn_pane_maybe(Some(PaneType::Terminal));
                         Task::perform((async || buf)(), terminal::Message::RunTasks)
                             .map(Message::Terminal)
                     }
                     editor::Message::RunTask => {
                         if let Some(sel) = self.editor.content.selection() {
+                            self.spawn_pane_maybe(Some(PaneType::Terminal));
                             Task::perform((async || sel)(), terminal::Message::RunTasks)
                                 .map(Message::Terminal)
                         } else {
@@ -68,6 +70,7 @@ impl MainWindow {
                     }
                     editor::Message::SearchHelp => {
                         if let Some(sel) = self.editor.content.selection() {
+                            self.spawn_pane_maybe(Some(PaneType::FunctionHelp));
                             Task::perform((async || sel)(), help::Message::SearchChange)
                                 .map(Message::FuncHelp)
                         } else {
@@ -76,6 +79,7 @@ impl MainWindow {
                     }
                     editor::Message::HelpTask => {
                         if let Some(func) = self.editor.function.clone() {
+                            self.spawn_pane_maybe(Some(PaneType::FunctionHelp));
                             Task::perform((async || func)(), |(t, f)| help::Message::Function(t, f))
                                 .map(Message::FuncHelp)
                         } else {
@@ -184,6 +188,23 @@ impl MainWindow {
             Theme::Light
         } else {
             Theme::Dark
+        }
+    }
+
+    fn spawn_pane_maybe(&mut self, ty: Option<PaneType>) {
+        if self.panes.iter().any(|(_, p)| p.ty == ty) {
+            return;
+        }
+        if let Some(pane) = self.focus {
+            let mut p = Pane::new(self.panes_count);
+            p.ty = ty;
+            let result = self.panes.split(pane_grid::Axis::Vertical, pane, p);
+
+            if let Some((pane, _)) = result {
+                self.focus = Some(pane);
+            }
+
+            self.panes_count += 1;
         }
     }
 }
