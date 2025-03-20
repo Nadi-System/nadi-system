@@ -2,12 +2,12 @@ use iced::widget::pane_grid::{self, PaneGrid};
 use iced::widget::{column, container, horizontal_space, pick_list, row, text, toggler};
 use iced::{Element, Fill, Task, Theme};
 
-use nadi::editor::Editor;
-use nadi::help::MdHelp;
+use nadi::editor::{self, Editor};
+use nadi::help::{self, MdHelp};
 use nadi::icons;
 use nadi::style;
 use nadi::svg::SvgView;
-use nadi::terminal::Terminal;
+use nadi::terminal::{self, Terminal};
 
 pub fn main() -> iced::Result {
     iced::application("NADI", MainWindow::update, MainWindow::view)
@@ -51,7 +51,40 @@ impl MainWindow {
             }
             Message::Terminal(m) => return self.terminal.update(m).map(Message::Terminal),
             Message::SvgView(m) => return self.svg.update(m).map(Message::SvgView),
-            Message::Editor(m) => return self.editor.update(m).map(Message::Editor),
+            Message::Editor(m) => {
+                return match m {
+                    editor::Message::RunAllTask => {
+                        let buf = self.editor.content.text();
+                        Task::perform((async || buf)(), terminal::Message::RunTasks)
+                            .map(Message::Terminal)
+                    }
+                    editor::Message::RunTask => {
+                        if let Some(sel) = self.editor.content.selection() {
+                            Task::perform((async || sel)(), terminal::Message::RunTasks)
+                                .map(Message::Terminal)
+                        } else {
+                            Task::none()
+                        }
+                    }
+                    editor::Message::SearchHelp => {
+                        if let Some(sel) = self.editor.content.selection() {
+                            Task::perform((async || sel)(), help::Message::SearchChange)
+                                .map(Message::FuncHelp)
+                        } else {
+                            Task::none()
+                        }
+                    }
+                    editor::Message::HelpTask => {
+                        if let Some(func) = self.editor.function.clone() {
+                            Task::perform((async || func)(), |(t, f)| help::Message::Function(t, f))
+                                .map(Message::FuncHelp)
+                        } else {
+                            Task::none()
+                        }
+                    }
+                    _ => self.editor.update(m).map(Message::Editor),
+                };
+            }
             Message::FuncHelp(m) => self.funchelp.update(m),
             Message::PaneTypeChanged(p, typ) => {
                 if let Some(Pane { ty, .. }) = self.panes.get_mut(p) {

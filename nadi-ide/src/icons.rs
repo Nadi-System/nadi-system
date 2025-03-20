@@ -83,7 +83,7 @@ font_icon!(bottom_icon, '\u{0E816}');
 font_icon!(up_icon, '\u{0E817}');
 font_icon!(down_icon, '\u{0E818}');
 font_icon!(comment_icon, '\u{0E819}');
-font_icon!(funchelp_icon, '\u{0E81a}');
+// font_icon!(funchelp_icon, '\u{0E81A}');
 font_icon!(image_icon, '\u{0E81b}');
 font_icon!(run_all_icon, '\u{0E81c}');
 font_icon!(run_step_icon, '\u{0E81d}');

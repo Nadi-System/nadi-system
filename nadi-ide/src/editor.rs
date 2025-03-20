@@ -1,5 +1,12 @@
+use crate::help::FuncType;
 use crate::icons;
-use iced::widget::{column, horizontal_space, row, text, text_editor, toggler};
+use nadi_core::{
+    parser::tasks,
+    parser::tokenizer::{self, TaskToken},
+    tasks::{TaskInput, TaskKeyword, TaskType},
+};
+
+use iced::widget::{column, horizontal_space, row, text, text_editor, toggler, vertical_rule};
 use iced::{Element, Fill, Font, Task, Theme};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -7,11 +14,12 @@ use std::sync::Arc;
 #[derive(Default)]
 pub struct Editor {
     light_theme: bool,
+    pub function: Option<(FuncType, String)>,
     signature: String,
     file: Option<PathBuf>,
     is_dirty: bool,
     is_loading: bool,
-    content: text_editor::Content,
+    pub content: text_editor::Content,
     embedded: bool,
 }
 
@@ -24,6 +32,13 @@ pub enum Message {
     FileOpened(Result<(PathBuf, Arc<String>), Error>),
     SaveFile,
     FileSaved(Result<PathBuf, Error>),
+    Comment,
+    FuncAtMark(Option<(FuncType, String)>),
+    // these messages are only sent when embedded
+    RunAllTask,
+    RunTask,
+    SearchHelp,
+    HelpTask,
 }
 
 impl Editor {
@@ -38,10 +53,22 @@ impl Editor {
                 self.light_theme = theme;
                 Task::none()
             }
+            Message::FuncAtMark(func) => {
+                // todo get signature from the actual function
+                self.signature = func
+                    .as_ref()
+                    .map(|(t, n)| format!("{t} {n}"))
+                    .unwrap_or_default();
+                self.function = func;
+                Task::none()
+            }
             Message::EditorAction(action) => {
                 self.is_dirty = self.is_dirty || action.is_edit();
                 self.content.perform(action);
-                Task::none()
+                Task::perform(
+                    task_at_mark(self.content.text(), self.content.cursor_position()),
+                    Message::FuncAtMark,
+                )
             }
             Message::NewFile => {
                 if !self.is_loading {
@@ -107,6 +134,10 @@ impl Editor {
                 }
                 Task::none()
             }
+            // remaining ones should be handled in main window, and
+            // should be absent during non embed status; type system
+            // can't help here, so be careful
+            _ => Task::none(),
         }
     }
 
@@ -119,10 +150,33 @@ impl Editor {
                 "Save",
                 self.is_dirty.then_some(Message::SaveFile)
             ),
-            horizontal_space()
-        ]
-        .spacing(10);
-        if !self.embedded {
+            icons::action(icons::comment_icon(), "Comment", Some(Message::Comment)),
+        ];
+        if self.embedded {
+            controls = controls
+                .push(vertical_rule(1.0))
+                .push(icons::action(
+                    icons::run_all_icon(),
+                    "Run Selection/Line",
+                    Some(Message::RunTask),
+                ))
+                .push(icons::action(
+                    icons::terminal_icon(),
+                    "Run Buffer",
+                    Some(Message::RunAllTask),
+                ))
+                .push(icons::action(
+                    icons::search_icon(),
+                    "Search in Help Window",
+                    Some(Message::SearchHelp),
+                ))
+                .push(icons::action(
+                    icons::help_icon(),
+                    "Help",
+                    self.function.as_ref().map(|_| Message::HelpTask),
+                ));
+        } else {
+            controls = controls.push(horizontal_space());
             controls = controls.push(toggler(self.light_theme).on_toggle(Message::ThemeChange));
         }
         let signature = row![text(self.signature.clone())];
@@ -140,7 +194,7 @@ impl Editor {
             })
         ];
         column![
-            controls,
+            controls.spacing(10).height(30.0),
             signature,
             text_editor(&self.content)
                 .height(Fill)
@@ -217,4 +271,60 @@ async fn save_file(path: Option<PathBuf>, contents: String) -> Result<PathBuf, E
         .map_err(|error| Error::IoError(error.kind()))?;
 
     Ok(path)
+}
+
+enum State {
+    None,
+    Kw(TaskKeyword),
+}
+
+async fn task_at_mark(text: String, mark: (usize, usize)) -> Option<(FuncType, String)> {
+    let line = mark.0;
+    // if the current line can be parsed into a proper task, use that
+    let task_str = text.lines().nth(line)?;
+    let tokens = tokenizer::get_tokens(&task_str).ok()?;
+    if let Ok([task, ..]) = tasks::parse(tokens).as_deref() {
+        return if let TaskInput::Function(fc) = &task.input {
+            let fty = match task.ty {
+                TaskType::Node(_) => FuncType::Node,
+                TaskType::Network(_) => FuncType::Network,
+                TaskType::Env => FuncType::Env,
+                _ => return None,
+            };
+            Some((fty, fc.name.clone()))
+        } else {
+            None
+        };
+    }
+
+    // if not parse the whole thing and deduce the last function call
+    let mut state = State::None;
+    let mut func = None;
+    let mut tokens = tokenizer::VecTokens::new(tokenizer::get_tokens(&text).ok()?);
+    while tokens.line <= line {
+        match tokens.next_no_ws(true) {
+            Some(t) => match t.ty {
+                TaskToken::Keyword(k) => {
+                    state = State::Kw(k);
+                }
+                TaskToken::Function => {
+                    if let State::Kw(kw) = state {
+                        func = Some((kw, t.content.to_string()));
+                    }
+                    state = State::None;
+                }
+                _ => (),
+            },
+            None => break,
+        }
+    }
+    match func {
+        Some((kw, func)) => match kw {
+            TaskKeyword::Node => Some((FuncType::Node, func)),
+            TaskKeyword::Network => Some((FuncType::Network, func)),
+            TaskKeyword::Env => Some((FuncType::Env, func)),
+            _ => None,
+        },
+        _ => None,
+    }
 }
