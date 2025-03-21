@@ -1,7 +1,8 @@
 use iced::widget::pane_grid::{self, PaneGrid};
-use iced::widget::{column, container, horizontal_space, pick_list, row, text, toggler};
-use iced::{Element, Fill, Task, Theme};
-
+use iced::widget::{
+    button, center, column, container, horizontal_space, pick_list, row, text, toggler,
+};
+use iced::{Element, Fill, Length, Task, Theme};
 use nadi::editor::{self, Editor};
 use nadi::help::{self, MdHelp};
 use nadi::icons;
@@ -48,6 +49,10 @@ impl MainWindow {
         match message {
             Message::ThemeChange(t) => {
                 self.light_theme = t;
+            }
+            Message::Workspace(conf) => {
+                self.panes =
+                    pane_grid::State::<Pane>::with_configuration(panety_2_pane(self, &conf));
             }
             Message::Terminal(m) => return self.terminal.update(m).map(Message::Terminal),
             Message::SvgView(m) => return self.svg.update(m).map(Message::SvgView),
@@ -156,7 +161,7 @@ impl MainWindow {
                 } else {
                     style::title_bar_active
                 });
-            pane_grid::Content::new(pane_content(self, &pane.ty))
+            pane_grid::Content::new(pane_content(self, id, &pane.ty))
                 .title_bar(title_bar)
                 .style(if is_focused {
                     style::pane_focused
@@ -211,6 +216,7 @@ impl MainWindow {
 
 #[derive(Debug, Clone)]
 enum Message {
+    Workspace(pane_grid::Configuration<&'static PaneType>),
     PaneAction(PaneMessage),
     PaneTypeChanged(pane_grid::Pane, PaneType),
     FuncHelp(nadi::help::Message),
@@ -225,7 +231,18 @@ enum PaneType {
     FunctionHelp,
     TextEditor,
     SvgView,
+    NetworkView,
     Terminal,
+}
+
+impl PaneType {
+    pub const ALL: &'static [PaneType] = &[
+        PaneType::FunctionHelp,
+        PaneType::TextEditor,
+        PaneType::SvgView,
+        PaneType::NetworkView,
+        PaneType::Terminal,
+    ];
 }
 
 impl std::fmt::Display for PaneType {
@@ -237,6 +254,7 @@ impl std::fmt::Display for PaneType {
                 Self::FunctionHelp => "Function Help",
                 Self::TextEditor => "Text Editor",
                 Self::SvgView => "Svg Viewer",
+                Self::NetworkView => "Network Viewer",
                 Self::Terminal => "Terminal",
             }
         )
@@ -277,16 +295,9 @@ fn pane_controls<'a>(
     is_maximized: bool,
 ) -> Element<'a, Message> {
     row![
-        pick_list(
-            [
-                PaneType::FunctionHelp,
-                PaneType::TextEditor,
-                PaneType::SvgView,
-                PaneType::Terminal
-            ],
-            pane.ty,
-            move |t| Message::PaneTypeChanged(id, t),
-        ),
+        pick_list(PaneType::ALL, pane.ty, move |t| Message::PaneTypeChanged(
+            id, t
+        ),),
         icons::action(
             icons::hsplit_icon(),
             "Horizontal Split",
@@ -325,12 +336,138 @@ fn pane_controls<'a>(
     .spacing(5)
     .into()
 }
-fn pane_content<'a>(win: &'a MainWindow, ty: &'a Option<PaneType>) -> Element<'a, Message> {
+fn pane_content<'a>(
+    win: &'a MainWindow,
+    id: pane_grid::Pane,
+    ty: &'a Option<PaneType>,
+) -> Element<'a, Message> {
     match ty {
-        None => text("Select a Pane Type").into(),
+        None => initial_view(win, id),
         Some(PaneType::FunctionHelp) => win.funchelp.view().map(Message::FuncHelp),
         Some(PaneType::TextEditor) => win.editor.view().map(Message::Editor),
         Some(PaneType::SvgView) => win.svg.view().map(Message::SvgView),
+        Some(PaneType::NetworkView) => win.terminal.view_network().map(Message::Terminal),
         Some(PaneType::Terminal) => win.terminal.view().map(Message::Terminal),
+    }
+}
+
+fn initial_view(win: &MainWindow, id: pane_grid::Pane) -> Element<Message> {
+    let mut col = column![center(text("Pane Type")).width(Length::Fill).height(30.0),]
+        .spacing(10.0)
+        .width(300.0);
+    for pt in PaneType::ALL {
+        col = col.push(
+            button(center(text(pt.to_string())))
+                .width(Length::Fill)
+                .height(30.0)
+                .on_press(Message::PaneTypeChanged(id, pt.clone())),
+        );
+    }
+    if win.panes_count == 1 {
+        center(
+            row![
+                col,
+                column![
+                    center(text("Workspace Layout"))
+                        .width(Length::Fill)
+                        .height(30.0),
+                    button(center("Editor + Terminal"))
+                        .on_press_with(|| {
+                            Message::Workspace(pane_grid::Configuration::Split {
+                                axis: pane_grid::Axis::Vertical,
+                                ratio: 0.5,
+                                a: Box::new(pane_grid::Configuration::Pane(&PaneType::TextEditor)),
+                                b: Box::new(pane_grid::Configuration::Pane(&PaneType::Terminal)),
+                            })
+                        })
+                        .width(Length::Fill)
+                        .height(30.0),
+                    button(center("Editor + Help / Terminal"))
+                        .on_press_with(|| {
+                            Message::Workspace(pane_grid::Configuration::Split {
+                                axis: pane_grid::Axis::Vertical,
+                                ratio: 0.5,
+                                a: Box::new(pane_grid::Configuration::Pane(&PaneType::TextEditor)),
+                                b: Box::new(pane_grid::Configuration::Split {
+                                    axis: pane_grid::Axis::Horizontal,
+                                    ratio: 0.5,
+                                    a: Box::new(pane_grid::Configuration::Pane(
+                                        &PaneType::FunctionHelp,
+                                    )),
+                                    b: Box::new(pane_grid::Configuration::Pane(
+                                        &PaneType::Terminal,
+                                    )),
+                                }),
+                            })
+                        })
+                        .width(Length::Fill)
+                        .height(30.0),
+                    button(center("Editor + Svg / Terminal"))
+                        .on_press_with(|| {
+                            Message::Workspace(pane_grid::Configuration::Split {
+                                axis: pane_grid::Axis::Vertical,
+                                ratio: 0.5,
+                                a: Box::new(pane_grid::Configuration::Pane(&PaneType::TextEditor)),
+                                b: Box::new(pane_grid::Configuration::Split {
+                                    axis: pane_grid::Axis::Horizontal,
+                                    ratio: 0.5,
+                                    a: Box::new(pane_grid::Configuration::Pane(&PaneType::SvgView)),
+                                    b: Box::new(pane_grid::Configuration::Pane(
+                                        &PaneType::Terminal,
+                                    )),
+                                }),
+                            })
+                        })
+                        .width(Length::Fill)
+                        .height(30.0),
+                    button(center("Editor + Network / Terminal"))
+                        .on_press_with(|| {
+                            Message::Workspace(pane_grid::Configuration::Split {
+                                axis: pane_grid::Axis::Vertical,
+                                ratio: 0.5,
+                                a: Box::new(pane_grid::Configuration::Pane(&PaneType::TextEditor)),
+                                b: Box::new(pane_grid::Configuration::Split {
+                                    axis: pane_grid::Axis::Horizontal,
+                                    ratio: 0.5,
+                                    a: Box::new(pane_grid::Configuration::Pane(
+                                        &PaneType::NetworkView,
+                                    )),
+                                    b: Box::new(pane_grid::Configuration::Pane(
+                                        &PaneType::Terminal,
+                                    )),
+                                }),
+                            })
+                        })
+                        .width(Length::Fill)
+                        .height(30.0)
+                ]
+                .spacing(10.0)
+                .width(300.0)
+            ]
+            .spacing(30.0),
+        )
+        .into()
+    } else {
+        center(col).into()
+    }
+}
+
+fn panety_2_pane(
+    win: &mut MainWindow,
+    conf: &pane_grid::Configuration<&PaneType>,
+) -> pane_grid::Configuration<Pane> {
+    match conf {
+        pane_grid::Configuration::Pane(ty) => {
+            let mut pane = Pane::new(win.panes_count);
+            win.panes_count += 1;
+            pane.ty = Some(**ty);
+            pane_grid::Configuration::Pane(pane)
+        }
+        pane_grid::Configuration::Split { axis, ratio, a, b } => pane_grid::Configuration::Split {
+            axis: *axis,
+            ratio: *ratio,
+            a: Box::new(panety_2_pane(win, &a)),
+            b: Box::new(panety_2_pane(win, &b)),
+        },
     }
 }

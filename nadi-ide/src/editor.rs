@@ -1,19 +1,20 @@
 use crate::help::FuncType;
 use crate::icons;
+use iced::highlighter;
+use iced::widget::{
+    column, horizontal_space, pick_list, row, text, text_editor, toggler, vertical_rule,
+};
+use iced::{Element, Fill, Font, Task, Theme};
 use nadi_core::{
     parser::tasks,
     parser::tokenizer::{self, TaskToken},
     tasks::{TaskInput, TaskKeyword, TaskType},
 };
-
-use iced::widget::{column, horizontal_space, row, text, text_editor, toggler, vertical_rule};
-use iced::{Element, Fill, Font, Task, Theme};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-#[derive(Default)]
 pub struct Editor {
-    light_theme: bool,
+    theme: highlighter::Theme,
     pub function: Option<(FuncType, String)>,
     signature: String,
     file: Option<PathBuf>,
@@ -23,10 +24,25 @@ pub struct Editor {
     embedded: bool,
 }
 
+impl Default for Editor {
+    fn default() -> Self {
+        Self {
+            theme: highlighter::Theme::SolarizedDark,
+            function: None,
+            signature: String::new(),
+            file: None,
+            is_dirty: false,
+            is_loading: false,
+            content: text_editor::Content::default(),
+            embedded: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Message {
     EditorAction(text_editor::Action),
-    ThemeChange(bool),
+    ThemeChange(highlighter::Theme),
     NewFile,
     OpenFile,
     FileOpened(Result<(PathBuf, Arc<String>), Error>),
@@ -51,7 +67,7 @@ impl Editor {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::ThemeChange(theme) => {
-                self.light_theme = theme;
+                self.theme = theme;
                 Task::none()
             }
             Message::FuncAtMark(func) => {
@@ -176,10 +192,14 @@ impl Editor {
                     "Help",
                     self.function.as_ref().map(|_| Message::HelpTask),
                 ));
-        } else {
-            controls = controls.push(horizontal_space());
-            controls = controls.push(toggler(self.light_theme).on_toggle(Message::ThemeChange));
         }
+        controls = controls.push(horizontal_space());
+        controls = controls.push(pick_list(
+            highlighter::Theme::ALL,
+            Some(self.theme),
+            Message::ThemeChange,
+        ));
+
         let signature = row![text(self.signature.clone())];
         let status = row![
             text(
@@ -207,7 +227,7 @@ impl Editor {
                         .and_then(Path::extension)
                         .and_then(std::ffi::OsStr::to_str)
                         .unwrap_or("txt"),
-                    iced::highlighter::Theme::SolarizedDark,
+                    self.theme,
                 ),
             status
         ]
@@ -216,10 +236,10 @@ impl Editor {
     }
 
     pub fn theme(&self) -> Theme {
-        if self.light_theme {
-            Theme::Light
-        } else {
+        if self.theme.is_dark() {
             Theme::Dark
+        } else {
+            Theme::Light
         }
     }
 }
