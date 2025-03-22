@@ -1,8 +1,8 @@
 use crate::icons;
 use iced::mouse;
 use iced::widget::{
-    Column, canvas, column, combo_box, container, horizontal_space, hover, row, text, text_editor,
-    text_input, toggler,
+    Column, canvas, column, combo_box, container, horizontal_space, hover, row, scrollable, text,
+    text_editor, text_input, toggler,
 };
 use iced::{Color, Element, Fill, Font, Rectangle, Renderer, Task, Theme};
 use nadi_core::attrs::{FromAttributeRelaxed, HasAttributes};
@@ -19,8 +19,9 @@ pub struct Terminal {
     command: String,
     status: String,
     content: text_editor::Content,
-    task_ctx: TaskContext,
+    pub task_ctx: TaskContext,
     network: Network,
+    table_headers: Vec<String>,
     embedded: bool,
 }
 
@@ -36,6 +37,7 @@ impl Default for Terminal {
             content: text_editor::Content::default(),
             task_ctx: TaskContext::new(None),
             network: Network::default(),
+            table_headers: vec!["NAME".to_string()],
             embedded: false,
         }
     }
@@ -49,6 +51,8 @@ pub enum Message {
     Run(String),
     ExecCommand,
     RunTasks(String),
+    HeaderChange(String),
+    HeaderSubmit,
     TasksDone(Result<Option<String>, String>),
     CommandChange(String),
     History(String),
@@ -56,6 +60,8 @@ pub enum Message {
     GotoBottom,
     GoUp,
     GoDown,
+    // handled in main
+    NodeClicked(Option<String>),
 }
 
 impl Terminal {
@@ -139,15 +145,33 @@ impl Terminal {
                     Err(s) => self.append_term(&s),
                     _ => (),
                 };
-                self.network = Network::new(&self.task_ctx.network);
+                self.network
+                    .update(&self.task_ctx.network, self.table_headers.clone());
                 self.append_history(tasks);
             }
             Message::ExecCommand => {
                 let task = self.command.clone();
                 self.command.clear();
-                return Task::perform((async || task)(), Message::RunTasks);
+                match task.split_once(" ") {
+                    Some(("attr", args)) => {
+                        let a = args.to_string();
+                        return Task::perform(async { Some(a) }, Message::NodeClicked);
+                    }
+                    // Some(("help", args)) => ,
+                    None if task == "attr" => {
+                        return Task::perform(async { None }, Message::NodeClicked);
+                    }
+                    _ => (),
+                };
+                return Task::perform(async { task }, Message::RunTasks);
             }
-
+            Message::HeaderChange(header) => {
+                self.table_headers = header.split(';').map(String::from).collect();
+            }
+            Message::HeaderSubmit => {
+                self.network
+                    .update(&self.task_ctx.network, self.table_headers.clone());
+            }
             Message::GotoTop => {
                 self.content.perform(text_editor::Action::Move(
                     text_editor::Motion::DocumentStart,
@@ -168,7 +192,6 @@ impl Terminal {
             Message::History(hist) => {
                 self.command = hist;
             }
-            Message::SaveHistory => (),
             _ => (),
         }
         Task::none()
@@ -210,7 +233,18 @@ impl Terminal {
     }
 
     pub fn view_network(&self) -> Element<'_, Message> {
-        container(canvas(&self.network).width(Fill).height(Fill)).into()
+        column![
+            row![
+                text_input("Table Headers", &self.table_headers.join(";"))
+                    .on_input(Message::HeaderChange)
+                    .on_submit(Message::HeaderSubmit),
+                text("")
+            ]
+            .spacing(10.0),
+            container(canvas(&self.network).height(Fill).width(Fill))
+        ]
+        .spacing(10.0)
+        .into()
     }
 
     pub fn theme(&self) -> Theme {
@@ -224,7 +258,7 @@ impl Terminal {
 
 struct Node {
     index: usize,
-    label: String,
+    name: String,
     size: f32,
     pos: (f32, f32),
     color: Color,
@@ -233,7 +267,7 @@ struct Node {
 }
 
 impl Node {
-    fn new(node: &nadi_core::prelude::NodeInner) -> Self {
+    fn new(node: &nadi_core::prelude::NodeInner, data: &[String]) -> Self {
         let size = node
             .attr(nadi_core::graphics::node::NODE_SIZE.0)
             .and_then(f64::from_attr_relaxed)
@@ -254,30 +288,53 @@ impl Node {
             .color()
             .unwrap_or(nadi_core::graphics::node::LINE_COLOR.1);
         let linecolor = Color::new(c.r as f32, c.g as f32, c.b as f32, 1.0);
+        let data = data
+            .iter()
+            .map(|d| node.attr(d).map(|a| a.to_string()).unwrap_or_default())
+            .collect();
         Self {
             index: node.index(),
-            label: node.name().to_string(),
+            name: node.name().to_string(),
             size,
             pos: (node.level() as f32, node.index() as f32),
             color,
             linecolor,
-            data: vec![],
+            data,
         }
     }
 }
 
-#[derive(Default)]
 struct Network {
     nodes: Vec<Node>,
     edges: Vec<(usize, usize)>,
     data: Vec<String>,
     deltax: f32,
     deltay: f32,
+    offsetx: f32,
+    offsety: f32,
+    deltacol: f32,
+    invert: bool,
+}
+
+impl Default for Network {
+    fn default() -> Self {
+        Self {
+            nodes: vec![],
+            edges: vec![],
+            data: vec![],
+            deltax: 20.0,
+            deltay: 20.0,
+            offsetx: 50.0,
+            offsety: 50.0,
+            deltacol: 20.0,
+            invert: true,
+        }
+    }
 }
 
 impl Network {
-    fn new(net: &nadi_core::prelude::Network) -> Self {
-        let nodes = net.nodes().map(|n| Node::new(&n.lock())).collect();
+    fn new(net: &nadi_core::prelude::Network, data: Vec<String>) -> Self {
+        let nodes = net.nodes().map(|n| Node::new(&n.lock(), &data)).collect();
         let edges = net
             .nodes()
             .filter_map(|n| {
@@ -289,10 +346,23 @@ impl Network {
         Self {
             nodes,
             edges,
-            data: vec![],
-            deltax: 20.0,
-            deltay: 20.0,
+            data,
+            ..Default::default()
         }
+    }
+
+    fn update(&mut self, net: &nadi_core::prelude::Network, data: Vec<String>) {
+        let nodes = net.nodes().map(|n| Node::new(&n.lock(), &data)).collect();
+        let edges = net
+            .nodes()
+            .filter_map(|n| {
+                let n = n.lock();
+                n.output().map(|o| (n.index(), o.lock().index())).into()
+            })
+            .collect();
+        self.data = data;
+        self.nodes = nodes;
+        self.edges = edges;
     }
 }
 
@@ -308,18 +378,45 @@ impl canvas::Program<Message> for Network {
         cursor: mouse::Cursor,
     ) -> Vec<canvas::Geometry> {
         let mut frame = canvas::Frame::new(renderer, bounds.size());
-        let cursor_pos = cursor.position_in(bounds);
-
+        let curr_node = cursor.position_in(bounds).and_then(|pt| {
+            let y = ((pt.y - self.offsety) / self.deltay).round() - 1.0;
+            if y < 0.0 {
+                None
+            } else {
+                self.nodes.get(y as usize).map(|n| n.name.as_str())
+            }
+        });
         let coords: Vec<(f32, f32)> = self
             .nodes
             .iter()
             .map(|n| {
                 let (x, y) = n.pos;
-                (x * self.deltax + 50.0, y * self.deltay + 50.0)
+                (
+                    (x + 1.0) * self.deltax + self.offsetx,
+                    (y + 1.0) * self.deltay + self.offsety,
+                )
             })
             .collect();
 
+        for (i, data) in self.data.iter().enumerate() {
+            let mut txt = canvas::Text::from(data.as_str());
+            txt.position = (self.deltax * 5.0 + (i + 1) as f32, self.offsety).into();
+            txt.vertical_alignment = iced::alignment::Vertical::Center;
+            frame.fill_text(txt);
+        }
+
         for ((from, to), node) in self.edges.iter().zip(&self.nodes) {
+            if Some(node.name.as_str()) == curr_node {
+                // highlight the row
+                frame.fill_rectangle(
+                    (0.0, coords[node.index].1 - self.deltay / 2.0).into(),
+                    iced::Size::new(bounds.size().width, self.deltay),
+                    canvas::Fill {
+                        style: canvas::Style::Solid(Color::new(0.8, 0.8, 0.8, 0.4)),
+                        ..canvas::Fill::default()
+                    },
+                );
+            }
             let line = canvas::Path::line(coords[*from].into(), coords[*to].into());
             frame.stroke(
                 &line,
@@ -329,29 +426,14 @@ impl canvas::Program<Message> for Network {
             );
         }
         for (node, pos) in self.nodes.iter().zip(coords) {
-            match cursor_pos {
-                Some(pt) => {
-                    let r = node.size / 2.0;
-                    if pt.y >= (pos.1 - self.deltay / 2.0) && pt.y <= (pos.1 + self.deltay / 2.0) {
-                        // highlight the row
-                        frame.fill_rectangle(
-                            (0.0, pos.1 - self.deltay / 2.0).into(),
-                            iced::Size::new(bounds.size().width, self.deltay),
-                            canvas::Fill {
-                                style: canvas::Style::Solid(Color::new(0.8, 0.8, 0.8, 0.4)),
-                                ..canvas::Fill::default()
-                            },
-                        )
-                    }
-                }
-                _ => (),
-            }
             let circle = canvas::Path::circle(pos.into(), node.size);
             frame.fill(&circle, node.color);
-            let mut txt = canvas::Text::from(node.label.as_str());
-            txt.position = (self.deltax * 5.0, pos.1).into();
-            txt.vertical_alignment = iced::alignment::Vertical::Center;
-            frame.fill_text(txt);
+            for (i, data) in node.data.iter().enumerate() {
+                let mut txt = canvas::Text::from(data.as_str());
+                txt.position = (self.deltax * 5.0 * (i + 1) as f32, pos.1).into();
+                txt.vertical_alignment = iced::alignment::Vertical::Center;
+                frame.fill_text(txt);
+            }
         }
 
         // Then, we produce the geometry

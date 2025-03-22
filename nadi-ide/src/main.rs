@@ -3,12 +3,14 @@ use iced::widget::{
     button, center, column, container, horizontal_space, pick_list, row, text, toggler,
 };
 use iced::{Element, Fill, Length, Task, Theme};
+use nadi::attributes::AttrView;
 use nadi::editor::{self, Editor};
 use nadi::help::{self, MdHelp};
 use nadi::icons;
 use nadi::style;
 use nadi::svg::SvgView;
 use nadi::terminal::{self, Terminal};
+use nadi_core::attrs::HasAttributes;
 
 pub fn main() -> iced::Result {
     iced::application("NADI", MainWindow::update, MainWindow::view)
@@ -26,6 +28,7 @@ struct MainWindow {
     editor: Editor,
     svg: SvgView,
     terminal: Terminal,
+    attrs: AttrView,
 }
 
 impl Default for MainWindow {
@@ -40,6 +43,7 @@ impl Default for MainWindow {
             editor: Editor::default().embed(),
             svg: SvgView::default().embed(),
             terminal: Terminal::default().embed(),
+            attrs: AttrView::default(),
         }
     }
 }
@@ -54,8 +58,24 @@ impl MainWindow {
                 self.panes =
                     pane_grid::State::<Pane>::with_configuration(panety_2_pane(self, &conf));
             }
-            Message::Terminal(m) => return self.terminal.update(m).map(Message::Terminal),
+            Message::Terminal(m) => match m {
+                nadi::terminal::Message::NodeClicked(None) => {
+                    self.attrs.load_attrs(
+                        "Network".to_string(),
+                        self.terminal.task_ctx.network.attr_map(),
+                    );
+                }
+                nadi::terminal::Message::NodeClicked(Some(node)) => {
+                    if let Some(node) = self.terminal.task_ctx.network.node_by_name(&node) {
+                        let n = node.lock();
+                        self.attrs
+                            .load_attrs(format!("Node[{}]: {}", n.index(), n.name()), n.attr_map());
+                    }
+                }
+                _ => return self.terminal.update(m).map(Message::Terminal),
+            },
             Message::SvgView(m) => return self.svg.update(m).map(Message::SvgView),
+            Message::Attributes => (),
             Message::Editor(m) => {
                 return match m {
                     editor::Message::RunAllTask => {
@@ -216,6 +236,7 @@ impl MainWindow {
 
 #[derive(Debug, Clone)]
 enum Message {
+    Attributes,
     Workspace(pane_grid::Configuration<&'static PaneType>),
     PaneAction(PaneMessage),
     PaneTypeChanged(pane_grid::Pane, PaneType),
@@ -233,6 +254,7 @@ enum PaneType {
     SvgView,
     NetworkView,
     Terminal,
+    AttrView,
 }
 
 impl PaneType {
@@ -242,6 +264,7 @@ impl PaneType {
         PaneType::SvgView,
         PaneType::NetworkView,
         PaneType::Terminal,
+        PaneType::AttrView,
     ];
 }
 
@@ -256,6 +279,7 @@ impl std::fmt::Display for PaneType {
                 Self::SvgView => "Svg Viewer",
                 Self::NetworkView => "Network Viewer",
                 Self::Terminal => "Terminal",
+                Self::AttrView => "Attributes",
             }
         )
     }
@@ -348,6 +372,7 @@ fn pane_content<'a>(
         Some(PaneType::SvgView) => win.svg.view().map(Message::SvgView),
         Some(PaneType::NetworkView) => win.terminal.view_network().map(Message::Terminal),
         Some(PaneType::Terminal) => win.terminal.view().map(Message::Terminal),
+        Some(PaneType::AttrView) => win.attrs.view().map(|_| Message::Attributes),
     }
 }
 
@@ -431,6 +456,26 @@ fn initial_view(win: &MainWindow, id: pane_grid::Pane) -> Element<Message> {
                                     ratio: 0.5,
                                     a: Box::new(pane_grid::Configuration::Pane(
                                         &PaneType::NetworkView,
+                                    )),
+                                    b: Box::new(pane_grid::Configuration::Pane(
+                                        &PaneType::Terminal,
+                                    )),
+                                }),
+                            })
+                        })
+                        .width(Length::Fill)
+                        .height(30.0),
+                    button(center("Editor + Attributes / Terminal"))
+                        .on_press_with(|| {
+                            Message::Workspace(pane_grid::Configuration::Split {
+                                axis: pane_grid::Axis::Vertical,
+                                ratio: 0.5,
+                                a: Box::new(pane_grid::Configuration::Pane(&PaneType::TextEditor)),
+                                b: Box::new(pane_grid::Configuration::Split {
+                                    axis: pane_grid::Axis::Horizontal,
+                                    ratio: 0.5,
+                                    a: Box::new(pane_grid::Configuration::Pane(
+                                        &PaneType::AttrView,
                                     )),
                                     b: Box::new(pane_grid::Configuration::Pane(
                                         &PaneType::Terminal,

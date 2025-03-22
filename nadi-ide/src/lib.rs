@@ -1,3 +1,4 @@
+pub mod attributes;
 pub mod editor;
 pub mod help;
 pub mod icons;
