@@ -1,7 +1,7 @@
 use iced::widget::{button, center, container, text, tooltip};
 use iced::{Element, Font};
 
-pub static FONT: &'static [u8] = include_bytes!("../fonts/icons.ttf");
+pub static FONT: &[u8] = include_bytes!("../fonts/icons.ttf");
 
 fn icon<'a, Message>(codepoint: char) -> Element<'a, Message> {
     const ICON_FONT: Font = Font::with_name("nadi-icons");

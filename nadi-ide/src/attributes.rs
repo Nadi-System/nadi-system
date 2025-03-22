@@ -1,9 +1,6 @@
-use crate::icons;
-use iced::widget::{Column, column, horizontal_space, row, scrollable, svg, text, toggler};
-use iced::{Element, Fill, Task, Theme, color};
+use iced::widget::{Column, column, horizontal_space, row, scrollable, text};
+use iced::{Element, Fill, color};
 use nadi_core::attrs::AttrMap;
-use std::path::PathBuf;
-use std::sync::Arc;
 
 #[derive(Default)]
 pub struct AttrView {

@@ -2,7 +2,7 @@ use crate::help::FuncType;
 use crate::icons;
 use iced::highlighter;
 use iced::widget::{
-    column, horizontal_space, pick_list, row, text, text_editor, toggler, vertical_rule,
+    column, horizontal_space, pick_list, row, text, text_editor, vertical_rule,
 };
 use iced::{Element, Fill, Font, Task, Theme};
 use nadi_core::{
@@ -303,7 +303,7 @@ async fn task_at_mark(text: String, mark: (usize, usize)) -> Option<(FuncType, S
     let line = mark.0;
     // if the current line can be parsed into a proper task, use that
     let task_str = text.lines().nth(line)?;
-    let tokens = tokenizer::get_tokens(&task_str).ok()?;
+    let tokens = tokenizer::get_tokens(task_str).ok()?;
     if let Ok([task, ..]) = tasks::parse(tokens).as_deref() {
         return if let TaskInput::Function(fc) = &task.input {
             let fty = match task.ty {

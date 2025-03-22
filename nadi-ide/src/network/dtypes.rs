@@ -20,10 +20,10 @@ impl NodeData {
         let size = node
             .attr(nadi_core::graphics::node::NODE_SIZE.0)
             .and_then(f64::from_attr_relaxed)
-            .unwrap_or(nadi_core::graphics::node::NODE_SIZE.1) as f32;
-        let color = node_color(node, nadi_core::graphics::node::NODE_COLOR.0);
-        let linecolor = node_color(node, nadi_core::graphics::node::LINE_COLOR.0);
-        let textcolor = node_color(node, nadi_core::graphics::node::TEXT_COLOR.0);
+            .unwrap_or(NODE_SIZE.1) as f32;
+        let color = node_color(node, NODE_COLOR.0);
+        let linecolor = node_color(node, LINE_COLOR.0);
+        let textcolor = node_color(node, TEXT_COLOR.0);
         let label = label
             .as_ref()
             .map(|t| node.render(t).unwrap_or(t.original().to_string()))

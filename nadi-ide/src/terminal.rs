@@ -1,16 +1,13 @@
 use crate::icons;
 use crate::network::{NetworkData, NetworkTable};
-use iced::mouse;
 use iced::widget::{
-    Column, canvas, column, combo_box, container, horizontal_space, hover, row, scrollable, text,
-    text_editor, text_input, toggler,
+    column, combo_box, container, horizontal_space, row, scrollable, text, text_editor, text_input,
+    toggler,
 };
-use iced::{Color, Element, Fill, Font, Rectangle, Renderer, Task, Theme};
-use nadi_core::attrs::{FromAttributeRelaxed, HasAttributes};
+use iced::{Element, Fill, Font, Task, Theme};
 use nadi_core::string_template::Template;
 use nadi_core::tasks::{Task as NadiTask, TaskContext};
 use std::io::Read;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 pub struct Terminal {
@@ -86,9 +83,10 @@ impl Terminal {
         let mut buf = gag::BufferRedirect::stdout().unwrap();
         let mut output = String::new();
         let mut results = String::new();
-        let total = tasks.len();
+        let _total = tasks.len();
         // TODO break it into individual tasks and run it with Task::chain
-        for (i, fc) in tasks.into_iter().enumerate() {
+        for (_i, fc) in tasks.into_iter().enumerate() {
+            // TODO show progress
             let res = self.task_ctx.execute(fc);
             // print the stdout output to the terminal
             buf.read_to_string(&mut output).unwrap();
@@ -133,7 +131,7 @@ impl Terminal {
             }
             Message::RunTasks(tasks) => {
                 self.append_term(&tasks);
-                let tasks_vec = match nadi_core::parser::tokenizer::get_tokens(&&tasks) {
+                let tasks_vec = match nadi_core::parser::tokenizer::get_tokens(&tasks) {
                     Ok(tk) => match nadi_core::parser::tasks::parse(tk) {
                         Ok(t) => t,
                         Err(e) => {

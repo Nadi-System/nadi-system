@@ -83,13 +83,13 @@ impl MainWindow {
                     editor::Message::RunAllTask => {
                         let buf = self.editor.content.text();
                         self.spawn_pane_maybe(Some(PaneType::Terminal));
-                        Task::perform((async || buf)(), terminal::Message::RunTasks)
+                        Task::perform(async { buf }, terminal::Message::RunTasks)
                             .map(Message::Terminal)
                     }
                     editor::Message::RunTask => {
                         if let Some(sel) = self.editor.content.selection() {
                             self.spawn_pane_maybe(Some(PaneType::Terminal));
-                            Task::perform((async || sel)(), terminal::Message::RunTasks)
+                            Task::perform(async { sel }, terminal::Message::RunTasks)
                                 .map(Message::Terminal)
                         } else {
                             Task::none()
@@ -98,7 +98,7 @@ impl MainWindow {
                     editor::Message::SearchHelp => {
                         if let Some(sel) = self.editor.content.selection() {
                             self.spawn_pane_maybe(Some(PaneType::FunctionHelp));
-                            Task::perform((async || sel)(), help::Message::SearchChange)
+                            Task::perform(async { sel }, help::Message::SearchChange)
                                 .map(Message::FuncHelp)
                         } else {
                             Task::none()
@@ -107,7 +107,7 @@ impl MainWindow {
                     editor::Message::HelpTask => {
                         if let Some(func) = self.editor.function.clone() {
                             self.spawn_pane_maybe(Some(PaneType::FunctionHelp));
-                            Task::perform((async || func)(), |(t, f)| help::Message::Function(t, f))
+                            Task::perform(async { func }, |(t, f)| help::Message::Function(t, f))
                                 .map(Message::FuncHelp)
                         } else {
                             Task::none()
@@ -387,7 +387,7 @@ fn initial_view(win: &MainWindow, id: pane_grid::Pane) -> Element<Message> {
             button(center(text(pt.to_string())))
                 .width(Length::Fill)
                 .height(30.0)
-                .on_press(Message::PaneTypeChanged(id, pt.clone())),
+                .on_press(Message::PaneTypeChanged(id, *pt)),
         );
     }
     if win.panes_count == 1 {
@@ -513,8 +513,8 @@ fn panety_2_pane(
         pane_grid::Configuration::Split { axis, ratio, a, b } => pane_grid::Configuration::Split {
             axis: *axis,
             ratio: *ratio,
-            a: Box::new(panety_2_pane(win, &a)),
-            b: Box::new(panety_2_pane(win, &b)),
+            a: Box::new(panety_2_pane(win, a)),
+            b: Box::new(panety_2_pane(win, b)),
         },
     }
 }

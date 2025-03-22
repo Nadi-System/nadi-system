@@ -3,11 +3,10 @@ use iced::{Event, Renderer};
 use iced_core::renderer::{self, Renderer as _};
 use iced_core::widget::tree::{self, Tree};
 use iced_core::{
-    Clipboard, Color, Element, Layout, Length, Point, Rectangle, Shell, Size, Theme, Vector, Widget,
+    Clipboard, Color, Element, Layout, Length, Point, Rectangle, Shell, Size, Theme, Widget,
 };
 use iced_core::{event, layout, mouse};
-use iced_graphics::geometry::{Cache, Path, Stroke};
-use nadi_core::prelude::*;
+use iced_graphics::geometry::{Path, Stroke};
 use std::cell::RefCell;
 
 mod dtypes;
@@ -120,19 +119,16 @@ where
             state.over_node = node;
             self.data.cache.clear();
         }
-        match event {
-            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
-                if let Some(on_press) = &self.on_press {
-                    if let Some(node) = &state.over_node {
-                        shell.publish(on_press(Some(node.to_string())));
-                        return event::Status::Captured;
-                    } else if cursor.is_over(layout.bounds()) {
-                        shell.publish(on_press(None));
-                        return event::Status::Captured;
-                    }
+        if let Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) = event {
+            if let Some(on_press) = &self.on_press {
+                if let Some(node) = &state.over_node {
+                    shell.publish(on_press(Some(node.to_string())));
+                    return event::Status::Captured;
+                } else if cursor.is_over(layout.bounds()) {
+                    shell.publish(on_press(None));
+                    return event::Status::Captured;
                 }
             }
-            _ => (),
         }
         event::Status::Ignored
     }
