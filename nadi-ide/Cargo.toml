@@ -10,3 +10,5 @@ nadi_core = { version = "0.6.0", features = ["functions"] }
 tokio = {version = "1.44.1", features = ["fs"]}
 rfd = "0.13"
 gag = "1.0.0"
+iced_core = "0.13.2"
+iced_graphics = { version = "0.13.0", features = ["geometry"] }

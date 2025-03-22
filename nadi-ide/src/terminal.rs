@@ -1,4 +1,5 @@
 use crate::icons;
+use crate::network::{NetworkData, NetworkTable};
 use iced::mouse;
 use iced::widget::{
     Column, canvas, column, combo_box, container, horizontal_space, hover, row, scrollable, text,
@@ -6,6 +7,7 @@ use iced::widget::{
 };
 use iced::{Color, Element, Fill, Font, Rectangle, Renderer, Task, Theme};
 use nadi_core::attrs::{FromAttributeRelaxed, HasAttributes};
+use nadi_core::string_template::Template;
 use nadi_core::tasks::{Task as NadiTask, TaskContext};
 use std::io::Read;
 use std::path::PathBuf;
@@ -20,8 +22,8 @@ pub struct Terminal {
     status: String,
     content: text_editor::Content,
     pub task_ctx: TaskContext,
-    network: Network,
-    table_headers: Vec<String>,
+    network: NetworkData,
+    label_template: String,
     embedded: bool,
 }
 
@@ -36,8 +38,8 @@ impl Default for Terminal {
             status: String::new(),
             content: text_editor::Content::default(),
             task_ctx: TaskContext::new(None),
-            network: Network::default(),
-            table_headers: vec!["NAME".to_string()],
+            network: NetworkData::default(),
+            label_template: String::new(),
             embedded: false,
         }
     }
@@ -51,8 +53,8 @@ pub enum Message {
     Run(String),
     ExecCommand,
     RunTasks(String),
-    HeaderChange(String),
-    HeaderSubmit,
+    TemplChange(String),
+    TemplSubmit,
     TasksDone(Result<Option<String>, String>),
     CommandChange(String),
     History(String),
@@ -134,9 +136,17 @@ impl Terminal {
                 let tasks_vec = match nadi_core::parser::tokenizer::get_tokens(&&tasks) {
                     Ok(tk) => match nadi_core::parser::tasks::parse(tk) {
                         Ok(t) => t,
-                        Err(e) => return Task::none(),
+                        Err(e) => {
+                            self.is_running = false;
+                            self.status = e.to_string();
+                            return Task::none();
+                        }
                     },
-                    Err(e) => return Task::none(),
+                    Err(e) => {
+                        self.is_running = false;
+                        self.status = e.to_string();
+                        return Task::none();
+                    }
                 };
                 let (out, res) = self.execute_tasks(tasks_vec);
                 self.append_term(&out);
@@ -145,9 +155,16 @@ impl Terminal {
                     Err(s) => self.append_term(&s),
                     _ => (),
                 };
-                self.network
-                    .update(&self.task_ctx.network, self.table_headers.clone());
+                self.network.update(
+                    &self.task_ctx.network,
+                    if self.label_template.is_empty() {
+                        None
+                    } else {
+                        Template::parse_template(&self.label_template).ok()
+                    },
+                );
                 self.append_history(tasks);
+                self.is_running = false;
             }
             Message::ExecCommand => {
                 let task = self.command.clone();
@@ -163,14 +180,21 @@ impl Terminal {
                     }
                     _ => (),
                 };
+                self.is_running = true;
                 return Task::perform(async { task }, Message::RunTasks);
             }
-            Message::HeaderChange(header) => {
-                self.table_headers = header.split(';').map(String::from).collect();
+            Message::TemplChange(templ) => {
+                self.label_template = templ;
             }
-            Message::HeaderSubmit => {
-                self.network
-                    .update(&self.task_ctx.network, self.table_headers.clone());
+            Message::TemplSubmit => {
+                self.network.update(
+                    &self.task_ctx.network,
+                    if self.label_template.is_empty() {
+                        None
+                    } else {
+                        Template::parse_template(&self.label_template).ok()
+                    },
+                );
             }
             Message::GotoTop => {
                 self.content.perform(text_editor::Action::Move(
@@ -215,7 +239,7 @@ impl Terminal {
         }
         let entry = row![
             text_input("Command", &self.command)
-                .on_input(Message::CommandChange)
+                .on_input_maybe((!self.is_running).then_some(Message::CommandChange))
                 .on_submit(Message::ExecCommand)
                 .font(Font::MONOSPACE),
         ];
@@ -235,13 +259,18 @@ impl Terminal {
     pub fn view_network(&self) -> Element<'_, Message> {
         column![
             row![
-                text_input("Table Headers", &self.table_headers.join(";"))
-                    .on_input(Message::HeaderChange)
-                    .on_submit(Message::HeaderSubmit),
+                text_input("Label Template", &self.label_template)
+                    .on_input(Message::TemplChange)
+                    .on_submit(Message::TemplSubmit),
                 text("")
             ]
             .spacing(10.0),
-            container(canvas(&self.network).height(Fill).width(Fill))
+            scrollable(
+                container(NetworkTable::new(&self.network).on_press(Message::NodeClicked))
+                    .padding(10.0)
+            )
+            .width(Fill)
+            .height(Fill)
         ]
         .spacing(10.0)
         .into()
@@ -254,216 +283,4 @@ impl Terminal {
             Theme::Dark
         }
     }
-}
-
-struct Node {
-    index: usize,
-    name: String,
-    size: f32,
-    pos: (f32, f32),
-    color: Color,
-    linecolor: Color,
-    data: Vec<String>,
-}
-
-impl Node {
-    fn new(node: &nadi_core::prelude::NodeInner, data: &[String]) -> Self {
-        let size = node
-            .attr(nadi_core::graphics::node::NODE_SIZE.0)
-            .and_then(f64::from_attr_relaxed)
-            .unwrap_or(nadi_core::graphics::node::NODE_SIZE.1) as f32;
-        let c = node
-            .try_attr::<nadi_core::graphics::color::AttrColor>(
-                nadi_core::graphics::node::NODE_COLOR.0,
-            )
-            .unwrap_or_default()
-            .color()
-            .unwrap_or(nadi_core::graphics::node::NODE_COLOR.1);
-        let color = Color::new(c.r as f32, c.g as f32, c.b as f32, 1.0);
-        let c = node
-            .try_attr::<nadi_core::graphics::color::AttrColor>(
-                nadi_core::graphics::node::LINE_COLOR.0,
-            )
-            .unwrap_or_default()
-            .color()
-            .unwrap_or(nadi_core::graphics::node::LINE_COLOR.1);
-        let linecolor = Color::new(c.r as f32, c.g as f32, c.b as f32, 1.0);
-        let data = data
-            .iter()
-            .map(|d| node.attr(d).map(|a| a.to_string()).unwrap_or_default())
-            .collect();
-        Self {
-            index: node.index(),
-            name: node.name().to_string(),
-            size,
-            pos: (node.level() as f32, node.index() as f32),
-            color,
-            linecolor,
-            data,
-        }
-    }
-}
-
-struct Network {
-    nodes: Vec<Node>,
-    edges: Vec<(usize, usize)>,
-    data: Vec<String>,
-    deltax: f32,
-    deltay: f32,
-    offsetx: f32,
-    offsety: f32,
-    deltacol: f32,
-    invert: bool,
-}
-
-impl Default for Network {
-    fn default() -> Self {
-        Self {
-            nodes: vec![],
-            edges: vec![],
-            data: vec![],
-            deltax: 20.0,
-            deltay: 20.0,
-            offsetx: 50.0,
-            offsety: 50.0,
-            deltacol: 20.0,
-            invert: true,
-        }
-    }
-}
-
-impl Network {
-    fn new(net: &nadi_core::prelude::Network, data: Vec<String>) -> Self {
-        let nodes = net.nodes().map(|n| Node::new(&n.lock(), &data)).collect();
-        let edges = net
-            .nodes()
-            .filter_map(|n| {
-                let n = n.lock();
-                n.output().map(|o| (n.index(), o.lock().index())).into()
-            })
-            .collect();
-
-        Self {
-            nodes,
-            edges,
-            data,
-            ..Default::default()
-        }
-    }
-
-    fn update(&mut self, net: &nadi_core::prelude::Network, data: Vec<String>) {
-        let nodes = net.nodes().map(|n| Node::new(&n.lock(), &data)).collect();
-        let edges = net
-            .nodes()
-            .filter_map(|n| {
-                let n = n.lock();
-                n.output().map(|o| (n.index(), o.lock().index())).into()
-            })
-            .collect();
-        self.data = data;
-        self.nodes = nodes;
-        self.edges = edges;
-    }
-}
-
-impl canvas::Program<Message> for Network {
-    type State = ();
-
-    fn draw(
-        &self,
-        _state: &(),
-        renderer: &Renderer,
-        _theme: &Theme,
-        bounds: Rectangle,
-        cursor: mouse::Cursor,
-    ) -> Vec<canvas::Geometry> {
-        let mut frame = canvas::Frame::new(renderer, bounds.size());
-        let curr_node = cursor.position_in(bounds).and_then(|pt| {
-            let y = ((pt.y - self.offsety) / self.deltay).round() - 1.0;
-            if y < 0.0 {
-                None
-            } else {
-                self.nodes.get(y as usize).map(|n| n.name.as_str())
-            }
-        });
-        let coords: Vec<(f32, f32)> = self
-            .nodes
-            .iter()
-            .map(|n| {
-                let (x, y) = n.pos;
-                (
-                    (x + 1.0) * self.deltax + self.offsetx,
-                    (y + 1.0) * self.deltay + self.offsety,
-                )
-            })
-            .collect();
-
-        for (i, data) in self.data.iter().enumerate() {
-            let mut txt = canvas::Text::from(data.as_str());
-            txt.position = (self.deltax * 5.0 + (i + 1) as f32, self.offsety).into();
-            txt.vertical_alignment = iced::alignment::Vertical::Center;
-            frame.fill_text(txt);
-        }
-
-        for ((from, to), node) in self.edges.iter().zip(&self.nodes) {
-            if Some(node.name.as_str()) == curr_node {
-                // highlight the row
-                frame.fill_rectangle(
-                    (0.0, coords[node.index].1 - self.deltay / 2.0).into(),
-                    iced::Size::new(bounds.size().width, self.deltay),
-                    canvas::Fill {
-                        style: canvas::Style::Solid(Color::new(0.8, 0.8, 0.8, 0.4)),
-                        ..canvas::Fill::default()
-                    },
-                );
-            }
-            let line = canvas::Path::line(coords[*from].into(), coords[*to].into());
-            frame.stroke(
-                &line,
-                canvas::Stroke::default()
-                    .with_width(1.5)
-                    .with_color(node.linecolor),
-            );
-        }
-        for (node, pos) in self.nodes.iter().zip(coords) {
-            let circle = canvas::Path::circle(pos.into(), node.size);
-            frame.fill(&circle, node.color);
-            for (i, data) in node.data.iter().enumerate() {
-                let mut txt = canvas::Text::from(data.as_str());
-                txt.position = (self.deltax * 5.0 * (i + 1) as f32, pos.1).into();
-                txt.vertical_alignment = iced::alignment::Vertical::Center;
-                frame.fill_text(txt);
-            }
-        }
-
-        // Then, we produce the geometry
-        vec![frame.into_geometry()]
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum Error {
-    DialogClosed,
-    IoError(std::io::ErrorKind),
-}
-
-async fn open_file() -> Result<(PathBuf, Arc<String>), Error> {
-    let path = rfd::AsyncFileDialog::new()
-        .set_title("Open a SVG file...")
-        .add_filter("SVG", &["svg"])
-        .pick_file()
-        .await
-        .ok_or(Error::DialogClosed)?;
-    load_file(path).await
-}
-
-async fn load_file(path: impl Into<PathBuf>) -> Result<(PathBuf, Arc<String>), Error> {
-    let path = path.into();
-
-    let contents = tokio::fs::read_to_string(&path)
-        .await
-        .map(Arc::new)
-        .map_err(|error| Error::IoError(error.kind()))?;
-
-    Ok((path, contents))
 }

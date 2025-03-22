@@ -60,12 +60,14 @@ impl MainWindow {
             }
             Message::Terminal(m) => match m {
                 nadi::terminal::Message::NodeClicked(None) => {
+                    self.spawn_pane_maybe(Some(PaneType::AttrView));
                     self.attrs.load_attrs(
                         "Network".to_string(),
                         self.terminal.task_ctx.network.attr_map(),
                     );
                 }
                 nadi::terminal::Message::NodeClicked(Some(node)) => {
+                    self.spawn_pane_maybe(Some(PaneType::AttrView));
                     if let Some(node) = self.terminal.task_ctx.network.node_by_name(&node) {
                         let n = node.lock();
                         self.attrs

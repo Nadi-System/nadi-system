@@ -34,7 +34,7 @@ impl AttrView {
     }
 
     pub fn view(&self) -> Element<'_, ()> {
-        let mut controls = row![text(&self.label), horizontal_space()]
+        let controls = row![text(&self.label), horizontal_space()]
             .spacing(10)
             .padding(10);
         let names = Column::from_vec(

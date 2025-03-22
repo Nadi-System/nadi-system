@@ -2762,6 +2762,8 @@ version = "0.1.0"
 dependencies = [
  "gag",
  "iced",
+ "iced_core",
+ "iced_graphics",
  "nadi_core",
  "rfd",
  "tokio",
