@@ -187,23 +187,24 @@ pub fn list_functions<'a>(
     state: &Option<FuncType>,
     search: &str,
 ) -> Vec<(FuncType, &'a str)> {
+    let searches: Vec<&str> = search.trim().split(' ').collect();
     let mut func: Vec<(FuncType, &str)> = match state {
         Some(FuncType::Node) => functions
             .node_functions()
             .iter()
-            .filter(|n| n.0.contains(search))
+            .filter(|n| searches.iter().all(|&s| n.0.contains(s) || s == "node"))
             .map(|n| (FuncType::Node, n.0.as_str()))
             .collect(),
         Some(FuncType::Network) => functions
             .network_functions()
             .iter()
-            .filter(|n| n.0.contains(search))
+            .filter(|n| searches.iter().all(|&s| n.0.contains(s) || s == "network"))
             .map(|n| (FuncType::Network, n.0.as_str()))
             .collect(),
         Some(FuncType::Env) => functions
             .env_functions()
             .iter()
-            .filter(|n| n.0.contains(search))
+            .filter(|n| searches.iter().all(|&s| n.0.contains(s) || s == "env"))
             .map(|n| (FuncType::Env, n.0.as_str()))
             .collect(),
         None => {
