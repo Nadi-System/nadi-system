@@ -88,6 +88,8 @@ font_icon!(image_icon, '\u{0E81b}');
 font_icon!(run_all_icon, '\u{0E81c}');
 font_icon!(run_step_icon, '\u{0E81d}');
 font_icon!(run_line_icon, '\u{0E81e}');
+font_icon!(right_icon, '\u{0E81f}');
+font_icon!(left_icon, '\u{0E820}');
 font_icon!(double_up_icon, '\u{0F102}');
 font_icon!(double_down_icon, '\u{0F103}');
 font_icon!(github_icon, '\u{0F09B}');

@@ -12,3 +12,4 @@ rfd = "0.13"
 gag = "1.0.0"
 iced_core = "0.13.2"
 iced_graphics = { version = "0.13.0", features = ["geometry"] }
+webbrowser = "1.0.4"
