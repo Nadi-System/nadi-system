@@ -85,7 +85,7 @@ impl Terminal {
         let mut results = String::new();
         let _total = tasks.len();
         // TODO break it into individual tasks and run it with Task::chain
-        for (_i, fc) in tasks.into_iter().enumerate() {
+        for fc in tasks.into_iter() {
             // TODO show progress
             let res = self.task_ctx.execute(fc);
             // print the stdout output to the terminal

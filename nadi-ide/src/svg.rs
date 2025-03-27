@@ -1,5 +1,5 @@
 use crate::icons;
-use iced::widget::{column, horizontal_space, row, svg, text, toggler};
+use iced::widget::{center, column, container, horizontal_space, row, svg, text, toggler};
 use iced::{Element, Fill, Task, Theme};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -100,7 +100,24 @@ impl SvgView {
         // if let Some(h) = &self.handle {
         column![
             controls,
-            svg(self.handle.clone()).width(Fill).height(Fill),
+            center(
+                container(
+                    svg(self.handle.clone())
+                        .width(iced::Length::Shrink)
+                        .height(iced::Length::Shrink)
+                )
+                .style(|_| {
+                    container::Style::default().shadow(iced::Shadow {
+                        color: iced::Color::BLACK,
+                        offset: iced::Vector::new(3.0, 3.0),
+                        blur_radius: 10.0,
+                    })
+                })
+                .width(iced::Length::Shrink)
+                .height(iced::Length::Shrink)
+            )
+            .width(Fill)
+            .height(Fill),
             status
         ]
         // } else {

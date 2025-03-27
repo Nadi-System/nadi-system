@@ -1,9 +1,7 @@
 use crate::help::FuncType;
 use crate::icons;
 use iced::highlighter;
-use iced::widget::{
-    column, horizontal_space, pick_list, row, text, text_editor, vertical_rule,
-};
+use iced::widget::{column, horizontal_space, pick_list, row, text, text_editor, vertical_rule};
 use iced::{Element, Fill, Font, Task, Theme};
 use nadi_core::{
     parser::tasks,
@@ -12,6 +10,7 @@ use nadi_core::{
 };
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+mod my_hl;
 
 pub struct Editor {
     theme: highlighter::Theme,
@@ -214,25 +213,32 @@ impl Editor {
                 format!("{}:{}", line + 1, column + 1)
             })
         ];
-        column![
-            controls.spacing(10).height(30.0),
-            signature,
-            text_editor(&self.content)
-                .height(Fill)
-                .on_action(Message::EditorAction)
-                .font(Font::MONOSPACE)
-                .highlight(
-                    self.file
-                        .as_deref()
-                        .and_then(Path::extension)
-                        .and_then(std::ffi::OsStr::to_str)
-                        .unwrap_or("txt"),
-                    self.theme,
-                ),
-            status
-        ]
-        .padding(10)
-        .into()
+        let editor = text_editor(&self.content)
+            .height(Fill)
+            .on_action(Message::EditorAction)
+            .font(Font::MONOSPACE);
+        let ext = self
+            .file
+            .as_deref()
+            .and_then(Path::extension)
+            .and_then(std::ffi::OsStr::to_str)
+            .unwrap_or("txt");
+        let editor: Element<_> = match ext {
+            // use custom highlights for these
+            "net" | "network" | "task" | "tasks" | "toml" => editor
+                .highlight_with::<my_hl::TaskHighlighter>(
+                    highlighter::Settings {
+                        theme: self.theme,
+                        token: ext.to_string(),
+                    },
+                    my_hl::Highlight::to_format,
+                )
+                .into(),
+            _ => editor.highlight(ext, self.theme).into(),
+        };
+        column![controls.spacing(10).height(30.0), signature, editor, status]
+            .padding(10)
+            .into()
     }
 
     pub fn theme(&self) -> Theme {
