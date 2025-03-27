@@ -3,6 +3,7 @@ use iced::Color;
 use iced::Font;
 use iced_core::text::highlighter::{Format, Highlighter};
 use nadi_core::parser::tokenizer::{TaskToken, get_tokens};
+use std::collections::HashSet;
 
 struct HlTokens {
     offset: usize,
@@ -49,7 +50,7 @@ pub enum Highlight {
 }
 
 impl Highlight {
-    fn from_token(tk: TaskToken, ntf: &NadiFileType) -> Self {
+    fn from_token(tk: &TaskToken, ntf: &NadiFileType) -> Self {
         match ntf {
             NadiFileType::Network => match tk {
                 TaskToken::Comment => Self::Comment,
@@ -120,11 +121,11 @@ impl Highlight {
         let color = match self {
             Self::Comment => Some(Color::new(0.5, 0.5, 0.5, 0.7)),
             Self::Keyword => Some(Color::new(0.7, 0.0, 0.0, 1.0)),
-            Self::Symbol => Some(Color::new(0.0, 0.0, 1.0, 1.0)),
-            Self::Paren => None,
+            Self::Symbol => None,
+            Self::Paren => Some(Color::new(0.0, 0.0, 1.0, 1.0)),
             Self::Variable => Some(Color::new(0.0, 0.5, 0.0, 1.0)),
             Self::Function => Some(Color::new(0.5, 0.2, 0.2, 1.0)),
-            Self::Bool => Some(Color::new(0.1, 0.7, 0.5, 1.0)),
+            Self::Bool => Some(Color::new(0.4, 0.6, 0.9, 1.0)),
             Self::Number => None,
             Self::DateTime => Some(Color::new(0.1, 0.7, 0.5, 1.0)),
             Self::String => Some(Color::new(0.1, 0.7, 0.5, 1.0)),
@@ -136,21 +137,92 @@ impl Highlight {
 }
 
 impl HlTokens {
-    fn new(line: &str, nft: &NadiFileType) -> Self {
-        match get_tokens(line) {
+    fn new(line: &str, nft: &NadiFileType) -> (bool, Self) {
+        let mut quote = false;
+        let tk = match get_tokens(line) {
             Ok(tk) => {
-                let tokens = tk
-                    .into_iter()
-                    .rev()
-                    .map(|t| (Highlight::from_token(t.ty, nft), t.content.len()))
-                    .collect();
+                let tokens = if let Some(p) = tk.iter().position(|t| t.ty == TaskToken::Quote) {
+                    quote = true;
+                    let mut tokens = vec![(
+                        Highlight::String,
+                        tk[p..].iter().map(|t| t.content.len()).sum(),
+                    )];
+                    tokens.extend(
+                        tk[..p]
+                            .iter()
+                            .rev()
+                            .map(|t| (Highlight::from_token(&t.ty, nft), t.content.len())),
+                    );
+                    tokens
+                } else {
+                    tk.iter()
+                        .rev()
+                        .map(|t| (Highlight::from_token(&t.ty, nft), t.content.len()))
+                        .collect()
+                };
                 Self { offset: 0, tokens }
             }
             Err(_) => Self {
                 offset: 0,
                 tokens: vec![(Highlight::Error, line.len())],
             },
+        };
+        (quote, tk)
+    }
+
+    fn in_quote(line: &str, nft: &NadiFileType) -> (bool, Self) {
+        let mut quote = true;
+        if !line.contains('"') {
+            return (
+                quote,
+                Self {
+                    offset: 0,
+                    tokens: vec![(Highlight::String, line.len())],
+                },
+            );
         }
+        let tk = match get_tokens(&format!("\"{line}")) {
+            Ok(tk) => {
+                let mut tokens = if let Some(t) = tk.iter().next() {
+                    match t.ty {
+                        // the quote was not closed
+                        TaskToken::Quote => {
+                            return (
+                                quote,
+                                Self {
+                                    offset: 0,
+                                    tokens: vec![(Highlight::String, line.len())],
+                                },
+                            );
+                        }
+                        // the quote was closed
+                        TaskToken::String(_) => {
+                            quote = false;
+                            vec![(Highlight::String, t.content.len() - 1)]
+                        }
+                        // shouldn't happen
+                        _ => panic!("Logic Error: the quote should be closed or open"),
+                    }
+                } else {
+                    panic!("There is a quote even if line is empty, so tokens shouldn't be empty")
+                };
+                tokens.extend(
+                    tk.iter()
+                        .skip(1)
+                        .map(|t| (Highlight::from_token(&t.ty, nft), t.content.len())),
+                );
+                Self {
+                    offset: 0,
+                    tokens: tokens.into_iter().rev().collect(),
+                }
+            }
+            // if there is error, there are probably extra characters inside string (temp fix)
+            Err(_) => Self {
+                offset: 0,
+                tokens: vec![(Highlight::String, line.len())],
+            },
+        };
+        (quote, tk)
     }
 }
 
@@ -167,6 +239,8 @@ impl Iterator for HlTokens {
 
 pub struct NadiHighlighter {
     curr_line: usize,
+    in_quote: bool,
+    str_lines: HashSet<usize>,
     settings: NadiFileType,
 }
 
@@ -177,6 +251,8 @@ impl Highlighter for NadiHighlighter {
     fn new(settings: &Self::Settings) -> Self {
         Self {
             curr_line: 0,
+            in_quote: false,
+            str_lines: HashSet::new(),
             settings: settings.clone(),
         }
     }
@@ -187,8 +263,19 @@ impl Highlighter for NadiHighlighter {
         self.curr_line = line;
     }
     fn highlight_line(&mut self, line: &str) -> Self::Iterator<'_> {
+        let (q, tk) = if self.in_quote || self.str_lines.contains(&self.curr_line) {
+            HlTokens::in_quote(line, &self.settings)
+        } else {
+            HlTokens::new(line, &self.settings)
+        };
+        self.in_quote = q;
         self.curr_line += 1;
-        Box::new(HlTokens::new(line, &self.settings))
+        if self.in_quote {
+            self.str_lines.insert(self.curr_line);
+        } else {
+            self.str_lines.remove(&self.curr_line);
+        }
+        Box::new(tk)
     }
     fn current_line(&self) -> usize {
         self.curr_line
