@@ -9,6 +9,7 @@ use nadi_core::{
     tasks::{TaskInput, TaskKeyword, TaskType},
 };
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::Arc;
 mod my_hl;
 
@@ -223,16 +224,10 @@ impl Editor {
             .and_then(Path::extension)
             .and_then(std::ffi::OsStr::to_str)
             .unwrap_or("txt");
-        let editor: Element<_> = match ext {
-            // use custom highlights for these
-            "net" | "network" | "task" | "tasks" | "toml" => editor
-                .highlight_with::<my_hl::TaskHighlighter>(
-                    highlighter::Settings {
-                        theme: self.theme,
-                        token: ext.to_string(),
-                    },
-                    my_hl::Highlight::to_format,
-                )
+        let editor: Element<_> = match my_hl::NadiFileType::from_str(ext) {
+            // use custom highlights for nadi files
+            Ok(nft) => editor
+                .highlight_with::<my_hl::NadiHighlighter>(nft, my_hl::Highlight::to_format)
                 .into(),
             _ => editor.highlight(ext, self.theme).into(),
         };
