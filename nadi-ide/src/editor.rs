@@ -11,7 +11,7 @@ use nadi_core::{
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
-mod my_hl;
+pub mod my_hl;
 
 pub struct Editor {
     theme: highlighter::Theme,

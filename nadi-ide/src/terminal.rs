@@ -1,3 +1,4 @@
+use crate::editor::my_hl;
 use crate::icons;
 use crate::network::{NetworkData, NetworkTable};
 use iced::widget::{
@@ -246,7 +247,11 @@ impl Terminal {
             text_editor(&self.content)
                 .height(Fill)
                 .font(Font::MONOSPACE)
-                .on_action(Message::EditorAction),
+                .on_action(Message::EditorAction)
+                .highlight_with::<my_hl::NadiHighlighter>(
+                    my_hl::NadiFileType::Terminal,
+                    my_hl::Highlight::to_format
+                ),
             text(&self.status),
             entry
         ]

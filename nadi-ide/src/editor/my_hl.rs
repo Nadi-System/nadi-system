@@ -15,6 +15,7 @@ pub enum NadiFileType {
     Network,
     Attribute,
     Tasks,
+    Terminal,
 }
 
 impl std::str::FromStr for NadiFileType {
@@ -24,6 +25,7 @@ impl std::str::FromStr for NadiFileType {
             "net" | "network" => Ok(Self::Network),
             "task" | "tasks" => Ok(Self::Tasks),
             "toml" => Ok(Self::Attribute),
+            "log" => Ok(Self::Terminal),
             _ => Err(()),
         }
     }
@@ -87,7 +89,7 @@ impl Highlight {
                 TaskToken::NewLine | TaskToken::WhiteSpace => Self::None,
                 _ => Self::Error,
             },
-            NadiFileType::Tasks => match tk {
+            NadiFileType::Tasks | NadiFileType::Terminal => match tk {
                 TaskToken::Comment => Self::Comment,
                 TaskToken::Keyword(_) => Self::Keyword,
                 TaskToken::AngleStart => Self::Paren,
@@ -164,7 +166,13 @@ impl HlTokens {
             }
             Err(_) => Self {
                 offset: 0,
-                tokens: vec![(Highlight::Error, line.len())],
+                tokens: vec![(
+                    match nft {
+                        NadiFileType::Terminal => Highlight::None,
+                        _ => Highlight::Error,
+                    },
+                    line.len(),
+                )],
             },
         };
         (quote, tk)
@@ -263,6 +271,10 @@ impl Highlighter for NadiHighlighter {
         self.curr_line = line;
     }
     fn highlight_line(&mut self, line: &str) -> Self::Iterator<'_> {
+        match &self.settings {
+            NadiFileType::Terminal => return Box::new(HlTokens::new(line, &self.settings).1),
+            _ => (),
+        }
         let (q, tk) = if self.in_quote || self.str_lines.contains(&self.curr_line) {
             HlTokens::in_quote(line, &self.settings)
         } else {
