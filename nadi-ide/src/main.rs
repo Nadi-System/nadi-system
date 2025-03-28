@@ -22,7 +22,6 @@ pub fn main() -> iced::Result {
 struct MainWindow {
     light_theme: bool,
     panes: pane_grid::State<Pane>,
-    panes_count: usize,
     focus: Option<pane_grid::Pane>,
     funchelp: MdHelp,
     editor: Editor,
@@ -33,11 +32,10 @@ struct MainWindow {
 
 impl Default for MainWindow {
     fn default() -> Self {
-        let (panes, _) = pane_grid::State::new(Pane::new(0));
+        let (panes, _) = pane_grid::State::new(Pane::new());
         Self {
             light_theme: false,
             panes,
-            panes_count: 1,
             focus: None,
             funchelp: MdHelp::default().embed(),
             editor: Editor::default().embed(),
@@ -55,8 +53,7 @@ impl MainWindow {
                 self.light_theme = t;
             }
             Message::Workspace(conf) => {
-                self.panes =
-                    pane_grid::State::<Pane>::with_configuration(panety_2_pane(self, &conf));
+                self.panes = pane_grid::State::<Pane>::with_configuration(panety_2_pane(&conf));
             }
             Message::Terminal(m) => match m {
                 nadi::terminal::Message::NodeClicked(None) => {
@@ -124,13 +121,11 @@ impl MainWindow {
             }
             Message::PaneAction(m) => match m {
                 PaneMessage::Split(axis, pane) => {
-                    let result = self.panes.split(axis, pane, Pane::new(self.panes_count));
+                    let result = self.panes.split(axis, pane, Pane::new());
 
                     if let Some((pane, _)) = result {
                         self.focus = Some(pane);
                     }
-
-                    self.panes_count += 1;
                 }
                 PaneMessage::Clicked(pane) => {
                     self.focus = Some(pane);
@@ -174,9 +169,22 @@ impl MainWindow {
                 if pane.is_pinned { "Unpin" } else { "Pin" },
                 Some(Message::PaneAction(PaneMessage::TogglePin(id))),
             );
-            let title = row![pin_button, "Pane", text(pane.id.to_string()),].spacing(5);
+            let title = row![
+                pin_button,
+                text(
+                    pane.ty
+                        .map(|t| t.to_string())
+                        .unwrap_or("Choose Pane Type".into())
+                ),
+            ]
+            .spacing(5);
             let title_bar = pane_grid::TitleBar::new(title)
-                .controls(pane_controls(id, pane, self.panes_count, is_maximized))
+                .controls(pane_controls(
+                    id,
+                    pane,
+                    self.panes.panes.len(),
+                    is_maximized,
+                ))
                 .padding(1)
                 .style(if is_focused {
                     style::title_bar_focused
@@ -223,15 +231,13 @@ impl MainWindow {
             return;
         }
         if let Some(pane) = self.focus {
-            let mut p = Pane::new(self.panes_count);
+            let mut p = Pane::new();
             p.ty = ty;
             let result = self.panes.split(pane_grid::Axis::Vertical, pane, p);
 
             if let Some((pane, _)) = result {
                 self.focus = Some(pane);
             }
-
-            self.panes_count += 1;
         }
     }
 }
@@ -300,15 +306,13 @@ enum PaneMessage {
 }
 
 struct Pane {
-    id: usize,
     pub is_pinned: bool,
     pub ty: Option<PaneType>,
 }
 
 impl Pane {
-    fn new(id: usize) -> Self {
+    fn new() -> Self {
         Self {
-            id,
             is_pinned: false,
             ty: None,
         }
@@ -390,7 +394,7 @@ fn initial_view(win: &MainWindow, id: pane_grid::Pane) -> Element<Message> {
                 .on_press(Message::PaneTypeChanged(id, *pt)),
         );
     }
-    if win.panes_count == 1 {
+    if win.panes.panes.len() == 1 {
         center(
             row![
                 col,
@@ -499,22 +503,18 @@ fn initial_view(win: &MainWindow, id: pane_grid::Pane) -> Element<Message> {
     }
 }
 
-fn panety_2_pane(
-    win: &mut MainWindow,
-    conf: &pane_grid::Configuration<&PaneType>,
-) -> pane_grid::Configuration<Pane> {
+fn panety_2_pane(conf: &pane_grid::Configuration<&PaneType>) -> pane_grid::Configuration<Pane> {
     match conf {
         pane_grid::Configuration::Pane(ty) => {
-            let mut pane = Pane::new(win.panes_count);
-            win.panes_count += 1;
+            let mut pane = Pane::new();
             pane.ty = Some(**ty);
             pane_grid::Configuration::Pane(pane)
         }
         pane_grid::Configuration::Split { axis, ratio, a, b } => pane_grid::Configuration::Split {
             axis: *axis,
             ratio: *ratio,
-            a: Box::new(panety_2_pane(win, a)),
-            b: Box::new(panety_2_pane(win, b)),
+            a: Box::new(panety_2_pane(a)),
+            b: Box::new(panety_2_pane(b)),
         },
     }
 }
