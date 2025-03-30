@@ -51,6 +51,9 @@ impl MainWindow {
         match message {
             Message::ThemeChange(t) => {
                 self.light_theme = t;
+                self.funchelp.light_theme = t;
+                self.terminal.light_theme = t;
+                self.svg.light_theme = t;
             }
             Message::Workspace(conf) => {
                 self.panes = pane_grid::State::<Pane>::with_configuration(panety_2_pane(&conf));

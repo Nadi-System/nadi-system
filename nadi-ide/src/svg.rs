@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 pub struct SvgView {
-    light_theme: bool,
+    pub light_theme: bool,
     file: Option<PathBuf>,
     is_loading: bool,
     handle: svg::Handle,

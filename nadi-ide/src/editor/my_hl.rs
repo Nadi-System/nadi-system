@@ -191,7 +191,7 @@ impl HlTokens {
         }
         let tk = match get_tokens(&format!("\"{line}")) {
             Ok(tk) => {
-                let mut tokens = if let Some(t) = tk.iter().next() {
+                let mut tokens = if let Some(t) = tk.first() {
                     match t.ty {
                         // the quote was not closed
                         TaskToken::Quote => {
@@ -271,10 +271,7 @@ impl Highlighter for NadiHighlighter {
         self.curr_line = line;
     }
     fn highlight_line(&mut self, line: &str) -> Self::Iterator<'_> {
-        match &self.settings {
-            NadiFileType::Terminal => return Box::new(HlTokens::new(line, &self.settings).1),
-            _ => (),
-        }
+        if self.settings == NadiFileType::Terminal { return Box::new(HlTokens::new(line, &self.settings).1) }
         let (q, tk) = if self.in_quote || self.str_lines.contains(&self.curr_line) {
             HlTokens::in_quote(line, &self.settings)
         } else {

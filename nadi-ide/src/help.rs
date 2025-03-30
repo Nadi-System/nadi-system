@@ -30,7 +30,7 @@ impl std::fmt::Display for FuncType {
 }
 
 pub struct MdHelp {
-    light_theme: bool,
+    pub light_theme: bool,
     functions: NadiFunctions,
     state: Option<FuncType>,
     search: String,
@@ -182,13 +182,12 @@ impl MdHelp {
     pub fn update(&mut self, message: Message) {
         match message {
             Message::LinkClicked(url) => {
-                println!("{url:?}");
                 match url.scheme() {
                     // this way we can make our own schema for the
                     // links to nadi functions
                     "nadi" => todo!(),
                     _ => {
-                        _ = webbrowser::open(&url.to_string());
+                        _ = webbrowser::open(url.as_ref());
                     }
                 }
             }

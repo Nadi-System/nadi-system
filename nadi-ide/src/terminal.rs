@@ -15,7 +15,7 @@ use std::sync::Arc;
 pub static NETWORK_HELP: &str = include_str!("../markdown/network.md");
 
 pub struct Terminal {
-    light_theme: bool,
+    pub light_theme: bool,
     is_running: bool,
     history_str: Vec<String>,
     history: combo_box::State<String>,
@@ -131,7 +131,9 @@ impl Terminal {
             Message::ToggleNetSidebar => {
                 self.network_sidebar = !self.network_sidebar;
             }
-            Message::LinkClicked(_url) => (),
+            Message::LinkClicked(url) => {
+                _ = webbrowser::open(url.as_ref());
+            }
             Message::EditorAction(action) => {
                 // We don't allow the editor to be edited by users at all
                 if action.is_edit() {

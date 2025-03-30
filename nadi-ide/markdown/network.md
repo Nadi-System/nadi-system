@@ -1,6 +1,6 @@
 # Network View Help
 
-The network visualization shows the network with the nodes. Edit the template above to show the node label using different attributes. Refer to the documentation on `String Templates` for how to write templates.
+The network visualization shows the network with the nodes. Edit the template above to show the node label using different attributes. Refer to the documentation on [`String Templates`](https://nadi-system.github.io/devref/string-templates.html) for how to write templates.
 
 You can click on the nodes to see the node's (or outside the node to see network's) attributes. the visualization is done using some special attributes that you can assign
 
