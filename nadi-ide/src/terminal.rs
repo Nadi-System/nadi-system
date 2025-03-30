@@ -1,15 +1,18 @@
 use crate::editor::my_hl;
+use crate::help::md_style;
 use crate::icons;
 use crate::network::{NetworkData, NetworkTable};
 use iced::widget::{
-    column, combo_box, container, horizontal_space, row, scrollable, text, text_editor, text_input,
-    toggler,
+    button, center, column, combo_box, container, horizontal_rule, horizontal_space, markdown, row,
+    scrollable, text, text_editor, text_input, toggler,
 };
-use iced::{Element, Fill, Font, Task, Theme};
+use iced::{Element, Fill, Font, Length, Task, Theme};
 use nadi_core::string_template::Template;
 use nadi_core::tasks::{Task as NadiTask, TaskContext};
 use std::io::Read;
 use std::sync::Arc;
+
+pub static NETWORK_HELP: &str = include_str!("../markdown/network.md");
 
 pub struct Terminal {
     light_theme: bool,
@@ -21,6 +24,8 @@ pub struct Terminal {
     content: text_editor::Content,
     pub task_ctx: TaskContext,
     network: NetworkData,
+    network_sidebar: bool,
+    network_help: Vec<markdown::Item>,
     label_template: String,
     embedded: bool,
 }
@@ -37,6 +42,8 @@ impl Default for Terminal {
             content: text_editor::Content::default(),
             task_ctx: TaskContext::new(None),
             network: NetworkData::default(),
+            network_sidebar: false,
+            network_help: markdown::parse(NETWORK_HELP).collect(),
             label_template: String::new(),
             embedded: false,
         }
@@ -60,6 +67,8 @@ pub enum Message {
     GotoBottom,
     GoUp,
     GoDown,
+    ToggleNetSidebar,
+    LinkClicked(markdown::Url),
     // handled in main
     NodeClicked(Option<String>),
 }
@@ -109,7 +118,7 @@ impl Terminal {
             .perform(text_editor::Action::Move(text_editor::Motion::DocumentEnd));
         self.content
             .perform(text_editor::Action::Edit(text_editor::Edit::Paste(
-                Arc::new(format!("{}\n", text)),
+                Arc::new(format!("{}\n", text.trim())),
             )));
     }
 
@@ -119,6 +128,10 @@ impl Terminal {
             Message::ThemeChange(theme) => {
                 self.light_theme = theme;
             }
+            Message::ToggleNetSidebar => {
+                self.network_sidebar = !self.network_sidebar;
+            }
+            Message::LinkClicked(_url) => (),
             Message::EditorAction(action) => {
                 // We don't allow the editor to be edited by users at all
                 if action.is_edit() {
@@ -260,20 +273,45 @@ impl Terminal {
     }
 
     pub fn view_network(&self) -> Element<'_, Message> {
-        column![
-            row![
-                text_input("Label Template", &self.label_template)
-                    .on_input(Message::TemplChange)
-                    .on_submit(Message::TemplSubmit),
-                text("")
-            ]
-            .spacing(10.0),
+        let mut sidebar = row![
+            button(center(if self.network_sidebar {
+                icons::right_icon()
+            } else {
+                icons::left_icon()
+            }))
+            .on_press(Message::ToggleNetSidebar)
+            .height(Length::Fill)
+            .style(button::secondary)
+            .width(25)
+        ];
+        if self.network_sidebar {
+            sidebar = sidebar.push(
+                column![
+                    text_input("Label Template", &self.label_template)
+                        .on_input(Message::TemplChange)
+                        .on_submit(Message::TemplSubmit),
+                    horizontal_rule(5.0),
+                    scrollable(
+                        markdown::view(
+                            &self.network_help,
+                            markdown::Settings::default(),
+                            md_style(self.light_theme),
+                        )
+                        .map(Message::LinkClicked)
+                    ),
+                ]
+                .spacing(10.0)
+                .padding(10.0),
+            );
+        }
+        row![
             scrollable(
                 container(NetworkTable::new(&self.network).on_press(Message::NodeClicked))
                     .padding(10.0)
             )
             .width(Fill)
-            .height(Fill)
+            .height(Fill),
+            sidebar
         ]
         .spacing(10.0)
         .into()

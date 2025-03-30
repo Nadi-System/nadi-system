@@ -107,6 +107,9 @@ impl Editor {
                 self.is_dirty = false;
                 match result {
                     Ok((path, contents)) => {
+                        if let Some(p) = path.parent() {
+                            let _ = std::env::set_current_dir(p);
+                        }
                         self.file = Some(path);
                         self.content = text_editor::Content::with_text(&contents);
                     }
