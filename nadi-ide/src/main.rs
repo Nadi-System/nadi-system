@@ -1,6 +1,6 @@
 use iced::widget::pane_grid::{self, PaneGrid};
 use iced::widget::{
-    button, center, column, container, horizontal_space, pick_list, row, text, toggler,
+    button, center, column, container, horizontal_space, pick_list, row, text, text_editor, toggler,
 };
 use iced::{Element, Fill, Length, Task, Theme};
 use nadi::attributes::AttrView;
@@ -87,13 +87,23 @@ impl MainWindow {
                             .map(Message::Terminal)
                     }
                     editor::Message::RunTask => {
-                        if let Some(sel) = self.editor.content.selection() {
-                            self.spawn_pane_maybe(Some(PaneType::Terminal));
-                            Task::perform(async { sel }, terminal::Message::RunTasks)
-                                .map(Message::Terminal)
-                        } else {
-                            Task::none()
-                        }
+                        let tasks = match self.editor.content.selection() {
+                            Some(sel) => sel,
+                            None => {
+                                let (line, _) = self.editor.content.cursor_position();
+                                self.editor
+                                    .content
+                                    .perform(text_editor::Action::Move(text_editor::Motion::Down));
+                                self.editor
+                                    .content
+                                    .line(line)
+                                    .map(|l| l.to_string())
+                                    .unwrap_or_default()
+                            }
+                        };
+                        self.spawn_pane_maybe(Some(PaneType::Terminal));
+                        Task::perform(async { tasks }, terminal::Message::RunTasks)
+                            .map(Message::Terminal)
                     }
                     editor::Message::SearchHelp => {
                         if let Some(sel) = self.editor.content.selection() {

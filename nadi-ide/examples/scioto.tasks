@@ -1,0 +1,30 @@
+# load network
+network load_file("scioto.network")
+
+# load average streamflow from the csv file containing timeseries using python
+node command("python area-and-streamflow.py {_NAME}")
+
+node.nodesize = 5
+
+network(area) count()
+# there were some nodes without area in the original network, remove those nodes
+network(area) subset()
+
+# visualize size based on area
+network set_nodesize_attrs("area")
+
+node.nodelabel = "i={INDEX}; xi = {area:f(2)?\"N/A\"}; yi = {streamflow:f(2)}"
+
+network save_file("updated.network")
+network export_svg("network.svg")
+
+node.INDEX
+node(INDEX>0).output = output("INDEX")
+
+# the following two lines are a complex template example, I used this to generate a table in LaTeX
+node render("\\Node[{LEVEL}]\\{{INDEX}\\}\\{{INDEX}\\} & Node {INDEX} & {area:f(2)} & {streamflow:f(2)} \\\\[2mm]")
+node(INDEX>0) render("({INDEX}) edge ({output})")
+
+# this just prints the attributes in csv format.
+# writing it to file and other functions are to be added
+network print_attr_csv("INDEX", "area", "streamflow")
