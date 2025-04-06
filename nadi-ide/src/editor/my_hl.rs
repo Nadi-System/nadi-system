@@ -3,7 +3,7 @@ use iced::Color;
 use iced::Font;
 use iced_core::text::highlighter::{Format, Highlighter};
 use nadi_core::parser::tokenizer::{TaskToken, get_tokens};
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 struct HlTokens {
     offset: usize,
@@ -139,12 +139,12 @@ impl Highlight {
 }
 
 impl HlTokens {
-    fn new(line: &str, nft: &NadiFileType) -> (bool, Self) {
-        let mut quote = false;
+    fn new(line: &str, nft: &NadiFileType) -> (Option<MultiLineStr>, Self) {
+        let mut mls = None;
         let tk = match get_tokens(line) {
             Ok(tk) => {
                 let tokens = if let Some(p) = tk.iter().position(|t| t.ty == TaskToken::Quote) {
-                    quote = true;
+                    mls = Some(MultiLineStr::Open);
                     let mut tokens = vec![(
                         Highlight::String,
                         tk[p..].iter().map(|t| t.content.len()).sum(),
@@ -164,6 +164,8 @@ impl HlTokens {
                 };
                 Self { offset: 0, tokens }
             }
+            // for now whole line is shown as error, showing the error
+            // with exact position can be done later
             Err(_) => Self {
                 offset: 0,
                 tokens: vec![(
@@ -175,14 +177,14 @@ impl HlTokens {
                 )],
             },
         };
-        (quote, tk)
+        (mls, tk)
     }
 
-    fn in_quote(line: &str, nft: &NadiFileType) -> (bool, Self) {
-        let mut quote = true;
+    fn in_quote(line: &str, nft: &NadiFileType) -> (Option<MultiLineStr>, Self) {
+        let mut mls = Some(MultiLineStr::In);
         if !line.contains('"') {
             return (
-                quote,
+                mls,
                 Self {
                     offset: 0,
                     tokens: vec![(Highlight::String, line.len())],
@@ -196,7 +198,7 @@ impl HlTokens {
                         // the quote was not closed
                         TaskToken::Quote => {
                             return (
-                                quote,
+                                mls,
                                 Self {
                                     offset: 0,
                                     tokens: vec![(Highlight::String, line.len())],
@@ -205,7 +207,14 @@ impl HlTokens {
                         }
                         // the quote was closed
                         TaskToken::String(_) => {
-                            quote = false;
+                            mls = Some(
+                                if tk.iter().position(|t| t.ty == TaskToken::Quote).is_some() {
+                                    // but another quote is open
+                                    MultiLineStr::CloseOpen
+                                } else {
+                                    MultiLineStr::Close
+                                },
+                            );
                             vec![(Highlight::String, t.content.len() - 1)]
                         }
                         // shouldn't happen
@@ -230,7 +239,7 @@ impl HlTokens {
                 tokens: vec![(Highlight::String, line.len())],
             },
         };
-        (quote, tk)
+        (mls, tk)
     }
 }
 
@@ -245,10 +254,17 @@ impl Iterator for HlTokens {
     }
 }
 
+#[derive(Clone)]
+enum MultiLineStr {
+    Open,
+    In,
+    Close,
+    CloseOpen,
+}
+
 pub struct NadiHighlighter {
     curr_line: usize,
-    in_quote: bool,
-    str_lines: HashSet<usize>,
+    ml_str: HashMap<usize, MultiLineStr>,
     settings: NadiFileType,
 }
 
@@ -259,8 +275,7 @@ impl Highlighter for NadiHighlighter {
     fn new(settings: &Self::Settings) -> Self {
         Self {
             curr_line: 0,
-            in_quote: false,
-            str_lines: HashSet::new(),
+            ml_str: HashMap::new(),
             settings: settings.clone(),
         }
     }
@@ -269,21 +284,33 @@ impl Highlighter for NadiHighlighter {
     }
     fn change_line(&mut self, line: usize) {
         self.curr_line = line;
+        // if line is changed, remove the saved states for
+        // MultiLineStrings for all lines after this
+        self.ml_str.retain(|l, _| l <= &line);
     }
     fn highlight_line(&mut self, line: &str) -> Self::Iterator<'_> {
-        if self.settings == NadiFileType::Terminal { return Box::new(HlTokens::new(line, &self.settings).1) }
-        let (q, tk) = if self.in_quote || self.str_lines.contains(&self.curr_line) {
-            HlTokens::in_quote(line, &self.settings)
-        } else {
-            HlTokens::new(line, &self.settings)
-        };
-        self.in_quote = q;
-        self.curr_line += 1;
-        if self.in_quote {
-            self.str_lines.insert(self.curr_line);
-        } else {
-            self.str_lines.remove(&self.curr_line);
+        if self.settings == NadiFileType::Terminal {
+            return Box::new(HlTokens::new(line, &self.settings).1);
         }
+
+        let (mls, tk) = match self.ml_str.get(&self.curr_line) {
+            None | Some(MultiLineStr::Open) => HlTokens::new(line, &self.settings),
+            Some(MultiLineStr::In) | Some(MultiLineStr::Close) | Some(MultiLineStr::CloseOpen) => {
+                HlTokens::in_quote(line, &self.settings)
+            }
+        };
+        if let Some(mls) = mls {
+            self.ml_str.insert(self.curr_line, mls.clone());
+            match mls {
+                MultiLineStr::Close => self.ml_str.remove(&(self.curr_line + 1)),
+                MultiLineStr::Open | MultiLineStr::In | MultiLineStr::CloseOpen => {
+                    self.ml_str.insert(self.curr_line + 1, MultiLineStr::In)
+                }
+            };
+        } else {
+            self.ml_str.remove(&self.curr_line);
+        }
+        self.curr_line += 1;
         Box::new(tk)
     }
     fn current_line(&self) -> usize {

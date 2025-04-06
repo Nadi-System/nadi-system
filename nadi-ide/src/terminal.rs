@@ -3,8 +3,8 @@ use crate::help::md_style;
 use crate::icons;
 use crate::network::{NetworkData, NetworkTable};
 use iced::widget::{
-    button, center, column, combo_box, container, horizontal_rule, horizontal_space, markdown, row,
-    scrollable, text, text_editor, text_input, toggler,
+    button, center, column, combo_box, container, horizontal_rule, horizontal_space, markdown,
+    progress_bar, row, scrollable, text, text_editor, text_input, toggler,
 };
 use iced::{Element, Fill, Font, Length, Task, Theme};
 use nadi_core::string_template::Template;
@@ -16,13 +16,14 @@ pub static NETWORK_HELP: &str = include_str!("../markdown/network.md");
 
 pub struct Terminal {
     pub light_theme: bool,
-    is_running: bool,
+    running_msg: Option<String>,
     history_str: Vec<String>,
     history: combo_box::State<String>,
     command: String,
     status: String,
     content: text_editor::Content,
     pub task_ctx: TaskContext,
+    progress: f32,
     network: NetworkData,
     network_sidebar: bool,
     network_help: Vec<markdown::Item>,
@@ -34,13 +35,14 @@ impl Default for Terminal {
     fn default() -> Self {
         Self {
             light_theme: false,
-            is_running: false,
+            running_msg: None,
             history_str: vec![],
             history: combo_box::State::<String>::default(),
             command: String::new(),
             status: String::new(),
             content: text_editor::Content::default(),
             task_ctx: TaskContext::new(None),
+            progress: 0.0,
             network: NetworkData::default(),
             network_sidebar: false,
             network_help: markdown::parse(NETWORK_HELP).collect(),
@@ -60,7 +62,7 @@ pub enum Message {
     RunTasks(String),
     TemplChange(String),
     TemplSubmit,
-    TasksDone(Result<Option<String>, String>),
+    TaskChain(usize, Vec<NadiTask>),
     CommandChange(String),
     History(String),
     GotoTop,
@@ -86,29 +88,24 @@ impl Terminal {
 
     // Can't do async because the TaskContext is not thread
     // safe. Might have to find a way to run it using channels
-    fn execute_tasks(&mut self, tasks: Vec<NadiTask>) -> (String, Result<Option<String>, String>) {
+    fn execute_task(&mut self, task: NadiTask) -> (String, Result<Option<String>, String>) {
         // temp solution, make NadiFunctions take a std::io::Write or
         // other trait object that can either print to stdout, or take the
         // result to show somewhere else (like here)
         let mut buf = gag::BufferRedirect::stdout().unwrap();
         let mut output = String::new();
         let mut results = String::new();
-        let _total = tasks.len();
-        // TODO break it into individual tasks and run it with Task::chain
-        for fc in tasks.into_iter() {
-            // TODO show progress
-            let res = self.task_ctx.execute(fc);
-            // print the stdout output to the terminal
-            buf.read_to_string(&mut output).unwrap();
-            output.push('\n');
-            match res {
-                Ok(Some(p)) => {
-                    results.push_str(&p);
-                    results.push('\n');
-                }
-                Err(e) => return (output, Err(e.to_string())),
-                _ => (),
+        let res = self.task_ctx.execute(task);
+        // print the stdout output to the terminal
+        buf.read_to_string(&mut output).unwrap();
+        output.push('\n');
+        match res {
+            Ok(Some(p)) => {
+                results.push_str(&p);
+                results.push('\n');
             }
+            Err(e) => return (output, Err(e.to_string())),
+            _ => (),
         }
         (output, Ok(Some(results)))
     }
@@ -145,24 +142,15 @@ impl Terminal {
             Message::CommandChange(cmd) => {
                 self.command = cmd;
             }
-            Message::RunTasks(tasks) => {
-                self.append_term(&tasks);
-                let tasks_vec = match nadi_core::parser::tokenizer::get_tokens(&tasks) {
-                    Ok(tk) => match nadi_core::parser::tasks::parse(tk) {
-                        Ok(t) => t,
-                        Err(e) => {
-                            self.is_running = false;
-                            self.status = e.to_string();
-                            return Task::none();
-                        }
-                    },
-                    Err(e) => {
-                        self.is_running = false;
-                        self.status = e.to_string();
-                        return Task::none();
-                    }
+            Message::TaskChain(done, mut tasks) => {
+                let task = if let Some(t) = tasks.pop() {
+                    t
+                } else {
+                    self.progress = 100.0;
+                    self.running_msg = None;
+                    return Task::none();
                 };
-                let (out, res) = self.execute_tasks(tasks_vec);
+                let (out, res) = self.execute_task(task);
                 self.append_term(&out);
                 match res {
                     Ok(Some(s)) => self.append_term(&s),
@@ -177,8 +165,33 @@ impl Terminal {
                         Template::parse_template(&self.label_template).ok()
                     },
                 );
+                self.progress = (done + 1) as f32 * 100.0 / (done + 1 + tasks.len()) as f32;
+                self.running_msg = Some(format!("Executing Tasks: {:.2}%", self.progress));
+                return Task::perform(async { tasks }, move |t| Message::TaskChain(done + 1, t));
+            }
+            Message::RunTasks(tasks) => {
+                self.append_term(&tasks);
+                self.progress = 0.0;
+                let tasks_vec = match nadi_core::parser::tokenizer::get_tokens(&tasks) {
+                    Ok(tk) => match nadi_core::parser::tasks::parse(tk) {
+                        Ok(t) => t,
+                        Err(e) => {
+                            self.running_msg = None;
+                            self.status = e.to_string();
+                            return Task::none();
+                        }
+                    },
+                    Err(e) => {
+                        self.running_msg = None;
+                        self.status = e.to_string();
+                        return Task::none();
+                    }
+                };
                 self.append_history(tasks);
-                self.is_running = false;
+                self.running_msg = Some(format!("Executing Tasks: {:.2}%", self.progress));
+                return Task::perform(async { tasks_vec.into_iter().rev().collect() }, move |t| {
+                    Message::TaskChain(0, t)
+                });
             }
             Message::ExecCommand => {
                 let task = self.command.clone();
@@ -194,7 +207,7 @@ impl Terminal {
                     }
                     _ => (),
                 };
-                self.is_running = true;
+                self.running_msg = Some("Executing Command".to_string());
                 return Task::perform(async { task }, Message::RunTasks);
             }
             Message::TemplChange(templ) => {
@@ -252,10 +265,18 @@ impl Terminal {
             controls = controls.push(toggler(self.light_theme).on_toggle(Message::ThemeChange));
         }
         let entry = row![
-            text_input("Command", &self.command)
-                .on_input_maybe((!self.is_running).then_some(Message::CommandChange))
-                .on_submit(Message::ExecCommand)
-                .font(Font::MONOSPACE),
+            text_input(
+                self.running_msg.as_deref().unwrap_or("Command"),
+                &self.command
+            )
+            .on_input_maybe(
+                self.running_msg
+                    .as_ref()
+                    .is_none()
+                    .then_some(Message::CommandChange)
+            )
+            .on_submit(Message::ExecCommand)
+            .font(Font::MONOSPACE),
         ];
         column![
             controls.spacing(10).padding(10),
@@ -268,7 +289,10 @@ impl Terminal {
                     my_hl::Highlight::to_format
                 ),
             text(&self.status),
-            entry
+            entry,
+            progress_bar(0.0..=100.0, self.progress)
+                .height(4.0)
+                .style(progress_bar::success)
         ]
         .padding(10)
         .into()

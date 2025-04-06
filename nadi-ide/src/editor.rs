@@ -226,7 +226,7 @@ impl Editor {
             .as_deref()
             .and_then(Path::extension)
             .and_then(std::ffi::OsStr::to_str)
-            .unwrap_or("txt");
+            .unwrap_or("tasks");
         let editor: Element<_> = match my_hl::NadiFileType::from_str(ext) {
             // use custom highlights for nadi files
             Ok(nft) => editor
