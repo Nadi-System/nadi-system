@@ -8,4 +8,4 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.89"
 clap = { version = "4.5.17", features = ["derive"] }
-nadi_core = {version = "0.5.0", path="../nadi_core", features=["functions", "parser"]}
+nadi_core = {version = "0.6.0", path="../nadi_core", features=["functions", "parser"]}

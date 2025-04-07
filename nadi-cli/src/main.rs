@@ -1,7 +1,10 @@
-use std::{io::Read, path::{PathBuf, Path}};
-use nadi_core::parser::NadiError;
 use clap::{Parser, ValueEnum};
+use nadi_core::parser::NadiError;
 use nadi_core::{functions::NadiFunctions, network::Network};
+use std::{
+    io::Read,
+    path::{Path, PathBuf},
+};
 
 #[derive(Default, Debug, Clone, ValueEnum)]
 enum FunctionType {
@@ -40,10 +43,10 @@ struct CliArgs {
     /// Tasks file to run; if `--stdin` is also provided runs this before stdin
     tasks: Option<PathBuf>,
     /// Show the tasks file, do not do anything
-    #[arg(short, long, action, requires="tasks")]
+    #[arg(short, long, action, requires = "tasks")]
     show: bool,
     /// Use stdin for the tasks; reads the whole stdin before execution
-    #[arg(short='S', long, action)]
+    #[arg(short = 'S', long, action)]
     stdin: bool,
 }
 
@@ -52,7 +55,7 @@ fn main() -> anyhow::Result<()> {
     let functions = NadiFunctions::new();
 
     if args.show {
-	show_tasks(&args.tasks.unwrap());
+        show_tasks(&args.tasks.unwrap());
     } else if let Some(dir) = args.generate_doc {
         functions.plugins_doc(&dir)?;
     } else if let Some(func) = args.fnhelp {
@@ -77,15 +80,15 @@ fn main() -> anyhow::Result<()> {
     } else {
         if let Some(ref tasks) = args.tasks {
             let txt = std::fs::read_to_string(tasks)?;
-            execute_tasks(&functions, &txt, &args)?;
+            execute_tasks(&txt, &args)?;
         }
         if let Some(ref txt) = args.task {
-            execute_tasks(&functions, txt, &args)?;
+            execute_tasks(txt, &args)?;
         }
         if args.stdin {
             let mut txt = String::new();
             std::io::stdin().read_to_string(&mut txt)?;
-            execute_tasks(&functions, &txt, &args)?;
+            execute_tasks(&txt, &args)?;
         }
     }
     Ok(())
@@ -93,31 +96,31 @@ fn main() -> anyhow::Result<()> {
 
 fn show_tasks(filename: &Path) {
     let txt = std::fs::read_to_string(filename).unwrap();
-    match nadi_core::parser::tokenizer::get_tokens(&txt){
+    match nadi_core::parser::tokenizer::get_tokens(&txt) {
         Ok(tokens) => {
-	    println!("\n----File Tokens----");
+            println!("\n----File Tokens----");
             for tok in &tokens {
                 tok.colored_print();
             }
-	    match nadi_core::parser::tasks::parse(tokens) {
-		Ok(tasks) => {
-		    println!("\n----Parsed Tasks----");
-		    for task in tasks {
-			println!("{}", task.to_colored_string());
-		    }
-		}
-		Err(e) => println!("{}", e.user_msg(Some(&filename.to_string_lossy()))),
-	    };
-	},
+            match nadi_core::parser::tasks::parse(tokens) {
+                Ok(tasks) => {
+                    println!("\n----Parsed Tasks----");
+                    for task in tasks {
+                        println!("{}", task.to_colored_string());
+                    }
+                }
+                Err(e) => println!("{}", e.user_msg(Some(&filename.to_string_lossy()))),
+            };
+        }
         Err(e) => println!("{}", e.user_msg(Some(&filename.to_string_lossy()))),
     }
 }
 
-fn execute_tasks(functions: &NadiFunctions, txt: &str, args: &CliArgs) -> anyhow::Result<()> {
+fn execute_tasks(txt: &str, args: &CliArgs) -> anyhow::Result<()> {
     let tokens = nadi_core::parser::tokenizer::get_tokens(&txt)?;
     let tasks = match nadi_core::parser::tasks::parse(tokens) {
-	Ok(t) => t,
-	Err(e) => return Err(anyhow::Error::msg(e.user_msg(None))),
+        Ok(t) => t,
+        Err(e) => return Err(anyhow::Error::msg(e.user_msg(None))),
     };
     if args.print_tasks {
         for fc in &tasks {
@@ -135,10 +138,10 @@ fn execute_tasks(functions: &NadiFunctions, txt: &str, args: &CliArgs) -> anyhow
     let mut tasks_ctx = nadi_core::tasks::TaskContext::new(net);
     for fc in tasks {
         match tasks_ctx.execute(fc) {
-	    Ok(Some(p)) => println!("{p}"),
-	    Err(p) => return Err(anyhow::Error::msg(p)),
-	    _ => (),
-	}
+            Ok(Some(p)) => println!("{p}"),
+            Err(p) => return Err(anyhow::Error::msg(p)),
+            _ => (),
+        }
     }
     Ok(())
 }
