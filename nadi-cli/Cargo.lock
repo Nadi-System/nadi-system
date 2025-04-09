@@ -816,6 +816,8 @@ dependencies = [
 [[package]]
 name = "nadi_core"
 version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76097e1796d9ba049af747c58dff8bf7eb9ae87cfa063714afbcfda727af0ad4"
 dependencies = [
  "abi_stable",
  "anyhow",
@@ -834,6 +836,8 @@ dependencies = [
 [[package]]
 name = "nadi_plugin"
 version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c25367ff97e96d9b269d199aece55fe6ec08a508e2f7d699d7bd28e9a3274f8"
 dependencies = [
  "convert_case",
  "itertools 0.13.0",
