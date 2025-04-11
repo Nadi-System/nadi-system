@@ -11,6 +11,29 @@ enum FunctionType {
     #[default]
     Node,
     Network,
+    Env,
+}
+
+impl FunctionType {
+    fn print_functions(&self, functions: &NadiFunctions) {
+        match self {
+            FunctionType::Node => {
+                for f in functions.node_functions().keys() {
+                    println!("{f}");
+                }
+            }
+            FunctionType::Network => {
+                for f in functions.network_functions().keys() {
+                    println!("{f}");
+                }
+            }
+            FunctionType::Env => {
+                for f in functions.env_functions().keys() {
+                    println!("{f}");
+                }
+            }
+        }
+    }
 }
 
 #[derive(Parser, Debug)]
@@ -66,17 +89,10 @@ fn main() -> anyhow::Result<()> {
         functions.list_functions();
     } else if let Some(comp) = args.completion {
         match comp {
-            FunctionType::Node => {
-                for f in functions.node_functions().keys() {
-                    println!("{f}");
-                }
-            }
-            FunctionType::Network => {
-                for f in functions.network_functions().keys() {
-                    println!("{f}");
-                }
-            }
+            FunctionType::Env => (),
+            _ => comp.print_functions(&functions),
         }
+        FunctionType::Env.print_functions(&functions);
     } else {
         if let Some(ref tasks) = args.tasks {
             let txt = std::fs::read_to_string(tasks)?;
