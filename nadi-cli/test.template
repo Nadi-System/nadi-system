@@ -1,0 +1,31 @@
+# Network Render Template
+You can write templates for any text based file formats like markdown, LaTeX, etc.
+
+To render things for each node write the template inside clippers.
+
+<!-- this is clipper ---8<---- -->
+## This is node: {NAME}, with index {INDEX}
+This section will be repeated for each node: For example node {_NAME} is currently in scope.
+
+<!-- end of clipper ---8<---- -->
+
+# Making Tables
+You can also be more smart with clippers, let's say for a table:
+
+| Node | Index |
+|------|-------|
+<!-- ---8<--- -->
+| {_NAME} | {INDEX} |
+<!-- ---8<--- -->
+
+Let's see if it works by running this template with `network render(...)` command.
+
+# Repeating only a few nodes
+
+You can select a list of nodes, or a path of nodes to repeat. Use the same syntax to select nodes list/path in the node function call.
+
+| Node | Index |
+|------|-------|
+<!-- ---8<---:[romayor, rosser] -->
+| {_NAME} | {INDEX} |
+<!-- ---8<--- -->
