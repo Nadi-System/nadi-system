@@ -1,5 +1,5 @@
-use nadi::editor::Editor;
-use nadi::icons;
+use nadi_ide::editor::Editor;
+use nadi_ide::icons;
 
 fn main() -> iced::Result {
     iced::application("NADI Editor", Editor::update, Editor::view)

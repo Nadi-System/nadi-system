@@ -3,14 +3,14 @@ use iced::widget::{
     button, center, column, container, horizontal_space, pick_list, row, text, text_editor, toggler,
 };
 use iced::{Element, Fill, Length, Task, Theme};
-use nadi::attributes::AttrView;
-use nadi::editor::{self, Editor};
-use nadi::help::{self, MdHelp};
-use nadi::icons;
-use nadi::style;
-use nadi::svg::SvgView;
-use nadi::terminal::{self, Terminal};
 use nadi_core::attrs::HasAttributes;
+use nadi_ide::attributes::AttrView;
+use nadi_ide::editor::{self, Editor};
+use nadi_ide::help::{self, MdHelp};
+use nadi_ide::icons;
+use nadi_ide::style;
+use nadi_ide::svg::SvgView;
+use nadi_ide::terminal::{self, Terminal};
 
 pub fn main() -> iced::Result {
     iced::application("NADI", MainWindow::update, MainWindow::view)
@@ -59,14 +59,14 @@ impl MainWindow {
                 self.panes = pane_grid::State::<Pane>::with_configuration(panety_2_pane(&conf));
             }
             Message::Terminal(m) => match m {
-                nadi::terminal::Message::NodeClicked(None) => {
+                nadi_ide::terminal::Message::NodeClicked(None) => {
                     self.spawn_pane_maybe(Some(PaneType::AttrView));
                     self.attrs.load_attrs(
                         "Network".to_string(),
                         self.terminal.task_ctx.network.attr_map(),
                     );
                 }
-                nadi::terminal::Message::NodeClicked(Some(node)) => {
+                nadi_ide::terminal::Message::NodeClicked(Some(node)) => {
                     self.spawn_pane_maybe(Some(PaneType::AttrView));
                     if let Some(node) = self.terminal.task_ctx.network.node_by_name(&node) {
                         let n = node.lock();
@@ -261,10 +261,10 @@ enum Message {
     Workspace(pane_grid::Configuration<&'static PaneType>),
     PaneAction(PaneMessage),
     PaneTypeChanged(pane_grid::Pane, PaneType),
-    FuncHelp(nadi::help::Message),
-    Editor(nadi::editor::Message),
-    SvgView(nadi::svg::Message),
-    Terminal(nadi::terminal::Message),
+    FuncHelp(nadi_ide::help::Message),
+    Editor(nadi_ide::editor::Message),
+    SvgView(nadi_ide::svg::Message),
+    Terminal(nadi_ide::terminal::Message),
     ThemeChange(bool),
 }
 

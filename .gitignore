@@ -1,0 +1,9 @@
+# rust
+target/
+debug/
+**/*.rs.bk
+
+# emacs
+*~
+\#*\#
+.\#*
