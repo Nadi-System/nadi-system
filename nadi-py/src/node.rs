@@ -13,26 +13,26 @@ pub struct PyNode(pub Node);
 #[pymethods]
 impl PyNode {
     #[getter]
-    fn name(&self) -> PyResult<String> {
-        Ok(self.0.lock().name().to_string())
+    pub fn name(&self) -> String {
+        self.0.lock().name().to_string()
     }
 
     #[getter]
-    fn index(&self) -> PyResult<usize> {
-        Ok(self.0.lock().index())
+    pub fn index(&self) -> usize {
+        self.0.lock().index()
     }
 
     #[getter]
-    fn level(&self) -> PyResult<u64> {
-        Ok(self.0.lock().level())
+    pub fn level(&self) -> u64 {
+        self.0.lock().level()
     }
 
     #[getter]
-    fn order(&self) -> PyResult<u64> {
-        Ok(self.0.lock().order())
+    pub fn order(&self) -> u64 {
+        self.0.lock().order()
     }
 
-    fn inputs(&self) -> Vec<PyNode> {
+    pub fn inputs(&self) -> Vec<PyNode> {
         self.0
             .lock()
             .inputs()
@@ -53,7 +53,7 @@ impl PyNode {
     fn attrs(&self) -> HashSet<String> {
         self.0
             .lock()
-            .attrs()
+            .attr_map()
             .keys()
             .map(|k| k.to_string())
             .collect()

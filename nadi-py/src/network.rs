@@ -1,5 +1,5 @@
 use crate::node::PyNode;
-use nadi_core::network::Network;
+use nadi_core::network::{Network, StrPath};
 use pyo3::{exceptions::PyKeyError, prelude::*};
 
 #[derive(FromPyObject, Clone)]
@@ -40,18 +40,14 @@ impl PyNetwork {
     }
 
     /// Will return empty vec if the path doesn't exist
-    #[pyo3(signature = (start, end, strict = false))]
-    fn nodes_path(
-        &self,
-        start: NodeIndOrName,
-        end: NodeIndOrName,
-        strict: bool,
-    ) -> PyResult<Vec<PyNode>> {
-        let start = self.node(start)?;
-        let end = self.node(end)?;
+    fn nodes_path(&self, start: NodeIndOrName, end: NodeIndOrName) -> PyResult<Vec<PyNode>> {
+        let start = self.node(start)?.name();
+        let end = self.node(end)?.name();
+        let path = StrPath::new(start.into(), end.into());
         let path = self
             .0
-            .nodes_path_safe(start.0, end.0, strict)
+            .nodes_path(&path)
+            .map_err(|s| PyKeyError::new_err(s))?
             .into_iter()
             .map(PyNode)
             .collect();
