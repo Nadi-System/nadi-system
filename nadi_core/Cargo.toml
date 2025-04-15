@@ -1,0 +1,35 @@
+[package]
+name = "nadi_core"
+version = "0.6.0"
+edition = "2021"
+description = "Core library for Nadi systems, for use by plugins"
+repository = "https://github.com/Nadi-System/nadi_core"
+license = "GPL-3.0-only"
+readme = "README.md"
+keywords = ["river", "timeseries", "water-system"]
+categories = ["data-structures", "science", "science::geo", "visualization"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+abi_stable = "0.11.3"
+anyhow = "1.0.86"
+chrono = {version = "0.4.38", optional = true}
+nom = {version = "7.1.3", optional = true}
+string-template-plus = "0.4.3"
+nadi_plugin = {version = "0.6.0", path="../nadi_plugin"}
+colored = "2.1.0"
+subprocess = "0.2.9"
+number_range = "0.3.2"
+filetime = {version = "0.2.25", optional = true}
+termimad = "0.31.1"
+cairo-rs = "0.20.7"
+regex = {version = "1.11.1", optional = true}
+
+[dev-dependencies]
+rstest = "0.22.0"
+
+[features]
+chrono = ["dep:chrono"]
+functions = ["dep:filetime", "dep:regex", "parser"]
+parser = ["dep:nom"]

@@ -1,0 +1,20 @@
+use nadi_plugin_macros::nadi_internal_plugin;
+
+#[nadi_internal_plugin]
+mod render {
+    use crate::{Attribute, NodeInner};
+    use nadi_plugin_macros::node_func;
+    use string_template_plus::Template;
+
+    /// Render the template based on the node attributes
+    ///
+    /// # Arguments
+    /// - `template` - String template to render
+    #[node_func(safe = false)]
+    fn render(node: &mut NodeInner, template: String, safe: bool) -> Attribute {
+        let templ = Template::parse_template(&template).unwrap();
+        let text = node.render(templ).unwrap();
+        println!("{text}");
+        Attribute::String(text.into())
+    }
+}
