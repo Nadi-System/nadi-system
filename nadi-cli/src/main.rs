@@ -112,28 +112,23 @@ fn main() -> anyhow::Result<()> {
 
 fn show_tasks(filename: &Path) {
     let txt = std::fs::read_to_string(filename).unwrap();
-    match nadi_core::parser::tokenizer::get_tokens(&txt) {
-        Ok(tokens) => {
-            println!("\n----File Tokens----");
-            for tok in &tokens {
-                tok.colored_print();
+    let tokens = nadi_core::parser::tokenizer::get_tokens(&txt);
+    for tok in &tokens {
+        tok.colored_print();
+    }
+    println!("\n----Parsing Tasks----");
+    match nadi_core::parser::tasks::parse(tokens) {
+        Ok(tasks) => {
+            for task in tasks {
+                println!("{}", task.to_colored_string());
             }
-            match nadi_core::parser::tasks::parse(tokens) {
-                Ok(tasks) => {
-                    println!("\n----Parsed Tasks----");
-                    for task in tasks {
-                        println!("{}", task.to_colored_string());
-                    }
-                }
-                Err(e) => println!("{}", e.user_msg(Some(&filename.to_string_lossy()))),
-            };
         }
         Err(e) => println!("{}", e.user_msg(Some(&filename.to_string_lossy()))),
-    }
+    };
 }
 
 fn execute_tasks(txt: &str, args: &CliArgs) -> anyhow::Result<()> {
-    let tokens = nadi_core::parser::tokenizer::get_tokens(&txt)?;
+    let tokens = nadi_core::parser::tokenizer::get_tokens(&txt);
     let tasks = match nadi_core::parser::tasks::parse(tokens) {
         Ok(t) => t,
         Err(e) => return Err(anyhow::Error::msg(e.user_msg(None))),

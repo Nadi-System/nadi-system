@@ -84,7 +84,7 @@ pub enum ParseErrorType {
     LogicalError(&'static str),
     ValueError(&'static str),
     InvalidLineStart,
-    Unclosed,
+    Incomplete,
     InvalidPropagation,
     SyntaxError,
     InvalidToken,
@@ -98,7 +98,7 @@ impl ParseErrorType {
             }
             Self::ValueError(v) => return format!("Invalid Value: {v}"),
             Self::InvalidLineStart => "Lines should start with a keyword",
-            Self::Unclosed => "Incomplete Input",
+            Self::Incomplete => "Incomplete Input",
             Self::InvalidPropagation => "Invalid propagation value",
             Self::SyntaxError => "Invalid Syntax",
             Self::InvalidToken => "Invalid Token",
@@ -194,7 +194,7 @@ impl Network {
         let mut network = Self::default();
         let content =
             std::fs::read_to_string(filename).context("Error while accessing the network file")?;
-        let tokens = tokenizer::get_tokens(&content)?;
+        let tokens = tokenizer::get_tokens(&content);
         let paths = network::parse(tokens)?;
         for path in paths {
             if !network.nodes_map.contains_key(&path.start) {
@@ -231,7 +231,7 @@ impl Network {
 impl NodeInner {
     pub fn load_attr<P: AsRef<Path>>(&mut self, file: P) -> anyhow::Result<()> {
         let contents = std::fs::read_to_string(file)?;
-        let tokens = tokenizer::get_tokens(&contents)?;
+        let tokens = tokenizer::get_tokens(&contents);
         let attrs = attrs::parse(tokens)?;
         self.attributes.extend(attrs);
         Ok(())
@@ -258,7 +258,7 @@ impl Table {
 impl FromStr for Propagation {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut tokens = VecTokens::new(get_tokens(&s)?);
+        let mut tokens = VecTokens::new(get_tokens(&s))?;
         let tk = match tokens.next_no_ws(false) {
             None => return Err(anyhow::Error::msg("No propagation")),
             Some(t) => t,

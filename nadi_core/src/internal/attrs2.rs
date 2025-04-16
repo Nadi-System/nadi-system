@@ -138,7 +138,7 @@ mod attrs {
         if echo {
             println!("{toml}");
         }
-        let tokens = crate::parser::tokenizer::get_tokens(&toml)?;
+        let tokens = crate::parser::tokenizer::get_tokens(&toml);
         let attrs = crate::parser::attrs::parse(tokens)?;
         node.attr_map_mut().extend(attrs);
         Ok(())

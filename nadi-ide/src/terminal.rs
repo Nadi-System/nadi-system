@@ -172,15 +172,10 @@ impl Terminal {
             Message::RunTasks(tasks) => {
                 self.append_term(&tasks);
                 self.progress = 0.0;
-                let tasks_vec = match nadi_core::parser::tokenizer::get_tokens(&tasks) {
-                    Ok(tk) => match nadi_core::parser::tasks::parse(tk) {
-                        Ok(t) => t,
-                        Err(e) => {
-                            self.running_msg = None;
-                            self.status = e.to_string();
-                            return Task::none();
-                        }
-                    },
+                let tasks_vec = match nadi_core::parser::tasks::parse(
+                    nadi_core::parser::tokenizer::get_tokens(&tasks),
+                ) {
+                    Ok(t) => t,
                     Err(e) => {
                         self.running_msg = None;
                         self.status = e.to_string();

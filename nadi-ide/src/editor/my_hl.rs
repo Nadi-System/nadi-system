@@ -62,7 +62,7 @@ impl Highlight {
                 TaskToken::Bool => Self::Variable,
                 TaskToken::String(_) => Self::String,
                 TaskToken::Integer | TaskToken::Float => Self::Variable,
-                TaskToken::Quote => Self::Error,
+                TaskToken::Invalid(_) => Self::Error,
                 TaskToken::NewLine | TaskToken::WhiteSpace => Self::None,
                 _ => Self::Error,
             },
@@ -83,7 +83,7 @@ impl Highlight {
                 TaskToken::String(_) => Self::String,
                 TaskToken::Integer | TaskToken::Float => Self::Number,
                 TaskToken::Date | TaskToken::Time | TaskToken::DateTime => Self::DateTime,
-                TaskToken::Quote => Self::Error,
+                TaskToken::Invalid(_) => Self::Error,
                 TaskToken::PathSep => Self::Error,
                 TaskToken::Function => Self::Error,
                 TaskToken::NewLine | TaskToken::WhiteSpace => Self::None,
@@ -113,7 +113,7 @@ impl Highlight {
                 TaskToken::String(_) => Self::String,
                 TaskToken::Integer | TaskToken::Float => Self::Number,
                 TaskToken::Date | TaskToken::Time | TaskToken::DateTime => Self::DateTime,
-                TaskToken::Quote => Self::Error,
+                TaskToken::Invalid(_) => Self::Error,
                 TaskToken::NewLine | TaskToken::WhiteSpace => Self::None,
             },
         }
@@ -141,43 +141,27 @@ impl Highlight {
 impl HlTokens {
     fn new(line: &str, nft: &NadiFileType) -> (Option<MultiLineStr>, Self) {
         let mut mls = None;
-        let tk = match get_tokens(line) {
-            Ok(tk) => {
-                let tokens = if let Some(p) = tk.iter().position(|t| t.ty == TaskToken::Quote) {
-                    mls = Some(MultiLineStr::Open);
-                    let mut tokens = vec![(
-                        Highlight::String,
-                        tk[p..].iter().map(|t| t.content.len()).sum(),
-                    )];
-                    tokens.extend(
-                        tk[..p]
-                            .iter()
-                            .rev()
-                            .map(|t| (Highlight::from_token(&t.ty, nft), t.content.len())),
-                    );
-                    tokens
-                } else {
-                    tk.iter()
-                        .rev()
-                        .map(|t| (Highlight::from_token(&t.ty, nft), t.content.len()))
-                        .collect()
-                };
-                Self { offset: 0, tokens }
-            }
-            // for now whole line is shown as error, showing the error
-            // with exact position can be done later
-            Err(_) => Self {
-                offset: 0,
-                tokens: vec![(
-                    match nft {
-                        NadiFileType::Terminal => Highlight::None,
-                        _ => Highlight::Error,
-                    },
-                    line.len(),
-                )],
-            },
+        let tk = get_tokens(line);
+        let tokens = if let Some(p) = tk.iter().position(|t| t.ty == TaskToken::Invalid('"')) {
+            mls = Some(MultiLineStr::Open);
+            let mut tokens = vec![(
+                Highlight::String,
+                tk[p..].iter().map(|t| t.content.len()).sum(),
+            )];
+            tokens.extend(
+                tk[..p]
+                    .iter()
+                    .rev()
+                    .map(|t| (Highlight::from_token(&t.ty, nft), t.content.len())),
+            );
+            tokens
+        } else {
+            tk.iter()
+                .rev()
+                .map(|t| (Highlight::from_token(&t.ty, nft), t.content.len()))
+                .collect()
         };
-        (mls, tk)
+        (mls, Self { offset: 0, tokens })
     }
 
     fn in_quote(line: &str, nft: &NadiFileType) -> (Option<MultiLineStr>, Self) {
@@ -191,55 +175,54 @@ impl HlTokens {
                 },
             );
         }
-        let tk = match get_tokens(&format!("\"{line}")) {
-            Ok(tk) => {
-                let mut tokens = if let Some(t) = tk.first() {
-                    match t.ty {
-                        // the quote was not closed
-                        TaskToken::Quote => {
-                            return (
-                                mls,
-                                Self {
-                                    offset: 0,
-                                    tokens: vec![(Highlight::String, line.len())],
-                                },
-                            );
-                        }
-                        // the quote was closed
-                        TaskToken::String(_) => {
-                            mls = Some(
-                                if tk.iter().position(|t| t.ty == TaskToken::Quote).is_some() {
-                                    // but another quote is open
-                                    MultiLineStr::CloseOpen
-                                } else {
-                                    MultiLineStr::Close
-                                },
-                            );
-                            vec![(Highlight::String, t.content.len() - 1)]
-                        }
-                        // shouldn't happen
-                        _ => panic!("Logic Error: the quote should be closed or open"),
-                    }
-                } else {
-                    panic!("There is a quote even if line is empty, so tokens shouldn't be empty")
-                };
-                tokens.extend(
-                    tk.iter()
-                        .skip(1)
-                        .map(|t| (Highlight::from_token(&t.ty, nft), t.content.len())),
-                );
-                Self {
-                    offset: 0,
-                    tokens: tokens.into_iter().rev().collect(),
+        let temp_line = format!("\"{line}");
+        let tk = get_tokens(&temp_line);
+        let mut tokens = if let Some(t) = tk.first() {
+            match t.ty {
+                // the quote was not closed
+                TaskToken::Invalid('"') => {
+                    return (
+                        mls,
+                        Self {
+                            offset: 0,
+                            tokens: vec![(Highlight::String, line.len())],
+                        },
+                    );
                 }
+                // the quote was closed
+                TaskToken::String(_) => {
+                    mls = Some(
+                        if tk
+                            .iter()
+                            .position(|t| t.ty == TaskToken::Invalid('"'))
+                            .is_some()
+                        {
+                            // but another quote is open
+                            MultiLineStr::CloseOpen
+                        } else {
+                            MultiLineStr::Close
+                        },
+                    );
+                    vec![(Highlight::String, t.content.len() - 1)]
+                }
+                // shouldn't happen
+                _ => panic!("Logic Error: the quote should be closed or open"),
             }
-            // if there is error, there are probably extra characters inside string (temp fix)
-            Err(_) => Self {
-                offset: 0,
-                tokens: vec![(Highlight::String, line.len())],
-            },
+        } else {
+            panic!("There is a quote even if line is empty, so tokens shouldn't be empty")
         };
-        (mls, tk)
+        tokens.extend(
+            tk.iter()
+                .skip(1)
+                .map(|t| (Highlight::from_token(&t.ty, nft), t.content.len())),
+        );
+        (
+            mls,
+            Self {
+                offset: 0,
+                tokens: tokens.into_iter().rev().collect(),
+            },
+        )
     }
 }
 

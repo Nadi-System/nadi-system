@@ -2889,7 +2889,7 @@ dependencies = [
 
 [[package]]
 name = "nadi"
-version = "0.1.0"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2898,7 +2898,7 @@ dependencies = [
 
 [[package]]
 name = "nadi-ide"
-version = "0.1.0"
+version = "0.7.0"
 dependencies = [
  "gag",
  "iced",
@@ -2912,7 +2912,7 @@ dependencies = [
 
 [[package]]
 name = "nadi-py"
-version = "0.1.0"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "nadi_core",
@@ -2921,7 +2921,7 @@ dependencies = [
 
 [[package]]
 name = "nadi_core"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "abi_stable",
  "anyhow",
@@ -2941,7 +2941,7 @@ dependencies = [
 
 [[package]]
 name = "nadi_plugin"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "convert_case",
  "itertools 0.13.0",

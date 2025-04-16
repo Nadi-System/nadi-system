@@ -23,7 +23,7 @@ enum State {
 }
 
 pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
-    let mut tokens = VecTokens::new(tokens);
+    let mut tokens = VecTokens::new(tokens)?;
     let mut curr_keyword = None;
     let mut data: Vec<String> = vec![];
     let mut propagation: Option<Propagation> = None;
@@ -542,12 +542,9 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
                             });
                         }
                         Ok(None) => {
-                            return Err(tokens.parse_error(if token.ty == TaskToken::Quote {
-                                // single quote without complete string
-                                ParseErrorType::Unclosed
-                            } else {
-                                ParseErrorType::ValueError("Not an Attribute")
-                            }));
+                            return Err(
+                                tokens.parse_error(ParseErrorType::ValueError("Not an Attribute"))
+                            )
                         }
                         Err(e) => return Err(tokens.parse_error(ParseErrorType::ValueError(e))),
                     }
@@ -607,7 +604,7 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
             });
             Ok(tasks)
         }
-        _ => Err(tokens.parse_error(ParseErrorType::Unclosed)),
+        _ => Err(tokens.parse_error(ParseErrorType::Incomplete)),
     }
 }
 
@@ -636,7 +633,9 @@ pub fn read_attribute(
     };
     match tk.ty {
         // todo better error here
-        TaskToken::NewLine if !newline => return Err(tokens.parse_error(ParseErrorType::Unclosed)),
+        TaskToken::NewLine if !newline => {
+            return Err(tokens.parse_error(ParseErrorType::Incomplete))
+        }
         TaskToken::BracketStart => {
             let mut vals = vec![];
             let mut want_comma = false;
@@ -657,7 +656,7 @@ pub fn read_attribute(
                 }
                 // else it could be empty [], or error if the next tag is not `]`
             }
-            Err(tokens.parse_error(ParseErrorType::Unclosed))
+            Err(tokens.parse_error(ParseErrorType::Incomplete))
         }
         TaskToken::BraceStart => {
             let mut vals = HashMap::new();
@@ -712,7 +711,7 @@ pub fn read_attribute(
                     }
                 }
             }
-            Err(tokens.parse_error(ParseErrorType::Unclosed))
+            Err(tokens.parse_error(ParseErrorType::Incomplete))
         }
         _ => match tk.attribute() {
             Ok(Some(v)) => Ok(Some(v)),
@@ -743,7 +742,7 @@ pub(crate) fn read_propagation(tokens: &mut VecTokens) -> Result<Option<Propagat
         None => Ok(None),
         Some(tk) => match tk.ty {
             TaskToken::AngleEnd => Ok(Some(prop)),
-            _ => Err(tokens.parse_error(ParseErrorType::Unclosed)),
+            _ => Err(tokens.parse_error(ParseErrorType::Incomplete)),
         },
     }
 }
@@ -845,7 +844,7 @@ pub(crate) fn read_conditional(tokens: &mut VecTokens) -> Result<Option<Propagat
                 if let CondState::Cond(s) = state {
                     break s;
                 } else {
-                    return Err(tokens.parse_error(ParseErrorType::Unclosed));
+                    return Err(tokens.parse_error(ParseErrorType::Incomplete));
                 }
             }
             ref ty => {

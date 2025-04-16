@@ -307,7 +307,7 @@ async fn task_at_mark(text: String, mark: (usize, usize)) -> Option<(FuncType, S
     let line = mark.0;
     // if the current line can be parsed into a proper task, use that
     let task_str = text.lines().nth(line)?;
-    let tokens = tokenizer::get_tokens(task_str).ok()?;
+    let tokens = tokenizer::get_tokens(task_str);
     if let Ok([task, ..]) = tasks::parse(tokens).as_deref() {
         return if let TaskInput::Function(fc) = &task.input {
             let fty = match task.ty {
@@ -325,7 +325,7 @@ async fn task_at_mark(text: String, mark: (usize, usize)) -> Option<(FuncType, S
     // if not parse the whole thing and deduce the last function call
     let mut state = State::None;
     let mut func = None;
-    let mut tokens = tokenizer::VecTokens::new(tokenizer::get_tokens(&text).ok()?);
+    let mut tokens = tokenizer::VecTokens::new(tokenizer::get_tokens(&text)).ok()?;
     while tokens.line <= line {
         match tokens.next_no_ws(true) {
             Some(t) => match t.ty {

@@ -11,7 +11,7 @@ pub enum State {
 }
 
 pub fn parse(tokens: Vec<Token>) -> Result<Vec<StrPath>, ParseError> {
-    let mut tokens = VecTokens::new(tokens);
+    let mut tokens = VecTokens::new(tokens)?;
     let mut state = State::None;
     let mut paths = vec![];
     let mut token;
@@ -69,7 +69,7 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<StrPath>, ParseError> {
         }
     }
     if state != State::None {
-        Err(tokens.parse_error(ParseErrorType::Unclosed))
+        Err(tokens.parse_error(ParseErrorType::Incomplete))
     } else {
         Ok(paths)
     }

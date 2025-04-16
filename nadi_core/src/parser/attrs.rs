@@ -14,7 +14,7 @@ pub enum State {
 }
 
 pub fn parse(tokens: Vec<Token>) -> Result<AttrMap, ParseError> {
-    let mut tokens = VecTokens::new(tokens);
+    let mut tokens = VecTokens::new(tokens)?;
     let mut attrmap = AttrMap::new();
     let mut curr_grp: Vec<String> = vec![];
     let mut curr_var = &mut attrmap;
@@ -129,7 +129,7 @@ pub fn parse(tokens: Vec<Token>) -> Result<AttrMap, ParseError> {
     }
     match state {
         State::None | State::Newline => Ok(attrmap),
-        _ => Err(tokens.parse_error(ParseErrorType::Unclosed)),
+        _ => Err(tokens.parse_error(ParseErrorType::Incomplete)),
     }
 }
 

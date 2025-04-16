@@ -1,6 +1,6 @@
 [package]
 name = "nadi-py"
-version = "0.1.0"
+version = "0.7.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -10,5 +10,5 @@ crate-type = ["cdylib"]
 
 [dependencies]
 anyhow = "1.0.89"
-nadi_core = { version="0.6.0", path="../nadi_core", features=["functions"]}
+nadi_core = { version="0.7.0", path="../nadi_core", features=["functions"]}
 pyo3 = { version = "0.22.0", features = ["anyhow"] }

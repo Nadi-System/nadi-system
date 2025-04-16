@@ -1,11 +1,11 @@
 [package]
 name = "nadi-ide"
-version = "0.1.0"
+version = "0.7.0"
 edition = "2024"
 
 [dependencies]
 iced = { version = "0.13.1", features = ["highlighter", "markdown", "lazy", "tokio", "svg", "canvas"] }
-nadi_core = { version = "0.6.0", path="../nadi_core", features = ["functions"] }
+nadi_core = { version = "0.7.0", path="../nadi_core", features = ["functions"] }
 
 tokio = {version = "1.44.1", features = ["fs"]}
 rfd = "0.13"
