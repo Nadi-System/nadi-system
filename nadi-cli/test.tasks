@@ -43,7 +43,13 @@ node.testname
 network.name = "Ohio River Network"
 network.name2 = name
 
-network.name2
+node.inpsval = inputs.value
+node.outval = func(v = output.value, t = inputs.value)
+node.val2 = func(node.value)
+network.name2 = func(env.matter)
+
+# future support for this syntax
+# node(output.area > 0).name2 = func(env.matter)
 
 help node render
 help render

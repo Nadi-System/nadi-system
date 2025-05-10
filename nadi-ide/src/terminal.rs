@@ -283,7 +283,7 @@ impl Terminal {
                     my_hl::NadiFileType::Terminal,
                     my_hl::Highlight::to_format
                 ),
-            text(&self.status),
+            text(&self.status).style(text::danger),
             entry,
             progress_bar(0.0..=100.0, self.progress)
                 .height(4.0)

@@ -86,6 +86,10 @@ pub enum ParseErrorType {
     InvalidLineStart,
     Incomplete,
     InvalidPropagation,
+    InvalidKeyword,
+    PropagationNotSupported,
+    KeywordArgBeforePositional,
+    KeywordNotVariable,
     SyntaxError,
     InvalidToken,
 }
@@ -100,6 +104,10 @@ impl ParseErrorType {
             Self::InvalidLineStart => "Lines should start with a keyword",
             Self::Incomplete => "Incomplete Input",
             Self::InvalidPropagation => "Invalid propagation value",
+            Self::InvalidKeyword => "Invalid keyword at this location",
+            Self::PropagationNotSupported => "Propagation not supported here",
+            Self::KeywordArgBeforePositional => "Positional Argument cannot come after keyword",
+            Self::KeywordNotVariable => "Keywords cannot be used as variables",
             Self::SyntaxError => "Invalid Syntax",
             Self::InvalidToken => "Invalid Token",
         }

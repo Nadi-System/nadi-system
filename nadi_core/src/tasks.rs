@@ -2,7 +2,7 @@ use crate::functions::{
     FuncArg, FuncArgType, FunctionCtx, FunctionRet, NadiFunctions, Propagation,
 };
 use crate::prelude::*;
-use abi_stable::std_types::{RString, Tuple2};
+use abi_stable::std_types::{RString, RVec, Tuple2};
 use colored::Colorize;
 use std::collections::HashMap;
 
@@ -31,8 +31,17 @@ impl TaskContext {
                             self.env.insert(var.to_string().into(), val);
                             Ok(None)
                         }
-                        TaskInput::Variable(v) => {
-                            if let Some(v) = self.env.attr_dot(&v)? {
+                        TaskInput::Variable(t, v) => {
+                            let val = match t {
+                                None | Some(VarType::Env) => self.env.attr_dot(&v)?,
+                                Some(VarType::Network) => self.network.attr_dot(&v)?,
+                                _ => {
+                                    return Err(format!(
+                                        "Only env and network attribute supported in env functions"
+                                    ))
+                                }
+                            };
+                            if let Some(v) = val {
                                 let cs = v.to_colored_string();
                                 self.env.set_attr_dot(&var, v.clone()).map(|b| {
                                     b.map(|b| format!("{} -> {}", b.to_colored_string(), cs))
@@ -127,36 +136,93 @@ impl TaskContext {
                             Err("Invalid operation, no attribute to assign".to_string())
                         }
                     }
-                    TaskInput::Variable(v) => {
+                    TaskInput::Variable(t, v) => {
                         if let Some(attr) = task.attribute {
                             let updates = nodes
                                 .iter()
                                 .map(|n| {
                                     let mut n = n.lock();
-                                    let a = n
-                                        .attr_dot(&v)
-                                        .map_err(|e| format!("Node {}: {e}", n.name()))?
-                                        .cloned();
-                                    match a {
-                                        Some(v) => {
-                                            let cs = v.to_colored_string();
-                                            n.set_attr_dot(&attr, v).map(|b| {
-                                                b.map(|b| {
-                                                    format!(
-                                                        "  {} = {} -> {}",
-                                                        n.name(),
-                                                        b.to_colored_string(),
-                                                        cs
-                                                    )
-                                                })
-                                            })
+                                    let v = match t {
+                                        None | Some(VarType::Node) => n
+                                            .attr_dot(&v)
+                                            .map_err(|e| format!("Node {}: {e}", n.name()))?
+                                            .ok_or(format!(
+                                                "Node {}: Attribute {} not found",
+                                                n.name(),
+                                                v
+                                            ))?
+                                            .clone(),
+                                        Some(VarType::Network) => self
+                                            .network
+                                            .attr_dot(&v)
+                                            .map_err(|e| format!("Network: {e}"))?
+                                            .ok_or(format!("Network: Attribute {} not found", v))?
+                                            .clone(),
+                                        Some(VarType::Env) => self
+                                            .env
+                                            .attr_dot(&v)
+                                            .map_err(|e| format!("Env: {e}"))?
+                                            .ok_or(format!("Env: Attribute {} not found", v))?
+                                            .clone(),
+                                        Some(VarType::Inputs) => {
+                                            let mut vals = RVec::new();
+                                            for i in n.inputs() {
+                                                let i = i.lock();
+                                                vals.push(
+                                                    i.attr_dot(&v)
+                                                        .map_err(|e| {
+                                                            format!(
+                                                                "Node {} input {}: {e}",
+                                                                n.name(),
+                                                                i.name()
+                                                            )
+                                                        })?
+                                                        .ok_or(format!(
+                                                        "Node {} input {}: Attribute {v} not found",
+                                                                n.name(),
+                                                                i.name()
+                                                            ))?
+                                                        .clone(),
+                                                );
+                                            }
+                                            Attribute::Array(vals)
                                         }
-                                        None => Err(format!(
-                                            "Node {}: Attribute {} not found",
-                                            n.name(),
-                                            v
-                                        )),
-                                    }
+                                        Some(VarType::Output) => {
+                                            let o = n
+                                                .output()
+                                                .into_option()
+                                                .ok_or(format!(
+                                                    "Node {}: No output node",
+                                                    n.name()
+                                                ))?
+                                                .lock();
+                                            o.attr_dot(&v)
+                                                .map_err(|e| {
+                                                    format!(
+                                                        "Node {} output {}: {e}",
+                                                        n.name(),
+                                                        o.name()
+                                                    )
+                                                })?
+                                                .ok_or(format!(
+                                                    "Node {} output {}: Attribute {v} not found",
+                                                    n.name(),
+                                                    o.name()
+                                                ))?
+                                                .clone()
+                                        }
+                                    };
+                                    let cs = v.to_colored_string();
+                                    n.set_attr_dot(&attr, v).map(|b| {
+                                        b.map(|b| {
+                                            format!(
+                                                "  {} = {} -> {}",
+                                                n.name(),
+                                                b.to_colored_string(),
+                                                cs
+                                            )
+                                        })
+                                    })
                                 })
                                 .collect::<Result<Vec<Option<String>>, String>>()?;
                             let updates: Vec<String> =
@@ -237,9 +303,19 @@ impl TaskContext {
                         Ok(None)
                     }
                 }
-                TaskInput::Variable(var) => {
+                TaskInput::Variable(ty, var) => {
                     if let Some(attr) = task.attribute {
-                        if let Some(v) = self.network.attr_dot(&var)? {
+                        let val = match ty {
+                            None | Some(VarType::Network) => self.network.attr_dot(&var)?,
+                            Some(VarType::Env) => self.env.attr_dot(&var)?,
+                            Some(t) => {
+                                return Err(format!(
+                                    "Variable of type {} not supported in network function",
+                                    t.to_string()
+                                ))
+                            }
+                        };
+                        if let Some(v) = val {
                             let cs = v.to_colored_string();
                             self.network
                                 .set_attr_dot(&attr, v.clone())
@@ -427,7 +503,7 @@ pub enum TaskInput {
     None,
     Function(FunctionCall),
     Literal(Attribute),
-    Variable(String),
+    Variable(Option<VarType>, String),
 }
 
 impl TaskInput {
@@ -436,8 +512,46 @@ impl TaskInput {
             Self::None => "".into(),
             Self::Function(fc) => fc.to_colored_string(),
             Self::Literal(a) => a.to_colored_string(),
-            Self::Variable(s) => s.green().to_string(),
+            Self::Variable(t, s) => match t {
+                Some(t) => format!("{}.{}", t.to_string().red(), s.green()),
+                None => s.green().to_string(),
+            },
         }
+    }
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum VarType {
+    Env,
+    Node,
+    Network,
+    Inputs,
+    Output,
+}
+
+impl VarType {
+    pub fn from_keyword(kw: &TaskKeyword) -> Option<Self> {
+        match kw {
+            TaskKeyword::Node => Some(VarType::Node),
+            TaskKeyword::Network => Some(VarType::Network),
+            TaskKeyword::Env => Some(VarType::Env),
+            TaskKeyword::Inputs => Some(VarType::Inputs),
+            TaskKeyword::Output => Some(VarType::Output),
+            _ => None,
+        }
+    }
+}
+
+impl ToString for VarType {
+    fn to_string(&self) -> String {
+        match self {
+            VarType::Node => "node",
+            VarType::Network => "network",
+            VarType::Env => "env",
+            VarType::Inputs => "inputs",
+            VarType::Output => "output",
+        }
+        .to_string()
     }
 }
 
@@ -479,10 +593,17 @@ impl FunctionCall {
             .iter()
             .map(|a| match a {
                 TaskInput::Literal(v) => Ok(v.clone()),
-                TaskInput::Variable(v) => node
-                    .attr_dot(v)?
-                    .cloned()
-                    .ok_or(format!("Attribute {v} not found")),
+                TaskInput::Variable(ty, v) => match ty {
+                    None => node.attr_dot(v)?,
+                    Some(VarType::Env) => tctx.env.attr_dot(v)?,
+                    Some(VarType::Network) => tctx.network.attr_dot(v)?,
+                    // this must mean we're dealing with a node function
+                    // The parser should fail if user uses node keyword in env or network function
+                    Some(VarType::Node) => node.attr_dot(v)?,
+                    _ => panic!("Not supported: using inputs/output attributes"),
+                }
+                .cloned()
+                .ok_or(format!("Attribute {v} not found")),
                 TaskInput::Function(fc) => match tctx.functions.env(&fc.name) {
                     Some(f) => match f.call(&fc.context(node, tctx, propagation)?) {
                         FunctionRet::None => Err(format!("Function {} returned no value", fc.name)),
@@ -502,11 +623,16 @@ impl FunctionCall {
                 let k = RString::from(k.as_str());
                 match a {
                     TaskInput::Literal(v) => Ok((k, v.clone())),
-                    TaskInput::Variable(v) => Ok((
+                    TaskInput::Variable(ty, v) => Ok((
                         k,
-                        node.attr_dot(v)?
-                            .cloned()
-                            .ok_or(format!("Attribute {v} not found"))?,
+                        match ty {
+                            None => node.attr_dot(v)?,
+                            Some(VarType::Env) => tctx.env.attr_dot(v)?,
+                            Some(VarType::Network) => tctx.network.attr_dot(v)?,
+                            _ => panic!("Not supported: using inputs/output attributes"),
+                        }
+                        .cloned()
+                        .ok_or(format!("Attribute {v} not found"))?,
                     )),
                     TaskInput::Function(fc) => match tctx.functions.env(&fc.name) {
                         Some(f) => match f.call(&fc.context(node, tctx, propagation)?) {
@@ -541,6 +667,8 @@ pub enum TaskKeyword {
     Help,
     In,
     Match,
+    Inputs,
+    Output,
 }
 
 impl std::str::FromStr for TaskKeyword {
@@ -556,6 +684,8 @@ impl std::str::FromStr for TaskKeyword {
             "help" => TaskKeyword::Help,
             "in" => TaskKeyword::In,
             "match" => TaskKeyword::Match,
+            "inputs" => TaskKeyword::Inputs,
+            "output" => TaskKeyword::Output,
             k => return Err(format!("{k} is not a keyword")),
         })
     }
@@ -572,6 +702,8 @@ impl ToString for TaskKeyword {
             TaskKeyword::Help => "help",
             TaskKeyword::In => "in",
             TaskKeyword::Match => "match",
+            TaskKeyword::Inputs => "inputs",
+            TaskKeyword::Output => "output",
         }
         .to_string()
     }
@@ -588,6 +720,8 @@ impl TaskKeyword {
             TaskKeyword::Help => "help",
             TaskKeyword::In => "Check if value is in an array/table",
             TaskKeyword::Match => "match regex pattern with strings",
+            TaskKeyword::Inputs => "inputs of the current node",
+            TaskKeyword::Output => "output of the current node",
         }
         .to_string()
     }
