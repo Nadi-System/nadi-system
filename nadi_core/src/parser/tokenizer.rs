@@ -424,13 +424,18 @@ fn variable<'a>(i: &'a str) -> TokenRes<'a> {
                 TaskToken::Function
             } else {
                 if let Some(re) = rest.trim_start().strip_prefix('.') {
-                    let (r, _) = get_var(re)?;
-                    if r.trim_start().starts_with('(') {
-                        rest = r;
-                        var = &i[..(i.len() - r.len())];
-                        TaskToken::Function
-                    } else {
+                    // .var or ."var" is supported
+                    if re.trim_start().starts_with('"') {
                         TaskToken::Variable
+                    } else {
+                        let (r, _) = get_var(re)?;
+                        if r.trim_start().starts_with('(') {
+                            rest = r;
+                            var = &i[..(i.len() - r.len())];
+                            TaskToken::Function
+                        } else {
+                            TaskToken::Variable
+                        }
                     }
                 } else {
                     TaskToken::Variable
