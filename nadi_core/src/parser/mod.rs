@@ -134,12 +134,12 @@ impl std::str::FromStr for Date {
             .ok_or("Day not present")?
             .parse::<u8>()
             .map_err(|_| "Invalid Day")?;
-        if month < 1 && month > 12 {
+        if month < 1 || month > 12 {
             return Err("Invalid Month (use 1-12)");
         }
         // doesn't make too many assumption on calendar type (leap
         // year or others)
-        if day < 1 && day > 31 {
+        if day < 1 || day > 31 {
             return Err("Invalid Day (use 1-31)");
         }
         Ok(Date::new(year, month, day))
@@ -342,5 +342,22 @@ fn propagation(p: &str) -> anyhow::Result<Propagation> {
         "inputsfirst" => Ok(Propagation::InputsFirst),
         "outputfirst" => Ok(Propagation::OutputFirst),
         _ => Err(anyhow::Error::msg("Invalid propagation type")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case("1223-12-23", Date::new(1223, 12, 23))]
+    #[should_panic] // invalid month
+    #[case("1223-24-23", Date::new(1223, 24, 23))]
+    #[should_panic] // invalid month
+    #[case("1223-04-32", Date::new(1223, 4, 32))]
+    fn date_test(#[case] txt: &str, #[case] value: Date) {
+        let dt = Date::from_str(txt).unwrap();
+        assert!(dt == value)
     }
 }
