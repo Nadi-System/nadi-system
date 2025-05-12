@@ -12,7 +12,7 @@ pub trait NadiError: std::error::Error {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Default)]
 pub struct ParseError {
     pub ty: ParseErrorType,
     pub line: usize,
@@ -65,37 +65,49 @@ impl std::fmt::Display for ParseError {
     }
 }
 
+impl ParseError {
+    pub fn custom(msg: String) -> Self {
+        Self {
+            ty: ParseErrorType::Custom(msg),
+            ..Default::default()
+        }
+    }
+}
 impl NadiError for ParseError {
     fn user_msg(&self, filename: Option<&str>) -> String {
         let mut msg = String::new();
-        msg.push_str(&format!(
-            "{}: Parse Error at Line {} Column {}\n",
-            "Error".bright_red(),
-            self.line,
-            self.col
-        ));
-        if let Some(fname) = filename {
+        if let ParseErrorType::Custom(m) = &self.ty {
+            msg.push_str(m);
+            if let Some(fname) = filename {
+                msg.push_str(&format!("  {} {}\n", "->".blue(), fname.blue()));
+            }
+        } else {
             msg.push_str(&format!(
-                "  {} {}\n",
-                "->".blue(),
-                format!("{}:{}:{}", fname, self.line, self.col).blue()
+                "{}: Parse Error at Line {} Column {}\n",
+                "Error".bright_red(),
+                self.line,
+                self.col
             ));
-        }
-        msg.push_str(&format!("  {}\n", self.linestr));
-        msg.push_str(&format!(
-            "  {: >2$} {}",
-            "^".yellow(),
-            self.ty.message().yellow(),
-            self.col + 1
-        ));
-        if let ParseErrorType::LogicalError(s) = &self.ty {
-            msg.push_str(&format!("\n  {}", s.red()))
+            if let Some(fname) = filename {
+                msg.push_str(&format!(
+                    "  {} {}\n",
+                    "->".blue(),
+                    format!("{}:{}:{}", fname, self.line, self.col).blue()
+                ));
+            }
+            msg.push_str(&format!("  {}\n", self.linestr));
+            msg.push_str(&format!(
+                "  {: >2$} {}",
+                "^".yellow(),
+                self.ty.message().yellow(),
+                self.col + 1
+            ));
         }
         msg
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Default)]
 pub enum ParseErrorType {
     LogicalError(&'static str),
     ValueError(&'static str),
@@ -106,17 +118,19 @@ pub enum ParseErrorType {
     PropagationNotSupported,
     KeywordArgBeforePositional,
     KeywordNotVariable,
+    #[default]
     SyntaxError,
     ExpectedPath,
     InvalidToken,
     TokenMismatch,
+    Custom(String),
 }
 
 impl ParseErrorType {
     pub fn message(&self) -> String {
         match self {
             Self::LogicalError(v) => {
-                return format!("Unexpected Logic problem: {v}, please contact dev")
+                return format!("Unexpected Logic problem: {}, please contact dev", v.red())
             }
             Self::ValueError(v) => return format!("Invalid Value: {v}"),
             Self::InvalidLineStart => "Lines should start with a keyword",
@@ -130,6 +144,7 @@ impl ParseErrorType {
             Self::ExpectedPath => "Path symbol not found",
             Self::InvalidToken => "Unsupported Token",
             Self::TokenMismatch => "Unexpected Token",
+            Self::Custom(msg) => msg.as_str(),
         }
         .to_string()
     }

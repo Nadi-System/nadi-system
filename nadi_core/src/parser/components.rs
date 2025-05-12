@@ -18,13 +18,16 @@ pub type MatchRes<'a, 'b, T> = IResult<&'a [Token<'b>], T, MatchErr<'a, 'b>>;
 pub fn string_val<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, String> {
     if let [first, rest @ ..] = inp {
         match &first.ty {
-            TaskToken::String(s) => return Ok((rest, s.clone())),
-            _ => (),
+            TaskToken::String(s) => Ok((rest, s.clone())),
+            _ => Err(nom::Err::Error(
+                MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch),
+            )),
         }
+    } else {
+        Err(nom::Err::Error(
+            MatchErr::new(inp).ty(&ParseErrorType::Incomplete),
+        ))
     }
-    Err(nom::Err::Error(
-        MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch),
-    ))
 }
 
 macro_rules! one_token {
@@ -63,6 +66,7 @@ one_token!(bracket_start, TaskToken::BracketStart);
 one_token!(path_sep, TaskToken::PathSep);
 one_token!(comma, TaskToken::Comma);
 one_token!(dot, TaskToken::Dot);
+one_token!(dash, TaskToken::Dash);
 one_token!(and, TaskToken::And);
 one_token!(or, TaskToken::Or);
 one_token!(not, TaskToken::Not);
@@ -125,11 +129,15 @@ where
     terminated(f, many0(alt((space, newline, comment))))
 }
 
-pub fn dot_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<String>> {
-    separated_list1(
-        dot,
-        alt((map(variable, |v| v.content.to_string()), string_val)),
+pub fn dash_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, String> {
+    map(
+        separated_list1(dash, map(variable, |v| v.content.to_string())),
+        |v| v.join(""),
     )(inp)
+}
+
+pub fn dot_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<String>> {
+    separated_list1(dot, alt((dash_variable, string_val)))(inp)
 }
 
 pub fn attr_bool<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
@@ -175,7 +183,7 @@ pub fn attr_float<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
     Ok((rest, val))
 }
 
-pub fn attribute<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
+pub fn attribute_simple<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
     let (rest, var) = alt((
         attr_bool,
         attr_float,
@@ -190,17 +198,25 @@ pub fn attribute<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
         map(date, |t| {
             Attribute::Date(Date::from_str(t.content).unwrap())
         }),
-        array,
-        table,
     ))(inp)?;
     Ok((rest, var))
 }
 
-pub fn attr_oneline<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, (Vec<String>, Attribute)> {
+pub fn attribute<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
+    let (rest, var) = alt((attribute_simple, array, table))(inp)?;
+    Ok((rest, var))
+}
+
+pub fn attribute_inline<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
+    let (rest, var) = alt((attribute_simple, array_inline, table_inline))(inp)?;
+    Ok((rest, var))
+}
+
+pub fn key_val_dot<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, (Vec<String>, Attribute)> {
     separated_pair(
         dot_variable,
         maybe_space(assignment),
-        maybe_space(attribute),
+        maybe_space(attribute_inline),
     )(inp)
 }
 
@@ -233,6 +249,27 @@ pub fn table<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
             maybe_newline(key_val),
         )),
         maybe_newline(brace_end),
+    )(inp)?;
+    Ok((
+        rest,
+        Attribute::Table(vars.into_iter().map(|(k, v)| (k.into(), v)).collect()),
+    ))
+}
+
+pub fn array_inline<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
+    let (rest, vars) = delimited(
+        bracket_start,
+        maybe_space(separated_list0(maybe_space(comma), maybe_space(attribute))),
+        maybe_space(bracket_end),
+    )(inp)?;
+    Ok((rest, Attribute::Array(vars.into())))
+}
+
+pub fn table_inline<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
+    let (rest, vars) = delimited(
+        brace_start,
+        maybe_space(separated_list0(maybe_space(comma), maybe_space(key_val))),
+        maybe_space(brace_end),
     )(inp)?;
     Ok((
         rest,
@@ -292,9 +329,11 @@ mod tests {
     #[case("\"val\".val2 = 1223-12-12", vec!["val", "val2"], Attribute::Date(Date::new(1223,12,12)))]
     #[should_panic]
     #[case("= 1232", vec![""], Attribute::Integer(1232))]
-    pub fn attr_oneline_test(#[case] txt: &str, #[case] key: Vec<&str>, #[case] val: Attribute) {
+    #[should_panic]
+    #[case("var =\n 1232", vec!["var"], Attribute::Integer(1232))]
+    pub fn key_val_dot_test(#[case] txt: &str, #[case] key: Vec<&str>, #[case] val: Attribute) {
         let tokens = get_tokens(txt);
-        let (_, tk) = attr_oneline(&tokens).unwrap();
+        let (_, tk) = key_val_dot(&tokens).unwrap();
         let key: Vec<String> = key.into_iter().map(String::from).collect();
         assert!(key == tk.0);
         assert!(val == tk.1);

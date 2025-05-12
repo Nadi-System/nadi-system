@@ -190,6 +190,7 @@ pub enum TaskToken {
     BracketStart, // []
     PathSep,      // ->
     Comma,
+    Dash,
     Dot,
     And,
     Or,
@@ -231,6 +232,7 @@ impl TaskToken {
             TaskToken::PathSep => "blue",
             TaskToken::Comma => "blue",
             TaskToken::Dot => "blue",
+            TaskToken::Dash => "blue",
             TaskToken::And => "yellow",
             TaskToken::Or => "yellow",
             TaskToken::Not => "yellow",
@@ -270,6 +272,7 @@ impl<'a> Token<'a> {
             TaskToken::PathSep => format!("{}", self.content.blue()),
             TaskToken::Comma => format!("{}", self.content.blue()),
             TaskToken::Dot => format!("{}", self.content.blue()),
+            TaskToken::Dash => format!("{}", self.content.blue()),
             TaskToken::And => format!("{}", self.content.yellow()),
             TaskToken::Or => format!("{}", self.content.yellow()),
             TaskToken::Not => format!("{}", self.content.yellow()),
@@ -360,6 +363,7 @@ fn symbols<'a>(i: &'a str) -> TokenRes<'a> {
         map(tag("."), |s| Token::new(TaskToken::Dot, s)),
         map(tag(","), |s| Token::new(TaskToken::Comma, s)),
         map(tag("->"), |s| Token::new(TaskToken::PathSep, s)),
+        map(tag("-"), |s| Token::new(TaskToken::Dash, s)),
         map(tag("="), |s| Token::new(TaskToken::Assignment, s)),
         map(tag("&"), |s| Token::new(TaskToken::And, s)),
         map(tag("|"), |s| Token::new(TaskToken::Or, s)),

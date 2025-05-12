@@ -1,151 +1,104 @@
-use crate::attrs::{AttrMap, Attribute};
-use crate::parser::tasks::read_attribute;
-use crate::parser::tokenizer::{TaskToken, Token, VecTokens};
-use crate::parser::{ParseError, ParseErrorType};
+use crate::attrs::{AttrMap, Attribute, HasAttributes};
+use crate::parser::{
+    components::*,
+    errors::{ParseError, ParseErrorType},
+    tokenizer::{check_tokens, TaskToken, Token, VecTokens},
+};
 use abi_stable::std_types::{map::REntry, RString};
+use nadi_core::network::StrPath;
+use nom::{
+    branch::alt,
+    combinator::{all_consuming, map},
+    multi::separated_list0,
+    sequence::{delimited, separated_pair},
+    Finish,
+};
 
-#[derive(Debug, PartialEq)]
-pub enum State {
-    AttrGroup(Option<String>),
-    Assignment(String),
-    Variable(String),
-    Newline,
-    None,
+pub fn attr_group<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<String>> {
+    delimited(
+        bracket_start,
+        maybe_space(dot_variable),
+        maybe_space(bracket_end),
+    )(inp)
+}
+
+enum Line {
+    Group(Vec<String>),
+    KeyVal((Vec<String>, Attribute)),
+}
+
+pub fn attr_file_line<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Line> {
+    alt((map(attr_group, Line::Group), map(key_val_dot, Line::KeyVal)))(inp)
+}
+
+pub fn attr_file<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<Line>> {
+    traling_newlines(newline_separated(attr_file_line))(inp)
 }
 
 pub fn parse(tokens: Vec<Token>) -> Result<AttrMap, ParseError> {
-    let mut tokens = VecTokens::new(tokens)?;
+    check_tokens(&tokens)?;
+    let lines = match attr_file(&tokens).finish() {
+        Ok((rest, lines)) => {
+            if rest.is_empty() {
+                lines
+            } else {
+                let err = maybe_newline(attr_file_line)(rest)
+                    .finish()
+                    .err()
+                    .expect("Rest should be empty if network parse is complete");
+                return Err(ParseError::new(&tokens, err.internal.input, err.ty));
+            }
+        }
+        Err(e) => return Err(ParseError::new(&tokens, e.internal.input, e.ty)),
+    };
+
     let mut attrmap = AttrMap::new();
-    let mut curr_grp: Vec<String> = vec![];
     let mut curr_var = &mut attrmap;
-    let mut state = State::None;
-    let mut token;
-    loop {
-        token = match tokens.next() {
-            Some(t) => t,
-            None => break,
-        };
-        match token.ty {
-            TaskToken::WhiteSpace | TaskToken::Comment => (),
-            TaskToken::NewLine => match state {
-                State::Newline => {
-                    state = State::None;
-                    curr_var = &mut attrmap;
-                    for g in &curr_grp {
-                        curr_var = move_in(g, curr_var, &tokens)?;
+
+    for line in lines {
+        match line {
+            Line::Group(grp) => {
+                curr_var = move_in(&grp, curr_var)?;
+            }
+            Line::KeyVal((keys, val)) => {
+                let old = match keys.as_slice() {
+                    [] => return Err(ParseError::custom("Empty attribute group".into())),
+                    [name] => curr_var.set_attr(name, val.clone()),
+                    [pre @ .., name] => {
+                        let map = move_in(&pre, curr_var)?;
+                        map.set_attr(name, val.clone())
                     }
-                }
-                State::None => (),
-                _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
-            },
-            TaskToken::BracketStart => {
-                match state {
-                    State::None => {
-                        // if it's start of `[` for group then reset
-                        // the current group to root
-                        curr_var = &mut attrmap;
-                        curr_grp = vec![];
-                        state = State::AttrGroup(None);
-                    }
-                    State::Variable(s) => {
-                        let inp = match read_attribute(Some(token.clone()), &mut tokens, false)? {
-                            Some(i) => i,
-                            None => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
-                        };
-                        curr_var.insert(s.into(), inp);
-                        state = State::Newline;
-                    }
-                    _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
+                };
+                if let Some(oval) = old {
+                    return Err(ParseError::custom(format!(
+                        "Key {} already set to value {} (new: {})",
+                        keys.join("."),
+                        val.to_string(),
+                        oval.to_string()
+                    )));
                 }
             }
-            TaskToken::BraceStart => match state {
-                State::Variable(s) => {
-                    let inp = match read_attribute(Some(token.clone()), &mut tokens, false)? {
-                        Some(i) => i,
-                        None => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
-                    };
-                    curr_var.insert(s.into(), inp);
-                    state = State::Newline;
-                }
-                _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
-            },
-            TaskToken::Dot => match state {
-                State::AttrGroup(Some(s)) => {
-                    curr_var = move_in(&s, curr_var, &tokens)?;
-                    curr_grp.push(s);
-                    state = State::AttrGroup(None);
-                }
-                State::Assignment(s) => {
-                    curr_var = move_in(&s, curr_var, &tokens)?;
-                    state = State::None;
-                }
-                _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
-            },
-            TaskToken::BracketEnd => match state {
-                State::AttrGroup(Some(n)) => {
-                    curr_var = move_in(&n, curr_var, &tokens)?;
-                    curr_grp.push(n);
-                    state = State::None;
-                }
-                _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
-            },
-            TaskToken::Variable => match state {
-                State::None => {
-                    state = State::Assignment(token.content.to_string());
-                }
-                State::AttrGroup(None) => {
-                    state = State::AttrGroup(Some(token.content.to_string()));
-                }
-                _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
-            },
-            TaskToken::Assignment => match state {
-                State::Assignment(s) => {
-                    let inp = match read_attribute(None, &mut tokens, false)? {
-                        Some(i) => i,
-                        None => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
-                    };
-                    curr_var.insert(s.into(), inp);
-                    state = State::Newline;
-                }
-                _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
-            },
-            TaskToken::Bool => (),
-            TaskToken::String(s) => match state {
-                State::None => {
-                    state = State::Assignment(s);
-                }
-                State::AttrGroup(None) => {
-                    state = State::AttrGroup(Some(s));
-                }
-                _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
-            },
-            TaskToken::Integer => (),
-            TaskToken::Date => (),
-            TaskToken::Float => (),
-            TaskToken::DateTime => (),
-            TaskToken::Time => (),
-            _ => return Err(tokens.parse_error(ParseErrorType::InvalidToken)),
-        }
+        };
     }
-    match state {
-        State::None | State::Newline => Ok(attrmap),
-        _ => Err(tokens.parse_error(ParseErrorType::Incomplete)),
-    }
+    Ok(attrmap)
 }
 
-fn move_in<'a>(
-    key: &str,
-    table: &'a mut AttrMap,
-    tokens: &VecTokens,
-) -> Result<&'a mut AttrMap, ParseError> {
-    let key: RString = key.into();
-    let tb = match table.entry(key) {
-        REntry::Occupied(o) => o.into_mut(),
-        REntry::Vacant(v) => v.insert(Attribute::Table(AttrMap::new())),
-    };
-    match tb {
-        Attribute::Table(t) => Ok(t),
-        // TODO better error message (say value already present and not table)
-        _ => return Err(tokens.parse_error(ParseErrorType::SyntaxError)),
+fn move_in<'a>(keys: &[String], table: &'a mut AttrMap) -> Result<&'a mut AttrMap, ParseError> {
+    let mut map = table;
+    for k in keys {
+        map = match map
+            .entry(k.to_string().into())
+            .or_insert(Attribute::Table(AttrMap::new()))
+        {
+            Attribute::Table(ref mut mp) => mp,
+            val => {
+                return Err(ParseError::custom(format!(
+                    "Key {k} in {} is not a table (value: {})",
+                    keys.join("."),
+                    val.to_string(),
+                )))
+            }
+        };
     }
+    Ok(map)
 }
