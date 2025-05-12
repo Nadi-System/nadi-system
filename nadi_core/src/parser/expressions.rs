@@ -1,0 +1,301 @@
+use crate::attrs::{AttrMap, Attribute, HasAttributes};
+use crate::parser::{
+    components::*,
+    errors::{MatchErr, ParseError, ParseErrorType},
+    tokenizer::{check_tokens, TaskToken, Token, VecTokens},
+};
+use crate::tasks::{TaskKeyword, VarType};
+use abi_stable::std_types::{map::REntry, RString};
+use nadi_core::network::StrPath;
+use nom::{
+    branch::alt,
+    combinator::{all_consuming, cut, map, opt, value},
+    multi::{many0, many1, separated_list0, separated_list1},
+    sequence::{delimited, pair, separated_pair, terminated, tuple},
+    Finish,
+};
+use std::collections::HashMap;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Expression {
+    Literal(Attribute),
+    Variable(InputVar),
+    Function(FunctionCall),
+    UniOp(UniOperator, Box<Expression>),
+    BiOp(BiOperator, Box<Expression>, Box<Expression>),
+}
+
+pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+    alt((
+        uni_operator_expr,
+        map(input_variable, Expression::Variable),
+        map(attribute, Expression::Literal),
+        map(function_call, Expression::Function),
+    ))(inp)
+}
+
+pub fn expression_group<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+    delimited(
+        paren_start,
+        maybe_newline(complete_expression),
+        maybe_newline(paren_end),
+    )(inp)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum UniOperator {
+    Not,
+    Negative,
+}
+
+pub fn uni_operator_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+    let (rest, (op, expr)) = pair(
+        alt((
+            value(UniOperator::Not, not),
+            value(UniOperator::Negative, dash),
+        )),
+        maybe_newline(alt((expression_group, expression))),
+    )(inp)?;
+    Ok((rest, Expression::UniOp(op, Box::new(expr))))
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum BiOperator {
+    Add,
+    Substract,
+    Multiply,
+    Divide,
+    Modulus,
+    Equal,
+    LessThan,
+    GreaterThan,
+    LessThanEqual,
+    GreaterThanEqual,
+    And,
+    Or,
+}
+
+pub fn bi_operator<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, BiOperator> {
+    alt((
+        value(BiOperator::Add, plus),
+        value(BiOperator::Substract, dash),
+        value(BiOperator::Multiply, star),
+        value(BiOperator::Divide, slash),
+        value(BiOperator::Modulus, percentage),
+        value(BiOperator::Equal, pair(assignment, assignment)),
+        value(BiOperator::LessThanEqual, pair(angle_start, assignment)),
+        value(BiOperator::GreaterThanEqual, pair(angle_end, assignment)),
+        value(BiOperator::LessThan, angle_start),
+        value(BiOperator::GreaterThan, angle_end),
+        value(BiOperator::And, and),
+        value(BiOperator::Or, or),
+    ))(inp)
+}
+
+pub fn complete_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+    let (rest, (first, others)) = pair(
+        alt((expression_group, expression)),
+        many0(pair(
+            maybe_newline(bi_operator),
+            maybe_newline(alt((expression_group, expression))),
+        )),
+    )(inp)?;
+    // TODO left-first expression evaluation; redo later
+    let mut lhs = first;
+    match others.as_slice() {
+        [] => Ok((rest, lhs)),
+        [others @ .., last] => {
+            // TODO a way to do pattern match without cloning would be nice
+            for (o, v) in others {
+                lhs = Expression::BiOp(o.clone(), Box::new(lhs), Box::new(v.clone()));
+            }
+            Ok((
+                rest,
+                Expression::BiOp(last.0.clone(), Box::new(lhs), Box::new(last.1.clone())),
+            ))
+        }
+    }
+}
+
+pub fn variable_type<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, VarType> {
+    let (rest, kw) = keyword_val(inp)?;
+    match VarType::from_keyword(&kw) {
+        Some(v) => Ok((rest, v)),
+        None => Err(nom::Err::Error(
+            MatchErr::new(inp).ty(&ParseErrorType::InvalidKeyword),
+        )),
+    }
+}
+
+pub fn input_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, InputVar> {
+    alt((
+        map(
+            pair(
+                separated_pair(
+                    variable_type,
+                    // example showing how to make it return error on
+                    // partial matches
+                    cut(err_ctx(&ParseErrorType::Incomplete, dot)),
+                    cut(err_ctx(&ParseErrorType::Incomplete, dot_variable)),
+                ),
+                opt(question),
+            ),
+            |((vt, v), q)| InputVar::new(Some(vt), v, q.is_some()),
+        ),
+        map(pair(dot_variable, opt(question)), |(v, q)| {
+            InputVar::new(None, v, q.is_some())
+        }),
+    ))(inp)
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct InputVar {
+    pub ty: Option<VarType>,
+    pub names: Vec<String>,
+    pub check: bool,
+}
+
+impl InputVar {
+    pub fn new(ty: Option<VarType>, names: Vec<String>, check: bool) -> Self {
+        Self { ty, names, check }
+    }
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct FunctionCall {
+    pub name: String,
+    pub args: Vec<Expression>,
+    pub kwargs: HashMap<String, Expression>,
+    pub silent: bool,
+}
+
+impl FunctionCall {
+    pub fn new(
+        name: String,
+        args: Vec<Expression>,
+        kwargs: HashMap<String, Expression>,
+        silent: bool,
+    ) -> Self {
+        Self {
+            name,
+            args,
+            kwargs,
+            silent,
+        }
+    }
+}
+
+pub fn kw_arg<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, (String, Expression)> {
+    separated_pair(
+        // no dot variable in kwargs pair
+        map(variable, |t| t.content.to_string()),
+        maybe_space(assignment),
+        maybe_space(complete_expression),
+    )(inp)
+}
+
+pub fn kw_args<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<(String, Expression)>> {
+    separated_list1(comma, maybe_newline(kw_arg))(inp)
+}
+
+pub fn pos_args<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<Expression>> {
+    separated_list1(comma, maybe_newline(complete_expression))(inp)
+}
+
+pub fn function_call<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionCall> {
+    let (rest, (name, (args, kwargs), silent)) = tuple((
+        function,
+        alt((
+            value(
+                (vec![], vec![]),
+                pair(paren_start, maybe_newline(paren_end)),
+            ),
+            delimited(
+                paren_start,
+                map(pos_args, |a| (a, vec![])),
+                maybe_newline(paren_end),
+            ),
+            delimited(
+                paren_start,
+                map(kw_args, |a| (vec![], a)),
+                maybe_newline(paren_end),
+            ),
+            delimited(
+                paren_start,
+                pair(
+                    many1(terminated(
+                        maybe_newline(complete_expression),
+                        maybe_newline(comma),
+                    )),
+                    maybe_newline(kw_args),
+                ),
+                maybe_newline(paren_end),
+            ),
+        )),
+        opt(question),
+    ))(inp)?;
+    Ok((
+        rest,
+        FunctionCall::new(
+            name.content.to_string(),
+            args,
+            kwargs.into_iter().collect(),
+            silent.is_some(),
+        ),
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::tokenizer::get_tokens;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case("12")]
+    #[case("2.12")]
+    #[case("- 2.12")]
+    #[case("xyz")]
+    #[case("!(xyz)")]
+    #[case("!(-xyz)")]
+    pub fn expression_valid_test(#[case] txt: &str) {
+        let tokens = get_tokens(txt);
+        let (rest, _) = expression(&tokens).unwrap();
+        assert_eq!(rest, vec![]);
+    }
+
+    #[rstest]
+    #[case("12")]
+    #[case("2.12")]
+    #[case("- 2.12")]
+    #[case("xyz")]
+    #[case("!(xyz)")]
+    #[case("!(-xyz)")]
+    #[case("xyz + 12")]
+    // since it doesn't eval, anything is valid
+    #[case("xyz | yzx * 12 + true % func(call)")]
+    #[case("(xyz | yzx) * (12 + true)")]
+    #[should_panic]
+    #[case("(xyz |* yzx) * (12 + true)")]
+    pub fn compl_expr_valid_test(#[case] txt: &str) {
+        let tokens = get_tokens(txt);
+        let (rest, _) = complete_expression(&tokens).unwrap();
+        assert_eq!(rest, vec![]);
+    }
+
+    #[rstest]
+    #[case("sth()")]
+    #[case("sth.sth()")]
+    #[case("sth.sth(12)")]
+    #[case("sth.sth(-zyx2)")]
+    #[case("sth.sth(y=12)")]
+    #[case("sth.sth(2.12, y=12, y2=43)")]
+    #[case("sth.sth(2.12, y=12, y2=43 + values * 1.23)")]
+    #[should_panic]
+    #[case("sth.sth(2.12, y=12, 43)")]
+    pub fn function_call_valid_test(#[case] txt: &str) {
+        let tokens = get_tokens(txt);
+        let (rest, _) = function_call(&tokens).unwrap();
+        assert_eq!(rest, vec![]);
+    }
+}

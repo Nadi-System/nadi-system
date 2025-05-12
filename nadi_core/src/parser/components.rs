@@ -2,6 +2,7 @@ use crate::parser::{
     errors::{MatchErr, ParseErrorType},
     tokenizer::{TaskToken, Token},
 };
+use crate::tasks::TaskKeyword;
 use nadi_core::attrs::{Attribute, Date, DateTime, Time};
 use nom::{
     branch::alt,
@@ -19,6 +20,21 @@ pub fn string_val<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, String> {
     if let [first, rest @ ..] = inp {
         match &first.ty {
             TaskToken::String(s) => Ok((rest, s.clone())),
+            _ => Err(nom::Err::Error(
+                MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch),
+            )),
+        }
+    } else {
+        Err(nom::Err::Error(
+            MatchErr::new(inp).ty(&ParseErrorType::Incomplete),
+        ))
+    }
+}
+
+pub fn keyword_val<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, TaskKeyword> {
+    if let [first, rest @ ..] = inp {
+        match &first.ty {
+            TaskToken::Keyword(s) => Ok((rest, s.clone())),
             _ => Err(nom::Err::Error(
                 MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch),
             )),
@@ -65,8 +81,15 @@ one_token!(brace_start, TaskToken::BraceStart);
 one_token!(bracket_start, TaskToken::BracketStart);
 one_token!(path_sep, TaskToken::PathSep);
 one_token!(comma, TaskToken::Comma);
-one_token!(dot, TaskToken::Dot);
+one_token!(caret, TaskToken::Caret);
 one_token!(dash, TaskToken::Dash);
+one_token!(plus, TaskToken::Plus);
+one_token!(star, TaskToken::Star);
+one_token!(slash, TaskToken::Slash);
+one_token!(percentage, TaskToken::Percentage);
+one_token!(question, TaskToken::Question);
+one_token!(semicolon, TaskToken::Semicolon);
+one_token!(dot, TaskToken::Dot);
 one_token!(and, TaskToken::And);
 one_token!(or, TaskToken::Or);
 one_token!(not, TaskToken::Not);
@@ -116,7 +139,7 @@ pub fn newline_separated<'a, 'b: 'a, O, F>(
 where
     F: nom::Parser<&'a [Token<'b>], O, MatchErr<'a, 'b>>,
 {
-    separated_list0(many0(alt((newline, comment))), maybe_space(f))
+    separated_list0(many0(maybe_space(alt((newline, comment)))), maybe_space(f))
 }
 
 /// Matches the next one that might have spaces, newlines or comments before it

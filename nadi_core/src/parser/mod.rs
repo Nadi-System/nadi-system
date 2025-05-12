@@ -13,6 +13,7 @@ use std::str::FromStr;
 pub mod attrs;
 pub mod components;
 pub mod errors;
+pub mod expressions;
 pub mod network;
 pub mod string;
 pub mod table;

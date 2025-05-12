@@ -75,7 +75,7 @@ mod tests {
         let tokens = get_tokens(txt);
         let (rest, name) = node_name(&tokens).unwrap();
         assert!(rest.is_empty());
-        assert!(name == txt);
+        assert_eq!(name, txt);
     }
 
     #[rstest]
@@ -91,18 +91,17 @@ mod tests {
         let (rest, p) = str_path(&tokens).unwrap();
         let path2 = (p.start.as_str(), p.end.as_str());
         assert!(rest.is_empty());
-        assert!(path2 == path);
+        assert_eq!(path2, path);
     }
 
     #[rstest]
     #[case("0_node_name -> name", 1, 3)]
-    // invalid token error (from -) comes before node error, change if we allow
-    // math operators later
-    #[case("node-name -> another", 1, 5)]
+    #[case("valid -> edge \nnode-name -> another", 2, 1)]
+    #[case("# test this \nnode-name -> another", 2, 1)]
     pub fn parse_error_test(#[case] txt: &str, #[case] line: usize, #[case] col: usize) {
         let tokens = get_tokens(txt);
         let err = parse(tokens).err().unwrap();
-        assert!(err.line == line);
-        assert!(err.col == col);
+        assert_eq!(err.line, line);
+        assert_eq!(err.col, col);
     }
 }
