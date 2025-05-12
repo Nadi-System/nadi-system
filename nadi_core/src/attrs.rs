@@ -145,8 +145,24 @@ impl ToString for Attribute {
             Self::Date(v) => v.to_string(),
             Self::Time(v) => v.to_string(),
             Self::DateTime(v) => v.to_string(),
-            Self::Array(v) => format!("{v:?}"),
-            Self::Table(v) => format!("{v:?}"),
+            Self::Array(v) => {
+                format!(
+                    "[{}]",
+                    v.iter()
+                        .map(|a| a.to_string())
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                )
+            }
+            Self::Table(v) => {
+                format!(
+                    "{{{}}}",
+                    v.iter()
+                        .map(|a| format!("{} = {}", a.0, a.1.to_string()))
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                )
+            }
         }
     }
 }
