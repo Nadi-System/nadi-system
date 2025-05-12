@@ -23,7 +23,7 @@ pub fn string_val<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, String> {
         }
     }
     Err(nom::Err::Error(
-        MatchErr::new(inp).ty(ParseErrorType::TokenMismatch),
+        MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch),
     ))
 }
 
@@ -37,7 +37,7 @@ macro_rules! one_token {
                 }
             }
             Err(nom::Err::Error(
-                MatchErr::new(inp).ty(ParseErrorType::TokenMismatch),
+                MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch),
             ))
         }
     };
@@ -74,6 +74,22 @@ one_token!(assignment, TaskToken::Assignment);
 one_token!(invalid, TaskToken::Invalid(_));
 
 /// Matches the next one that might have spaces before it
+pub fn err_ctx<'a, 'b: 'a, O, F>(
+    ty: &'static ParseErrorType,
+    mut f: F,
+) -> impl FnMut(&'a [Token<'b>]) -> MatchRes<'a, 'b, O>
+where
+    F: nom::Parser<&'a [Token<'b>], O, MatchErr<'a, 'b>>,
+{
+    move |i: &'a [Token<'b>]| match f.parse(i) {
+        Ok(o) => Ok(o),
+        Err(nom::Err::Incomplete(i)) => Err(nom::Err::Incomplete(i)),
+        Err(nom::Err::Error(e)) => Err(nom::Err::Error(e.ty(ty))),
+        Err(nom::Err::Failure(e)) => Err(nom::Err::Failure(e.ty(ty))),
+    }
+}
+
+/// Matches the next one that might have spaces before it
 pub fn maybe_space<'a, 'b: 'a, O, F>(f: F) -> impl FnMut(&'a [Token<'b>]) -> MatchRes<'a, 'b, O>
 where
     F: nom::Parser<&'a [Token<'b>], O, MatchErr<'a, 'b>>,
@@ -87,6 +103,26 @@ where
     F: nom::Parser<&'a [Token<'b>], O, MatchErr<'a, 'b>>,
 {
     preceded(many0(alt((space, newline, comment))), f)
+}
+
+/// Matches the next one that might have spaces, newlines or comments before it
+pub fn newline_separated<'a, 'b: 'a, O, F>(
+    f: F,
+) -> impl FnMut(&'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<O>>
+where
+    F: nom::Parser<&'a [Token<'b>], O, MatchErr<'a, 'b>>,
+{
+    separated_list0(many0(alt((newline, comment))), maybe_space(f))
+}
+
+/// Matches the next one that might have spaces, newlines or comments before it
+pub fn traling_newlines<'a, 'b: 'a, O, F>(
+    f: F,
+) -> impl FnMut(&'a [Token<'b>]) -> MatchRes<'a, 'b, O>
+where
+    F: nom::Parser<&'a [Token<'b>], O, MatchErr<'a, 'b>>,
+{
+    terminated(f, many0(alt((space, newline, comment))))
 }
 
 pub fn dot_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<String>> {
@@ -103,7 +139,7 @@ pub fn attr_bool<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
         "false" => false,
         _ => {
             return Err(nom::Err::Error(MatchErr::new(inp).ty(
-                ParseErrorType::ValueError("Boolean should be true or false"),
+                &ParseErrorType::ValueError("Boolean should be true or false"),
             )))
         }
     }
@@ -113,11 +149,11 @@ pub fn attr_bool<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
 
 pub fn attr_integer<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
     let (rest, val) = integer(inp)?;
-    let val = match val.content.parse::<i64>() {
+    let val = match val.content.replace('_', "").parse::<i64>() {
         Ok(v) => v,
         _ => {
             return Err(nom::Err::Error(
-                MatchErr::new(inp).ty(ParseErrorType::ValueError("Error while parsing Integer")),
+                MatchErr::new(inp).ty(&ParseErrorType::ValueError("Error while parsing Integer")),
             ))
         }
     }
@@ -127,11 +163,11 @@ pub fn attr_integer<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute>
 
 pub fn attr_float<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
     let (rest, val) = float(inp)?;
-    let val = match val.content.parse::<f64>() {
+    let val = match val.content.replace('_', "").parse::<f64>() {
         Ok(v) => v,
         _ => {
             return Err(nom::Err::Error(
-                MatchErr::new(inp).ty(ParseErrorType::ValueError("Error while parsing Float")),
+                MatchErr::new(inp).ty(&ParseErrorType::ValueError("Error while parsing Float")),
             ))
         }
     }
@@ -267,7 +303,11 @@ mod tests {
     #[rstest]
     #[case("1232", Attribute::Integer(1232))]
     #[case("12.32", Attribute::Float(12.32))]
+    #[case("\"12.32\"", Attribute::String("12.32".into()))]
     #[case("true", Attribute::Bool(true))]
+    #[case("false", Attribute::Bool(false))]
+    #[should_panic]
+    #[case("null", Attribute::Bool(false))]
     #[case("1223-12-23", Attribute::Date(Date::new(1223, 12, 23)))]
     #[case(
         "1223-12-23 23:00",

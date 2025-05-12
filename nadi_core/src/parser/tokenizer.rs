@@ -8,64 +8,13 @@ use nom::{
     branch::alt,
     bytes::complete::{is_not, tag},
     character::complete::{alpha1, alphanumeric1, anychar, char, digit1, one_of},
-    combinator::{cut, map, opt, recognize},
+    combinator::{map, opt, recognize},
     error::{context, VerboseError},
     multi::{many0, many1},
     sequence::{pair, preceded, terminated, tuple},
     IResult,
 };
 use std::str::FromStr;
-
-#[derive(Clone, PartialEq, Debug)]
-pub struct TokenError {
-    pub line: usize,
-    pub col: usize,
-    pub linestr: String,
-}
-
-impl std::error::Error for TokenError {}
-
-impl std::fmt::Display for TokenError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "TokenError: Error at line {} col {}",
-            self.line, self.col
-        )
-    }
-}
-
-impl NadiError for TokenError {
-    fn user_msg(&self, filename: Option<&str>) -> String {
-        let mut msg = String::new();
-        msg.push_str(&format!(
-            "{}: Invalid Token at Line {} Column {}\n",
-            "TokenError".bright_red(),
-            self.line,
-            self.col
-        ));
-        if let Some(fname) = filename {
-            msg.push_str(&format!(
-                "  {} {}\n",
-                "->".blue(),
-                format!("{}:{}:{}", fname, self.line, self.col).blue()
-            ));
-        }
-        let off = self.col - 1;
-        msg.push_str(&format!(
-            "  {}{}\n",
-            &self.linestr[..off],
-            self.linestr[off..].bright_red()
-        ));
-        msg.push_str(&format!(
-            "  {: >2$} {}",
-            "^".yellow(),
-            "invalid token".yellow(),
-            self.col
-        ));
-        msg
-    }
-}
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Token<'a> {
@@ -79,6 +28,20 @@ impl<'a> Token<'a> {
     }
 }
 
+pub fn check_tokens(tokens: &[Token]) -> Result<(), TaskParseError> {
+    let mut data = tokens.split(|t| !t.ty.is_valid());
+    let valid = data.next().unwrap();
+    match data.next() {
+        Some(_) => Err(TaskParseError::new(
+            tokens,
+            &tokens[valid.len()..],
+            ParseErrorType::InvalidToken,
+        )),
+        None => Ok(()),
+    }
+}
+
+// TODO remove this once everything is based on &[Token]
 pub struct VecTokens<'a> {
     tokens: Vec<Token<'a>>,
     pub line: usize,
@@ -414,7 +377,7 @@ pub fn valid_variable_name(txt: &str) -> bool {
 fn variable<'a>(i: &'a str) -> TokenRes<'a> {
     let mut get_var = recognize(pair(
         alt((alpha1, tag("_"))),
-        many0(pair(opt(tag("-")), many1(alt((alphanumeric1, tag("_")))))),
+        many0(alt((alphanumeric1, tag("_")))),
     ));
     let (mut rest, mut var) = get_var(i)?;
     let ty = match TaskKeyword::from_str(var) {
@@ -478,13 +441,13 @@ fn float<'a>(i: &'a str) -> TokenRes<'a> {
         alt((
             recognize(tuple((
                 integer,
-                preceded(char('.'), cut(digit1)),
+                preceded(char('.'), digit1),
                 opt(tuple((one_of("eE"), integer))),
             ))),
             // even if there is no decimal 1e10 is float.
             recognize(tuple((
                 integer,
-                opt(preceded(char('.'), cut(digit1))),
+                opt(preceded(char('.'), digit1)),
                 tuple((one_of("eE"), integer)),
             ))),
         )),

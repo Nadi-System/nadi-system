@@ -1,4 +1,6 @@
+use crate::parser::tokenizer::{TaskToken, Token};
 use colored::Colorize;
+use nom::error::ErrorKind;
 
 pub trait NadiError: std::error::Error {
     fn user_msg(&self, filename: Option<&str>) -> String {
@@ -16,6 +18,37 @@ pub struct ParseError {
     pub line: usize,
     pub col: usize,
     pub linestr: String,
+}
+
+impl ParseError {
+    pub fn new(tokens: &[Token<'_>], rest: &[Token<'_>], ty: ParseErrorType) -> Self {
+        let tokens = &tokens[..(tokens.len() - rest.len())];
+        let mut line = 1;
+        let mut lstart = 0;
+        for (i, t) in tokens.iter().enumerate() {
+            if t.ty == TaskToken::NewLine {
+                line += 1;
+                lstart = i + 1;
+            }
+        }
+        let mut curr_line: Vec<_> = tokens[lstart..].iter().collect();
+        let col = curr_line.iter().map(|t| t.content.len()).sum::<usize>() + 1;
+        for t in rest {
+            if t.ty == TaskToken::NewLine {
+                break;
+            } else {
+                curr_line.push(t);
+            }
+        }
+        let mut linestr = String::new();
+        curr_line.iter().for_each(|t| linestr.push_str(t.content));
+        Self {
+            ty,
+            line,
+            col,
+            linestr,
+        }
+    }
 }
 
 impl std::error::Error for ParseError {}
@@ -74,6 +107,7 @@ pub enum ParseErrorType {
     KeywordArgBeforePositional,
     KeywordNotVariable,
     SyntaxError,
+    ExpectedPath,
     InvalidToken,
     TokenMismatch,
 }
@@ -93,6 +127,7 @@ impl ParseErrorType {
             Self::KeywordArgBeforePositional => "Positional Argument cannot come after keyword",
             Self::KeywordNotVariable => "Keywords cannot be used as variables",
             Self::SyntaxError => "Invalid Syntax",
+            Self::ExpectedPath => "Path symbol not found",
             Self::InvalidToken => "Unsupported Token",
             Self::TokenMismatch => "Unexpected Token",
         }
@@ -102,27 +137,27 @@ impl ParseErrorType {
 
 #[derive(Debug)]
 pub struct MatchErr<'a, 'b> {
-    ty: ParseErrorType,
-    internal: nom::error::Error<&'a [Token<'b>]>,
+    pub ty: ParseErrorType,
+    pub internal: nom::error::Error<&'a [Token<'b>]>,
 }
 
 impl<'a, 'b> MatchErr<'a, 'b> {
-    fn new(inp: &'a [Token<'b>]) -> Self {
+    pub fn new(inp: &'a [Token<'b>]) -> Self {
         MatchErr {
             ty: ParseErrorType::SyntaxError,
             internal: nom::error::Error::new(inp, ErrorKind::Tag),
         }
     }
 
-    fn from_nom(internal: nom::error::Error<&'a [Token<'b>]>) -> Self {
+    pub fn from_nom(internal: nom::error::Error<&'a [Token<'b>]>) -> Self {
         MatchErr {
             ty: ParseErrorType::SyntaxError,
             internal,
         }
     }
 
-    fn ty(mut self, ty: ParseErrorType) -> Self {
-        self.ty = ty;
+    pub fn ty(mut self, ty: &ParseErrorType) -> Self {
+        self.ty = ty.clone();
         self
     }
 }
