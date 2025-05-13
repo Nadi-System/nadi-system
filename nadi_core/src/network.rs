@@ -185,47 +185,11 @@ impl Network {
             Propagation::Inverse | Propagation::InputsFirst => {
                 Ok(self.nodes_rev().cloned().collect())
             }
-            // // since it is already ordered, we don't need to do this
-            // Propagation::InputsFirst => {
-            //     let mut all_nodes: Vec<&Node> = self.nodes().collect();
-            //     let mut nodes = vec![];
-            //     fn insert_node(n: &Node, nodes: &mut Vec<Node>) {
-            //         let ni = n
-            //             .try_lock_for(RDuration::from_secs(1))
-            //             .expect("Lock failed for node, maybe branched network");
-            //         if ni.inputs().is_empty() {
-            //             nodes.push(n.clone());
-            //         } else {
-            //             for i in ni.inputs() {
-            //                 insert_node(i, nodes);
-            //             }
-            //             nodes.push(n.clone());
-            //         }
-            //     }
-            //     insert_node(self.outlet.as_ref().unwrap(), &mut nodes);
-            //     nodes
-            // }
-            Propagation::Conditional(c) => Ok(self
-                .nodes()
-                .filter(|n| n.lock().check(c))
-                .map(|n| n.clone())
-                .collect()),
-            Propagation::ConditionalStrict(c) => Ok(self
-                .nodes()
-                .map(|n| Ok((n.lock().check_strict(c)?, n)))
-                .collect::<Result<Vec<(bool, &Node)>, String>>()?
-                .into_iter()
-                .filter(|(c, _)| *c)
-                .map(|(_, n)| n.clone())
-                .collect()),
-            Propagation::ConditionalSuperStrict(c) => Ok(self
-                .nodes()
-                .map(|n| Ok((n.lock().check_super_strict(c)?, n)))
-                .collect::<Result<Vec<(bool, &Node)>, String>>()?
-                .into_iter()
-                .filter(|(c, _)| *c)
-                .map(|(_, n)| n.clone())
-                .collect()),
+            Propagation::Conditional(c) => todo!(), // Ok(self
+            // .nodes()
+            // .filter(|n| n.lock().check(c))
+            // .map(|n| n.clone())
+            // .collect()),
             Propagation::List(n) => n
                 .iter()
                 .map(|n| {

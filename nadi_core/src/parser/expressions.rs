@@ -1,10 +1,11 @@
 use crate::attrs::{AttrMap, Attribute, HasAttributes};
+use crate::expressions::{BiOperator, Expression, FunctionCall, InputVar, UniOperator, VarType};
 use crate::parser::{
     components::*,
     errors::{MatchErr, ParseError, ParseErrorType},
     tokenizer::{check_tokens, TaskToken, Token, VecTokens},
 };
-use crate::tasks::{TaskKeyword, VarType};
+use crate::tasks::TaskKeyword;
 use abi_stable::std_types::{map::REntry, RString};
 use nadi_core::network::StrPath;
 use nom::{
@@ -14,16 +15,10 @@ use nom::{
     sequence::{delimited, pair, separated_pair, terminated, tuple},
     Finish,
 };
-use std::collections::HashMap;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum Expression {
-    Literal(Attribute),
-    Variable(InputVar),
-    Function(FunctionCall),
-    UniOp(UniOperator, Box<Expression>),
-    BiOp(BiOperator, Box<Expression>, Box<Expression>),
-}
+// pub fn task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, _> {
+//     alt(())(inp)
+// }
 
 pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
     alt((
@@ -42,12 +37,6 @@ pub fn expression_group<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expres
     )(inp)
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum UniOperator {
-    Not,
-    Negative,
-}
-
 pub fn uni_operator_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
     let (rest, (op, expr)) = pair(
         alt((
@@ -57,22 +46,6 @@ pub fn uni_operator_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expre
         maybe_newline(alt((expression_group, expression))),
     )(inp)?;
     Ok((rest, Expression::UniOp(op, Box::new(expr))))
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum BiOperator {
-    Add,
-    Substract,
-    Multiply,
-    Divide,
-    Modulus,
-    Equal,
-    LessThan,
-    GreaterThan,
-    LessThanEqual,
-    GreaterThanEqual,
-    And,
-    Or,
 }
 
 pub fn bi_operator<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, BiOperator> {
@@ -148,43 +121,6 @@ pub fn input_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, InputVar
     ))(inp)
 }
 
-#[derive(Clone, PartialEq, Debug)]
-pub struct InputVar {
-    pub ty: Option<VarType>,
-    pub names: Vec<String>,
-    pub check: bool,
-}
-
-impl InputVar {
-    pub fn new(ty: Option<VarType>, names: Vec<String>, check: bool) -> Self {
-        Self { ty, names, check }
-    }
-}
-
-#[derive(Clone, PartialEq, Debug)]
-pub struct FunctionCall {
-    pub name: String,
-    pub args: Vec<Expression>,
-    pub kwargs: HashMap<String, Expression>,
-    pub silent: bool,
-}
-
-impl FunctionCall {
-    pub fn new(
-        name: String,
-        args: Vec<Expression>,
-        kwargs: HashMap<String, Expression>,
-        silent: bool,
-    ) -> Self {
-        Self {
-            name,
-            args,
-            kwargs,
-            silent,
-        }
-    }
-}
-
 pub fn kw_arg<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, (String, Expression)> {
     separated_pair(
         // no dot variable in kwargs pair
@@ -203,7 +139,7 @@ pub fn pos_args<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<Expression
 }
 
 pub fn function_call<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionCall> {
-    let (rest, (name, (args, kwargs), silent)) = tuple((
+    let (rest, (name, (args, kwargs))) = tuple((
         function,
         alt((
             value(
@@ -232,16 +168,10 @@ pub fn function_call<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionC
                 maybe_newline(paren_end),
             ),
         )),
-        opt(question),
     ))(inp)?;
     Ok((
         rest,
-        FunctionCall::new(
-            name.content.to_string(),
-            args,
-            kwargs.into_iter().collect(),
-            silent.is_some(),
-        ),
+        FunctionCall::new(name.content.to_string(), args, kwargs.into_iter().collect()),
     ))
 }
 

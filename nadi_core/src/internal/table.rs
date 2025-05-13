@@ -18,7 +18,7 @@ mod table {
         net: &mut Network,
         path: &Path,
         #[args] fields: &[Attribute],
-        #[prop] prop: &Propagation,
+        #[prop] prop: Vec<Node>,
     ) -> anyhow::Result<()> {
         let mut file = File::create(path)?;
         let fields = fields
@@ -28,7 +28,7 @@ mod table {
             .collect::<Result<Vec<String>, String>>()
             .map_err(anyhow::Error::msg)?;
         writeln!(file, "{}", fields.join(","))?;
-        for node in net.nodes_propagation(prop).map_err(anyhow::Error::msg)? {
+        for node in &prop {
             let values = fields
                 .iter()
                 .map(|a| {

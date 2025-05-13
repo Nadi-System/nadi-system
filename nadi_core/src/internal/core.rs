@@ -11,8 +11,8 @@ mod core {
     ///
     /// If propagation is present, only counts those nodes
     #[network_func]
-    fn count(net: &mut Network, #[prop] prop: &Propagation) -> Result<usize, String> {
-        net.nodes_propagation(prop).map(|v| v.len())
+    fn count(net: &mut Network, #[prop] prop: Vec<Node>) -> usize {
+        prop.len()
     }
 
     /// Count the number of input nodes in the node

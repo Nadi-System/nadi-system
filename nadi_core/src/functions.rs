@@ -1,5 +1,6 @@
 #![allow(clippy::module_inception)]
 use crate::attrs::{AttrMap, AttrSlice};
+use crate::expressions::Expression;
 use crate::network::StrPath;
 use crate::plugins::{load_library_safe, NadiPlugin};
 use crate::prelude::*;
@@ -675,7 +676,6 @@ impl NadiFunctions {
 pub struct FunctionCtx {
     pub args: RVec<Attribute>,
     pub kwargs: AttrMap,
-    pub propagation: Propagation,
 }
 
 impl FunctionCtx {
@@ -685,15 +685,12 @@ impl FunctionCtx {
             .into_iter()
             .map(|(k, v)| (RString::from(k), v))
             .collect();
-        Self {
-            args,
-            kwargs,
-            propagation: Propagation::default(),
-        }
+        Self { args, kwargs }
     }
 
-    pub fn propagation(&self) -> &Propagation {
-        &self.propagation
+    #[deprecated(since = "0.7.0", note = "do not use this")]
+    pub fn propagation(&self) -> Vec<Node> {
+        vec![]
     }
 
     pub fn args(&self) -> AttrSlice {
@@ -745,202 +742,14 @@ impl FunctionCtx {
     }
 }
 
-// TODO maybe add attr = "smth"; attr > 1.0 etc as conditions
-// Maybe we can't because attribute name can be string or variable for now
-#[repr(C)]
-#[derive(StableAbi, Debug, Clone, PartialEq)]
-pub enum Condition {
-    Variable(RString),
-    Literal(Attribute),
-    Eq(RString, RBox<Condition>),
-    Gt(RString, RBox<Condition>),
-    Lt(RString, RBox<Condition>),
-    Not(RBox<Condition>),
-    And(RBox<Condition>, RBox<Condition>),
-    Or(RBox<Condition>, RBox<Condition>),
-}
-
-fn partial_ord(
-    node: &NodeInner,
-    var: &RString,
-    cond: &Condition,
-    strict: bool,
-) -> Result<Option<std::cmp::Ordering>, String> {
-    let a = match node.attr_dot(var)? {
-        Some(v) => v,
-        None => return Ok(None),
-    };
-    let b = match cond {
-        Condition::Variable(v) => match node.attr_dot(v)? {
-            Some(v) => v,
-            None => return Ok(None),
-        },
-        Condition::Literal(v) => v,
-        _ => return Err(String::from("Comparision of conditions not supported")),
-    };
-    if strict {
-        let (x, y) = (a.type_name(), b.type_name());
-        if x != y {
-            return Err(format!("Cannot compare {x} with {y}"));
-        }
-    }
-    Ok(a.partial_cmp(b))
-}
-
-impl NodeInner {
-    /// check if the condition is true
-    pub fn check(&self, cond: &Condition) -> bool {
-        match cond {
-            Condition::Eq(var, val) => match partial_ord(self, var, val, false) {
-                Ok(Some(x)) => x.is_eq(),
-                _ => false,
-            },
-            Condition::Gt(var, val) => match partial_ord(self, var, val, false) {
-                Ok(Some(x)) => x.is_gt(),
-                _ => false,
-            },
-            Condition::Lt(var, val) => match partial_ord(self, var, val, false) {
-                Ok(Some(x)) => x.is_lt(),
-                _ => false,
-            },
-            Condition::Variable(v) => self.try_attr_relaxed(v.as_str()).unwrap_or(false),
-            Condition::Literal(v) => bool::from_attr_relaxed(v).unwrap_or(false),
-            Condition::Not(v) => !self.check(v),
-            Condition::And(a, b) => self.check(a) & self.check(b),
-            Condition::Or(a, b) => self.check(a) | self.check(b),
-        }
-    }
-    /// check if condition is true only if attributes exist
-    pub fn check_strict(&self, cond: &Condition) -> Result<bool, String> {
-        match cond {
-            Condition::Eq(var, val) => match partial_ord(self, var, val, false)? {
-                Some(x) => Ok(x.is_eq()),
-                _ => Err(format!("Attrbute {var} doesn't exist")),
-            },
-            Condition::Gt(var, val) => match partial_ord(self, var, val, false)? {
-                Some(x) => Ok(x.is_gt()),
-                _ => Err(format!("Attrbute {var} doesn't exist")),
-            },
-            Condition::Lt(var, val) => match partial_ord(self, var, val, false)? {
-                Some(x) => Ok(x.is_lt()),
-                _ => Err(format!("Attrbute {var} doesn't exist")),
-            },
-            Condition::Variable(v) => self.try_attr_relaxed(v.as_str()),
-            Condition::Literal(v) => bool::try_from_attr_relaxed(v),
-            Condition::Not(v) => self.check_strict(v).map(|b| !b),
-            Condition::And(a, b) => {
-                let a = self.check_strict(a)?;
-                let b = self.check_strict(b)?;
-                Ok(a & b)
-            }
-            Condition::Or(a, b) => {
-                let a = self.check_strict(a)?;
-                let b = self.check_strict(b)?;
-                Ok(a | b)
-            }
-        }
-    }
-    /// check if condition is true only if attributes are bool
-    pub fn check_super_strict(&self, cond: &Condition) -> Result<bool, String> {
-        match cond {
-            Condition::Eq(var, val) => match partial_ord(self, var, val, true)? {
-                Some(x) => Ok(x.is_eq()),
-                _ => Err(format!("Attrbute {var} doesn't exist")),
-            },
-            Condition::Gt(var, val) => match partial_ord(self, var, val, true)? {
-                Some(x) => Ok(x.is_gt()),
-                _ => Err(format!("Attrbute {var} doesn't exist")),
-            },
-            Condition::Lt(var, val) => match partial_ord(self, var, val, true)? {
-                Some(x) => Ok(x.is_lt()),
-                _ => Err(format!("Attrbute {var} doesn't exist")),
-            },
-            Condition::Variable(v) => self.try_attr(v.as_str()),
-            Condition::Literal(v) => bool::try_from_attr(v),
-            Condition::Not(v) => self.check_super_strict(v).map(|b| !b),
-            Condition::And(a, b) => {
-                let a = self.check_super_strict(a)?;
-                let b = self.check_super_strict(b)?;
-                Ok(a && b)
-            }
-            Condition::Or(a, b) => {
-                let a = self.check_super_strict(a)?;
-                let b = self.check_super_strict(b)?;
-                Ok(a || b)
-            }
-        }
-    }
-}
-
-impl Condition {
-    fn maybe_paren(&self) -> String {
-        match self {
-            Condition::Variable(_) => self.to_string(),
-            _ => format!("({})", self.to_string()),
-        }
-    }
-
-    fn maybe_paren_colored(&self) -> String {
-        match self {
-            Condition::Variable(_) => self.to_colored_string(),
-            _ => format!("{}{}{}", "(".red(), self.to_colored_string(), ")".red()),
-        }
-    }
-
-    pub fn to_colored_string(&self) -> String {
-        match self {
-            Condition::Variable(v) => v.to_string(),
-            Condition::Literal(v) => v.to_colored_string(),
-            Condition::Eq(var, val) => format!("{} == {}", var.green(), val.to_colored_string()),
-            Condition::Gt(var, val) => format!("{} > {}", var.green(), val.to_colored_string()),
-            Condition::Lt(var, val) => format!("{} < {}", var.green(), val.to_colored_string()),
-            Condition::Not(v) => format!("{}{}", "!".yellow(), v.maybe_paren_colored()),
-            Condition::And(a, b) => {
-                format!(
-                    "{} {} {}",
-                    a.maybe_paren_colored(),
-                    "&".yellow(),
-                    b.maybe_paren_colored()
-                )
-            }
-            Condition::Or(a, b) => {
-                format!(
-                    "{} {} {}",
-                    a.maybe_paren_colored(),
-                    "|".yellow(),
-                    b.maybe_paren_colored()
-                )
-            }
-        }
-    }
-}
-
-impl ToString for Condition {
-    fn to_string(&self) -> String {
-        match self {
-            Condition::Variable(v) => v.to_string(),
-            Condition::Literal(v) => v.to_string(),
-            Condition::Eq(var, val) => format!("{} = {}", var, val.to_string()),
-            Condition::Gt(var, val) => format!("{} > {}", var, val.to_string()),
-            Condition::Lt(var, val) => format!("{} < {}", var, val.to_string()),
-            Condition::Not(v) => format!("!{}", v.maybe_paren()),
-            Condition::And(a, b) => format!("{} & {}", a.maybe_paren(), b.maybe_paren()),
-            Condition::Or(a, b) => format!("{} | {}", a.maybe_paren(), b.maybe_paren()),
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(StableAbi, Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub enum Propagation {
     #[default]
     Sequential,
     Inverse,
     InputsFirst,
     OutputFirst,
-    Conditional(Condition),
-    ConditionalStrict(Condition),
-    ConditionalSuperStrict(Condition),
+    Conditional(Expression),
     List(RVec<RString>),
     Path(StrPath),
 }
@@ -952,9 +761,7 @@ impl ToString for Propagation {
             Self::Inverse => "<inverse>".to_string(),
             Self::InputsFirst => "<inputsfirst>".to_string(),
             Self::OutputFirst => "<outputfirst>".to_string(),
-            Self::Conditional(c) => format!("({})", c.to_string()),
-            Self::ConditionalStrict(c) => format!("(={})", c.to_string()),
-            Self::ConditionalSuperStrict(c) => format!("(=={})", c.to_string()),
+            Self::Conditional(expr) => format!("({})", expr.to_string()),
             Self::List(v) => format!(
                 "[{}]",
                 v.iter()
@@ -963,28 +770,6 @@ impl ToString for Propagation {
                     .join(", ")
             ),
             Self::Path(p) => format!("[{}]", p.to_string()),
-        }
-    }
-}
-
-impl Propagation {
-    pub fn to_colored_string(&self) -> String {
-        match self {
-            Self::Sequential => format!("<{}>", "sequential".red()),
-            Self::Inverse => format!("<{}>", "inverse".red()),
-            Self::InputsFirst => format!("<{}>", "inputsfirst".red()),
-            Self::OutputFirst => format!("<{}>", "outputfirst".red()),
-            Self::Conditional(c) => format!("({})", c.to_colored_string()),
-            Self::ConditionalStrict(c) => format!("(={})", c.to_colored_string()),
-            Self::ConditionalSuperStrict(c) => format!("(=={})", c.to_colored_string()),
-            Self::List(v) => format!(
-                "[{}]",
-                v.iter()
-                    .map(|a| a.as_str().green().to_string())
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            ),
-            Self::Path(p) => format!("[{}]", p.to_colored_string()),
         }
     }
 }

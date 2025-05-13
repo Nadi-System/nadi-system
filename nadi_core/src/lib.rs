@@ -1,4 +1,5 @@
 pub mod attrs;
+pub mod expressions;
 pub mod functions;
 pub mod graphics;
 pub mod network;

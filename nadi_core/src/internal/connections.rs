@@ -30,16 +30,16 @@ mod connections {
         Ok(())
     }
 
-    /// Take a subset of network by only including the selected nodes
-    #[network_func(keep = true)]
-    fn subset(
-        net: &mut Network,
-        #[prop] prop: &Propagation,
-        /// Keep the selected nodes (false = removes the selected)
-        keep: bool,
-    ) -> Result<(), String> {
-        net.subset(prop, keep)
-    }
+    // /// Take a subset of network by only including the selected nodes
+    // #[network_func(keep = true)]
+    // fn subset(
+    //     net: &mut Network,
+    //     #[prop] prop: Vec<Node>,
+    //     /// Keep the selected nodes (false = removes the selected)
+    //     keep: bool,
+    // ) -> Result<(), String> {
+    //     net.subset(prop, keep)
+    // }
 
     /// Save the network into the given file
     ///
