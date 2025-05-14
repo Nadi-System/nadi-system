@@ -416,6 +416,33 @@ impl std::ops::Rem for Attribute {
 }
 
 impl Attribute {
+    pub fn to_toml_string(&self) -> String {
+        match self {
+            Self::Bool(v) => format!("{v:?}"),
+            Self::String(v) => format!("{v:?}"),
+            Self::Integer(v) => format!("{v:?}"),
+            Self::Float(v) => format!("{v:?}"),
+            Self::Date(v) => v.to_string(),
+            Self::Time(v) => v.to_string(),
+            Self::DateTime(v) => v.to_string(),
+            Self::Array(v) => format!(
+                "[{}]",
+                v.iter()
+                    .map(|a| a.to_toml_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            Self::Table(v) => format!(
+                "{{{}}}",
+                v.iter()
+                    .map(|Tuple2(k, v)| format!("{}={}", k.to_string(), v.to_toml_string()))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            )
+            .to_string(),
+        }
+    }
+
     pub fn to_colored_string(&self) -> String {
         match self {
             Self::Bool(v) => format!("{v:?}").magenta().to_string(),

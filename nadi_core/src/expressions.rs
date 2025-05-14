@@ -81,7 +81,7 @@ pub enum Expression {
 impl ToString for Expression {
     fn to_string(&self) -> String {
         match self {
-            Self::Literal(a) => a.to_string(),
+            Self::Literal(a) => a.to_toml_string(),
             Self::Variable(v) => v.to_string(),
             Self::Function(fc) => fc.to_string(),
             Self::UniOp(op, expr) => {

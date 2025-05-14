@@ -175,7 +175,22 @@ pub fn dash_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, String> {
 }
 
 pub fn dot_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<String>> {
-    separated_list1(dot, alt((dash_variable, string_val)))(inp)
+    alt((
+        // to avoid it taking literal string as variable unless followed by a dot
+        map(
+            separated_pair(
+                alt((dash_variable, string_val)),
+                dot,
+                separated_list1(dot, alt((dash_variable, string_val))),
+            ),
+            |(v1, mut v2)| {
+                let mut v = vec![v1];
+                v.append(&mut v2);
+                v
+            },
+        ),
+        map(dash_variable, |v| vec![v]),
+    ))(inp)
 }
 
 pub fn attr_bool<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
@@ -261,7 +276,7 @@ pub fn key_val_dot<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, (Vec<String
 pub fn key_val<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, (String, Attribute)> {
     separated_pair(
         // no dot variable in keyval pair
-        map(variable, |t| t.content.to_string()),
+        alt((map(variable, |t| t.content.to_string()), string_val)),
         maybe_space(assignment),
         maybe_space(attribute),
     )(inp)
@@ -391,7 +406,7 @@ mod tests {
     pub fn variable_test(#[case] txt: &str) {
         let tokens = get_tokens(txt);
         let (_, tk) = variable(&tokens).unwrap();
-        assert!(tk.content == txt)
+        assert_eq!(tk.content, txt)
     }
 
     #[rstest]
@@ -405,7 +420,7 @@ mod tests {
         let tokens = get_tokens(txt);
         let (_, tk) = dot_variable(&tokens).unwrap();
         let vals: Vec<String> = vals.into_iter().map(String::from).collect();
-        assert!(tk == vals)
+        assert_eq!(tk, vals)
     }
 
     #[rstest]
@@ -421,8 +436,8 @@ mod tests {
         let tokens = get_tokens(txt);
         let (_, tk) = key_val_dot(&tokens).unwrap();
         let key: Vec<String> = key.into_iter().map(String::from).collect();
-        assert!(key == tk.0);
-        assert!(val == tk.1);
+        assert_eq!(key, tk.0);
+        assert_eq!(val, tk.1);
     }
 
     #[rstest]
@@ -453,5 +468,25 @@ mod tests {
     pub fn kw_exit_test(#[case] txt: &str) {
         let tokens = get_tokens(txt);
         kw_exit(&tokens).unwrap();
+    }
+
+    #[rstest]
+    #[case("1232")]
+    #[case("12.32")]
+    #[case("\"12.32\"")]
+    #[case("true")]
+    #[case("false")]
+    #[should_panic]
+    #[case("null")]
+    #[case("1223-12-23")]
+    #[case("\"some complicated string ain't problem?\"")]
+    #[case("1223-12-23 23:00:12")]
+    #[should_panic] // invalid month
+    #[case("1223-24-23")]
+    pub fn toml_test(#[case] txt: &str) {
+        let tokens = get_tokens(txt);
+        let (_, tk) = attribute(&tokens).unwrap();
+        let val = tk.to_toml_string();
+        assert_eq!(txt, val)
     }
 }

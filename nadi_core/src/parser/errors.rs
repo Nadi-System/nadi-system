@@ -100,7 +100,7 @@ impl NadiError for ParseError {
                 "  {: >2$} {}",
                 "^".yellow(),
                 self.ty.message().yellow(),
-                self.col + 1
+                self.col
             ));
         }
         msg

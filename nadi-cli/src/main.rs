@@ -1,4 +1,5 @@
 use clap::{Parser, ValueEnum};
+use nadi_core::parser::tokenizer::TaskToken;
 use nadi_core::parser::NadiError;
 use nadi_core::{functions::NadiFunctions, network::Network};
 use std::{
@@ -113,14 +114,26 @@ fn main() -> anyhow::Result<()> {
 fn show_tasks(filename: &Path) {
     let txt = std::fs::read_to_string(filename).unwrap();
     let tokens = nadi_core::parser::tokenizer::get_tokens(&txt);
+    let mut line = 1;
+    print!("{line:3}: ");
     for tok in &tokens {
-        tok.colored_print();
+        match tok.ty {
+            TaskToken::NewLine => {
+                line += 1;
+                print!("\n{line:3}: ");
+            }
+            _ => tok.colored_print(),
+        }
     }
     println!("\n----Parsing Tasks----");
     match nadi_core::parser::tasks::parse(tokens) {
         Ok(tasks) => {
             for task in tasks {
-                println!("{}", task.to_colored_string());
+                // println!("{task:?}");
+                for tk in nadi_core::parser::tokenizer::get_tokens(&task.to_string()) {
+                    tk.colored_print();
+                }
+                println!();
             }
         }
         Err(e) => println!("{}", e.user_msg(Some(&filename.to_string_lossy()))),
@@ -135,7 +148,7 @@ fn execute_tasks(txt: &str, args: &CliArgs) -> anyhow::Result<()> {
     };
     if args.print_tasks {
         for fc in &tasks {
-            println!("{}", fc.to_colored_string());
+            println!("{}", fc.to_string());
         }
     }
 
