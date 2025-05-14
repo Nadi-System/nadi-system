@@ -1,7 +1,5 @@
 use crate::expressions::Expression;
-use crate::functions::{
-    FuncArg, FuncArgType, FunctionRet, NadiFunctions,
-};
+use crate::functions::{FuncArg, FuncArgType, FunctionRet, NadiFunctions};
 use crate::prelude::*;
 use colored::Colorize;
 pub struct TaskContext {
@@ -418,6 +416,17 @@ pub enum FunctionType {
     Network,
 }
 
+impl ToString for FunctionType {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Env => "env",
+            Self::Node => "node",
+            Self::Network => "network",
+        }
+        .to_string()
+    }
+}
+
 impl FunctionType {
     pub fn from_keyword(kw: &TaskKeyword) -> Option<Self> {
         match kw {
@@ -432,18 +441,76 @@ impl FunctionType {
 #[derive(Clone, PartialEq, Debug)]
 pub struct EvalTask {
     pub ty: FunctionType,
+    pub propagation: Option<Propagation>,
     pub attribute: Vec<String>,
     pub input: Expression,
     pub silent: bool,
 }
 
+impl ToString for EvalTask {
+    fn to_string(&self) -> String {
+        let outattr = if self.attribute.is_empty() {
+            "".to_string()
+        } else {
+            format!(".{} =", self.attribute.join("."))
+        };
+        format!(
+            "{}{} {}{}",
+            self.ty.to_string(),
+            outattr,
+            self.input.to_string(),
+            self.silent.then(|| ";").unwrap_or_default()
+        )
+    }
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct AttrTask {
+    pub ty: FunctionType,
+    pub propagation: Option<Propagation>,
+    pub attribute: Vec<String>,
+}
+
+impl ToString for AttrTask {
+    fn to_string(&self) -> String {
+        let outattr = if self.attribute.is_empty() {
+            "".to_string()
+        } else {
+            format!(".{} =", self.attribute.join("."))
+        };
+        format!(
+            "{}{}{}",
+            self.ty.to_string(),
+            self.propagation
+                .as_ref()
+                .map(|p| p.to_string())
+                .unwrap_or_default(),
+            outattr
+        )
+    }
+}
+
 #[derive(Clone, PartialEq, Debug)]
 pub enum Task {
     Eval(EvalTask),
+    Attr(AttrTask),
     Help(Option<TaskKeyword>, Option<String>),
     Exit,
 }
 
+impl ToString for Task {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Eval(et) => et.to_string(),
+            Self::Attr(at) => at.to_string(),
+            Self::Help(None, None) => "help".to_string(),
+            Self::Help(Some(kw), None) => format!("help {}", kw.to_string()),
+            Self::Help(None, Some(s)) => format!("help {s}"),
+            Self::Help(Some(kw), Some(s)) => format!("help {} {s}", kw.to_string()),
+            Self::Exit => "exit".to_string(),
+        }
+    }
+}
 // impl Task {
 //     pub fn to_colored_string(&self) -> String {
 //         if let Some(ref a) = self.attribute {

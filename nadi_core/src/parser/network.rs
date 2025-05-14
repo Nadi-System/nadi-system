@@ -34,16 +34,17 @@ pub fn str_path<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, StrPath> {
 }
 
 pub fn network<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<StrPath>> {
-    traling_newlines(newline_separated(str_path))(inp)
+    trailing_newlines(newline_separated(str_path))(inp)
 }
 
-pub fn parse(tokens: Vec<Token>) -> Result<Vec<StrPath>, ParseError> {
-    check_tokens(&tokens)?;
-    match network(&tokens).finish() {
+pub fn parse(tokens: &[Token]) -> Result<Vec<StrPath>, ParseError> {
+    check_tokens(tokens)?;
+    match network(tokens).finish() {
         Ok((rest, paths)) => {
             if rest.is_empty() {
                 Ok(paths)
             } else {
+                println!("{tokens:?}\n{rest:?}");
                 let err = maybe_newline(str_path)(rest) // need this to fail
                     .finish()
                     .err()
@@ -82,6 +83,7 @@ mod tests {
     #[case("12.23->name", ("12.23", "name"))]
     #[case("12 -> \"12\"", ("12", "12"))]
     #[case("012-> xyz_is_12", ("012", "xyz_is_12"))]
+    #[case("node_name -> name", ("node_name", "name"))]
     #[should_panic]
     #[case("0_node_name -> name", ("0_node_name", "name"))]
     #[should_panic]
@@ -95,12 +97,30 @@ mod tests {
     }
 
     #[rstest]
+    #[case("12.23->name", vec![("12.23", "name")])]
+    #[case("12 -> \"12\"", vec![("12", "12")])]
+    #[case("012-> xyz_is_12", vec![("012", "xyz_is_12")])]
+    #[case("valid -> edge \nnode_name -> another", vec![("valid", "edge"), ("node_name", "another")])]
+    #[case("# test this \nnode_name -> another", vec![("node_name", "another")])]
+    pub fn parse_test(#[case] txt: &str, #[case] paths: Vec<(&str, &str)>) {
+        let tokens = get_tokens(txt);
+        let edges = parse(&tokens).unwrap();
+        let paths2: Vec<_> = edges
+            .iter()
+            .map(|p| (p.start.as_str(), p.end.as_str()))
+            .collect();
+        assert_eq!(paths2, paths);
+    }
+
+    #[rstest]
     #[case("0_node_name -> name", 1, 3)]
     #[case("valid -> edge \nnode-name -> another", 2, 1)]
     #[case("# test this \nnode-name -> another", 2, 1)]
+    #[should_panic]
+    #[case("012-> xyz_is_12", 1, 1)]
     pub fn parse_error_test(#[case] txt: &str, #[case] line: usize, #[case] col: usize) {
         let tokens = get_tokens(txt);
-        let err = parse(tokens).err().unwrap();
+        let err = parse(&tokens).err().unwrap();
         assert_eq!(err.line, line);
         assert_eq!(err.col, col);
     }

@@ -110,7 +110,7 @@ impl Network {
         let content =
             std::fs::read_to_string(filename).context("Error while accessing the network file")?;
         let tokens = tokenizer::get_tokens(&content);
-        let paths = network::parse(tokens)?;
+        let paths = network::parse(&tokens)?;
         for path in paths {
             if !network.nodes_map.contains_key(&path.start) {
                 network.insert_node_by_name(&path.start);

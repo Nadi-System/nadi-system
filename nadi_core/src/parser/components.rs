@@ -8,7 +8,7 @@ use nom::{
     branch::alt,
     combinator::map,
     error::ErrorKind,
-    multi::{many0, separated_list0, separated_list1},
+    multi::{many0, many1, separated_list0, separated_list1},
     sequence::{delimited, preceded, separated_pair, terminated},
     IResult,
 };
@@ -100,6 +100,10 @@ one_token!(bracket_end, TaskToken::BracketEnd);
 one_token!(assignment, TaskToken::Assignment);
 one_token!(invalid, TaskToken::Invalid(_));
 
+one_token!(kw_help, TaskToken::Keyword(TaskKeyword::Help));
+one_token!(kw_end, TaskToken::Keyword(TaskKeyword::End));
+one_token!(kw_exit, TaskToken::Keyword(TaskKeyword::Exit));
+
 /// Matches the next one that might have spaces before it
 pub fn err_ctx<'a, 'b: 'a, O, F>(
     ty: &'static ParseErrorType,
@@ -124,6 +128,14 @@ where
     preceded(many0(space), f)
 }
 
+/// Matches the next one that might have spaces before it
+pub fn after_space<'a, 'b: 'a, O, F>(f: F) -> impl FnMut(&'a [Token<'b>]) -> MatchRes<'a, 'b, O>
+where
+    F: nom::Parser<&'a [Token<'b>], O, MatchErr<'a, 'b>>,
+{
+    preceded(many1(space), f)
+}
+
 /// Matches the next one that might have spaces, newlines or comments before it
 pub fn maybe_newline<'a, 'b: 'a, O, F>(f: F) -> impl FnMut(&'a [Token<'b>]) -> MatchRes<'a, 'b, O>
 where
@@ -139,11 +151,14 @@ pub fn newline_separated<'a, 'b: 'a, O, F>(
 where
     F: nom::Parser<&'a [Token<'b>], O, MatchErr<'a, 'b>>,
 {
-    separated_list0(many0(maybe_space(alt((newline, comment)))), maybe_space(f))
+    maybe_newline(separated_list0(
+        many1(maybe_space(alt((newline, comment)))),
+        maybe_space(f),
+    ))
 }
 
 /// Matches the next one that might have spaces, newlines or comments before it
-pub fn traling_newlines<'a, 'b: 'a, O, F>(
+pub fn trailing_newlines<'a, 'b: 'a, O, F>(
     f: F,
 ) -> impl FnMut(&'a [Token<'b>]) -> MatchRes<'a, 'b, O>
 where
@@ -307,6 +322,54 @@ mod tests {
     use rstest::rstest;
 
     #[rstest]
+    #[case("12.23", "12.23")]
+    #[case(" 12.23", "12.23")]
+    #[case("  12.23", "12.23")]
+    #[case("         12.23", "12.23")]
+    pub fn maybe_space_test(#[case] txt: &str, #[case] val: &str) {
+        let tokens = get_tokens(txt);
+        let (rest, tk) = maybe_space(float)(&tokens).unwrap();
+        assert_eq!(rest, vec![]);
+        assert_eq!(tk.content, val);
+    }
+
+    #[rstest]
+    #[should_panic]
+    #[case("12.23", "12.23")]
+    #[case(" 12.23", "12.23")]
+    #[case("  12.23", "12.23")]
+    #[case("         12.23", "12.23")]
+    pub fn after_space_test(#[case] txt: &str, #[case] val: &str) {
+        let tokens = get_tokens(txt);
+        let (rest, tk) = after_space(float)(&tokens).unwrap();
+        assert_eq!(rest, vec![]);
+        assert_eq!(tk.content, val);
+    }
+
+    #[rstest]
+    #[case("12.23", "12.23")]
+    #[case(" 12.23", "12.23")]
+    #[case("\n  12.23", "12.23")]
+    #[case("  \n  \n  12.23", "12.23")]
+    #[case("  \n #comment \n  12.23", "12.23")]
+    pub fn maybe_newline_test(#[case] txt: &str, #[case] val: &str) {
+        let tokens = get_tokens(txt);
+        let (rest, tk) = maybe_newline(float)(&tokens).unwrap();
+        assert_eq!(rest, vec![]);
+        assert_eq!(tk.content, val);
+    }
+
+    #[rstest]
+    #[case("12.23\n1.12\n1.23", 3)]
+    #[case("\n12.23\n1.12\n1.23", 3)]
+    #[case("\n#comment \n12.23\n 1.12\n1.23", 3)]
+    pub fn newline_separated_test(#[case] txt: &str, #[case] count: usize) {
+        let tokens = get_tokens(txt);
+        let (_, tk) = newline_separated(float)(&tokens).unwrap();
+        assert_eq!(tk.len(), count)
+    }
+
+    #[rstest]
     #[case("12.23", TaskToken::Float)]
     pub fn float_test(#[case] txt: &str, #[case] ty: TaskToken) {
         let tokens = get_tokens(txt);
@@ -381,5 +444,14 @@ mod tests {
         let tokens = get_tokens(txt);
         let (_, tk) = attribute(&tokens).unwrap();
         assert!(tk == value)
+    }
+
+    #[rstest]
+    #[case("exit")]
+    #[should_panic]
+    #[case("help")]
+    pub fn kw_exit_test(#[case] txt: &str) {
+        let tokens = get_tokens(txt);
+        kw_exit(&tokens).unwrap();
     }
 }

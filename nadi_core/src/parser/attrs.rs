@@ -32,7 +32,7 @@ pub fn attr_file_line<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Line> {
 }
 
 pub fn attr_file<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<Line>> {
-    traling_newlines(newline_separated(attr_file_line))(inp)
+    trailing_newlines(newline_separated(attr_file_line))(inp)
 }
 
 pub fn parse(tokens: Vec<Token>) -> Result<AttrMap, ParseError> {
