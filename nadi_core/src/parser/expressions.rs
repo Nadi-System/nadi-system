@@ -257,14 +257,19 @@ mod tests {
     #[case("(xyz >= 10) | false", true.into())]
     #[should_panic]
     #[case("(xyz - 1) * (12 + true)", 143.into())]
-    pub fn compl_expr_eval_test(context: TaskContext, #[case] txt: &str, #[case] val: Attribute) {
+    pub fn compl_expr_eval_test(
+        mut context: TaskContext,
+        #[case] txt: &str,
+        #[case] val: Attribute,
+    ) {
         let tokens = get_tokens(txt);
         let (rest, expr) = complete_expression(&tokens).unwrap();
         assert_eq!(rest, vec![]);
         let res = expr
             .resolve(&FunctionType::Env, &context, None)
             .unwrap()
-            .eval(&FunctionType::Env, &context)
+            .eval(&FunctionType::Env, &mut context, None)
+            .unwrap()
             .unwrap();
         assert_eq!(res, val);
     }

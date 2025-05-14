@@ -67,6 +67,9 @@ pub struct NodeInner {
 }
 
 impl HasAttributes for NodeInner {
+    fn node_name(&self) -> Option<&str> {
+        Some(self.name())
+    }
     fn attr_map(&self) -> &AttrMap {
         &self.attributes
     }

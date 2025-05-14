@@ -222,7 +222,15 @@ pub trait NodeFunction: Debug + Clone {
             .into()
     }
     fn code(&self) -> RString;
-    fn call(&self, obj: &mut NodeInner, ctx: &FunctionCtx) -> FunctionRet;
+    // write these by detecting the arguments from macro
+    // fn mutates(&self) -> bool;
+    // fn returns(&self) -> bool;
+    fn call(&self, obj: &NodeInner, ctx: &FunctionCtx) -> FunctionRet {
+        FunctionRet::Error(RString::from("Function mutates the node"))
+    }
+    fn call_mut(&self, obj: &mut NodeInner, ctx: &FunctionCtx) -> FunctionRet {
+        self.call(obj, ctx)
+    }
 }
 
 // can't use generics because of sabi_trait
@@ -248,7 +256,14 @@ pub trait NetworkFunction: Debug + Clone {
             .into()
     }
     fn code(&self) -> RString;
-    fn call(&self, obj: &mut Network, ctx: &FunctionCtx) -> FunctionRet;
+    // fn mutates(&self) -> bool;
+    // fn returns(&self) -> bool;
+    fn call(&self, obj: &Network, ctx: &FunctionCtx) -> FunctionRet {
+        FunctionRet::Error(RString::from("Function mutates the network"))
+    }
+    fn call_mut(&self, obj: &mut Network, ctx: &FunctionCtx) -> FunctionRet {
+        self.call(obj, ctx)
+    }
 }
 
 // A trait object for the `State` Trait Object

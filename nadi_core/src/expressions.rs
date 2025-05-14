@@ -1,4 +1,5 @@
 use crate::attrs::{Attribute, FromAttribute, HasAttributes};
+use crate::functions::FunctionCtx;
 use crate::node::Node;
 use crate::tasks::{FunctionType, TaskContext, TaskKeyword};
 use std::collections::HashMap;
@@ -6,30 +7,55 @@ use std::collections::HashMap;
 #[derive(Debug, PartialEq)]
 pub enum EvalError {
     UnresolvedVariable,
+    FunctionNotFound(FunctionType, String),
+    FunctionError(String, String),
+    NoReturnValue(String),
+    NodeNotFound(String),
+    PathNotFound(String, String, String),
     AttributeNotFound,
+    // AttributeNotFound(Option<String>, String),
     NoOutputNode,
+    NodeAttributeError(String, String),
     AttributeError(String),
     InvalidOperation,
     InvalidVariableType,
     NotANumber,
     NotABool,
     DivideByZero,
-    LogicalError,
+    LogicalError(&'static str),
+    MutexError(&'static str, u32),
 }
 
 impl EvalError {
     pub fn message(&self) -> String {
         match self {
             Self::UnresolvedVariable => "Unresolved variable in expression",
+            Self::FunctionNotFound(t, n) => {
+                return format!("{} function: {n:?} not found", t.to_string())
+            }
+            Self::FunctionError(n, s) => return format!("Error in function {n}: {s}"),
+            Self::NoReturnValue(n) => return format!("Function {n} did not return a value"),
+            Self::NodeNotFound(n) => return format!("Node: {n:?} not found"),
+            Self::PathNotFound(s, e, t) => {
+                return format!("No path found between Nodes {s:?} and {t:?}, path ends at {e:?}")
+            }
             Self::AttributeNotFound => "Attribute not found",
+            // Self::AttributeNotFound(Some(n), var) => {
+            //     return format!("Node: {n:?} Attribute {var:?} not found")
+            // }
+            // Self::AttributeNotFound(None, var) => return format!("Attribute {var:?} not found"),
             Self::NoOutputNode => "Node doesn't have a output node",
             Self::AttributeError(s) => return format!("Attribute Error: {s}"),
+            Self::NodeAttributeError(n, s) => return format!("Node {n:?} Attribute Error: {s}"),
             Self::InvalidOperation => "Operation not Allowed",
             Self::InvalidVariableType => "Variable type invalid in this context",
             Self::NotANumber => "Numerical Operation on Non Number",
             Self::NotABool => "Boolean Operation on Non Boolean",
             Self::DivideByZero => "Division by Zero",
-            Self::LogicalError => "Logical Error inside the program, contact dev",
+            Self::LogicalError(s) => return format!("Logical Error: {s}, contact developer"),
+            Self::MutexError(f, l) => {
+                return format!("Mutex Error on file: {f}::{l}, contact developer")
+            }
         }
         .to_string()
     }
@@ -114,7 +140,7 @@ impl Expression {
     /// attribute variables.
     pub fn simplify(self, ft: &FunctionType, ctx: &TaskContext) -> Result<Expression, EvalError> {
         if !self.has_variables() {
-            return Ok(Self::Literal(self.eval(ft, ctx)?));
+            return Ok(Self::Literal(self.eval_value(ft, ctx, None)?));
         }
         match self {
             Self::Literal(v) => {
@@ -144,6 +170,27 @@ impl Expression {
             )),
         }
     }
+
+    pub fn resolve_eval(
+        &self,
+        ft: &FunctionType,
+        ctx: &TaskContext,
+        node: Option<&Node>,
+    ) -> Result<Option<Attribute>, EvalError> {
+        self.resolve(ft, ctx, node)
+            .and_then(|e| e.eval(ft, ctx, node))
+    }
+
+    pub fn resolve_eval_mut(
+        &self,
+        ft: &FunctionType,
+        ctx: &mut TaskContext,
+        node: Option<&Node>,
+    ) -> Result<Option<Attribute>, EvalError> {
+        self.resolve(ft, ctx, node)
+            .and_then(|e| e.eval_mut(ft, ctx, node))
+    }
+
     pub fn resolve(
         &self,
         ft: &FunctionType,
@@ -158,10 +205,17 @@ impl Expression {
                         VarType::Env => ctx.env.attr_nested(&vt.names).map(|a| a.cloned()),
                         VarType::Network => ctx.network.attr_nested(&vt.names).map(|a| a.cloned()),
                         VarType::Node => match node {
-                            Some(n) => n.lock().attr_nested(&vt.names).map(|a| a.cloned()),
+                            Some(n) => n
+                                .try_lock()
+                                .into_option()
+                                .ok_or(EvalError::MutexError(file!(), line!()))?
+                                .attr_nested(&vt.names)
+                                .map(|a| a.cloned()),
                             None => {
                                 return Err(match ft {
-                                    FunctionType::Node => EvalError::LogicalError,
+                                    FunctionType::Node => EvalError::LogicalError(
+                                        "Node variable tried without Node value",
+                                    ),
                                     _ => EvalError::InvalidVariableType,
                                 })
                             }
@@ -169,18 +223,34 @@ impl Expression {
                         VarType::Inputs => match node {
                             Some(n) => {
                                 if vt.check {
-                                    let res = n.lock().inputs().iter().all(|i| {
-                                        if let Ok(Some(_)) = i.lock().attr_nested(&vt.names) {
-                                            true
-                                        } else {
-                                            false
-                                        }
-                                    });
+                                    let res = n
+                                        .try_lock()
+                                        .into_option()
+                                        .ok_or(EvalError::MutexError(file!(), line!()))?
+                                        .inputs()
+                                        .iter()
+                                        .all(|i| {
+                                            if let Ok(Some(_)) = i.lock().attr_nested(&vt.names) {
+                                                true
+                                            } else {
+                                                false
+                                            }
+                                        });
                                     return Ok(Self::Literal(Attribute::Bool(res)));
                                 } else {
                                     let mut vars = Vec::new();
-                                    for i in n.lock().inputs() {
-                                        let a = i.lock().attr_nested(&vt.names).map(|a| a.cloned());
+                                    for i in n
+                                        .try_lock()
+                                        .into_option()
+                                        .ok_or(EvalError::MutexError(file!(), line!()))?
+                                        .inputs()
+                                    {
+                                        let a = i
+                                            .try_lock()
+                                            .into_option()
+                                            .ok_or(EvalError::MutexError(file!(), line!()))?
+                                            .attr_nested(&vt.names)
+                                            .map(|a| a.cloned());
                                         vars.push(
                                             a.map_err(EvalError::AttributeError)?
                                                 .ok_or(EvalError::AttributeNotFound)?,
@@ -191,23 +261,31 @@ impl Expression {
                             }
                             None => {
                                 return Err(match ft {
-                                    FunctionType::Node => EvalError::LogicalError,
+                                    FunctionType::Node => EvalError::LogicalError(
+                                        "Inputs variable tried without Node value",
+                                    ),
                                     _ => EvalError::InvalidVariableType,
                                 })
                             }
                         },
                         VarType::Output => match node {
                             Some(n) => n
-                                .lock()
+                                .try_lock()
+                                .into_option()
+                                .ok_or(EvalError::MutexError(file!(), line!()))?
                                 .output()
                                 .into_option()
                                 .ok_or(EvalError::NoOutputNode)?
-                                .lock()
+                                .try_lock()
+                                .into_option()
+                                .ok_or(EvalError::MutexError(file!(), line!()))?
                                 .attr_nested(&vt.names)
                                 .map(|a| a.cloned()),
                             None => {
                                 return Err(match ft {
-                                    FunctionType::Node => EvalError::LogicalError,
+                                    FunctionType::Node => EvalError::LogicalError(
+                                        "Output variable tried without Node value",
+                                    ),
                                     _ => EvalError::InvalidVariableType,
                                 })
                             }
@@ -219,8 +297,17 @@ impl Expression {
                             ctx.network.attr_nested(&vt.names).map(|a| a.cloned())
                         }
                         FunctionType::Node => match node {
-                            Some(n) => n.lock().attr_nested(&vt.names).map(|a| a.cloned()),
-                            None => return Err(EvalError::LogicalError),
+                            Some(n) => n
+                                .try_lock()
+                                .into_option()
+                                .ok_or(EvalError::MutexError(file!(), line!()))?
+                                .attr_nested(&vt.names)
+                                .map(|a| a.cloned()),
+                            None => {
+                                return Err(EvalError::LogicalError(
+                                    "Node function ran without Node value",
+                                ))
+                            }
                         },
                     },
                 };
@@ -263,13 +350,49 @@ impl Expression {
         }
     }
 
-    pub fn eval(&self, ft: &FunctionType, ctx: &TaskContext) -> Result<Attribute, EvalError> {
+    pub fn eval(
+        &self,
+        ft: &FunctionType,
+        ctx: &TaskContext,
+        node: Option<&Node>,
+    ) -> Result<Option<Attribute>, EvalError> {
+        match self {
+            Self::Function(fc) => fc.eval(ft, ctx, node),
+            e => e.eval_value(ft, ctx, node).map(|v| Some(v)),
+        }
+    }
+
+    pub fn eval_mut(
+        &self,
+        ft: &FunctionType,
+        ctx: &mut TaskContext,
+        node: Option<&Node>,
+    ) -> Result<Option<Attribute>, EvalError> {
+        match self {
+            Self::Function(fc) => fc.eval_mut(ft, ctx, node),
+            e => e.eval_value(ft, ctx, node).map(|v| Some(v)),
+        }
+    }
+
+    pub fn eval_value(
+        &self,
+        ft: &FunctionType,
+        ctx: &TaskContext,
+        node: Option<&Node>,
+    ) -> Result<Attribute, EvalError> {
         match self {
             Self::Literal(v) => Ok(v.clone()),
             Self::Variable(_) => Err(EvalError::UnresolvedVariable),
-            Self::Function(fc) => fc.eval(ft, ctx),
-            Self::UniOp(op, expr) => op.eval(expr.eval(ft, ctx)?),
-            Self::BiOp(op, expr1, expr2) => op.eval(expr1.eval(ft, ctx)?, expr2.eval(ft, ctx)?),
+            Self::Function(fc) => match fc.eval(ft, ctx, node) {
+                Ok(None) => Err(EvalError::NoReturnValue(fc.name.to_string())),
+                Ok(Some(v)) => Ok(v),
+                Err(e) => Err(e),
+            },
+            Self::UniOp(op, expr) => op.eval(expr.eval_value(ft, ctx, node)?),
+            Self::BiOp(op, expr1, expr2) => op.eval(
+                expr1.eval_value(ft, ctx, node)?,
+                expr2.eval_value(ft, ctx, node)?,
+            ),
         }
     }
 }
@@ -449,9 +572,154 @@ impl FunctionCall {
     pub fn new(name: String, args: Vec<Expression>, kwargs: HashMap<String, Expression>) -> Self {
         Self { name, args, kwargs }
     }
+    pub fn eval_mut(
+        &self,
+        ft: &FunctionType,
+        ctx: &mut TaskContext,
+        node: Option<&Node>,
+    ) -> Result<Option<Attribute>, EvalError> {
+        let mut args = Vec::with_capacity(self.args.len());
+        for a in &self.args {
+            args.push(a.eval_value(ft, ctx, node)?);
+        }
+        let mut kwargs = HashMap::with_capacity(self.kwargs.len());
+        for (k, a) in &self.kwargs {
+            kwargs.insert(k.clone(), a.eval_value(ft, ctx, node)?);
+        }
+        let fctx = FunctionCtx::from_arg_kwarg(args, kwargs);
+        self.run_w_ctx_mut(ft, &self.name, ctx, fctx, node, None)
+    }
 
-    pub fn eval(&self, ft: &FunctionType, ctx: &TaskContext) -> Result<Attribute, EvalError> {
-        todo!()
+    pub fn eval(
+        &self,
+        ft: &FunctionType,
+        ctx: &TaskContext,
+        node: Option<&Node>,
+    ) -> Result<Option<Attribute>, EvalError> {
+        let mut args = Vec::with_capacity(self.args.len());
+        for a in &self.args {
+            args.push(a.eval_value(ft, ctx, node)?);
+        }
+        let mut kwargs = HashMap::with_capacity(self.kwargs.len());
+        for (k, a) in &self.kwargs {
+            kwargs.insert(k.clone(), a.eval_value(ft, ctx, node)?);
+        }
+        let fctx = FunctionCtx::from_arg_kwarg(args, kwargs);
+        self.run_w_ctx(ft, &self.name, ctx, fctx, node, None)
+    }
+
+    pub fn run_w_ctx(
+        &self,
+        ft: &FunctionType,
+        name: &str,
+        tctx: &TaskContext,
+        fctx: FunctionCtx,
+        node: Option<&Node>,
+        original: Option<FunctionType>,
+    ) -> Result<Option<Attribute>, EvalError> {
+        match ft {
+            FunctionType::Env => match tctx.functions.env(name) {
+                Some(f) => f
+                    .call(&fctx)
+                    .res()
+                    .map_err(|s| EvalError::FunctionError(name.to_string(), s)),
+                None => Err(EvalError::FunctionNotFound(
+                    original.unwrap_or_else(|| ft.clone()),
+                    self.name.to_string(),
+                )),
+            },
+            FunctionType::Node => match tctx.functions.node(name) {
+                Some(f) => {
+                    let n = node
+                        .ok_or(EvalError::LogicalError("Node function called without node"))?
+                        .try_lock()
+                        .into_option()
+                        .ok_or(EvalError::MutexError(file!(), line!()))?;
+                    f.call(&n, &fctx)
+                        .res()
+                        .map_err(|s| EvalError::FunctionError(name.to_string(), s))
+                }
+                None => self.run_w_ctx(
+                    &FunctionType::Env,
+                    &self.name,
+                    tctx,
+                    fctx,
+                    node,
+                    Some(ft.clone()),
+                ),
+            },
+            FunctionType::Network => match tctx.functions.network(name) {
+                Some(f) => f
+                    .call(&tctx.network, &fctx)
+                    .res()
+                    .map_err(|s| EvalError::FunctionError(name.to_string(), s)),
+                None => self.run_w_ctx(
+                    &FunctionType::Env,
+                    &self.name,
+                    tctx,
+                    fctx,
+                    node,
+                    Some(ft.clone()),
+                ),
+            },
+        }
+    }
+
+    pub fn run_w_ctx_mut(
+        &self,
+        ft: &FunctionType,
+        name: &str,
+        tctx: &mut TaskContext,
+        fctx: FunctionCtx,
+        node: Option<&Node>,
+        original: Option<FunctionType>,
+    ) -> Result<Option<Attribute>, EvalError> {
+        match ft {
+            FunctionType::Env => match tctx.functions.env(name) {
+                Some(f) => f
+                    .call(&fctx)
+                    .res()
+                    .map_err(|s| EvalError::FunctionError(name.to_string(), s)),
+                None => Err(EvalError::FunctionNotFound(
+                    original.unwrap_or_else(|| ft.clone()),
+                    self.name.to_string(),
+                )),
+            },
+            FunctionType::Node => match tctx.functions.node(name) {
+                Some(f) => {
+                    let mut n = node
+                        .ok_or(EvalError::LogicalError("Node function called without node"))?
+                        .try_lock()
+                        .into_option()
+                        .ok_or(EvalError::MutexError(file!(), line!()))?;
+                    f.call_mut(&mut n, &fctx)
+                        .res()
+                        .map_err(|s| EvalError::FunctionError(name.to_string(), s))
+                }
+                None => self.run_w_ctx(
+                    &FunctionType::Env,
+                    &self.name,
+                    tctx,
+                    fctx,
+                    node,
+                    Some(ft.clone()),
+                ),
+            },
+            FunctionType::Network => match tctx.functions.network(name) {
+                Some(f) => f
+                    .call_mut(&mut tctx.network, &fctx)
+                    .res()
+                    .map_err(|s| EvalError::FunctionError(name.to_string(), s)),
+                None => self.run_w_ctx(
+                    &FunctionType::Env,
+                    &self.name,
+                    tctx,
+                    fctx,
+                    node,
+                    Some(ft.clone()),
+                ),
+            },
+        }
     }
 }
 

@@ -19,6 +19,9 @@ use abi_stable::std_types::RSome;
 use chrono::{Datelike, Timelike};
 
 pub trait HasAttributes {
+    fn node_name(&self) -> Option<&str> {
+        None
+    }
     fn attr_map(&self) -> &AttrMap;
     fn attr_map_mut(&mut self) -> &mut AttrMap;
     fn attr(&self, name: &str) -> Option<&Attribute> {

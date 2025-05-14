@@ -1,4 +1,4 @@
-use crate::expressions::{Expression, InputVar};
+use crate::expressions::{EvalError, Expression, InputVar};
 use crate::functions::{FuncArg, FuncArgType, FunctionRet, NadiFunctions};
 use crate::prelude::*;
 use colored::Colorize;
@@ -28,8 +28,8 @@ impl TaskContext {
 
     pub fn eval_task(&mut self, task: EvalTask) -> Result<Option<String>, String> {
         match task.ty {
-            FunctionType::Env => match task.input.eval(&FunctionType::Env, &self) {
-                Ok(a) => {
+            FunctionType::Env => match task.input.resolve_eval(&FunctionType::Env, &self, None) {
+                Ok(Some(a)) => {
                     if task.attribute.is_empty() {
                         if task.silent {
                             Ok(None)
@@ -48,49 +48,126 @@ impl TaskContext {
                         }
                     }
                 }
+                Ok(None) => Ok(None),
                 Err(e) => Err(e.message()),
             },
-            FunctionType::Node => todo!(),
-            FunctionType::Network => match task.input.eval(&FunctionType::Network, &self) {
-                Ok(a) => {
+            FunctionType::Node => {
+                let nodes = self
+                    .propagation(task.propagation.unwrap_or_default())
+                    .map_err(|e| e.message())?;
+                let mut attrs = Vec::with_capacity(nodes.len());
+                for n in nodes {
+                    let res = match task
+                        .input
+                        .resolve_eval_mut(&FunctionType::Network, self, Some(&n))
+                        // add node name to this error
+                        .map_err(|e| e.message())?
+                    {
+                        Some(r) => r,
+                        None => continue,
+                    };
+                    // TODO add this to all other lock() so we get
+                    // error instead of program freezing
+                    let mut n = n
+                        .try_lock()
+                        .into_option()
+                        .ok_or(EvalError::MutexError(file!(), line!()))
+                        .map_err(|e| e.message())?;
                     if task.attribute.is_empty() {
-                        if task.silent {
-                            Ok(None)
-                        } else {
-                            Ok(Some(a.to_string()))
+                        if !task.silent {
+                            attrs.push(format!("  {} = {}", n.name(), res.to_string()));
                         }
                     } else {
-                        if let Some(old) =
-                            self.network.set_attr_nested(&task.attribute, a.clone())?
-                        {
-                            if task.silent {
-                                Ok(None)
-                            } else {
-                                Ok(Some(format!("{} -> {}", old.to_string(), a.to_string())))
+                        let old = n.set_attr_nested(&task.attribute, res.clone())?;
+                        if !task.silent {
+                            if let Some(o) = old {
+                                attrs.push(format!(
+                                    "  {} = {} -> {}",
+                                    n.name(),
+                                    o.to_string(),
+                                    res.to_string()
+                                ));
                             }
-                        } else {
-                            Ok(None)
                         }
                     }
                 }
-                Err(e) => Err(e.message()),
-            },
+                if task.silent {
+                    Ok(None)
+                } else {
+                    Ok(Some(format!("{{\n{}\n}}", attrs.join(",\n"))))
+                }
+            }
+            FunctionType::Network => {
+                match task
+                    .input
+                    .resolve_eval_mut(&FunctionType::Network, self, None)
+                {
+                    Ok(Some(a)) => {
+                        if task.attribute.is_empty() {
+                            if task.silent {
+                                Ok(None)
+                            } else {
+                                Ok(Some(a.to_string()))
+                            }
+                        } else {
+                            if let Some(old) =
+                                self.network.set_attr_nested(&task.attribute, a.clone())?
+                            {
+                                if task.silent {
+                                    Ok(None)
+                                } else {
+                                    Ok(Some(format!("{} -> {}", old.to_string(), a.to_string())))
+                                }
+                            } else {
+                                Ok(None)
+                            }
+                        }
+                    }
+                    Ok(None) => Ok(None),
+                    Err(e) => Err(e.message()),
+                }
+            }
         }
     }
 
     pub fn attr_task(&self, task: AttrTask) -> Result<String, String> {
         match task.ty {
-            FunctionType::Env => Expression::Variable(InputVar::new(None, task.attribute, false))
-                .eval(&FunctionType::Env, &self)
+            FunctionType::Env => self
+                .env
+                .attr_nested(&task.attribute)?
                 .map(|a| a.to_string())
-                .map_err(|e| e.message()),
-            FunctionType::Node => todo!(),
-            FunctionType::Network => {
-                Expression::Variable(InputVar::new(None, task.attribute, false))
-                    .eval(&FunctionType::Network, &self)
-                    .map(|a| a.to_string())
-                    .map_err(|e| e.message())
+                .ok_or(EvalError::AttributeNotFound)
+                .map_err(|e| e.to_string()),
+            FunctionType::Node => {
+                let nodes = self
+                    .propagation(task.propagation.unwrap_or_default())
+                    .map_err(|e| e.message())?;
+                let attrs = nodes
+                    .iter()
+                    .map(|n| {
+                        let n = n.lock();
+                        Ok(format!(
+                            "  {} = {}",
+                            n.name(),
+                            if let Some(a) = n
+                                .attr_nested(&task.attribute)
+                                .map_err(|e| format!("Node {}: {e}", n.name()))?
+                            {
+                                a.to_string()
+                            } else {
+                                "<None>".to_string()
+                            }
+                        ))
+                    })
+                    .collect::<Result<Vec<String>, String>>()?;
+                Ok(format!("{{\n{}\n}}", attrs.join(",\n")))
             }
+            FunctionType::Network => self
+                .network
+                .attr_nested(&task.attribute)?
+                .map(|a| a.to_string())
+                .ok_or(EvalError::AttributeNotFound)
+                .map_err(|e| e.to_string()),
         }
     }
     pub fn help(
@@ -152,6 +229,50 @@ impl TaskContext {
                 x
             )),
             (None, None) => Ok(Some("Usage: help <keyword> [function]".into())),
+        }
+    }
+
+    pub fn propagation(&self, prop: Propagation) -> Result<Vec<Node>, EvalError> {
+        match prop {
+            Propagation::Sequential | Propagation::OutputFirst => {
+                Ok(self.network.nodes().cloned().collect())
+            }
+            Propagation::Inverse | Propagation::InputsFirst => {
+                Ok(self.network.nodes_rev().cloned().collect())
+            }
+            Propagation::Conditional(expr) => {
+                let mut nodes = Vec::with_capacity(self.network.nodes().count());
+                // simplify to save computation
+                let expr = expr.simplify(&FunctionType::Node, &self)?;
+                // propagation is evaluated for each node even if it's
+                // in network function
+                for n in self.network.nodes() {
+                    let cond = expr.resolve(&FunctionType::Node, &self, Some(n))?;
+                    let res = cond.eval_value(&FunctionType::Node, &self, Some(n))?;
+                    match bool::try_from_attr(&res) {
+                        Ok(true) => nodes.push(n.clone()),
+                        Ok(false) => (),
+                        Err(e) => {
+                            return Err(EvalError::NodeAttributeError(
+                                n.lock().name().to_string(),
+                                e,
+                            ))
+                        }
+                    }
+                }
+                Ok(nodes)
+            }
+            Propagation::List(lst) => lst
+                .iter()
+                .map(|n| {
+                    self.network
+                        .nodes_map
+                        .get(n)
+                        .cloned()
+                        .ok_or_else(|| EvalError::NodeNotFound(n.to_string()))
+                })
+                .collect(),
+            Propagation::Path(p) => self.network.nodes_path(&p),
         }
     }
 }

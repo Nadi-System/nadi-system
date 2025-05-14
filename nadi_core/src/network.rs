@@ -1,12 +1,9 @@
-use abi_stable::std_types::{RDuration, Tuple2};
-use colored::Colorize;
-use std::collections::{HashMap, HashSet};
-use std::fmt::Debug;
-
 use crate::attrs::{AttrMap, HasAttributes};
+use crate::expressions::EvalError;
 use crate::functions::Propagation;
 use crate::node::{new_node, Node, NodeInner};
 use crate::timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap};
+use abi_stable::std_types::{RDuration, Tuple2};
 use abi_stable::{
     std_types::{
         RHashMap,
@@ -15,6 +12,9 @@ use abi_stable::{
     },
     StableAbi,
 };
+use colored::Colorize;
+use std::collections::{HashMap, HashSet};
+use std::fmt::Debug;
 
 /// Network is a collection of Nodes, with Connection information. The
 /// connection information is saved in the nodes itself (`inputs` and
@@ -171,13 +171,14 @@ impl Network {
         self.nodes_map.get(name)
     }
 
-    pub fn try_node_by_name(&self, name: &str) -> Result<&Node, String> {
+    pub fn try_node_by_name(&self, name: &str) -> Result<&Node, EvalError> {
         self.nodes_map
             .get(name)
-            .ok_or_else(|| format!("Node {name} not found"))
+            .ok_or_else(|| EvalError::NodeNotFound(name.to_string()))
     }
 
-    pub fn nodes_propagation(&self, prop: &Propagation) -> Result<Vec<Node>, String> {
+    #[deprecated(since = "0.7.0", note = "use TaskContext::propagation instead")]
+    pub fn nodes_propagation(&self, prop: &Propagation) -> Result<Vec<Node>, EvalError> {
         match prop {
             Propagation::Sequential | Propagation::OutputFirst => {
                 Ok(self.nodes().cloned().collect())
@@ -185,25 +186,23 @@ impl Network {
             Propagation::Inverse | Propagation::InputsFirst => {
                 Ok(self.nodes_rev().cloned().collect())
             }
-            Propagation::Conditional(c) => todo!(), // Ok(self
-            // .nodes()
-            // .filter(|n| n.lock().check(c))
-            // .map(|n| n.clone())
-            // .collect()),
-            Propagation::List(n) => n
+            Propagation::Conditional(_) => Err(EvalError::LogicalError(
+                "Conditional cannot be evaluated without task context",
+            )),
+            Propagation::List(lst) => lst
                 .iter()
                 .map(|n| {
                     self.nodes_map
                         .get(n)
                         .cloned()
-                        .ok_or_else(|| format!("Node {n} not found"))
+                        .ok_or_else(|| EvalError::NodeNotFound(n.to_string()))
                 })
                 .collect(),
             Propagation::Path(p) => self.nodes_path(p),
         }
     }
 
-    pub fn nodes_path(&self, path: &StrPath) -> Result<Vec<Node>, String> {
+    pub fn nodes_path(&self, path: &StrPath) -> Result<Vec<Node>, EvalError> {
         let start = self.try_node_by_name(path.start.as_str())?;
         let end = self.try_node_by_name(path.end.as_str())?;
         // we'll assume the network is indexed based on order, small
@@ -225,11 +224,10 @@ impl Network {
             let tmp = if let RSome(o) = curr.lock().output() {
                 o.clone()
             } else {
-                return Err(format!(
-                    "Node {:?} does not reach Node {:?} (path ends at {:?})",
-                    start_name,
-                    end_name,
-                    curr.lock().name()
+                return Err(EvalError::PathNotFound(
+                    start_name.to_string(),
+                    curr.lock().name().to_string(),
+                    end_name.to_string(),
                 ));
             };
             curr = tmp;
@@ -388,7 +386,7 @@ impl Network {
 
     pub fn subset(&mut self, prop: &Propagation, keep: bool) -> Result<(), String> {
         // rewrite it, too slow
-        let nodes: Vec<Node> = self.nodes_propagation(prop)?;
+        let nodes: Vec<Node> = self.nodes_propagation(prop).map_err(|e| e.message())?;
         let given_nodes: HashSet<String> = nodes
             .iter()
             .map(|n| n.try_lock().expect("mutex problem").name().to_string())

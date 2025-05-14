@@ -209,6 +209,7 @@ pub enum TaskToken {
     Variable,
     Function,
     Assignment,
+    None, // <None>
     Bool,
     String(String), // might need new value instead of slice (think escape seq)
     Integer,
@@ -223,6 +224,8 @@ impl TaskToken {
     pub fn is_valid(&self) -> bool {
         match self {
             Self::Invalid(_) => false,
+            // none is only there for highlight of output
+            Self::None => false,
             _ => true,
         }
     }
@@ -258,6 +261,7 @@ impl TaskToken {
             TaskToken::Function => "magenta",
             TaskToken::Assignment => "blue",
             TaskToken::Bool => "yellow",
+            TaskToken::None => "gray",
             TaskToken::String(_) => "yellow",
             TaskToken::Integer => "yellow",
             TaskToken::Float => "yellow",
@@ -304,6 +308,7 @@ impl<'a> Token<'a> {
             TaskToken::Variable => format!("{}", self.content.green()),
             TaskToken::Function => format!("{}", self.content.magenta()),
             TaskToken::Assignment => format!("{}", self.content.blue()),
+            TaskToken::None => format!("{}", self.content.truecolor(100, 100, 100)),
             TaskToken::Bool => format!("{}", self.content.yellow()),
             TaskToken::String(_) => format!("{}", self.content.yellow()),
             TaskToken::Integer => format!("{}", self.content.yellow()),
@@ -369,6 +374,10 @@ fn comment<'a>(i: &'a str) -> TokenRes<'a> {
     map(recognize(pair(tag("#"), many0(is_not("\n\r")))), |s| {
         Token::new(TaskToken::Comment, s)
     })(i)
+}
+
+fn none<'a>(i: &'a str) -> TokenRes<'a> {
+    map(tag("<None>"), |s| Token::new(TaskToken::Caret, s))(i)
 }
 
 fn operators<'a>(i: &'a str) -> TokenRes<'a> {
@@ -515,7 +524,7 @@ fn datetime<'a>(i: &'a str) -> TokenRes<'a> {
 fn task_token<'a>(i: &'a str) -> TokenRes<'a> {
     alt((
         whitespace, newline, comment, string, datetime, date, time, boolean, float, integer,
-        variable, symbols, operators, invalid,
+        variable, none, symbols, operators, invalid,
     ))(i)
 }
 

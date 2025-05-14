@@ -752,20 +752,31 @@ fn get_call_func(
         .map(|(arg, _, _)| arg.into_token_stream())
         .collect();
     let func_name = &item.sig.ident;
-    let (arg0, fcall) = match ft {
-        FuncType::Env => (quote! {}, quote! {#func_name(#(#args_n),*)}),
+    let (fname, arg0, fcall) = match ft {
+        FuncType::Env => (quote! {call}, quote! {}, quote! {#func_name(#(#args_n),*)}),
         _ => {
             let a0 = get_fn_arg(arg0.expect("Should have at least one argument"));
             let arg0_name = a0.0;
             let arg0_ty = a0.1;
+            let fname = match &arg0_ty {
+                syn::Type::Reference(r) => {
+                    if r.mutability.is_some() {
+                        quote! {call_mut}
+                    } else {
+                        quote! {call}
+                    }
+                }
+                _ => panic!("First argument should be a reference"),
+            };
             (
+                fname,
                 quote! {#arg0_name : #arg0_ty,},
                 quote! {#func_name(#arg0_name, #(#args_n),*)},
             )
         }
     };
     let call_func = quote! {
-            fn call(&self,
+            fn #fname(&self,
                     #arg0
                     ctx: &::nadi_core::functions::FunctionCtx)
                     -> ::nadi_core::functions::FunctionRet {

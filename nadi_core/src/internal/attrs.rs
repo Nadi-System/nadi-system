@@ -74,7 +74,7 @@ The function will error out in following conditions:
         .into()
     }
 
-    fn call(&self, node: &mut NodeInner, ctx: &FunctionCtx) -> FunctionRet {
+    fn call_mut(&self, node: &mut NodeInner, ctx: &FunctionCtx) -> FunctionRet {
         let templ: Template = match ctx.arg_kwarg(0, "filename") {
             Some(Ok(a)) => a,
             Some(Err(e)) => return FunctionRet::Error(e.into()),
@@ -128,7 +128,7 @@ No arguments and no errors, it'll just print all the attributes in a node with
         vec![].into()
     }
 
-    fn call(&self, node: &mut NodeInner, _ctx: &FunctionCtx) -> FunctionRet {
+    fn call(&self, node: &NodeInner, _ctx: &FunctionCtx) -> FunctionRet {
         for Tuple2(k, v) in node.attr_map() {
             println!("{}::{k} = {}", node.name(), v.to_string());
         }
@@ -156,7 +156,7 @@ The function will error if
 The attributes will be printed in `key=val` format.
 */
 #[node_func(name = false)]
-fn print_attrs(node: &mut NodeInner, #[args] attrs: AttrSlice, name: bool) -> FunctionRet {
+fn print_attrs(node: &NodeInner, #[args] attrs: AttrSlice, name: bool) -> FunctionRet {
     let attrs = return_on_err!(attrs
         .iter()
         .map(String::try_from_attr)
