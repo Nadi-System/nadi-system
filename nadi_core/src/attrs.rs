@@ -1,8 +1,4 @@
-use colored::Colorize;
-use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
-use string_template_plus::{Render, RenderOptions, Template};
-
+use crate::expressions::EvalError;
 use abi_stable::{
     std_types::{
         RHashMap,
@@ -11,6 +7,10 @@ use abi_stable::{
     },
     StableAbi,
 };
+use colored::Colorize;
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+use string_template_plus::{Render, RenderOptions, Template};
 
 #[cfg(feature = "chrono")]
 use abi_stable::std_types::RSome;
@@ -53,6 +53,24 @@ pub trait HasAttributes {
             };
         }
         Ok(map.attr(name))
+    }
+
+    fn attr_nested(&self, names: &[String]) -> Result<Option<&Attribute>, String> {
+        match names {
+            [] => Err("Empty Attribute Name".into()),
+            [name] => Ok(self.attr(name)),
+            [pre @ .., name] => {
+                let mut map = self.attr_map();
+                for m in pre {
+                    map = match map.attr(m) {
+                        Some(Attribute::Table(mp)) => mp,
+                        Some(_) => return Err(format!("Key {m} is not a Table")),
+                        None => return Err(format!("Key {m} not found")),
+                    };
+                }
+                Ok(map.attr(name))
+            }
+        }
     }
     fn set_attr_dot(&mut self, name: &str, val: Attribute) -> Result<Option<Attribute>, String> {
         let (pre, name) = match name.rsplit_once('.') {
@@ -217,6 +235,156 @@ impl PartialOrd for Attribute {
             _ => (),
         };
         None
+    }
+}
+
+impl std::ops::Not for Attribute {
+    type Output = Result<Self, EvalError>;
+
+    fn not(self) -> Self::Output {
+        match self {
+            Self::Bool(b) => Ok(Self::Bool(!b)),
+            _ => Err(EvalError::NotABool),
+        }
+    }
+}
+
+impl std::ops::Neg for Attribute {
+    type Output = Result<Self, EvalError>;
+
+    fn neg(self) -> Self::Output {
+        match self {
+            Self::Integer(v) => Ok(Self::Integer(-v)),
+            Self::Float(v) => Ok(Self::Float(-v)),
+            _ => Err(EvalError::NotANumber),
+        }
+    }
+}
+
+impl std::ops::BitAnd for Attribute {
+    type Output = Result<Self, EvalError>;
+
+    fn bitand(self, other: Self) -> Self::Output {
+        match self {
+            Self::Bool(a) => match other {
+                Self::Bool(b) => Ok(Self::Bool(a & b)),
+                _ => Err(EvalError::NotABool),
+            },
+            _ => Err(EvalError::NotABool),
+        }
+    }
+}
+
+impl std::ops::BitOr for Attribute {
+    type Output = Result<Self, EvalError>;
+
+    fn bitor(self, other: Self) -> Self::Output {
+        match self {
+            Self::Bool(a) => match other {
+                Self::Bool(b) => Ok(Self::Bool(a | b)),
+                _ => Err(EvalError::NotABool),
+            },
+            _ => Err(EvalError::NotABool),
+        }
+    }
+}
+
+// find a way to write macro for this?
+impl std::ops::Add for Attribute {
+    type Output = Result<Self, EvalError>;
+
+    fn add(self, other: Self) -> Self::Output {
+        // todo date/time + integer
+        match self {
+            Self::Integer(a) => match other {
+                Self::Integer(b) => Ok(Self::Integer(a + b)),
+                Self::Float(b) => Ok(Self::Float(a as f64 + b)),
+                _ => Err(EvalError::InvalidOperation),
+            },
+            Self::Float(a) => match other {
+                Self::Integer(b) => Ok(Self::Float(a + b as f64)),
+                Self::Float(b) => Ok(Self::Float(a + b)),
+                _ => Err(EvalError::InvalidOperation),
+            },
+            _ => Err(EvalError::InvalidOperation),
+        }
+    }
+}
+
+impl std::ops::Sub for Attribute {
+    type Output = Result<Self, EvalError>;
+
+    fn sub(self, other: Self) -> Self::Output {
+        // todo date/time - integer
+        match self {
+            Self::Integer(a) => match other {
+                Self::Integer(b) => Ok(Self::Integer(a - b)),
+                Self::Float(b) => Ok(Self::Float(a as f64 - b)),
+                _ => Err(EvalError::InvalidOperation),
+            },
+            Self::Float(a) => match other {
+                Self::Integer(b) => Ok(Self::Float(a - b as f64)),
+                Self::Float(b) => Ok(Self::Float(a - b)),
+                _ => Err(EvalError::InvalidOperation),
+            },
+            _ => Err(EvalError::InvalidOperation),
+        }
+    }
+}
+
+impl std::ops::Mul for Attribute {
+    type Output = Result<Self, EvalError>;
+
+    fn mul(self, other: Self) -> Self::Output {
+        match self {
+            Self::Integer(a) => match other {
+                Self::Integer(b) => Ok(Self::Integer(a * b)),
+                Self::Float(b) => Ok(Self::Float(a as f64 * b)),
+                _ => Err(EvalError::InvalidOperation),
+            },
+            Self::Float(a) => match other {
+                Self::Integer(b) => Ok(Self::Float(a * b as f64)),
+                Self::Float(b) => Ok(Self::Float(a * b)),
+                _ => Err(EvalError::InvalidOperation),
+            },
+            _ => Err(EvalError::InvalidOperation),
+        }
+    }
+}
+
+impl std::ops::Div for Attribute {
+    type Output = Result<Self, EvalError>;
+
+    fn div(self, other: Self) -> Self::Output {
+        match self {
+            Self::Integer(a) => match other {
+                Self::Integer(b) => Ok(Self::Integer(
+                    a.checked_div(b).ok_or(EvalError::DivideByZero)?,
+                )),
+                Self::Float(b) => Ok(Self::Float(a as f64 / b)),
+                _ => Err(EvalError::InvalidOperation),
+            },
+            Self::Float(a) => match other {
+                Self::Integer(b) => Ok(Self::Float(a / b as f64)),
+                Self::Float(b) => Ok(Self::Float(a / b)),
+                _ => Err(EvalError::InvalidOperation),
+            },
+            _ => Err(EvalError::InvalidOperation),
+        }
+    }
+}
+
+impl std::ops::Rem for Attribute {
+    type Output = Result<Self, EvalError>;
+
+    fn rem(self, other: Self) -> Self::Output {
+        match self {
+            Self::Integer(a) => match other {
+                Self::Integer(b) => Ok(Self::Integer(a % b)),
+                _ => Err(EvalError::InvalidOperation),
+            },
+            _ => Err(EvalError::InvalidOperation),
+        }
     }
 }
 

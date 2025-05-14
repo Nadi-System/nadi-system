@@ -22,7 +22,7 @@ pub fn attr_group<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<String>>
     )(inp)
 }
 
-enum Line {
+pub enum Line {
     Group(Vec<String>),
     KeyVal((Vec<String>, Attribute)),
 }

@@ -179,7 +179,17 @@ pub fn function_call<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionC
 mod tests {
     use super::*;
     use crate::parser::tokenizer::get_tokens;
-    use rstest::rstest;
+    use crate::tasks::FunctionType;
+    use crate::tasks::TaskContext;
+    use rstest::{fixture, rstest};
+    use std::cell::OnceCell;
+
+    #[fixture]
+    fn context() -> TaskContext {
+        let mut ctx = TaskContext::new(None);
+        ctx.env.set_attr("xyz", 12.into());
+        ctx
+    }
 
     #[rstest]
     #[case("12")]
@@ -227,5 +237,34 @@ mod tests {
         let tokens = get_tokens(txt);
         let (rest, _) = function_call(&tokens).unwrap();
         assert_eq!(rest, vec![]);
+    }
+
+    // testing the evaluation is easier than testing if it got all the
+    // components correct, xyz=12 from fixure above
+    #[rstest]
+    #[case("12", 12.into())]
+    #[case("2.12", 2.12.into())]
+    #[case("- 2.12", (-2.12).into())]
+    #[case("xyz", 12.into())]
+    #[should_panic]
+    #[case("!(xyz)", 12.into())]
+    #[should_panic]
+    #[case("(xyz2)", 12.into())]
+    #[case("(-xyz)", (-12).into())]
+    #[case("xyz + 12", 24.into())]
+    #[case("2*(xyz - 10) + 12", 16.into())]
+    #[case("(xyz >= 10) | false", true.into())]
+    #[should_panic]
+    #[case("(xyz - 1) * (12 + true)", 143.into())]
+    pub fn compl_expr_eval_test(context: TaskContext, #[case] txt: &str, #[case] val: Attribute) {
+        let tokens = get_tokens(txt);
+        let (rest, expr) = complete_expression(&tokens).unwrap();
+        assert_eq!(rest, vec![]);
+        let res = expr
+            .resolve(&FunctionType::Env, &context, None)
+            .unwrap()
+            .eval(&FunctionType::Env, &context)
+            .unwrap();
+        assert_eq!(res, val);
     }
 }
