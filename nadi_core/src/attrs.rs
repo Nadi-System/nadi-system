@@ -90,6 +90,30 @@ pub trait HasAttributes {
         Ok(map.set_attr(name, val))
     }
 
+    fn set_attr_nested(
+        &mut self,
+        names: &[String],
+        val: Attribute,
+    ) -> Result<Option<Attribute>, String> {
+        match names {
+            [] => Err("Empty Attribute Name".into()),
+            [name] => Ok(self.set_attr(name, val)),
+            [pre @ .., name] => {
+                let mut map = self.attr_map_mut();
+                for m in pre {
+                    map = match map
+                        .entry(m.to_string().into())
+                        .or_insert(Attribute::Table(AttrMap::new()))
+                    {
+                        Attribute::Table(ref mut mp) => mp,
+                        _ => return Err(format!("Key {m} is not a Table")),
+                    };
+                }
+                Ok(map.set_attr(name, val))
+            }
+        }
+    }
+
     fn try_attr<T: FromAttribute>(&self, name: &str) -> Result<T, String> {
         match self.attr_dot(name)? {
             Some(v) => FromAttribute::try_from_attr(v),

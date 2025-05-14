@@ -3,7 +3,7 @@ use crate::node::Node;
 use crate::tasks::{FunctionType, TaskContext, TaskKeyword};
 use std::collections::HashMap;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum EvalError {
     UnresolvedVariable,
     AttributeNotFound,
@@ -107,6 +107,43 @@ impl Expression {
         }
     }
 
+    /// This simplifies the expression by evaluating the nested expressions without variables
+    ///
+    /// It makes it easier to catch any mistakes and reduce the
+    /// complexity while evaluating expressions later with actual
+    /// attribute variables.
+    pub fn simplify(self, ft: &FunctionType, ctx: &TaskContext) -> Result<Expression, EvalError> {
+        if !self.has_variables() {
+            return Ok(Self::Literal(self.eval(ft, ctx)?));
+        }
+        match self {
+            Self::Literal(v) => {
+                // shouldn't happen
+                eprintln!("WARN: Logic Error, literal shouldn't be considered a variable");
+                Ok(Self::Literal(v))
+            }
+            Self::Variable(v) => Ok(Self::Variable(v)),
+            Self::Function(mut fc) => {
+                let mut args = Vec::with_capacity(fc.args.len());
+                for a in fc.args {
+                    args.push(a.simplify(ft, ctx)?);
+                }
+                let mut kwargs = HashMap::with_capacity(fc.kwargs.len());
+                for (k, a) in fc.kwargs {
+                    kwargs.insert(k.clone(), a.simplify(ft, ctx)?);
+                }
+                fc.args = args;
+                fc.kwargs = kwargs;
+                Ok(Self::Function(fc))
+            }
+            Self::UniOp(op, expr) => Ok(Self::UniOp(op, Box::new(expr.simplify(ft, ctx)?))),
+            Self::BiOp(op, expr1, expr2) => Ok(Self::BiOp(
+                op,
+                Box::new(expr1.simplify(ft, ctx)?),
+                Box::new(expr2.simplify(ft, ctx)?),
+            )),
+        }
+    }
     pub fn resolve(
         &self,
         ft: &FunctionType,

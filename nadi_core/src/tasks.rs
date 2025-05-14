@@ -1,4 +1,4 @@
-use crate::expressions::Expression;
+use crate::expressions::{Expression, InputVar};
 use crate::functions::{FuncArg, FuncArgType, FunctionRet, NadiFunctions};
 use crate::prelude::*;
 use colored::Colorize;
@@ -17,15 +17,143 @@ impl TaskContext {
         }
     }
 
-    // pub fn simplify(&self, expr: Expression) -> Expression {
-    //     match expr {
-    //         Expression::Literal(l) => Expression::Literal(l),
-    //         Expression::Variable(_) => false,
-    //         Expression::Function(_) => false,
-    //         Expression::UniOp(_, _) => true,
-    //         Expression::BiOp(_, _, _) => true,
-    //     }
-    // }
+    pub fn execute(&mut self, task: Task) -> Result<Option<String>, String> {
+        match task {
+            Task::Eval(et) => self.eval_task(et),
+            Task::Attr(at) => self.attr_task(at).map(|a| Some(a)),
+            Task::Help(kw, var) => self.help(kw, var),
+            Task::Exit => std::process::exit(0),
+        }
+    }
+
+    pub fn eval_task(&mut self, task: EvalTask) -> Result<Option<String>, String> {
+        match task.ty {
+            FunctionType::Env => match task.input.eval(&FunctionType::Env, &self) {
+                Ok(a) => {
+                    if task.attribute.is_empty() {
+                        if task.silent {
+                            Ok(None)
+                        } else {
+                            Ok(Some(a.to_string()))
+                        }
+                    } else {
+                        if let Some(old) = self.env.set_attr_nested(&task.attribute, a.clone())? {
+                            if task.silent {
+                                Ok(None)
+                            } else {
+                                Ok(Some(format!("{} -> {}", old.to_string(), a.to_string())))
+                            }
+                        } else {
+                            Ok(None)
+                        }
+                    }
+                }
+                Err(e) => Err(e.message()),
+            },
+            FunctionType::Node => todo!(),
+            FunctionType::Network => match task.input.eval(&FunctionType::Network, &self) {
+                Ok(a) => {
+                    if task.attribute.is_empty() {
+                        if task.silent {
+                            Ok(None)
+                        } else {
+                            Ok(Some(a.to_string()))
+                        }
+                    } else {
+                        if let Some(old) =
+                            self.network.set_attr_nested(&task.attribute, a.clone())?
+                        {
+                            if task.silent {
+                                Ok(None)
+                            } else {
+                                Ok(Some(format!("{} -> {}", old.to_string(), a.to_string())))
+                            }
+                        } else {
+                            Ok(None)
+                        }
+                    }
+                }
+                Err(e) => Err(e.message()),
+            },
+        }
+    }
+
+    pub fn attr_task(&self, task: AttrTask) -> Result<String, String> {
+        match task.ty {
+            FunctionType::Env => Expression::Variable(InputVar::new(None, task.attribute, false))
+                .eval(&FunctionType::Env, &self)
+                .map(|a| a.to_string())
+                .map_err(|e| e.message()),
+            FunctionType::Node => todo!(),
+            FunctionType::Network => {
+                Expression::Variable(InputVar::new(None, task.attribute, false))
+                    .eval(&FunctionType::Network, &self)
+                    .map(|a| a.to_string())
+                    .map_err(|e| e.message())
+            }
+        }
+    }
+    pub fn help(
+        &self,
+        kw: Option<TaskKeyword>,
+        var: Option<String>,
+    ) -> Result<Option<String>, String> {
+        match (kw, var) {
+            (None, Some(var)) => {
+                let mut helpstr = String::new();
+                if let Some(f) = self.functions.node(&var) {
+                    helpstr = format_help("node", &var, &f.signature(), &f.args(), &f.help());
+                }
+                if let Some(f) = self.functions.network(&var) {
+                    helpstr.push_str(&format_help(
+                        "network",
+                        &var,
+                        &f.signature(),
+                        &f.args(),
+                        &f.help(),
+                    ));
+                }
+                if !helpstr.is_empty() {
+                    Ok(Some(helpstr))
+                } else {
+                    Err(format!("Function {} not found", var))
+                }
+            }
+            (Some(TaskKeyword::Node), Some(var)) => {
+                if let Some(f) = self.functions.node(&var) {
+                    Ok(Some(format_help(
+                        "node",
+                        &var,
+                        &f.signature(),
+                        &f.args(),
+                        &f.help(),
+                    )))
+                } else {
+                    Err(format!("Node Function {} not found", var))
+                }
+            }
+            (Some(TaskKeyword::Network), Some(var)) => {
+                if let Some(f) = self.functions.network(&var) {
+                    Ok(Some(format_help(
+                        "network",
+                        &var,
+                        &f.signature(),
+                        &f.args(),
+                        &f.help(),
+                    )))
+                } else {
+                    Err(format!("Network Function {} not found", var))
+                }
+            }
+            (Some(kw), None) => Ok(Some(kw.help())),
+            (Some(kw), Some(x)) => Err(format!(
+                "Keyword {} does not have help for {}",
+                kw.to_string(),
+                x
+            )),
+            (None, None) => Ok(Some("Usage: help <keyword> [function]".into())),
+        }
+    }
 }
 //     pub fn execute(&mut self, task: Task) -> Result<Option<String>, String> {
 //         match &task.ty {
@@ -511,52 +639,6 @@ impl ToString for Task {
         }
     }
 }
-// impl Task {
-//     pub fn to_colored_string(&self) -> String {
-//         if let Some(ref a) = self.attribute {
-//             if self.input == TaskInput::None {
-//                 format!("{}.{}", self.ty.to_colored_string(), a.green())
-//             } else {
-//                 format!(
-//                     "{}.{} = {}",
-//                     self.ty.to_colored_string(),
-//                     a.green(),
-//                     self.input.to_colored_string()
-//                 )
-//             }
-//         } else {
-//             format!(
-//                 "{} {}",
-//                 self.ty.to_colored_string(),
-//                 self.input.to_colored_string()
-//             )
-//         }
-//     }
-
-//     pub fn exit() -> Self {
-//         Task {
-//             ty: TaskType::Exit,
-//             attribute: None,
-//             input: TaskInput::None,
-//         }
-//     }
-
-//     pub fn env(var: String, val: Attribute) -> Self {
-//         Task {
-//             ty: TaskType::Env,
-//             attribute: Some(var),
-//             input: TaskInput::Literal(val),
-//         }
-//     }
-
-//     pub fn help(kw: Option<TaskKeyword>, var: Option<String>) -> Self {
-//         Task {
-//             ty: TaskType::Help(kw, var),
-//             attribute: None,
-//             input: TaskInput::None,
-//         }
-//     }
-// }
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum TaskKeyword {

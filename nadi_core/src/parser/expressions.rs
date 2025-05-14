@@ -178,14 +178,15 @@ pub fn function_call<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionC
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::expressions::EvalError;
     use crate::parser::tokenizer::get_tokens;
     use crate::tasks::FunctionType;
     use crate::tasks::TaskContext;
     use rstest::{fixture, rstest};
-    use std::cell::OnceCell;
 
     #[fixture]
     fn context() -> TaskContext {
+        // Since TaskContext is not thread safe, we cannot share references between tests
         let mut ctx = TaskContext::new(None);
         ctx.env.set_attr("xyz", 12.into());
         ctx
@@ -266,5 +267,43 @@ mod tests {
             .eval(&FunctionType::Env, &context)
             .unwrap();
         assert_eq!(res, val);
+    }
+
+    // testing the simplify process
+    #[rstest]
+    #[case("12 + 2", "14")]
+    #[case("true | false", "true")]
+    #[case("12 > 12", "false")]
+    #[case("(xyz >= 10) | false", "(xyz >= 10) | false")]
+    #[should_panic]
+    #[case("(xyz - 1) * (12 + true)", "(xyz - 1) * 13")]
+    pub fn compl_expr_simplify_test(context: TaskContext, #[case] txt: &str, #[case] simpl: &str) {
+        // let context = task_context();
+
+        let tokens = get_tokens(txt);
+        let (rest, expr) = complete_expression(&tokens).unwrap();
+        assert_eq!(rest, vec![]);
+        let res = expr.simplify(&FunctionType::Env, &context).unwrap();
+
+        let tokens2 = get_tokens(simpl);
+        let (rest2, expr2) = complete_expression(&tokens2).unwrap();
+        assert_eq!(rest2, vec![]);
+
+        assert_eq!(res, expr2);
+    }
+
+    // testing the simplify process
+    #[rstest]
+    #[case("- true", EvalError::NotANumber)]
+    #[case("true | 12", EvalError::NotABool)]
+    #[case("(xyz - 1) * (12 + true)", EvalError::InvalidOperation)]
+    #[case("(xyz - 1) * (true + true)", EvalError::InvalidOperation)]
+    #[case("(xyz * \"1\") * (12 + true)", EvalError::InvalidOperation)]
+    pub fn compl_expr_error_test(context: TaskContext, #[case] txt: &str, #[case] err: EvalError) {
+        let tokens = get_tokens(txt);
+        let (rest, expr) = complete_expression(&tokens).unwrap();
+        assert_eq!(rest, vec![]);
+        let res = expr.simplify(&FunctionType::Env, &context).err().unwrap();
+        assert_eq!(res, err);
     }
 }
