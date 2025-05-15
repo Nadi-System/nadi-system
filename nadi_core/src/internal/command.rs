@@ -49,7 +49,7 @@ mod command {
     /// Checks if the given path exists when rendering the template
     #[node_func]
     fn exists(
-        node: &mut NodeInner,
+        node: &NodeInner,
         /// Path to check
         path: Template,
         /// Minimum number of lines the file should have

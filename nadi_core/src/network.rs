@@ -177,7 +177,7 @@ impl Network {
             .ok_or_else(|| EvalError::NodeNotFound(name.to_string()))
     }
 
-    #[deprecated(since = "0.7.0", note = "use TaskContext::propagation instead")]
+    /// use TaskContext::propagation whenever possible
     pub fn nodes_propagation(&self, prop: &Propagation) -> Result<Vec<Node>, EvalError> {
         match prop {
             Propagation::Sequential | Propagation::OutputFirst => {
@@ -532,11 +532,7 @@ impl From<Node> for Network {
             })
             .collect::<HashMap<RString, Node>>()
             .into();
-        net.nodes = net
-            .nodes_map
-            .keys().cloned()
-            .collect::<Vec<_>>()
-            .into();
+        net.nodes = net.nodes_map.keys().cloned().collect::<Vec<_>>().into();
         net.outlet = RSome(node);
         net.reorder();
         net.set_levels();

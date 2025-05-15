@@ -2,16 +2,6 @@ use crate::parser::tokenizer::{TaskToken, Token};
 use colored::Colorize;
 use nom::error::ErrorKind;
 
-pub trait NadiError: std::error::Error {
-    fn user_msg(&self, filename: Option<&str>) -> String {
-        if let Some(fname) = filename {
-            format!("Error on file: {fname:?}")
-        } else {
-            "Error occured".to_string()
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Clone, Default)]
 pub struct ParseError {
     pub ty: ParseErrorType,
@@ -72,9 +62,8 @@ impl ParseError {
             ..Default::default()
         }
     }
-}
-impl NadiError for ParseError {
-    fn user_msg(&self, filename: Option<&str>) -> String {
+
+    pub fn user_msg(&self, filename: Option<&str>) -> String {
         let mut msg = String::new();
         if let ParseErrorType::Custom(m) = &self.ty {
             msg.push_str(m);

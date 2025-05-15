@@ -1,4 +1,5 @@
 #![allow(clippy::module_inception)]
+#![allow(non_local_definitions)] // warning from sabi_trait macro
 use crate::attrs::{AttrMap, AttrSlice};
 use crate::expressions::Expression;
 use crate::network::StrPath;
@@ -225,7 +226,7 @@ pub trait NodeFunction: Debug + Clone {
     // write these by detecting the arguments from macro
     // fn mutates(&self) -> bool;
     // fn returns(&self) -> bool;
-    fn call(&self, obj: &NodeInner, ctx: &FunctionCtx) -> FunctionRet {
+    fn call(&self, _obj: &NodeInner, _ctx: &FunctionCtx) -> FunctionRet {
         FunctionRet::Error(RString::from("Function mutates the node"))
     }
     fn call_mut(&self, obj: &mut NodeInner, ctx: &FunctionCtx) -> FunctionRet {
@@ -258,7 +259,7 @@ pub trait NetworkFunction: Debug + Clone {
     fn code(&self) -> RString;
     // fn mutates(&self) -> bool;
     // fn returns(&self) -> bool;
-    fn call(&self, obj: &Network, ctx: &FunctionCtx) -> FunctionRet {
+    fn call(&self, _obj: &Network, _ctx: &FunctionCtx) -> FunctionRet {
         FunctionRet::Error(RString::from("Function mutates the network"))
     }
     fn call_mut(&self, obj: &mut Network, ctx: &FunctionCtx) -> FunctionRet {

@@ -5,7 +5,7 @@ mod debug {
     use crate::prelude::*;
     use abi_stable::std_types::Tuple2;
     use colored::Colorize;
-    use nadi_plugin::{env_func, network_func};
+    use nadi_plugin::env_func;
 
     /// sleep for given number of milliseconds
     #[env_func(time = 1000u64)]
@@ -20,9 +20,8 @@ mod debug {
     /// if the args/kwargs are identified properly. And can also be
     /// used to see how the nadi system takes the input from the
     /// function call.
-    #[network_func]
+    #[env_func]
     fn debug(
-        net: &mut Network,
         /// Function arguments
         #[args]
         args: AttrSlice,
@@ -52,9 +51,8 @@ mod debug {
     /// those files back to the stdout.
     ///
     /// Also useful for nadi preprocessor.
-    #[network_func(error = false, newline = true)]
+    #[env_func(error = false, newline = true)]
     fn echo(
-        _net: &mut Network,
         /// line to print
         line: String,
         /// print to stderr instead of stdout
@@ -95,9 +93,8 @@ mod debug {
     /// only the parts after that are relevant to the user. Hence,
     /// it'll discard outputs before that during documentation
     /// generation.
-    #[network_func(error = false)]
+    #[env_func(error = false)]
     fn clip(
-        _net: &mut Network,
         /// print in stderr instead of in stdout
         error: bool,
     ) {

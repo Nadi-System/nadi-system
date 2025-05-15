@@ -17,7 +17,7 @@ pub mod table;
 pub mod tasks;
 pub mod tokenizer;
 
-pub use errors::{NadiError, ParseError, ParseErrorType};
+pub use errors::{ParseError, ParseErrorType};
 
 impl std::str::FromStr for Date {
     type Err = &'static str;
@@ -98,14 +98,12 @@ impl std::str::FromStr for DateTime {
     }
 }
 
-impl Network {
-    // TODO import DOT format as well, or maybe make it work through plugin
-    pub fn from_file<P: AsRef<Path>>(filename: P) -> anyhow::Result<Self> {
-        let mut network = Self::default();
-        let content =
-            std::fs::read_to_string(filename).context("Error while accessing the network file")?;
-        let tokens = tokenizer::get_tokens(&content);
+impl FromStr for Network {
+    type Err = ParseError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let tokens = tokenizer::get_tokens(s);
         let paths = network::parse(&tokens)?;
+        let mut network = Self::default();
         for path in paths {
             if !network.nodes_map.contains_key(&path.start) {
                 network.insert_node_by_name(&path.start);
@@ -123,6 +121,16 @@ impl Network {
         network.reorder();
         network.set_levels();
         Ok(network)
+    }
+}
+
+impl Network {
+    // TODO import DOT format as well, or maybe make it work through plugin
+    pub fn from_file<P: AsRef<Path>>(filename: P) -> anyhow::Result<Self> {
+        let content =
+            std::fs::read_to_string(&filename).context("Error while accessing the network file")?;
+        Self::from_str(&content)
+            .map_err(|e| anyhow::Error::msg(e.user_msg(Some(&filename.as_ref().to_string_lossy()))))
     }
     pub fn load_attrs<P: AsRef<Path>>(&self, attr_dir: P) -> anyhow::Result<()> {
         self.nodes_map.iter().try_for_each(|Tuple2(name, node)| {
@@ -167,7 +175,7 @@ impl Table {
 
 impl FromStr for Propagation {
     type Err = anyhow::Error;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(_s: &str) -> Result<Self, Self::Err> {
         todo!()
     }
 }

@@ -198,7 +198,7 @@ impl Expression {
         node: Option<&Node>,
     ) -> Result<Expression, EvalError> {
         match self {
-            Self::Literal(v) => Ok(self.clone()),
+            Self::Literal(_) => Ok(self.clone()),
             Self::Variable(vt) => {
                 let attr = match &vt.ty {
                     Some(ty) => match ty {

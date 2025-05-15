@@ -40,7 +40,7 @@ mod attrs {
     /// Retrive attribute
     #[node_func]
     fn get_attr(
-        node: &mut NodeInner,
+        node: &NodeInner,
         /// Name of the attribute to get
         attr: &str,
         /// Default value if the attribute is not found
@@ -52,7 +52,7 @@ mod attrs {
     /// Check if the attribute is present
     #[node_func]
     fn has_attr(
-        node: &mut NodeInner,
+        node: &NodeInner,
         /// Name of the attribute to check
         attr: &str,
     ) -> bool {
@@ -62,7 +62,7 @@ mod attrs {
     /// Return the first Attribute that exists
     #[node_func]
     fn first_attr(
-        node: &mut NodeInner,
+        node: &NodeInner,
         /// attribute names
         attrs: &[String],
         /// Default value if not found

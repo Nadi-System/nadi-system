@@ -1,6 +1,5 @@
 use clap::{Parser, ValueEnum};
 use nadi_core::parser::tokenizer::TaskToken;
-use nadi_core::parser::NadiError;
 use nadi_core::{functions::NadiFunctions, network::Network};
 use std::{
     io::Read,

@@ -5,10 +5,10 @@ mod connections {
     use crate::parser::tokenizer::valid_variable_name;
     use crate::prelude::*;
     use nadi_plugin::network_func;
-    use std::path::PathBuf;
-
     use std::fs::File;
     use std::io::{BufWriter, Write};
+    use std::path::PathBuf;
+    use std::str::FromStr;
 
     /// Load the given file into the network
     ///
@@ -26,6 +26,26 @@ mod connections {
             todo!()
         } else {
             *net = Network::from_file(file)?;
+        }
+        Ok(())
+    }
+
+    /// Load the given file into the network
+    ///
+    /// This replaces the current network with the one loaded from the
+    /// file.
+    #[network_func(append = false)]
+    fn load_str(
+        net: &mut Network,
+        /// String containing Network connections
+        contents: &str,
+        /// Append the connections in the current network
+        append: bool,
+    ) -> anyhow::Result<()> {
+        if append {
+            todo!()
+        } else {
+            *net = Network::from_str(contents).map_err(|e| anyhow::Error::msg(e.user_msg(None)))?;
         }
         Ok(())
     }
