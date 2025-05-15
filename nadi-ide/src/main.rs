@@ -80,6 +80,14 @@ impl MainWindow {
             Message::Attributes => (),
             Message::Editor(m) => {
                 return match m {
+                    editor::Message::FuncSignature((ty, name)) => {
+                        if let Some(f) = self.terminal.search_function(ty, name) {
+                            Task::perform(async { f }, editor::Message::FuncFound)
+                                .map(Message::Editor)
+                        } else {
+                            Task::none()
+                        }
+                    }
                     editor::Message::RunAllTask => {
                         let buf = self.editor.content.text();
                         self.spawn_pane_maybe(Some(PaneType::Terminal));
@@ -115,8 +123,9 @@ impl MainWindow {
                         }
                     }
                     editor::Message::HelpTask => {
-                        if let Some(func) = self.editor.function.clone() {
-                            self.spawn_pane_maybe(Some(PaneType::FunctionHelp));
+                        self.spawn_pane_maybe(Some(PaneType::FunctionHelp));
+                        if let Some(func) = &self.editor.curr_func {
+                            let func = (func.ty.clone(), func.name.clone());
                             Task::perform(async { func }, |(t, f)| help::Message::Function(t, f))
                                 .map(Message::FuncHelp)
                         } else {

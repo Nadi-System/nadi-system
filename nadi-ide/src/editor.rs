@@ -1,22 +1,95 @@
-use crate::help::FuncType;
 use crate::icons;
 use iced::highlighter;
-use iced::widget::{column, horizontal_space, pick_list, row, text, text_editor, vertical_rule};
+use iced::widget::{
+    column, container, horizontal_space, pick_list, row, scrollable, text,
+    text::{Rich, Span},
+    text_editor, vertical_rule,
+};
 use iced::{Element, Fill, Font, Task, Theme};
 use nadi_core::{
+    expressions::Expression,
+    functions::{FuncArg, FuncArgType},
     parser::tasks,
-    parser::tokenizer::{self, TaskToken},
-    tasks::{TaskInput, TaskKeyword, TaskType},
+    parser::tokenizer,
+    tasks::{FunctionType, Task as NadiTask},
 };
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
+pub mod colors;
 pub mod my_hl;
+
+#[derive(Clone, Debug)]
+pub struct EditorFunction {
+    pub ty: FunctionType,
+    pub name: String,
+    pub args: Vec<FuncArg>,
+}
+
+impl EditorFunction {
+    fn view(&self) -> Rich<'_, Message> {
+        let mut args: Vec<Vec<Span<_>>> = self
+            .args
+            .iter()
+            .map(|a| match &a.category {
+                FuncArgType::Arg => {
+                    vec![
+                        Span::new(a.name.as_str()).color(colors::ARG_COLOR_REQ),
+                        Span::new(": ").color(colors::ARG_COLOR_TYPE),
+                        Span::new(a.ty.to_string()).color(colors::ARG_COLOR_TYPE),
+                    ]
+                }
+                FuncArgType::OptArg => {
+                    vec![
+                        Span::new(a.name.as_str()),
+                        Span::new(": ").color(colors::ARG_COLOR_TYPE),
+                        Span::new(a.ty.to_string()).color(colors::ARG_COLOR_TYPE),
+                    ]
+                }
+                FuncArgType::DefArg(val) => vec![
+                    Span::new(a.name.as_str()),
+                    Span::new(": ").color(colors::ARG_COLOR_TYPE),
+                    Span::new(a.ty.to_string()).color(colors::ARG_COLOR_TYPE),
+                    Span::new(" = "),
+                    Span::new(val.to_string()).color(colors::ARG_COLOR_VAL),
+                ],
+                FuncArgType::Args => {
+                    vec![
+                        Span::new("*").color(colors::ARG_COLOR_GLOB),
+                        Span::new(a.name.as_str()),
+                    ]
+                }
+                FuncArgType::KwArgs => {
+                    vec![
+                        Span::new("**").color(colors::ARG_COLOR_GLOB),
+                        Span::new(a.name.as_str()),
+                    ]
+                }
+            })
+            .collect();
+        let mut texts: Vec<Span<_>> = vec![
+            Span::new(&self.name).color(colors::ARG_COLOR_FUNC),
+            Span::new("(").color(colors::ARG_COLOR_SYM),
+        ];
+        match args.pop() {
+            Some(last) => {
+                for txt in args {
+                    texts.extend(txt);
+                    texts.push(Span::new(", ").color(colors::ARG_COLOR_SYM));
+                }
+                texts.extend(last);
+            }
+            None => (),
+        }
+        texts.push(Span::new(")").color(colors::ARG_COLOR_SYM));
+        Rich::with_spans(texts).font(iced::font::Font::MONOSPACE)
+    }
+}
 
 pub struct Editor {
     theme: highlighter::Theme,
-    pub function: Option<(FuncType, String)>,
-    signature: String,
+    status: String,
+    pub curr_func: Option<EditorFunction>,
     file: Option<PathBuf>,
     is_dirty: bool,
     is_loading: bool,
@@ -28,8 +101,8 @@ impl Default for Editor {
     fn default() -> Self {
         Self {
             theme: highlighter::Theme::SolarizedDark,
-            function: None,
-            signature: String::new(),
+            curr_func: None,
+            status: String::new(),
             file: None,
             is_dirty: false,
             is_loading: false,
@@ -49,9 +122,11 @@ pub enum Message {
     SaveFile,
     FileSaved(Result<PathBuf, Error>),
     Comment,
-    FuncAtMark(Option<(FuncType, String)>),
+    TaskAtMark(Option<NadiTask>),
+    FuncFound(EditorFunction),
     // these messages are only sent when embedded; and are handled in
     // the main window
+    FuncSignature((FunctionType, String)),
     RunAllTask,
     RunTask,
     SearchHelp,
@@ -70,13 +145,49 @@ impl Editor {
                 self.theme = theme;
                 Task::none()
             }
-            Message::FuncAtMark(func) => {
-                // todo get signature from the actual function
-                self.signature = func
-                    .as_ref()
-                    .map(|(t, n)| format!("{t} {n}"))
-                    .unwrap_or_default();
-                self.function = func;
+            Message::FuncFound(f) => {
+                self.curr_func = Some(f);
+                Task::none()
+            }
+            Message::TaskAtMark(task) => {
+                self.curr_func = None;
+                let task = match task {
+                    Some(t) => t,
+                    None => {
+                        self.status = "".to_string();
+                        return Task::none();
+                    }
+                };
+                // todo get status from the actual function
+                self.status = match task {
+                    NadiTask::Eval(et) => {
+                        if let Expression::Function(fc) = et.input {
+                            if self.embedded {
+                                // self.status = format!("Searching Function {}", &fc.name);
+                                return Task::perform(
+                                    async { (et.ty, fc.name) },
+                                    Message::FuncSignature,
+                                );
+                            } else {
+                                format!("Set {} attribute from the {} function", et.ty, fc.name)
+                            }
+                        } else if let Some(_) = et.attr {
+                            format!("Set {} attribute from the expression", et.ty)
+                        } else {
+                            format!("Evaluate {} expression", et.ty)
+                        }
+                    }
+                    NadiTask::Attr(at) => format!("Get {} attribute", at.ty),
+                    NadiTask::Help(Some(kw), Some(name)) => {
+                        format!("Display help for {} function {name}", kw.to_string())
+                    }
+                    NadiTask::Help(None, Some(name)) => format!("Display help for function {name}"),
+                    NadiTask::Help(Some(kw), None) => {
+                        format!("Display help for {}", kw.to_string())
+                    }
+                    NadiTask::Help(None, None) => "Display help".into(),
+                    NadiTask::Exit => "Exit the program".into(),
+                };
                 Task::none()
             }
             Message::EditorAction(action) => {
@@ -84,7 +195,7 @@ impl Editor {
                 self.content.perform(action);
                 Task::perform(
                     task_at_mark(self.content.text(), self.content.cursor_position()),
-                    Message::FuncAtMark,
+                    Message::TaskAtMark,
                 )
             }
             Message::NewFile => {
@@ -193,7 +304,7 @@ impl Editor {
                 .push(icons::action(
                     icons::help_icon(),
                     "Help",
-                    self.function.as_ref().map(|_| Message::HelpTask),
+                    self.curr_func.as_ref().map(|_| Message::HelpTask),
                 ));
         }
         controls = controls.push(horizontal_space());
@@ -203,8 +314,12 @@ impl Editor {
             Message::ThemeChange,
         ));
 
-        let signature = row![text(self.signature.clone())];
-        let status = row![
+        let status: Element<_> = if let Some(f) = &self.curr_func {
+            f.view().into()
+        } else {
+            text(self.status.clone()).into()
+        };
+        let fileinfo = row![
             text(
                 self.file
                     .as_ref()
@@ -230,13 +345,20 @@ impl Editor {
         let editor: Element<_> = match my_hl::NadiFileType::from_str(ext) {
             // use custom highlights for nadi files
             Ok(nft) => editor
-                .highlight_with::<my_hl::NadiHighlighter>(nft, my_hl::Highlight::to_format)
+                .highlight_with::<my_hl::NadiHighlighter>((nft, 0), my_hl::Highlight::to_format)
                 .into(),
             _ => editor.highlight(ext, self.theme).into(),
         };
-        column![controls.spacing(10).height(30.0), signature, editor, status]
-            .padding(10)
-            .into()
+        column![
+            controls.spacing(10).height(30.0),
+            scrollable(container(status).padding(5.0))
+                .height(30.0)
+                .width(Fill),
+            editor,
+            fileinfo
+        ]
+        .padding(10)
+        .into()
     }
 
     pub fn theme(&self) -> Theme {
@@ -298,58 +420,10 @@ async fn save_file(path: Option<PathBuf>, contents: String) -> Result<PathBuf, E
     Ok(path)
 }
 
-enum State {
-    None,
-    Kw(TaskKeyword),
-}
-
-async fn task_at_mark(text: String, mark: (usize, usize)) -> Option<(FuncType, String)> {
+async fn task_at_mark(text: String, mark: (usize, usize)) -> Option<NadiTask> {
     let line = mark.0;
     // if the current line can be parsed into a proper task, use that
     let task_str = text.lines().nth(line)?;
     let tokens = tokenizer::get_tokens(task_str);
-    if let Ok([task, ..]) = tasks::parse(tokens).as_deref() {
-        return if let TaskInput::Function(fc) = &task.input {
-            let fty = match task.ty {
-                TaskType::Node(_) => FuncType::Node,
-                TaskType::Network(_) => FuncType::Network,
-                TaskType::Env => FuncType::Env,
-                _ => return None,
-            };
-            Some((fty, fc.name.clone()))
-        } else {
-            None
-        };
-    }
-
-    // if not parse the whole thing and deduce the last function call
-    let mut state = State::None;
-    let mut func = None;
-    let mut tokens = tokenizer::VecTokens::new(tokenizer::get_tokens(&text)).ok()?;
-    while tokens.line <= line {
-        match tokens.next_no_ws(true) {
-            Some(t) => match t.ty {
-                TaskToken::Keyword(k) => {
-                    state = State::Kw(k);
-                }
-                TaskToken::Function => {
-                    if let State::Kw(kw) = state {
-                        func = Some((kw, t.content.to_string()));
-                    }
-                    state = State::None;
-                }
-                _ => (),
-            },
-            None => break,
-        }
-    }
-    match func {
-        Some((kw, func)) => match kw {
-            TaskKeyword::Node => Some((FuncType::Node, func)),
-            TaskKeyword::Network => Some((FuncType::Network, func)),
-            TaskKeyword::Env => Some((FuncType::Env, func)),
-            _ => None,
-        },
-        _ => None,
-    }
+    tasks::parse(tokens).ok()?.get(0).cloned()
 }

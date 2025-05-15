@@ -1,3 +1,4 @@
+use crate::editor::EditorFunction;
 use crate::editor::my_hl;
 use crate::help::md_style;
 use crate::icons;
@@ -8,7 +9,7 @@ use iced::widget::{
 };
 use iced::{Element, Fill, Font, Length, Task, Theme};
 use nadi_core::string_template::Template;
-use nadi_core::tasks::{Task as NadiTask, TaskContext};
+use nadi_core::tasks::{FunctionType, Task as NadiTask, TaskContext};
 use std::io::Read;
 use std::sync::Arc;
 
@@ -22,6 +23,7 @@ pub struct Terminal {
     command: String,
     status: String,
     content: text_editor::Content,
+    last_line: usize,
     pub task_ctx: TaskContext,
     progress: f32,
     network: NetworkData,
@@ -41,6 +43,7 @@ impl Default for Terminal {
             command: String::new(),
             status: String::new(),
             content: text_editor::Content::default(),
+            last_line: 0,
             task_ctx: TaskContext::new(None),
             progress: 0.0,
             network: NetworkData::default(),
@@ -81,6 +84,17 @@ impl Terminal {
         self
     }
 
+    pub fn search_function(&self, ty: FunctionType, name: String) -> Option<EditorFunction> {
+        let args = match ty {
+            FunctionType::Network => self.task_ctx.functions.network(&name).map(|f| f.args()),
+            FunctionType::Node => self.task_ctx.functions.node(&name).map(|f| f.args()),
+            _ => None,
+        }
+        .or_else(|| self.task_ctx.functions.env(&name).map(|f| f.args()))?
+        .into();
+        Some(EditorFunction { ty, name, args })
+    }
+
     pub fn append_history(&mut self, entry: String) {
         self.history_str.push(entry);
         self.history = combo_box::State::new(self.history_str.clone());
@@ -110,12 +124,31 @@ impl Terminal {
         (output, Ok(Some(results)))
     }
 
-    fn append_term(&mut self, text: &str) {
+    fn append_term(&mut self, text: &str, prompt: bool, append: bool) {
+        if text.is_empty() {
+            return;
+        }
         self.content
             .perform(text_editor::Action::Move(text_editor::Motion::DocumentEnd));
+        if !append {
+            self.last_line = self.content.cursor_position().0;
+        }
+        let text = if prompt {
+            let mut new_lines = Vec::with_capacity(text.lines().count());
+            let mut lines = text.lines();
+            match lines.next() {
+                Some(l) => new_lines.push(format!(">>> {l}")),
+                None => (),
+            }
+            new_lines.extend(lines.into_iter().map(|l| format!(">.. {l}")));
+            new_lines.push(String::new()); // for trailing newline
+            new_lines.join("\n")
+        } else {
+            format!("{}\n", text.trim())
+        };
         self.content
             .perform(text_editor::Action::Edit(text_editor::Edit::Paste(
-                Arc::new(format!("{}\n", text.trim())),
+                Arc::new(text),
             )));
     }
 
@@ -151,10 +184,10 @@ impl Terminal {
                     return Task::none();
                 };
                 let (out, res) = self.execute_task(task);
-                self.append_term(&out);
+                self.append_term(out.trim(), false, true);
                 match res {
-                    Ok(Some(s)) => self.append_term(&s),
-                    Err(s) => self.append_term(&s),
+                    Ok(Some(s)) => self.append_term(s.trim(), false, true),
+                    Err(s) => self.append_term(s.trim(), false, true),
                     _ => (),
                 };
                 self.network.update(
@@ -170,7 +203,7 @@ impl Terminal {
                 return Task::perform(async { tasks }, move |t| Message::TaskChain(done + 1, t));
             }
             Message::RunTasks(tasks) => {
-                self.append_term(&tasks);
+                self.append_term(tasks.trim(), true, false);
                 self.progress = 0.0;
                 let tasks_vec = match nadi_core::parser::tasks::parse(
                     nadi_core::parser::tokenizer::get_tokens(&tasks),
@@ -280,7 +313,7 @@ impl Terminal {
                 .font(Font::MONOSPACE)
                 .on_action(Message::EditorAction)
                 .highlight_with::<my_hl::NadiHighlighter>(
-                    my_hl::NadiFileType::Terminal,
+                    (my_hl::NadiFileType::Terminal, self.last_line),
                     my_hl::Highlight::to_format
                 ),
             text(&self.status).style(text::danger),

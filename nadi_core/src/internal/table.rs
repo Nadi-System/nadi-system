@@ -2,7 +2,7 @@ use nadi_plugin::nadi_internal_plugin;
 
 #[nadi_internal_plugin]
 mod table {
-    
+
     use crate::prelude::*;
     use crate::table::Table;
 
@@ -15,7 +15,7 @@ mod table {
     /// Save CSV
     #[network_func]
     fn save_csv(
-        net: &mut Network,
+        net: &Network,
         path: &Path,
         fields: &[String],
         filter: Vec<bool>,
@@ -51,7 +51,7 @@ mod table {
     */
     #[network_func]
     fn table_to_markdown(
-        net: &mut Network,
+        net: &Network,
         /// Path to the table file
         table: Option<PathBuf>,
         /// String template for table

@@ -13,7 +13,7 @@ mod render {
     /// Template section of the NADI book.
     #[node_func(safe = false)]
     fn render(
-        node: &mut NodeInner,
+        node: &NodeInner,
         /// String template to render
         template: &Template,
         /// if render fails keep it as it is instead of exiting
@@ -26,6 +26,32 @@ mod render {
             node.render(template).map_err(|e| e.to_string())?
         };
         Ok(text)
+    }
+
+    #[network_func(safe = false, join = "\n")]
+    fn render(
+        network: &Network,
+        /// Path to the template file
+        template: &Template,
+        /// if render fails keep it as it is instead of exiting
+        safe: bool,
+        /// String to join the render results
+        join: &str,
+    ) -> Result<String, String> {
+        let lines: Vec<String> = network
+            .nodes()
+            .map(|n| {
+                let node = n.lock();
+                if safe {
+                    Ok(node
+                        .render(template)
+                        .unwrap_or_else(|_| template.original().to_string()))
+                } else {
+                    node.render(template).map_err(|e| e.to_string())
+                }
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        Ok(lines.join(join))
     }
 
     /// Render a File template for the nodes in the whole network
@@ -53,8 +79,8 @@ mod render {
     /// - `template`: Path to the template file
     /// - `outfile` [Optional]: Path to save the template file, if none it'll be printed in stdout
     #[network_func]
-    fn render(
-        network: &mut Network,
+    fn render_template(
+        network: &Network,
         /// Path to the template file
         template: PathBuf,
         /// output file
@@ -175,11 +201,7 @@ mod render_utils {
             })
         }
 
-        pub fn print_render(
-            &self,
-            net: &mut Network,
-            output: Option<PathBuf>,
-        ) -> anyhow::Result<()> {
+        pub fn print_render(&self, net: &Network, output: Option<PathBuf>) -> anyhow::Result<()> {
             let file = output.map(|f| File::create(f).unwrap());
 
             let mut writer: Box<dyn Write> = match file {
@@ -205,10 +227,7 @@ mod render_utils {
                     }
                     RenderFileContentsType::Literal(s) => write!(writer, "{}", s)?,
                     RenderFileContentsType::Snippet(templ, prop) => {
-                        for node in net
-                            .nodes_propagation(prop)
-                            .map_err(anyhow::Error::msg)?
-                        {
+                        for node in net.nodes_propagation(prop).map_err(anyhow::Error::msg)? {
                             write!(writer, "{}", node.lock().render(templ)?)?;
                         }
                     }

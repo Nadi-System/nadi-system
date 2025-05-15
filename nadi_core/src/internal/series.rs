@@ -8,20 +8,20 @@ mod series {
 
     /// Number of series in the node
     #[node_func]
-    fn sr_count(node: &mut NodeInner) -> usize {
+    fn sr_count(node: &NodeInner) -> usize {
         node.series_map().len()
     }
 
     /// List all series in the node
     #[node_func]
-    fn sr_list(node: &mut NodeInner) -> Vec<String> {
+    fn sr_list(node: &NodeInner) -> Vec<String> {
         node.series_map().keys().map(|s| s.to_string()).collect()
     }
 
     /// Type name of the series
     #[node_func(safe = false)]
     fn sr_dtype(
-        node: &mut NodeInner,
+        node: &NodeInner,
         /// Name of the series
         name: &str,
         /// Do not error if series does't exist
@@ -37,7 +37,7 @@ mod series {
     /// Length of the series
     #[node_func(safe = false)]
     fn sr_len(
-        node: &mut NodeInner,
+        node: &NodeInner,
         /// Name of the series
         name: &str,
         /// Do not error if series does't exist
@@ -53,7 +53,7 @@ mod series {
     /// Type name of the series
     #[node_func]
     fn sr_mean(
-        node: &mut NodeInner,
+        node: &NodeInner,
         /// Name of the series
         name: &str,
     ) -> Result<f64, String> {
@@ -74,7 +74,7 @@ mod series {
     /// Sum of the series
     #[node_func]
     fn sr_sum(
-        node: &mut NodeInner,
+        node: &NodeInner,
         /// Name of the series
         name: &str,
     ) -> Result<Attribute, String> {
@@ -109,7 +109,7 @@ mod series {
     /// Make an array from the series
     #[node_func(safe = false)]
     fn sr_to_array(
-        node: &mut NodeInner,
+        node: &NodeInner,
         /// Name of the series
         name: &str,
         /// Do not error if series does't exist

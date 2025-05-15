@@ -13,20 +13,20 @@ mod timeseries {
 
     /// Number of timeseries in the node
     #[node_func]
-    fn ts_count(node: &mut NodeInner) -> usize {
+    fn ts_count(node: &NodeInner) -> usize {
         node.ts_map().len()
     }
 
     /// List all timeseries in the node
     #[node_func]
-    fn ts_list(node: &mut NodeInner) -> Vec<String> {
+    fn ts_list(node: &NodeInner) -> Vec<String> {
         node.ts_map().keys().map(|s| s.to_string()).collect()
     }
 
     /// Type name of the timeseries
     #[node_func(safe = false)]
     fn ts_dtype(
-        node: &mut NodeInner,
+        node: &NodeInner,
         /// Name of the timeseries
         name: &str,
         /// Do not error if timeseries does't exist
@@ -42,7 +42,7 @@ mod timeseries {
     /// Length of the timeseries
     #[node_func(safe = false)]
     fn ts_len(
-        node: &mut NodeInner,
+        node: &NodeInner,
         /// Name of the timeseries
         name: &str,
         /// Do not error if timeseries does't exist
@@ -61,7 +61,7 @@ mod timeseries {
     */
     #[node_func(header = true)]
     fn ts_print(
-        node: &mut NodeInner,
+        node: &NodeInner,
         /// name of the timeseries
         name: &String,
         /// show header
@@ -103,7 +103,7 @@ mod timeseries {
     /// TODO: output to `file: PathBuf`
     #[network_func]
     fn ts_print_csv(
-        net: &mut Network,
+        net: &Network,
         /// Name of the timeseries to save
         name: String,
         /// number of head rows to show (all by default)
@@ -153,7 +153,7 @@ mod timeseries {
     /// Write the given nodes to csv with given attributes and series
     #[network_func]
     fn series_csv(
-        net: &mut Network,
+        net: &Network,
         filter: Vec<bool>,
         /// Path to the output csv
         outfile: PathBuf,

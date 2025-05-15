@@ -18,6 +18,8 @@ use abi_stable::std_types::RSome;
 #[cfg(feature = "chrono")]
 use chrono::{Datelike, Timelike};
 
+static DEFAULT_ATTR: Attribute = Attribute::Bool(true);
+
 pub trait HasAttributes {
     fn node_name(&self) -> Option<&str> {
         None
@@ -25,7 +27,12 @@ pub trait HasAttributes {
     fn attr_map(&self) -> &AttrMap;
     fn attr_map_mut(&mut self) -> &mut AttrMap;
     fn attr(&self, name: &str) -> Option<&Attribute> {
-        self.attr_map().get(name)
+        if name == "_" {
+            // always available
+            Some(&DEFAULT_ATTR)
+        } else {
+            self.attr_map().get(name)
+        }
     }
     fn attr_mut(&mut self, name: &str) -> Option<&mut Attribute> {
         self.attr_map_mut().get_mut(name)
@@ -34,6 +41,10 @@ pub trait HasAttributes {
         self.attr_map_mut().remove(name).into()
     }
     fn set_attr(&mut self, name: &str, val: Attribute) -> Option<Attribute> {
+        if name == "_" {
+            // cannot be set, it's also for discarding results
+            return None;
+        }
         if let Some(v) = self.attr(name) {
             if v == &val {
                 return None;

@@ -67,7 +67,7 @@ mod connections {
     /// `save_graphviz` from `graphviz` plugin instead.
     #[network_func(quote_all = true, graphviz = false)]
     fn save_file(
-        net: &mut Network,
+        net: &Network,
         /// Path to the output file
         file: PathBuf,
         /// quote all node names; if false, doesn't quote valid identifier names

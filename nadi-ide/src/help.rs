@@ -3,36 +3,18 @@ use iced::widget::{
     button, center, column, horizontal_space, markdown, row, scrollable, text, text_input, toggler,
 };
 use iced::{Color, Element, Length, Theme, widget::Column};
-use nadi_core::functions::{FuncArg, NadiFunctions};
+use nadi_core::{
+    functions::{FuncArg, NadiFunctions},
+    tasks::FunctionType,
+};
 
 pub static MAIN_HELP: &str = include_str!("../markdown/main.md");
 static FUNC_WIDTH: f32 = 300.0;
 
-#[derive(Clone, Debug)]
-pub enum FuncType {
-    Node,
-    Network,
-    Env,
-}
-
-impl std::fmt::Display for FuncType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Self::Node => "node",
-                Self::Network => "network",
-                Self::Env => "env",
-            }
-        )
-    }
-}
-
 pub struct MdHelp {
     pub light_theme: bool,
     functions: NadiFunctions,
-    state: Option<FuncType>,
+    state: Option<FunctionType>,
     search: String,
     markdown: Vec<markdown::Item>,
     collapsed: bool,
@@ -46,8 +28,8 @@ pub enum Message {
     Github,
     Book,
     ToggleCollapsed,
-    Function(FuncType, String),
-    FuncTypeChange(Option<FuncType>),
+    Function(FunctionType, String),
+    FunctionTypeChange(Option<FunctionType>),
     ThemeChange(bool),
     SearchChange(String),
 }
@@ -121,27 +103,27 @@ impl MdHelp {
         } else {
             let ftypes = row![
                 button("All")
-                    .on_press(Message::FuncTypeChange(None))
+                    .on_press(Message::FunctionTypeChange(None))
                     .style(match self.state {
                         None => button::success,
                         _ => button::primary,
                     }),
                 button("Env")
-                    .on_press(Message::FuncTypeChange(Some(FuncType::Env)))
+                    .on_press(Message::FunctionTypeChange(Some(FunctionType::Env)))
                     .style(match self.state {
-                        Some(FuncType::Env) => button::success,
+                        Some(FunctionType::Env) => button::success,
                         _ => button::primary,
                     }),
                 button("Node")
-                    .on_press(Message::FuncTypeChange(Some(FuncType::Node)))
+                    .on_press(Message::FunctionTypeChange(Some(FunctionType::Node)))
                     .style(match self.state {
-                        Some(FuncType::Node) => button::success,
+                        Some(FunctionType::Node) => button::success,
                         _ => button::primary,
                     }),
                 button("Network")
-                    .on_press(Message::FuncTypeChange(Some(FuncType::Network)))
+                    .on_press(Message::FunctionTypeChange(Some(FunctionType::Network)))
                     .style(match self.state {
-                        Some(FuncType::Network) => button::success,
+                        Some(FunctionType::Network) => button::success,
                         _ => button::primary,
                     }),
             ]
@@ -206,22 +188,22 @@ impl MdHelp {
             Message::SearchChange(s) => {
                 self.search = s;
             }
-            Message::Function(FuncType::Node, func) => {
+            Message::Function(FunctionType::Node, func) => {
                 if let Some(f) = self.functions.node(&func) {
                     self.markdown = help!("node", func, f);
                 }
             }
-            Message::Function(FuncType::Network, func) => {
+            Message::Function(FunctionType::Network, func) => {
                 if let Some(f) = self.functions.network(&func) {
                     self.markdown = help!("network", func, f);
                 }
             }
-            Message::Function(FuncType::Env, func) => {
+            Message::Function(FunctionType::Env, func) => {
                 if let Some(f) = self.functions.env(&func) {
                     self.markdown = help!("env", func, f);
                 }
             }
-            Message::FuncTypeChange(state) => {
+            Message::FunctionTypeChange(state) => {
                 self.state = state;
             }
             Message::ThemeChange(t) => {
@@ -241,34 +223,34 @@ impl MdHelp {
 
 pub fn list_functions<'a>(
     functions: &'a NadiFunctions,
-    state: &Option<FuncType>,
+    state: &Option<FunctionType>,
     search: &str,
-) -> Vec<(FuncType, &'a str)> {
+) -> Vec<(FunctionType, &'a str)> {
     let searches: Vec<&str> = search.trim().split(' ').collect();
-    let mut func: Vec<(FuncType, &str)> = match state {
-        Some(FuncType::Node) => functions
+    let mut func: Vec<(FunctionType, &str)> = match state {
+        Some(FunctionType::Node) => functions
             .node_functions()
             .iter()
             .filter(|n| searches.iter().all(|&s| n.0.contains(s) || s == "node"))
-            .map(|n| (FuncType::Node, n.0.as_str()))
+            .map(|n| (FunctionType::Node, n.0.as_str()))
             .collect(),
-        Some(FuncType::Network) => functions
+        Some(FunctionType::Network) => functions
             .network_functions()
             .iter()
             .filter(|n| searches.iter().all(|&s| n.0.contains(s) || s == "network"))
-            .map(|n| (FuncType::Network, n.0.as_str()))
+            .map(|n| (FunctionType::Network, n.0.as_str()))
             .collect(),
-        Some(FuncType::Env) => functions
+        Some(FunctionType::Env) => functions
             .env_functions()
             .iter()
             .filter(|n| searches.iter().all(|&s| n.0.contains(s) || s == "env"))
-            .map(|n| (FuncType::Env, n.0.as_str()))
+            .map(|n| (FunctionType::Env, n.0.as_str()))
             .collect(),
         None => {
             return vec![
-                list_functions(functions, &Some(FuncType::Env), search),
-                list_functions(functions, &Some(FuncType::Node), search),
-                list_functions(functions, &Some(FuncType::Network), search),
+                list_functions(functions, &Some(FunctionType::Env), search),
+                list_functions(functions, &Some(FunctionType::Node), search),
+                list_functions(functions, &Some(FunctionType::Network), search),
             ]
             .into_iter()
             .flatten()

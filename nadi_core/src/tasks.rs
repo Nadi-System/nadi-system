@@ -59,7 +59,7 @@ impl TaskContext {
                 for n in nodes {
                     let res = match task
                         .input
-                        .resolve_eval_mut(&FunctionType::Network, self, Some(&n))
+                        .resolve_eval_mut(&FunctionType::Node, self, Some(&n))
                         // add node name to this error
                         .map_err(|e| e.message())?
                     {
@@ -87,7 +87,7 @@ impl TaskContext {
                         attrs.push(format!("  {} = {}", n.name(), res.to_string()));
                     }
                 }
-                if task.silent {
+                if task.silent || attrs.is_empty() {
                     Ok(None)
                 } else {
                     Ok(Some(format!("{{\n{}\n}}", attrs.join(",\n"))))
@@ -279,14 +279,17 @@ pub enum FunctionType {
     Network,
 }
 
-impl ToString for FunctionType {
-    fn to_string(&self) -> String {
-        match self {
-            Self::Env => "env",
-            Self::Node => "node",
-            Self::Network => "network",
-        }
-        .to_string()
+impl std::fmt::Display for FunctionType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Node => "node",
+                Self::Network => "network",
+                Self::Env => "env",
+            }
+        )
     }
 }
 

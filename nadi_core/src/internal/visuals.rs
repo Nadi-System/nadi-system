@@ -9,7 +9,7 @@ mod visuals {
     /// Set the node size of the nodes based on the attribute value
     #[network_func(minsize = 4.0, maxsize = 12.0)]
     fn set_nodesize_attrs(
-        net: &mut Network,
+        net: &Network,
         /// Attribute values to use for size scaling
         #[relaxed]
         attrs: &[f64],

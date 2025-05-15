@@ -106,6 +106,8 @@ impl Highlight {
                 TaskToken::Slash => Self::Operator,
                 TaskToken::Percentage => Self::Operator,
                 TaskToken::Question => Self::Symbol,
+                TaskToken::Semicolon => Self::Operator,
+                TaskToken::None => Self::Comment,
                 TaskToken::Caret => Self::Operator,
                 TaskToken::And => Self::Operator,
                 TaskToken::Or => Self::Operator,
@@ -261,19 +263,24 @@ pub struct NadiHighlighter {
 }
 
 impl Highlighter for NadiHighlighter {
-    type Settings = NadiFileType;
+    type Settings = (NadiFileType, usize);
     type Highlight = Highlight;
     type Iterator<'a> = Box<dyn Iterator<Item = (Range<usize>, Self::Highlight)> + 'a>;
     fn new(settings: &Self::Settings) -> Self {
         Self {
-            curr_line: 0,
+            curr_line: settings.1,
             ml_str: HashMap::new(),
-            settings: settings.clone(),
+            settings: settings.0.clone(),
         }
     }
     fn update(&mut self, new_settings: &Self::Settings) {
-        self.settings = new_settings.clone();
+        if self.settings != new_settings.0 {
+            self.settings = new_settings.0.clone();
+            self.change_line(0);
+        }
+        self.change_line(new_settings.1);
     }
+
     fn change_line(&mut self, line: usize) {
         self.curr_line = line;
         // if line is changed, remove the saved states for

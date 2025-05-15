@@ -241,10 +241,9 @@ impl Expression {
                                                 .into_option()
                                                 .ok_or(EvalError::MutexError(file!(), line!()))?
                                                 .attr_nested(&vt.prefix, &vt.name)
-                                                .map_err(EvalError::AttributeError)?
                                             {
-                                                Some(_) => Ok(Attribute::Bool(true)),
-                                                None => Ok(Attribute::Bool(false)),
+                                                Ok(Some(_)) => Ok(Attribute::Bool(true)),
+                                                _ => Ok(Attribute::Bool(false)),
                                             }
                                         })
                                         .collect::<Result<_, EvalError>>()?;
@@ -281,18 +280,24 @@ impl Expression {
                             }
                         },
                         VarType::Output => match node {
-                            Some(n) => n
+                            Some(n) => match n
                                 .try_lock()
                                 .into_option()
                                 .ok_or(EvalError::MutexError(file!(), line!()))?
                                 .output()
                                 .into_option()
-                                .ok_or(EvalError::NoOutputNode)?
-                                .try_lock()
-                                .into_option()
-                                .ok_or(EvalError::MutexError(file!(), line!()))?
-                                .attr_nested(&vt.prefix, &vt.name)
-                                .map(|a| a.cloned()),
+                            {
+                                Some(o) => o,
+                                None if vt.check => {
+                                    return Ok(Self::Literal(Attribute::Bool(false)))
+                                }
+                                None => return Err(EvalError::NoOutputNode),
+                            }
+                            .try_lock()
+                            .into_option()
+                            .ok_or(EvalError::MutexError(file!(), line!()))?
+                            .attr_nested(&vt.prefix, &vt.name)
+                            .map(|a| a.cloned()),
                             None => {
                                 return Err(match ft {
                                     FunctionType::Node => EvalError::LogicalError(

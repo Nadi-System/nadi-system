@@ -15,20 +15,24 @@ mod core {
 
     /// Count the number of nodes in the network
     #[network_func]
-    fn count(net: &mut Network) -> usize {
-        net.nodes().count()
+    fn count(net: &Network, vars: Option<Vec<bool>>) -> usize {
+        if let Some(v) = vars {
+            v.iter().filter(|a| **a).count()
+        } else {
+            net.nodes().count()
+        }
     }
 
     /// Count the number of input nodes in the node
     #[node_func]
-    fn inputs_len(node: &mut NodeInner) -> usize {
+    fn inputs_len(node: &NodeInner) -> usize {
         node.inputs().len()
     }
 
     /// Get attributes of the input nodes
     #[node_func(attr = "NAME")]
     fn inputs(
-        node: &mut NodeInner,
+        node: &NodeInner,
         /// Attribute to get from inputs
         attr: String,
     ) -> Result<Attribute, String> {
@@ -42,14 +46,14 @@ mod core {
 
     /// Node has an outlet or not
     #[node_func]
-    fn has_outlet(node: &mut NodeInner) -> bool {
+    fn has_outlet(node: &NodeInner) -> bool {
         node.output().is_some()
     }
 
     /// Get attributes of the output node
     #[node_func(attr = "NAME")]
     fn output(
-        node: &mut NodeInner,
+        node: &NodeInner,
         /// Attribute to get from inputs
         attr: String,
     ) -> Result<Attribute, String> {
@@ -164,5 +168,31 @@ mod core {
         attributes: &AttrMap,
     ) -> Attribute {
         Attribute::Table(attributes.clone())
+    }
+
+    /// Count the number of true values in the array
+    #[env_func(start=Attribute::Integer(0))]
+    fn sum(vars: Vec<Attribute>, start: Attribute) -> Result<Attribute, String> {
+        let mut val = start;
+        for r in vars {
+            val = (val + r).map_err(|e| e.message())?
+        }
+        Ok(val)
+    }
+
+    /// Count the number of true values in the array
+    #[env_func]
+    fn prod(vars: &[Attribute]) -> Result<Attribute, String> {
+        match vars {
+            [] => Ok(Attribute::Float(1.0)),
+            [val] => Ok(val.clone()),
+            [val, rest @ ..] => {
+                let mut val = val.clone();
+                for r in rest {
+                    val = (val * r.clone()).map_err(|e| e.message())?
+                }
+                Ok(val)
+            }
+        }
     }
 }

@@ -132,7 +132,7 @@ where
 }
 
 #[repr(C)]
-#[derive(StableAbi)]
+#[derive(StableAbi, Debug, Clone)]
 pub struct FuncArg {
     pub name: RString,
     pub ty: RString,
@@ -166,7 +166,7 @@ impl FuncArg {
 }
 
 #[repr(C)]
-#[derive(StableAbi)]
+#[derive(StableAbi, Clone, Debug)]
 pub enum FuncArgType {
     Arg,
     OptArg,
