@@ -1,4 +1,4 @@
-use crate::attrs::{Attribute, FromAttribute, HasAttributes};
+use crate::attrs::{Attribute, HasAttributes};
 use crate::functions::FunctionCtx;
 use crate::node::Node;
 use crate::tasks::{FunctionType, TaskContext, TaskKeyword};
@@ -202,14 +202,20 @@ impl Expression {
             Self::Variable(vt) => {
                 let attr = match &vt.ty {
                     Some(ty) => match ty {
-                        VarType::Env => ctx.env.attr_nested(&vt.names).map(|a| a.cloned()),
-                        VarType::Network => ctx.network.attr_nested(&vt.names).map(|a| a.cloned()),
+                        VarType::Env => ctx
+                            .env
+                            .attr_nested(&vt.prefix, &vt.name)
+                            .map(|a| a.cloned()),
+                        VarType::Network => ctx
+                            .network
+                            .attr_nested(&vt.prefix, &vt.name)
+                            .map(|a| a.cloned()),
                         VarType::Node => match node {
                             Some(n) => n
                                 .try_lock()
                                 .into_option()
                                 .ok_or(EvalError::MutexError(file!(), line!()))?
-                                .attr_nested(&vt.names)
+                                .attr_nested(&vt.prefix, &vt.name)
                                 .map(|a| a.cloned()),
                             None => {
                                 return Err(match ft {
@@ -230,13 +236,18 @@ impl Expression {
                                         .inputs()
                                         .iter()
                                         .map(|i| {
-                                            if let Ok(Some(_)) = i.lock().attr_nested(&vt.names) {
-                                                Attribute::Bool(true)
-                                            } else {
-                                                Attribute::Bool(false)
+                                            match i
+                                                .try_lock()
+                                                .into_option()
+                                                .ok_or(EvalError::MutexError(file!(), line!()))?
+                                                .attr_nested(&vt.prefix, &vt.name)
+                                                .map_err(EvalError::AttributeError)?
+                                            {
+                                                Some(_) => Ok(Attribute::Bool(true)),
+                                                None => Ok(Attribute::Bool(false)),
                                             }
                                         })
-                                        .collect();
+                                        .collect::<Result<_, EvalError>>()?;
                                     return Ok(Self::Literal(Attribute::Array(res.into())));
                                 } else {
                                     let mut vars = Vec::new();
@@ -250,7 +261,7 @@ impl Expression {
                                             .try_lock()
                                             .into_option()
                                             .ok_or(EvalError::MutexError(file!(), line!()))?
-                                            .attr_nested(&vt.names)
+                                            .attr_nested(&vt.prefix, &vt.name)
                                             .map(|a| a.cloned());
                                         vars.push(
                                             a.map_err(EvalError::AttributeError)?
@@ -280,7 +291,7 @@ impl Expression {
                                 .try_lock()
                                 .into_option()
                                 .ok_or(EvalError::MutexError(file!(), line!()))?
-                                .attr_nested(&vt.names)
+                                .attr_nested(&vt.prefix, &vt.name)
                                 .map(|a| a.cloned()),
                             None => {
                                 return Err(match ft {
@@ -298,7 +309,7 @@ impl Expression {
                                     .try_lock()
                                     .into_option()
                                     .ok_or(EvalError::MutexError(file!(), line!()))?
-                                    .attr_nested(&vt.names)
+                                    .attr_nested(&vt.prefix, &vt.name)
                                     .map(|a| a.cloned());
                                 let val = a.map_err(EvalError::AttributeError)?;
                                 if vt.check {
@@ -311,16 +322,20 @@ impl Expression {
                         }
                     },
                     None => match ft {
-                        FunctionType::Env => ctx.env.attr_nested(&vt.names).map(|a| a.cloned()),
-                        FunctionType::Network => {
-                            ctx.network.attr_nested(&vt.names).map(|a| a.cloned())
-                        }
+                        FunctionType::Env => ctx
+                            .env
+                            .attr_nested(&vt.prefix, &vt.name)
+                            .map(|a| a.cloned()),
+                        FunctionType::Network => ctx
+                            .network
+                            .attr_nested(&vt.prefix, &vt.name)
+                            .map(|a| a.cloned()),
                         FunctionType::Node => match node {
                             Some(n) => n
                                 .try_lock()
                                 .into_option()
                                 .ok_or(EvalError::MutexError(file!(), line!()))?
-                                .attr_nested(&vt.names)
+                                .attr_nested(&vt.prefix, &vt.name)
                                 .map(|a| a.cloned()),
                             None => {
                                 return Err(EvalError::LogicalError(
@@ -498,27 +513,38 @@ impl ToString for BiOperator {
 #[derive(Clone, PartialEq, Debug)]
 pub struct InputVar {
     pub ty: Option<VarType>,
-    pub names: Vec<String>,
+    pub prefix: Vec<String>,
+    pub name: String,
     pub check: bool,
 }
 
 impl ToString for InputVar {
     fn to_string(&self) -> String {
         format!(
-            "{}{}{}",
+            "{}{}{}{}",
             self.ty
                 .as_ref()
                 .map(|t| format!("{}.", t.to_string()))
                 .unwrap_or_default(),
-            self.names.join("."),
+            self.prefix
+                .iter()
+                .map(|p| format!("{p}."))
+                .collect::<Vec<String>>()
+                .join(""),
+            self.name,
             self.check.then(|| "?").unwrap_or_default(),
         )
     }
 }
 
 impl InputVar {
-    pub fn new(ty: Option<VarType>, names: Vec<String>, check: bool) -> Self {
-        Self { ty, names, check }
+    pub fn new(ty: Option<VarType>, prefix: Vec<String>, name: String, check: bool) -> Self {
+        Self {
+            ty,
+            prefix,
+            name,
+            check,
+        }
     }
 }
 
@@ -743,11 +769,4 @@ impl FunctionCall {
             },
         }
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::parser::tokenizer::get_tokens;
-    use rstest::rstest;
 }

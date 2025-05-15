@@ -1,7 +1,6 @@
-use crate::expressions::{EvalError, Expression, InputVar};
-use crate::functions::{FuncArg, FuncArgType, FunctionRet, NadiFunctions};
+use crate::expressions::{EvalError, Expression};
+use crate::functions::{FuncArg, FuncArgType, NadiFunctions};
 use crate::prelude::*;
-use colored::Colorize;
 
 pub struct TaskContext {
     pub network: Network,
@@ -31,14 +30,10 @@ impl TaskContext {
         match task.ty {
             FunctionType::Env => match task.input.resolve_eval(&FunctionType::Env, &self, None) {
                 Ok(Some(a)) => {
-                    if task.attribute.is_empty() {
-                        if task.silent {
-                            Ok(None)
-                        } else {
-                            Ok(Some(a.to_string()))
-                        }
-                    } else {
-                        if let Some(old) = self.env.set_attr_nested(&task.attribute, a.clone())? {
+                    if let Some(attr) = &task.attr {
+                        if let Some(old) =
+                            self.env.set_attr_nested(&task.attr_pre, attr, a.clone())?
+                        {
                             if task.silent {
                                 Ok(None)
                             } else {
@@ -46,6 +41,12 @@ impl TaskContext {
                             }
                         } else {
                             Ok(None)
+                        }
+                    } else {
+                        if task.silent {
+                            Ok(None)
+                        } else {
+                            Ok(Some(a.to_string()))
                         }
                     }
                 }
@@ -67,19 +68,13 @@ impl TaskContext {
                         Some(r) => r,
                         None => continue,
                     };
-                    // TODO add this to all other lock() so we get
-                    // error instead of program freezing
                     let mut n = n
                         .try_lock()
                         .into_option()
                         .ok_or(EvalError::MutexError(file!(), line!()))
                         .map_err(|e| e.message())?;
-                    if task.attribute.is_empty() {
-                        if !task.silent {
-                            attrs.push(format!("  {} = {}", n.name(), res.to_string()));
-                        }
-                    } else {
-                        let old = n.set_attr_nested(&task.attribute, res.clone())?;
+                    if let Some(attr) = &task.attr {
+                        let old = n.set_attr_nested(&task.attr_pre, attr, res.clone())?;
                         if !task.silent {
                             if let Some(o) = old {
                                 attrs.push(format!(
@@ -89,6 +84,10 @@ impl TaskContext {
                                     res.to_string()
                                 ));
                             }
+                        }
+                    } else {
+                        if !task.silent {
+                            attrs.push(format!("  {} = {}", n.name(), res.to_string()));
                         }
                     }
                 }
@@ -104,15 +103,10 @@ impl TaskContext {
                     .resolve_eval_mut(&FunctionType::Network, self, None)
                 {
                     Ok(Some(a)) => {
-                        if task.attribute.is_empty() {
-                            if task.silent {
-                                Ok(None)
-                            } else {
-                                Ok(Some(a.to_string()))
-                            }
-                        } else {
+                        if let Some(attr) = &task.attr {
                             if let Some(old) =
-                                self.network.set_attr_nested(&task.attribute, a.clone())?
+                                self.network
+                                    .set_attr_nested(&task.attr_pre, attr, a.clone())?
                             {
                                 if task.silent {
                                     Ok(None)
@@ -121,6 +115,12 @@ impl TaskContext {
                                 }
                             } else {
                                 Ok(None)
+                            }
+                        } else {
+                            if task.silent {
+                                Ok(None)
+                            } else {
+                                Ok(Some(a.to_string()))
                             }
                         }
                     }
@@ -135,7 +135,7 @@ impl TaskContext {
         match task.ty {
             FunctionType::Env => self
                 .env
-                .attr_nested(&task.attribute)?
+                .attr_nested(&task.attr_pre, &task.attr)?
                 .map(|a| a.to_string())
                 .ok_or(EvalError::AttributeNotFound)
                 .map_err(|e| e.to_string()),
@@ -151,7 +151,7 @@ impl TaskContext {
                             "  {} = {}",
                             n.name(),
                             if let Some(a) = n
-                                .attr_nested(&task.attribute)
+                                .attr_nested(&task.attr_pre, &task.attr)
                                 .map_err(|e| format!("Node {}: {e}", n.name()))?
                             {
                                 a.to_string()
@@ -165,7 +165,7 @@ impl TaskContext {
             }
             FunctionType::Network => self
                 .network
-                .attr_nested(&task.attribute)?
+                .attr_nested(&task.attr_pre, &task.attr)?
                 .map(|a| a.to_string())
                 .ok_or(EvalError::AttributeNotFound)
                 .map_err(|e| e.to_string()),
@@ -311,17 +311,26 @@ impl FunctionType {
 pub struct EvalTask {
     pub ty: FunctionType,
     pub propagation: Option<Propagation>,
-    pub attribute: Vec<String>,
+    pub attr_pre: Vec<String>,
+    pub attr: Option<String>,
     pub input: Expression,
     pub silent: bool,
 }
 
 impl ToString for EvalTask {
     fn to_string(&self) -> String {
-        let outattr = if self.attribute.is_empty() {
-            "".to_string()
+        let outattr = if let Some(attr) = &self.attr {
+            format!(
+                ".{} =",
+                self.attr_pre
+                    .iter()
+                    .map(|s| s.as_str())
+                    .chain([attr.as_str()])
+                    .collect::<Vec<&str>>()
+                    .join(".")
+            )
         } else {
-            format!(".{} =", self.attribute.join("."))
+            "".to_string()
         };
         format!(
             "{}{}{} {}{}",
@@ -341,16 +350,21 @@ impl ToString for EvalTask {
 pub struct AttrTask {
     pub ty: FunctionType,
     pub propagation: Option<Propagation>,
-    pub attribute: Vec<String>,
+    pub attr_pre: Vec<String>,
+    pub attr: String,
 }
 
 impl ToString for AttrTask {
     fn to_string(&self) -> String {
-        let outattr = if self.attribute.is_empty() {
-            "".to_string()
-        } else {
-            format!(".{}", self.attribute.join("."))
-        };
+        let outattr = format!(
+            ".{} =",
+            self.attr_pre
+                .iter()
+                .map(|s| s.as_str())
+                .chain([self.attr.as_str()])
+                .collect::<Vec<&str>>()
+                .join(".")
+        );
         format!(
             "{}{}{}",
             self.ty.to_string(),

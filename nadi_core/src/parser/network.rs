@@ -1,7 +1,7 @@
 use crate::parser::{
     components::*,
     errors::{ParseError, ParseErrorType},
-    tokenizer::{check_tokens, TaskToken, Token, VecTokens},
+    tokenizer::{check_tokens, TaskToken, Token},
 };
 use nadi_core::network::StrPath;
 use nom::{

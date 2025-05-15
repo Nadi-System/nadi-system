@@ -42,13 +42,19 @@ pub trait HasAttributes {
         self.attr_map_mut().insert(name.into(), val).into()
     }
 
-    fn attr_dot(&self, name: &str) -> Result<Option<&Attribute>, String> {
-        let (pre, name) = match name.rsplit_once('.') {
-            Some(x) => x,
-            None => return Ok(self.attr(name)),
-        };
+    fn attr_dot(&self, names: &str) -> Result<Option<&Attribute>, String> {
+        match names.rsplit_once(".") {
+            Some((pre, name)) => self.attr_nested(
+                &pre.split(".").map(String::from).collect::<Vec<String>>(),
+                name,
+            ),
+            None => Ok(self.attr(names)),
+        }
+    }
+
+    fn attr_nested(&self, prefix: &[String], name: &str) -> Result<Option<&Attribute>, String> {
         let mut map = self.attr_map();
-        for m in pre.split('.') {
+        for m in prefix {
             map = match map.attr(m) {
                 Some(Attribute::Table(mp)) => mp,
                 Some(_) => return Err(format!("Key {m} is not a Table")),
@@ -58,30 +64,25 @@ pub trait HasAttributes {
         Ok(map.attr(name))
     }
 
-    fn attr_nested(&self, names: &[String]) -> Result<Option<&Attribute>, String> {
-        match names {
-            [] => Err("Empty Attribute Name".into()),
-            [name] => Ok(self.attr(name)),
-            [pre @ .., name] => {
-                let mut map = self.attr_map();
-                for m in pre {
-                    map = match map.attr(m) {
-                        Some(Attribute::Table(mp)) => mp,
-                        Some(_) => return Err(format!("Key {m} is not a Table")),
-                        None => return Err(format!("Key {m} not found")),
-                    };
-                }
-                Ok(map.attr(name))
-            }
+    fn set_attr_dot(&mut self, names: &str, val: Attribute) -> Result<Option<Attribute>, String> {
+        match names.rsplit_once(".") {
+            Some((pre, name)) => self.set_attr_nested(
+                &pre.split(".").map(String::from).collect::<Vec<String>>(),
+                name,
+                val,
+            ),
+            None => Ok(self.set_attr(names, val)),
         }
     }
-    fn set_attr_dot(&mut self, name: &str, val: Attribute) -> Result<Option<Attribute>, String> {
-        let (pre, name) = match name.rsplit_once('.') {
-            Some(x) => x,
-            None => return Ok(self.set_attr(name, val)),
-        };
+
+    fn set_attr_nested(
+        &mut self,
+        prefix: &[String],
+        name: &str,
+        val: Attribute,
+    ) -> Result<Option<Attribute>, String> {
         let mut map = self.attr_map_mut();
-        for m in pre.split('.') {
+        for m in prefix {
             map = match map
                 .entry(m.to_string().into())
                 .or_insert(Attribute::Table(AttrMap::new()))
@@ -91,30 +92,6 @@ pub trait HasAttributes {
             };
         }
         Ok(map.set_attr(name, val))
-    }
-
-    fn set_attr_nested(
-        &mut self,
-        names: &[String],
-        val: Attribute,
-    ) -> Result<Option<Attribute>, String> {
-        match names {
-            [] => Err("Empty Attribute Name".into()),
-            [name] => Ok(self.set_attr(name, val)),
-            [pre @ .., name] => {
-                let mut map = self.attr_map_mut();
-                for m in pre {
-                    map = match map
-                        .entry(m.to_string().into())
-                        .or_insert(Attribute::Table(AttrMap::new()))
-                    {
-                        Attribute::Table(ref mut mp) => mp,
-                        _ => return Err(format!("Key {m} is not a Table")),
-                    };
-                }
-                Ok(map.set_attr(name, val))
-            }
-        }
     }
 
     fn try_attr<T: FromAttribute>(&self, name: &str) -> Result<T, String> {
@@ -141,9 +118,21 @@ pub trait HasAttributes {
             if let Some(val) = self.attr(var) {
                 op.variables.insert(var.to_string(), val.to_string());
             }
+            if let Some((pre, name)) = var.rsplit_once(".") {
+                let pre: Vec<String> = pre.split(".").map(|s| s.to_string()).collect();
+                if let Ok(Some(val)) = self.attr_nested(&pre, name) {
+                    op.variables.insert(var.to_string(), val.to_string());
+                }
+            }
             if let Some(val) = var.strip_prefix('_') {
                 if let Some(Attribute::String(s)) = self.attr(val) {
                     op.variables.insert(var.to_string(), s.to_string());
+                }
+                if let Some((pre, name)) = val.rsplit_once(".") {
+                    let pre: Vec<String> = pre.split(".").map(|s| s.to_string()).collect();
+                    if let Ok(Some(Attribute::String(val))) = self.attr_nested(&pre, name) {
+                        op.variables.insert(var.to_string(), val.to_string());
+                    }
                 }
             }
         }

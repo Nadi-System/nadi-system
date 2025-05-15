@@ -13,7 +13,7 @@ use abi_stable::{
     StableAbi,
 };
 use colored::Colorize;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt::Debug;
 
 /// Network is a collection of Nodes, with Connection information. The

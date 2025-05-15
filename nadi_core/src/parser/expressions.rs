@@ -3,7 +3,7 @@ use crate::expressions::{BiOperator, Expression, FunctionCall, InputVar, UniOper
 use crate::parser::{
     components::*,
     errors::{MatchErr, ParseError, ParseErrorType},
-    tokenizer::{check_tokens, TaskToken, Token, VecTokens},
+    tokenizer::{check_tokens, TaskToken, Token},
 };
 use crate::tasks::TaskKeyword;
 use abi_stable::std_types::{map::REntry, RString};
@@ -115,10 +115,14 @@ pub fn input_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, InputVar
                 ),
                 opt(question),
             ),
-            |((vt, v), q)| InputVar::new(Some(vt), v, q.is_some()),
+            |((vt, mut v), q)| {
+                let name = v.pop().expect("There should be at least one var");
+                InputVar::new(Some(vt), v, name, q.is_some())
+            },
         ),
-        map(pair(dot_variable, opt(question)), |(v, q)| {
-            InputVar::new(None, v, q.is_some())
+        map(pair(dot_variable, opt(question)), |(mut v, q)| {
+            let name = v.pop().expect("There should be at least one var");
+            InputVar::new(None, v, name, q.is_some())
         }),
     ))(inp)
 }

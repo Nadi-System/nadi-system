@@ -87,10 +87,14 @@ pub fn attr_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, AttrTask> {
             opt(maybe_space(propagation)),
             preceded(opt(dot), dot_variable),
         )),
-        |(ty, propagation, attribute)| AttrTask {
-            ty,
-            attribute,
-            propagation,
+        |(ty, propagation, mut attr_pre)| {
+            let attr = attr_pre.pop().expect("should have at least one component");
+            AttrTask {
+                ty,
+                attr_pre,
+                attr,
+                propagation,
+            }
         },
     )(inp)
 }
@@ -112,11 +116,19 @@ pub fn eval_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, EvalTask> {
         }
         _ => (),
     }
+    let (attr_pre, attr) = match attr {
+        None => (vec![], None),
+        Some(mut v) => {
+            let name = v.pop();
+            (v, name)
+        }
+    };
     Ok((
         rest,
         EvalTask {
             ty,
-            attribute: attr.unwrap_or_default(),
+            attr_pre,
+            attr,
             propagation,
             input,
             silent: sc.is_some(),

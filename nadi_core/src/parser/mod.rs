@@ -1,7 +1,7 @@
 use crate::attrs::{Date, DateTime, Time};
 use crate::functions::Propagation;
 use crate::network::StrPath;
-use crate::parser::tokenizer::{get_tokens, TaskToken, VecTokens};
+use crate::parser::tokenizer::{get_tokens, TaskToken};
 use crate::prelude::*;
 use crate::table::Table;
 use abi_stable::std_types::{RString, Tuple2};

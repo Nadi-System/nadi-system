@@ -2,7 +2,7 @@ use crate::attrs::{AttrMap, Attribute, HasAttributes};
 use crate::parser::{
     components::*,
     errors::{ParseError, ParseErrorType},
-    tokenizer::{check_tokens, TaskToken, Token, VecTokens},
+    tokenizer::{check_tokens, TaskToken, Token},
 };
 use abi_stable::std_types::{map::REntry, RString};
 use nadi_core::network::StrPath;

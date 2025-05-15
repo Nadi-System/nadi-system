@@ -17,16 +17,10 @@ mod table {
     fn save_csv(
         net: &mut Network,
         path: &Path,
-        #[args] fields: &[Attribute],
+        fields: &[String],
         filter: Vec<bool>,
     ) -> anyhow::Result<()> {
         let mut file = File::create(path)?;
-        let fields = fields
-            .iter()
-            .skip(1) // args include everything, skip path
-            .map(|a| String::try_from_attr(a))
-            .collect::<Result<Vec<String>, String>>()
-            .map_err(anyhow::Error::msg)?;
         writeln!(file, "{}", fields.join(","))?;
         for (node, _) in net.nodes().zip(filter).filter(|(_, f)| *f) {
             let values = fields
