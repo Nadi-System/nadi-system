@@ -703,11 +703,6 @@ impl FunctionCtx {
         Self { args, kwargs }
     }
 
-    #[deprecated(since = "0.7.0", note = "do not use this")]
-    pub fn propagation(&self) -> Vec<Node> {
-        vec![]
-    }
-
     pub fn args(&self) -> AttrSlice {
         self.args.as_rslice()
     }

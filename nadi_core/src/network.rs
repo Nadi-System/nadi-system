@@ -384,18 +384,12 @@ impl Network {
         self.set_levels();
     }
 
-    pub fn subset(&mut self, prop: &Propagation, keep: bool) -> Result<(), String> {
-        // rewrite it, too slow
-        let nodes: Vec<Node> = self.nodes_propagation(prop).map_err(|e| e.message())?;
-        let given_nodes: HashSet<String> = nodes
-            .iter()
-            .map(|n| n.try_lock().expect("mutex problem").name().to_string())
-            .collect();
+    pub fn subset(&mut self, filter: &[bool], keep: bool) -> Result<(), String> {
         let remove_nodes: Vec<Node> = self
-            .nodes_map
-            .iter()
-            .filter(|n| given_nodes.contains(n.0.as_str()) ^ keep)
-            .map(|n| n.1.clone())
+            .nodes()
+            .zip(filter)
+            .filter(|(_, &f)| f ^ keep)
+            .map(|n| n.0.clone())
             .collect();
         for node in remove_nodes {
             self.remove_node_single(&node);

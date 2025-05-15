@@ -18,7 +18,7 @@ mod table {
         net: &mut Network,
         path: &Path,
         #[args] fields: &[Attribute],
-        #[prop] prop: Vec<Node>,
+        filter: Vec<bool>,
     ) -> anyhow::Result<()> {
         let mut file = File::create(path)?;
         let fields = fields
@@ -28,7 +28,7 @@ mod table {
             .collect::<Result<Vec<String>, String>>()
             .map_err(anyhow::Error::msg)?;
         writeln!(file, "{}", fields.join(","))?;
-        for node in &prop {
+        for (node, _) in net.nodes().zip(filter).filter(|(_, f)| *f) {
             let values = fields
                 .iter()
                 .map(|a| {

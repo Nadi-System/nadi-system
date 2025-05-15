@@ -23,7 +23,6 @@ mod debug {
     #[network_func]
     fn debug(
         net: &mut Network,
-        #[prop] prop: Vec<Node>,
         /// Function arguments
         #[args]
         args: AttrSlice,
@@ -43,18 +42,6 @@ mod debug {
         println!("Function Call: debug({})", args_str.join(", "));
         println!("Args: {args:?}");
         println!("KwArgs: {kwargs:?}");
-        let mut names = prop
-            .iter()
-            .take(3)
-            .map(|n| n.lock().name().to_string())
-            .collect::<Vec<String>>();
-        if prop.len() > 3 {
-            if prop.len() > 4 {
-                names.push("...".into());
-            }
-            names.push(prop[prop.len() - 1].lock().name().to_string());
-        }
-        println!("  Nodes: {names:?}")
     }
 
     /// Echo the string to stdout or stderr

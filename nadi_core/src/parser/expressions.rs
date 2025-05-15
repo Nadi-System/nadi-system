@@ -10,15 +10,11 @@ use abi_stable::std_types::{map::REntry, RString};
 use nadi_core::network::StrPath;
 use nom::{
     branch::alt,
-    combinator::{all_consuming, cut, map, opt, value},
+    combinator::{all_consuming, cut, fail, map, opt, value},
     multi::{many0, many1, separated_list0, separated_list1},
     sequence::{delimited, pair, separated_pair, terminated, tuple},
     Finish,
 };
-
-// pub fn task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, _> {
-//     alt(())(inp)
-// }
 
 pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
     alt((
@@ -33,7 +29,10 @@ pub fn expression_group<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expres
     delimited(
         paren_start,
         maybe_newline(complete_expression),
-        maybe_newline(paren_end),
+        cut(err_ctx(
+            &ParseErrorType::Unclosed(")"),
+            maybe_newline(paren_end),
+        )),
     )(inp)
 }
 
@@ -70,7 +69,10 @@ pub fn complete_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Exp
         alt((expression_group, expression)),
         many0(pair(
             maybe_newline(bi_operator),
-            maybe_newline(alt((expression_group, expression))),
+            cut(err_ctx(
+                &ParseErrorType::IncompleteExpression,
+                maybe_newline(alt((expression_group, expression))),
+            )),
         )),
     )(inp)?;
     // TODO left-first expression evaluation; redo later
@@ -126,7 +128,10 @@ pub fn kw_arg<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, (String, Express
         // no dot variable in kwargs pair
         map(variable, |t| t.content.to_string()),
         maybe_space(assignment),
-        maybe_space(complete_expression),
+        cut(err_ctx(
+            &ParseErrorType::MissingValue,
+            maybe_space(complete_expression),
+        )),
     )(inp)
 }
 
@@ -141,32 +146,35 @@ pub fn pos_args<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<Expression
 pub fn function_call<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionCall> {
     let (rest, (name, (args, kwargs))) = tuple((
         function,
-        alt((
-            value(
-                (vec![], vec![]),
-                pair(paren_start, maybe_newline(paren_end)),
-            ),
-            delimited(
-                paren_start,
-                map(pos_args, |a| (a, vec![])),
-                maybe_newline(paren_end),
-            ),
-            delimited(
-                paren_start,
-                map(kw_args, |a| (vec![], a)),
-                maybe_newline(paren_end),
-            ),
-            delimited(
-                paren_start,
-                pair(
-                    many1(terminated(
-                        maybe_newline(complete_expression),
-                        maybe_newline(comma),
-                    )),
-                    maybe_newline(kw_args),
+        cut(err_ctx(
+            &ParseErrorType::InvalidFunctionParameters,
+            alt((
+                value(
+                    (vec![], vec![]),
+                    pair(paren_start, maybe_newline(paren_end)),
                 ),
-                maybe_newline(paren_end),
-            ),
+                delimited(
+                    paren_start,
+                    map(pos_args, |a| (a, vec![])),
+                    maybe_newline(paren_end),
+                ),
+                delimited(
+                    paren_start,
+                    map(kw_args, |a| (vec![], a)),
+                    maybe_newline(paren_end),
+                ),
+                delimited(
+                    paren_start,
+                    pair(
+                        many1(terminated(
+                            maybe_newline(complete_expression),
+                            maybe_newline(comma),
+                        )),
+                        maybe_newline(kw_args),
+                    ),
+                    maybe_newline(paren_end),
+                ),
+            )),
         )),
     ))(inp)?;
     Ok((

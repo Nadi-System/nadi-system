@@ -15,7 +15,7 @@ use crate::{
 use abi_stable::std_types::{RString, RVec};
 use nom::{
     branch::alt,
-    combinator::{all_consuming, map, opt, value},
+    combinator::{all_consuming, cut, map, opt, value},
     multi::separated_list1,
     sequence::{delimited, preceded, separated_pair, tuple},
     Finish,
@@ -24,8 +24,8 @@ use nom::{
 pub fn prop_seq<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Propagation> {
     let (rest, var) = delimited(
         angle_start,
-        maybe_newline(variable),
-        maybe_newline(angle_end),
+        maybe_newline(cut(err_ctx(&ParseErrorType::Incomplete, variable))),
+        maybe_newline(cut(err_ctx(&ParseErrorType::Unclosed(">"), angle_end))),
     )(inp)?;
     let prop = match var.content {
         "sequential" => Propagation::Sequential,
@@ -34,7 +34,7 @@ pub fn prop_seq<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Propagation> {
         "outputfirst" => Propagation::OutputFirst,
         _ => {
             return Err(nom::Err::Failure(
-                MatchErr::new(inp).ty(&ParseErrorType::ValueError("Invalid Propagation name")),
+                MatchErr::new(inp).ty(&ParseErrorType::InvalidPropagation),
             ))
         }
     };
@@ -53,11 +53,11 @@ pub fn propagation<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Propagation
         prop_seq,
         delimited(
             bracket_start,
-            alt((
-                map(maybe_newline(node_list), Propagation::List),
+            cut(alt((
                 map(maybe_newline(str_path), Propagation::Path),
-            )),
-            maybe_newline(bracket_end),
+                map(maybe_newline(node_list), Propagation::List),
+            ))),
+            maybe_newline(cut(err_ctx(&ParseErrorType::Unclosed("]"), bracket_end))),
         ),
         map(
             delimited(
@@ -96,22 +96,32 @@ pub fn attr_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, AttrTask> {
 }
 
 pub fn eval_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, EvalTask> {
-    map(
-        tuple((
-            function_type,
-            opt(maybe_space(propagation)),
-            opt(delimited(opt(dot), dot_variable, maybe_space(assignment))),
-            maybe_newline(complete_expression),
-            opt(semicolon),
-        )),
-        |(ty, propagation, attr, input, sc)| EvalTask {
+    let (rest, (ty, propagation, attr, input, sc)) = tuple((
+        function_type,
+        opt(maybe_space(propagation)),
+        opt(delimited(opt(dot), dot_variable, maybe_space(assignment))),
+        maybe_newline(complete_expression),
+        opt(semicolon),
+    ))(inp)?;
+    match (&ty, propagation.is_some()) {
+        (FunctionType::Node, true) => (),
+        (_, true) => {
+            return Err(nom::Err::Error(
+                MatchErr::new(function_type(inp)?.0).ty(&ParseErrorType::PropagationNotSupported),
+            ))
+        }
+        _ => (),
+    }
+    Ok((
+        rest,
+        EvalTask {
             ty,
             attribute: attr.unwrap_or_default(),
             propagation,
             input,
             silent: sc.is_some(),
         },
-    )(inp)
+    ))
 }
 
 pub fn help_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {

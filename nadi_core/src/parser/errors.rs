@@ -112,7 +112,10 @@ pub enum ParseErrorType {
     LogicalError(&'static str),
     ValueError(&'static str),
     InvalidLineStart,
+    Unclosed(&'static str),
     Incomplete,
+    IncompletePath,
+    IncompleteExpression,
     InvalidPropagation,
     InvalidKeyword,
     PropagationNotSupported,
@@ -120,6 +123,8 @@ pub enum ParseErrorType {
     KeywordNotVariable,
     #[default]
     SyntaxError,
+    InvalidFunctionParameters,
+    MissingValue,
     ExpectedPath,
     InvalidToken,
     TokenMismatch,
@@ -134,13 +139,18 @@ impl ParseErrorType {
             }
             Self::ValueError(v) => return format!("Invalid Value: {v}"),
             Self::InvalidLineStart => "Lines should start with a keyword",
+            Self::Unclosed(s) => return format!("Missing closing token {s:?}"),
             Self::Incomplete => "Incomplete Input",
+            Self::IncompletePath => "Incomplete Path",
+            Self::IncompleteExpression => "Incomplete Expression",
             Self::InvalidPropagation => "Invalid propagation value",
             Self::InvalidKeyword => "Invalid keyword at this location",
             Self::PropagationNotSupported => "Propagation not supported here",
             Self::KeywordArgBeforePositional => "Positional Argument cannot come after keyword",
             Self::KeywordNotVariable => "Keywords cannot be used as variables",
             Self::SyntaxError => "Invalid Syntax",
+            Self::InvalidFunctionParameters => "Invalid function parameters",
+            Self::MissingValue => "Missing Value",
             Self::ExpectedPath => "Path symbol not found",
             Self::InvalidToken => "Unsupported Token",
             Self::TokenMismatch => "Unexpected Token",
@@ -184,6 +194,7 @@ impl<'a, 'b> nom::error::ParseError<&'a [Token<'b>]> for MatchErr<'a, 'b> {
             internal: nom::error::Error::<&'a [Token<'b>]>::from_error_kind(input, kind),
         }
     }
+    // what does it do?
     fn append(input: &'a [Token<'b>], kind: ErrorKind, other: Self) -> Self {
         MatchErr {
             ty: other.ty,
@@ -200,8 +211,8 @@ impl<'a, 'b> nom::error::ParseError<&'a [Token<'b>]> for MatchErr<'a, 'b> {
     }
     fn or(self, other: Self) -> Self {
         MatchErr {
-            ty: other.ty,
-            internal: nom::error::Error::<&'a [Token<'b>]>::or(self.internal, other.internal),
+            ty: self.ty,
+            internal: nom::error::Error::<&'a [Token<'b>]>::or(other.internal, self.internal),
         }
     }
 }

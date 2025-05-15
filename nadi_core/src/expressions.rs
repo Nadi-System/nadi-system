@@ -223,20 +223,21 @@ impl Expression {
                         VarType::Inputs => match node {
                             Some(n) => {
                                 if vt.check {
-                                    let res = n
+                                    let res: Vec<Attribute> = n
                                         .try_lock()
                                         .into_option()
                                         .ok_or(EvalError::MutexError(file!(), line!()))?
                                         .inputs()
                                         .iter()
-                                        .all(|i| {
+                                        .map(|i| {
                                             if let Ok(Some(_)) = i.lock().attr_nested(&vt.names) {
-                                                true
+                                                Attribute::Bool(true)
                                             } else {
-                                                false
+                                                Attribute::Bool(false)
                                             }
-                                        });
-                                    return Ok(Self::Literal(Attribute::Bool(res)));
+                                        })
+                                        .collect();
+                                    return Ok(Self::Literal(Attribute::Array(res.into())));
                                 } else {
                                     let mut vars = Vec::new();
                                     for i in n
@@ -290,6 +291,24 @@ impl Expression {
                                 })
                             }
                         },
+                        VarType::Nodes => {
+                            let mut vars = Vec::new();
+                            for n in ctx.network.nodes() {
+                                let a = n
+                                    .try_lock()
+                                    .into_option()
+                                    .ok_or(EvalError::MutexError(file!(), line!()))?
+                                    .attr_nested(&vt.names)
+                                    .map(|a| a.cloned());
+                                let val = a.map_err(EvalError::AttributeError)?;
+                                if vt.check {
+                                    vars.push(val.is_some().into());
+                                } else {
+                                    vars.push(val.ok_or(EvalError::AttributeNotFound)?);
+                                }
+                            }
+                            return Ok(Self::Literal(Attribute::Array(vars.into())));
+                        }
                     },
                     None => match ft {
                         FunctionType::Env => ctx.env.attr_nested(&vt.names).map(|a| a.cloned()),
@@ -510,6 +529,7 @@ pub enum VarType {
     Network,
     Inputs,
     Output,
+    Nodes,
 }
 
 impl VarType {
@@ -520,6 +540,7 @@ impl VarType {
             TaskKeyword::Env => Some(VarType::Env),
             TaskKeyword::Inputs => Some(VarType::Inputs),
             TaskKeyword::Output => Some(VarType::Output),
+            TaskKeyword::Nodes => Some(VarType::Nodes),
             _ => None,
         }
     }
@@ -533,6 +554,7 @@ impl ToString for VarType {
             VarType::Env => "env",
             VarType::Inputs => "inputs",
             VarType::Output => "output",
+            VarType::Nodes => "nodes",
         }
         .to_string()
     }

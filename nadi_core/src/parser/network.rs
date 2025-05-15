@@ -6,7 +6,7 @@ use crate::parser::{
 use nadi_core::network::StrPath;
 use nom::{
     branch::alt,
-    combinator::{all_consuming, map},
+    combinator::{all_consuming, cut, map},
     multi::separated_list0,
     sequence::separated_pair,
     Finish,
@@ -28,7 +28,7 @@ pub fn str_path<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, StrPath> {
     let (rest, (start, end)) = separated_pair(
         node_name,
         err_ctx(&ParseErrorType::ExpectedPath, maybe_space(path_sep)),
-        err_ctx(&ParseErrorType::Incomplete, maybe_space(node_name)),
+        err_ctx(&ParseErrorType::IncompletePath, maybe_space(node_name)),
     )(inp)?;
     Ok((rest, StrPath::new(start.into(), end.into())))
 }
@@ -44,8 +44,7 @@ pub fn parse(tokens: &[Token]) -> Result<Vec<StrPath>, ParseError> {
             if rest.is_empty() {
                 Ok(paths)
             } else {
-                println!("{tokens:?}\n{rest:?}");
-                let err = maybe_newline(str_path)(rest) // need this to fail
+                let err = maybe_newline(str_path)(rest)
                     .finish()
                     .err()
                     .expect("Rest should be empty if network parse is complete");

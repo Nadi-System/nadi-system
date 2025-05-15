@@ -154,7 +154,7 @@ mod timeseries {
     #[network_func]
     fn series_csv(
         net: &mut Network,
-        #[prop] prop: Vec<Node>,
+        filter: Vec<bool>,
         /// Path to the output csv
         outfile: PathBuf,
         /// list of attributes to write
@@ -173,7 +173,7 @@ mod timeseries {
             if middle { "," } else { "" },
             series.join(",")
         )?;
-        for node in &prop {
+        for (node, _) in net.nodes().zip(filter).filter(|(_, f)| *f) {
             let node = node.lock();
             let attrs: Vec<String> = attrs
                 .iter()

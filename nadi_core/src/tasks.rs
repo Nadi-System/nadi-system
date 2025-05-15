@@ -397,6 +397,7 @@ pub enum TaskKeyword {
     Match,
     Inputs,
     Output,
+    Nodes,
 }
 
 impl std::str::FromStr for TaskKeyword {
@@ -414,6 +415,7 @@ impl std::str::FromStr for TaskKeyword {
             "match" => TaskKeyword::Match,
             "inputs" => TaskKeyword::Inputs,
             "output" => TaskKeyword::Output,
+            "nodes" => TaskKeyword::Nodes,
             k => return Err(format!("{k} is not a keyword")),
         })
     }
@@ -432,6 +434,7 @@ impl ToString for TaskKeyword {
             TaskKeyword::Match => "match",
             TaskKeyword::Inputs => "inputs",
             TaskKeyword::Output => "output",
+            TaskKeyword::Nodes => "nodes",
         }
         .to_string()
     }
@@ -450,6 +453,7 @@ impl TaskKeyword {
             TaskKeyword::Match => "match regex pattern with strings",
             TaskKeyword::Inputs => "inputs of the current node",
             TaskKeyword::Output => "output of the current node",
+            TaskKeyword::Nodes => "all the nodes in the network",
         }
         .to_string()
     }

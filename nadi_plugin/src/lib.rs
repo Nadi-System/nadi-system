@@ -208,14 +208,12 @@ enum FuncArgType {
     Relaxed,
     Args,
     KwArgs,
-    Prop,
 }
 
-const FUNC_ARG_ATTRS: [(&str, FuncArgType); 4] = [
+const FUNC_ARG_ATTRS: [(&str, FuncArgType); 3] = [
     ("args", FuncArgType::Args),
     ("kwargs", FuncArgType::KwArgs),
     ("relaxed", FuncArgType::Relaxed),
-    ("prop", FuncArgType::Prop),
 ];
 
 fn nadi_func_inner(args: TokenStream, item: ItemFn, ft: FuncType) -> TokenStream {
@@ -643,12 +641,6 @@ fn get_call_func(
                         let #arg: #ty = ctx.kwargs().into();
                     };
                 }
-                FuncArgType::Prop => {
-                    argc -= 1;
-                    return quote! {
-                        let #arg: #ty = ctx.propagation();
-                    };
-                }
             };
             let def = if let Some(val) = defaults.get(arg) {
                 match ty {
@@ -824,9 +816,7 @@ fn get_signature_func(
                                 a.ty.as_ref().into_token_stream().to_string(),
                             );
                             // args and kwargs function signature
-                            let ft = if a.attrs.iter().any(|at| at.path().is_ident("prop")) {
-                                return None;
-                            } else if a.attrs.iter().any(|at| at.path().is_ident("args")) {
+                            let ft = if a.attrs.iter().any(|at| at.path().is_ident("args")) {
                                 quote! { Args }
                             } else if a.attrs.iter().any(|at| at.path().is_ident("kwargs")) {
                                 quote! { KwArgs }

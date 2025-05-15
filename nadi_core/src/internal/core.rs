@@ -7,12 +7,16 @@ mod core {
     use nadi_plugin::{env_func, network_func, node_func};
     use std::collections::HashMap;
 
+    /// Count the number of true values in the array
+    #[env_func]
+    fn count(vars: &[bool]) -> usize {
+        vars.iter().filter(|a| **a).count()
+    }
+
     /// Count the number of nodes in the network
-    ///
-    /// If propagation is present, only counts those nodes
     #[network_func]
-    fn count(net: &mut Network, #[prop] prop: Vec<Node>) -> usize {
-        prop.len()
+    fn count(net: &mut Network) -> usize {
+        net.nodes().count()
     }
 
     /// Count the number of input nodes in the node
