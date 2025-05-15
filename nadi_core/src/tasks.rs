@@ -11,7 +11,7 @@ pub struct TaskContext {
 impl TaskContext {
     pub fn new(net: Option<Network>) -> Self {
         Self {
-            network: net.unwrap_or(Network::default()),
+            network: net.unwrap_or_default(),
             functions: NadiFunctions::new(),
             env: AttrMap::new(),
         }
@@ -20,7 +20,7 @@ impl TaskContext {
     pub fn execute(&mut self, task: Task) -> Result<Option<String>, String> {
         match task {
             Task::Eval(et) => self.eval_task(et),
-            Task::Attr(at) => self.attr_task(at).map(|a| Some(a)),
+            Task::Attr(at) => self.attr_task(at).map(Some),
             Task::Help(kw, var) => self.help(kw, var),
             Task::Exit => std::process::exit(0),
         }
@@ -28,7 +28,7 @@ impl TaskContext {
 
     pub fn eval_task(&mut self, task: EvalTask) -> Result<Option<String>, String> {
         match task.ty {
-            FunctionType::Env => match task.input.resolve_eval(&FunctionType::Env, &self, None) {
+            FunctionType::Env => match task.input.resolve_eval(&FunctionType::Env, self, None) {
                 Ok(Some(a)) => {
                     if let Some(attr) = &task.attr {
                         if let Some(old) =
@@ -42,12 +42,10 @@ impl TaskContext {
                         } else {
                             Ok(None)
                         }
+                    } else if task.silent {
+                        Ok(None)
                     } else {
-                        if task.silent {
-                            Ok(None)
-                        } else {
-                            Ok(Some(a.to_string()))
-                        }
+                        Ok(Some(a.to_string()))
                     }
                 }
                 Ok(None) => Ok(None),
@@ -85,10 +83,8 @@ impl TaskContext {
                                 ));
                             }
                         }
-                    } else {
-                        if !task.silent {
-                            attrs.push(format!("  {} = {}", n.name(), res.to_string()));
-                        }
+                    } else if !task.silent {
+                        attrs.push(format!("  {} = {}", n.name(), res.to_string()));
                     }
                 }
                 if task.silent {
@@ -116,12 +112,10 @@ impl TaskContext {
                             } else {
                                 Ok(None)
                             }
+                        } else if task.silent {
+                            Ok(None)
                         } else {
-                            if task.silent {
-                                Ok(None)
-                            } else {
-                                Ok(Some(a.to_string()))
-                            }
+                            Ok(Some(a.to_string()))
                         }
                     }
                     Ok(None) => Ok(None),
@@ -244,12 +238,12 @@ impl TaskContext {
             Propagation::Conditional(expr) => {
                 let mut nodes = Vec::with_capacity(self.network.nodes().count());
                 // simplify to save computation
-                let expr = expr.simplify(&FunctionType::Node, &self)?;
+                let expr = expr.simplify(&FunctionType::Node, self)?;
                 // propagation is evaluated for each node even if it's
                 // in network function
                 for n in self.network.nodes() {
-                    let cond = expr.resolve(&FunctionType::Node, &self, Some(n))?;
-                    let res = cond.eval_value(&FunctionType::Node, &self, Some(n))?;
+                    let cond = expr.resolve(&FunctionType::Node, self, Some(n))?;
+                    let res = cond.eval_value(&FunctionType::Node, self, Some(n))?;
                     match bool::try_from_attr(&res) {
                         Ok(true) => nodes.push(n.clone()),
                         Ok(false) => (),
@@ -341,7 +335,7 @@ impl ToString for EvalTask {
                 .unwrap_or_default(),
             outattr,
             self.input.to_string(),
-            self.silent.then(|| ";").unwrap_or_default()
+            self.silent.then_some(";").unwrap_or_default()
         )
     }
 }

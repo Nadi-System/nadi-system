@@ -1,16 +1,13 @@
 use crate::attrs::{AttrMap, Attribute, HasAttributes};
 use crate::parser::{
     components::*,
-    errors::{ParseError, ParseErrorType},
-    tokenizer::{check_tokens, TaskToken, Token},
+    errors::ParseError,
+    tokenizer::{check_tokens, Token},
 };
-use abi_stable::std_types::{map::REntry, RString};
-use nadi_core::network::StrPath;
 use nom::{
     branch::alt,
-    combinator::{all_consuming, map},
-    multi::separated_list0,
-    sequence::{delimited, separated_pair},
+    combinator::map,
+    sequence::delimited,
     Finish,
 };
 
@@ -65,7 +62,7 @@ pub fn parse(tokens: Vec<Token>) -> Result<AttrMap, ParseError> {
                     [] => return Err(ParseError::custom("Empty attribute group".into())),
                     [name] => curr_var.set_attr(name, val.clone()),
                     [pre @ .., name] => {
-                        let map = move_in(&pre, curr_var)?;
+                        let map = move_in(pre, curr_var)?;
                         map.set_attr(name, val.clone())
                     }
                 };

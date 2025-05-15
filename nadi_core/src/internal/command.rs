@@ -15,7 +15,7 @@ mod command {
     use subprocess::Exec;
 
     pub fn key_val(txt: &str) -> anyhow::Result<(String, Attribute)> {
-        let tokens = parser::tokenizer::get_tokens(&txt);
+        let tokens = parser::tokenizer::get_tokens(txt);
         let attrs = parser::attrs::parse(tokens)?;
         attrs
             .into_iter()

@@ -24,7 +24,7 @@ mod visuals {
         let min = attrs.iter().fold(f64::MAX, |a, &b| f64::min(a, b));
         let diff = max - min;
         let diffs = maxsize - minsize;
-        attrs.into_iter().zip(net.nodes()).for_each(|(v, n)| {
+        attrs.iter().zip(net.nodes()).for_each(|(v, n)| {
             let s = (v - min) / diff * diffs + minsize;
             n.lock().set_attr(NODE_SIZE.0, s.into());
         });

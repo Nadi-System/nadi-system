@@ -1,19 +1,14 @@
-use crate::attrs::{AttrMap, Attribute, HasAttributes};
 use crate::expressions::{BiOperator, Expression, FunctionCall, InputVar, UniOperator, VarType};
 use crate::parser::{
     components::*,
-    errors::{MatchErr, ParseError, ParseErrorType},
-    tokenizer::{check_tokens, TaskToken, Token},
+    errors::{MatchErr, ParseErrorType},
+    tokenizer::Token,
 };
-use crate::tasks::TaskKeyword;
-use abi_stable::std_types::{map::REntry, RString};
-use nadi_core::network::StrPath;
 use nom::{
     branch::alt,
-    combinator::{all_consuming, cut, fail, map, opt, value},
-    multi::{many0, many1, separated_list0, separated_list1},
+    combinator::{cut, map, opt, value},
+    multi::{many0, many1, separated_list1},
     sequence::{delimited, pair, separated_pair, terminated, tuple},
-    Finish,
 };
 
 pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
@@ -190,6 +185,7 @@ pub fn function_call<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionC
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::attrs::{Attribute, HasAttributes};
     use crate::expressions::EvalError;
     use crate::parser::tokenizer::get_tokens;
     use crate::tasks::FunctionType;

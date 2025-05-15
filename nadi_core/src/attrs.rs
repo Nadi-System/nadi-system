@@ -31,7 +31,7 @@ pub trait HasAttributes {
         self.attr_map_mut().get_mut(name)
     }
     fn del_attr(&mut self, name: &str) -> Option<Attribute> {
-        self.attr_map_mut().remove(name.into()).into()
+        self.attr_map_mut().remove(name).into()
     }
     fn set_attr(&mut self, name: &str, val: Attribute) -> Option<Attribute> {
         if let Some(v) = self.attr(name) {
@@ -881,7 +881,7 @@ impl PartialEq<Date> for DateTime {
 impl PartialOrd<Date> for DateTime {
     fn partial_cmp(&self, other: &Date) -> Option<std::cmp::Ordering> {
         // TODO don't ignore offset
-        Some(self.date.cmp(&other).then(self.time.cmp(&Time::default())))
+        Some(self.date.cmp(other).then(self.time.cmp(&Time::default())))
     }
 }
 
@@ -899,10 +899,10 @@ impl From<chrono::NaiveDateTime> for DateTime {
 }
 
 #[cfg(feature = "chrono")]
-impl Into<chrono::NaiveDateTime> for DateTime {
-    fn into(self) -> chrono::NaiveDateTime {
-        let d: chrono::NaiveDate = self.date.into();
-        let t: chrono::NaiveTime = self.time.into();
+impl From<DateTime> for chrono::NaiveDateTime {
+    fn from(val: DateTime) -> Self {
+        let d: chrono::NaiveDate = val.date.into();
+        let t: chrono::NaiveTime = val.time.into();
         chrono::NaiveDateTime::new(d, t)
     }
 }
@@ -913,17 +913,17 @@ impl From<chrono::DateTime<chrono::FixedOffset>> for DateTime {
         Self::new(
             Date::from(value.date_naive()),
             Time::from(value.time()),
-            Some(Offset::from(value.offset().clone())),
+            Some(Offset::from(*value.offset())),
         )
     }
 }
 
 #[cfg(feature = "chrono")]
-impl Into<chrono::DateTime<chrono::FixedOffset>> for DateTime {
-    fn into(self) -> chrono::DateTime<chrono::FixedOffset> {
-        let d: chrono::NaiveDate = self.date.into();
-        let t: chrono::NaiveTime = self.time.into();
-        if let RSome(offset) = self.offset {
+impl From<DateTime> for chrono::DateTime<chrono::FixedOffset> {
+    fn from(val: DateTime) -> Self {
+        let d: chrono::NaiveDate = val.date.into();
+        let t: chrono::NaiveTime = val.time.into();
+        if let RSome(offset) = val.offset {
             let o: chrono::FixedOffset = offset.into();
             chrono::NaiveDateTime::new(d, t)
                 .and_local_timezone(o)
@@ -996,9 +996,9 @@ impl From<chrono::NaiveDate> for Date {
 }
 
 #[cfg(feature = "chrono")]
-impl Into<chrono::NaiveDate> for Date {
-    fn into(self) -> chrono::NaiveDate {
-        chrono::NaiveDate::from_ymd_opt(self.year as i32, self.month as u32, self.day as u32)
+impl From<Date> for chrono::NaiveDate {
+    fn from(val: Date) -> Self {
+        chrono::NaiveDate::from_ymd_opt(val.year as i32, val.month as u32, val.day as u32)
             .expect("should be valid date")
     }
 }
@@ -1068,13 +1068,13 @@ impl From<chrono::NaiveTime> for Time {
 }
 
 #[cfg(feature = "chrono")]
-impl Into<chrono::NaiveTime> for Time {
-    fn into(self) -> chrono::NaiveTime {
+impl From<Time> for chrono::NaiveTime {
+    fn from(val: Time) -> Self {
         chrono::NaiveTime::from_hms_nano_opt(
-            self.hour as u32,
-            self.min as u32,
-            self.sec as u32,
-            self.nanosecond,
+            val.hour as u32,
+            val.min as u32,
+            val.sec as u32,
+            val.nanosecond,
         )
         .expect("should be valid time")
     }
@@ -1137,10 +1137,10 @@ impl From<chrono::FixedOffset> for Offset {
 }
 
 #[cfg(feature = "chrono")]
-impl Into<chrono::FixedOffset> for Offset {
-    fn into(self) -> chrono::FixedOffset {
-        let secs = (self.hour as i32 * 60 + self.min as i32) * 60;
-        if self.east {
+impl From<Offset> for chrono::FixedOffset {
+    fn from(val: Offset) -> Self {
+        let secs = (val.hour as i32 * 60 + val.min as i32) * 60;
+        if val.east {
             chrono::FixedOffset::east_opt(secs).expect("should be valid offset")
         } else {
             chrono::FixedOffset::west_opt(secs).expect("should be valid offset")

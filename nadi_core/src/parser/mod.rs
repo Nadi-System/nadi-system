@@ -1,12 +1,9 @@
 use crate::attrs::{Date, DateTime, Time};
 use crate::functions::Propagation;
-use crate::network::StrPath;
-use crate::parser::tokenizer::{get_tokens, TaskToken};
 use crate::prelude::*;
 use crate::table::Table;
-use abi_stable::std_types::{RString, Tuple2};
+use abi_stable::std_types::Tuple2;
 use anyhow::Context;
-use colored::Colorize;
 use std::path::Path;
 use std::str::FromStr;
 
@@ -41,12 +38,12 @@ impl std::str::FromStr for Date {
             .ok_or("Day not present")?
             .parse::<u8>()
             .map_err(|_| "Invalid Day")?;
-        if month < 1 || month > 12 {
+        if !(1..=12).contains(&month) {
             return Err("Invalid Month (use 1-12)");
         }
         // doesn't make too many assumption on calendar type (leap
         // year or others)
-        if day < 1 || day > 31 {
+        if !(1..=31).contains(&day) {
             return Err("Invalid Day (use 1-31)");
         }
         Ok(Date::new(year, month, day))
@@ -92,12 +89,10 @@ impl std::str::FromStr for DateTime {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let (d, t) = if let Some((d, t)) = s.split_once(' ') {
             (d.trim(), t.trim())
+        } else if let Some((d, t)) = s.split_once('T') {
+            (d.trim(), t.trim())
         } else {
-            if let Some((d, t)) = s.split_once('T') {
-                (d.trim(), t.trim())
-            } else {
-                return Err("Invalid DateTime use YYYY-mm-dd HH:MM[:SS]");
-            }
+            return Err("Invalid DateTime use YYYY-mm-dd HH:MM[:SS]");
         };
         Ok(DateTime::new(Date::from_str(d)?, Time::from_str(t)?, None))
     }

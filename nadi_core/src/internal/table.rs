@@ -2,7 +2,7 @@ use nadi_plugin::nadi_internal_plugin;
 
 #[nadi_internal_plugin]
 mod table {
-    use crate::functions::Propagation;
+    
     use crate::prelude::*;
     use crate::table::Table;
 

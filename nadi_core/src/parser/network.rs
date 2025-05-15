@@ -1,13 +1,12 @@
 use crate::parser::{
     components::*,
     errors::{ParseError, ParseErrorType},
-    tokenizer::{check_tokens, TaskToken, Token},
+    tokenizer::{check_tokens, Token},
 };
 use nadi_core::network::StrPath;
 use nom::{
     branch::alt,
-    combinator::{all_consuming, cut, map},
-    multi::separated_list0,
+    combinator::map,
     sequence::separated_pair,
     Finish,
 };
@@ -46,12 +45,11 @@ pub fn parse(tokens: &[Token]) -> Result<Vec<StrPath>, ParseError> {
             } else {
                 let err = maybe_newline(str_path)(rest)
                     .finish()
-                    .err()
-                    .expect("Rest should be empty if network parse is complete");
-                Err(ParseError::new(&tokens, err.internal.input, err.ty))
+                    .expect_err("Rest should be empty if network parse is complete");
+                Err(ParseError::new(tokens, err.internal.input, err.ty))
             }
         }
-        Err(e) => Err(ParseError::new(&tokens, e.internal.input, e.ty)),
+        Err(e) => Err(ParseError::new(tokens, e.internal.input, e.ty)),
     }
 }
 

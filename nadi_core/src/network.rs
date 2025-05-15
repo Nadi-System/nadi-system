@@ -534,8 +534,7 @@ impl From<Node> for Network {
             .into();
         net.nodes = net
             .nodes_map
-            .keys()
-            .map(|s| s.clone())
+            .keys().cloned()
             .collect::<Vec<_>>()
             .into();
         net.outlet = RSome(node);

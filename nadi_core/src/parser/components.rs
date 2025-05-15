@@ -7,7 +7,6 @@ use nadi_core::attrs::{Attribute, Date, DateTime, Time};
 use nom::{
     branch::alt,
     combinator::map,
-    error::ErrorKind,
     multi::{many0, many1, separated_list0, separated_list1},
     sequence::{delimited, preceded, separated_pair, terminated},
     IResult,

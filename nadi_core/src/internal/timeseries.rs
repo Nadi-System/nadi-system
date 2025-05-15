@@ -162,7 +162,7 @@ mod timeseries {
         /// list of series to write
         series: Vec<String>,
     ) -> anyhow::Result<()> {
-        let mut f = File::create(&outfile)?;
+        let f = File::create(&outfile)?;
         let mut w = BufWriter::new(f);
         let middle = !attrs.is_empty() && !series.is_empty();
         // headers for the csv

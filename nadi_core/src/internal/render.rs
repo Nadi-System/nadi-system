@@ -207,7 +207,7 @@ mod render_utils {
                     RenderFileContentsType::Snippet(templ, prop) => {
                         for node in net
                             .nodes_propagation(prop)
-                            .map_err(|e| anyhow::Error::msg(e))?
+                            .map_err(anyhow::Error::msg)?
                         {
                             write!(writer, "{}", node.lock().render(templ)?)?;
                         }

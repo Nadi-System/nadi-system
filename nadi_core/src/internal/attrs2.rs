@@ -69,7 +69,7 @@ mod attrs {
         default: Option<Attribute>,
     ) -> Option<Attribute> {
         for attr in attrs {
-            if let Ok(Some(v)) = node.attr_dot(&attr) {
+            if let Ok(Some(v)) = node.attr_dot(attr) {
                 return Some(v.clone());
             }
         }

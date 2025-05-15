@@ -17,7 +17,7 @@ pub trait HasTimeSeries {
         self.ts_map().get(name)
     }
     fn del_ts(&mut self, name: &str) -> Option<TimeSeries> {
-        self.ts_map_mut().remove(name.into()).into()
+        self.ts_map_mut().remove(name).into()
     }
     fn set_ts(&mut self, name: &str, val: TimeSeries) -> Option<TimeSeries> {
         self.ts_map_mut().insert(name.into(), val).into()
@@ -37,7 +37,7 @@ pub trait HasSeries {
         self.series_map().get(name)
     }
     fn del_series(&mut self, name: &str) -> Option<Series> {
-        self.series_map_mut().remove(name.into()).into()
+        self.series_map_mut().remove(name).into()
     }
     fn set_series(&mut self, name: &str, val: Series) -> Option<Series> {
         self.series_map_mut().insert(name.into(), val).into()

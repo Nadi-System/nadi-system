@@ -96,13 +96,13 @@ impl ToString for Expression {
                 if expr1.nested() {
                     format!("({})", expr1.to_string())
                 } else {
-                    format!("{}", expr1.to_string())
+                    expr1.to_string()
                 },
                 op.to_string(),
                 if expr2.nested() {
                     format!("({})", expr2.to_string())
                 } else {
-                    format!("{}", expr2.to_string())
+                    expr2.to_string()
                 },
             ),
         }
@@ -392,7 +392,7 @@ impl Expression {
     ) -> Result<Option<Attribute>, EvalError> {
         match self {
             Self::Function(fc) => fc.eval(ft, ctx, node),
-            e => e.eval_value(ft, ctx, node).map(|v| Some(v)),
+            e => e.eval_value(ft, ctx, node).map(Some),
         }
     }
 
@@ -404,7 +404,7 @@ impl Expression {
     ) -> Result<Option<Attribute>, EvalError> {
         match self {
             Self::Function(fc) => fc.eval_mut(ft, ctx, node),
-            e => e.eval_value(ft, ctx, node).map(|v| Some(v)),
+            e => e.eval_value(ft, ctx, node).map(Some),
         }
     }
 
@@ -532,7 +532,7 @@ impl ToString for InputVar {
                 .collect::<Vec<String>>()
                 .join(""),
             self.name,
-            self.check.then(|| "?").unwrap_or_default(),
+            self.check.then_some("?").unwrap_or_default(),
         )
     }
 }

@@ -58,7 +58,7 @@ impl FromStr for Column {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match crate::parser::table::column(&s).map_err(|e| e.to_string())? {
+        match crate::parser::table::column(s).map_err(|e| e.to_string())? {
             ("", c) => Ok(c),
             (r, _) => Err(format!("Remainder from parsing column definition: {r}")),
         }
@@ -75,16 +75,16 @@ impl FromAttribute for Column {
             Attribute::Table(tab) => {
                 let header = tab
                     .get("header")
-                    .and_then(|h| String::from_attr(h))
+                    .and_then(String::from_attr)
                     .ok_or("Invalid or no header".to_string())?;
                 let align = tab
                     .get("align")
-                    .and_then(|h| String::from_attr(h))
+                    .and_then(String::from_attr)
                     .ok_or("Invalid or no align".to_string())?;
                 let align = ColumnAlign::from_str(&align)?;
                 let templ = tab
                     .get("template")
-                    .and_then(|h| String::from_attr(h))
+                    .and_then(String::from_attr)
                     .ok_or("Invalid or no template".to_string())?;
                 Ok(Column::new(&header, &templ, Some(align)))
             }
@@ -108,7 +108,7 @@ impl FromAttribute for Column {
                 x => Err(format!("Column can be 1,2 or 3 string array not {x}")),
             },
             #[cfg(feature = "parser")]
-            Attribute::String(s) => Column::from_str(&s),
+            Attribute::String(s) => Column::from_str(s),
             _ => Err(format!(
                 "Incorrect Type: got {} instead of Table/Array or String",
                 value.type_name()
@@ -155,7 +155,7 @@ impl FromAttribute for Table {
                             }
                         },
                     };
-                    cols.push(Column::new(&kv.0, &templ, align));
+                    cols.push(Column::new(kv.0, &templ, align));
                 }
             }
             Attribute::Array(ar) => {

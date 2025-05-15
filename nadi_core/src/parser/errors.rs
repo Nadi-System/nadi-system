@@ -7,7 +7,7 @@ pub trait NadiError: std::error::Error {
         if let Some(fname) = filename {
             format!("Error on file: {fname:?}")
         } else {
-            format!("Error occured")
+            "Error occured".to_string()
         }
     }
 }

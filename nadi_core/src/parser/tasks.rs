@@ -3,21 +3,19 @@ use crate::parser::{
     errors::MatchErr,
     expressions::complete_expression,
     network::{node_name, str_path},
-    tokenizer::{check_tokens, TaskToken, Token},
+    tokenizer::{check_tokens, Token},
     ParseError, ParseErrorType,
 };
 use crate::{
     functions::Propagation,
-    network::StrPath,
-    prelude::*,
     tasks::{AttrTask, EvalTask, FunctionType, Task},
 };
 use abi_stable::std_types::{RString, RVec};
 use nom::{
     branch::alt,
-    combinator::{all_consuming, cut, map, opt, value},
+    combinator::{cut, map, opt, value},
     multi::separated_list1,
-    sequence::{delimited, preceded, separated_pair, tuple},
+    sequence::{delimited, preceded, tuple},
     Finish,
 };
 
@@ -172,8 +170,7 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
             } else {
                 let err = maybe_newline(task)(rest) // need this to fail
                     .finish()
-                    .err()
-                    .expect("Rest should be empty if network parse is complete");
+                    .expect_err("Rest should be empty if network parse is complete");
                 Err(ParseError::new(&tokens, err.internal.input, err.ty))
             }
         }

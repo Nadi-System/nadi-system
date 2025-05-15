@@ -36,7 +36,7 @@ pub use anyhow;
 pub use nadi_plugin;
 pub use string_template_plus as string_template;
 
-pub const NADI_CORE_VERSION: &'static str = env!("CARGO_PKG_VERSION");
+pub const NADI_CORE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[macro_export]
 macro_rules! return_on_err {

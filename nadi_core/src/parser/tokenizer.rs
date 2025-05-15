@@ -1,5 +1,4 @@
 use crate::parser::string::parse_string;
-use crate::parser::NadiError;
 use crate::parser::{ParseError as TaskParseError, ParseErrorType};
 use crate::tasks::TaskKeyword;
 use colored::Colorize;
@@ -136,14 +135,14 @@ impl TaskToken {
     }
 }
 
-impl<'a> Token<'a> {
+impl Token<'_> {
     pub fn colored_print(&self) {
         print!("{}", self.colored());
     }
 
     pub fn colored(&self) -> String {
         match self.ty {
-            TaskToken::NewLine | TaskToken::WhiteSpace => format!("{}", self.content),
+            TaskToken::NewLine | TaskToken::WhiteSpace => self.content.to_string(),
             TaskToken::Comment => format!("{}", self.content.truecolor(100, 100, 100)),
             TaskToken::Keyword(_) => format!("{}", self.content.red()),
             TaskToken::AngleStart => format!("{}", self.content.blue()),
@@ -155,10 +154,10 @@ impl<'a> Token<'a> {
             TaskToken::Caret => format!("{}", self.content.blue()),
             TaskToken::Dot => format!("{}", self.content.blue()),
             TaskToken::Dash => format!("{}", self.content.blue()),
-            TaskToken::Plus => format!("{}", self.content),
-            TaskToken::Star => format!("{}", self.content),
-            TaskToken::Slash => format!("{}", self.content),
-            TaskToken::Percentage => format!("{}", self.content),
+            TaskToken::Plus => self.content.to_string(),
+            TaskToken::Star => self.content.to_string(),
+            TaskToken::Slash => self.content.to_string(),
+            TaskToken::Percentage => self.content.to_string(),
             TaskToken::Question => format!("{}", self.content.yellow()),
             TaskToken::Semicolon => format!("{}", self.content.yellow()),
             TaskToken::And => format!("{}", self.content.yellow()),
@@ -216,34 +215,34 @@ pub(crate) type TokenRes<'a> = IResult<&'a str, Token<'a>, VerboseError<&'a str>
 pub(crate) type VecTokenRes<'a> = IResult<&'a str, Vec<Token<'a>>, VerboseError<&'a str>>;
 
 // catch all one char token
-fn invalid<'a>(i: &'a str) -> TokenRes<'a> {
+fn invalid(i: &str) -> TokenRes<'_> {
     map(anychar, |c| Token::new(TaskToken::Invalid(c), &i[..1]))(i)
 }
 
-fn whitespace<'a>(i: &'a str) -> TokenRes<'a> {
+fn whitespace(i: &str) -> TokenRes<'_> {
     map(recognize(many1(alt((tag("\t"), tag(" "))))), |s| {
         Token::new(TaskToken::WhiteSpace, s)
     })(i)
 }
 
-fn newline<'a>(i: &'a str) -> TokenRes<'a> {
+fn newline(i: &str) -> TokenRes<'_> {
     // only unix, mac and windows line end supported for now
     map(alt((tag("\n\r"), tag("\r\n"), tag("\n"))), |s| {
         Token::new(TaskToken::NewLine, s)
     })(i)
 }
 
-fn comment<'a>(i: &'a str) -> TokenRes<'a> {
+fn comment(i: &str) -> TokenRes<'_> {
     map(recognize(pair(tag("#"), many0(is_not("\n\r")))), |s| {
         Token::new(TaskToken::Comment, s)
     })(i)
 }
 
-fn none<'a>(i: &'a str) -> TokenRes<'a> {
+fn none(i: &str) -> TokenRes<'_> {
     map(tag("<None>"), |s| Token::new(TaskToken::Caret, s))(i)
 }
 
-fn operators<'a>(i: &'a str) -> TokenRes<'a> {
+fn operators(i: &str) -> TokenRes<'_> {
     alt((
         map(tag("^"), |s| Token::new(TaskToken::Caret, s)),
         map(tag("-"), |s| Token::new(TaskToken::Dash, s)),
@@ -258,7 +257,7 @@ fn operators<'a>(i: &'a str) -> TokenRes<'a> {
     ))(i)
 }
 
-fn symbols<'a>(i: &'a str) -> TokenRes<'a> {
+fn symbols(i: &str) -> TokenRes<'_> {
     alt((
         map(tag("->"), |s| Token::new(TaskToken::PathSep, s)),
         map(tag("<"), |s| Token::new(TaskToken::AngleStart, s)),
@@ -283,7 +282,7 @@ pub fn valid_variable_name(txt: &str) -> bool {
     }
 }
 
-fn variable<'a>(i: &'a str) -> TokenRes<'a> {
+fn variable(i: &str) -> TokenRes<'_> {
     let mut get_var = recognize(pair(
         alt((alpha1, tag("_"))),
         many0(alt((alphanumeric1, tag("_")))),
@@ -294,31 +293,29 @@ fn variable<'a>(i: &'a str) -> TokenRes<'a> {
         Err(_) => {
             if rest.trim_start().starts_with('(') {
                 TaskToken::Function
-            } else {
-                if let Some(re) = rest.trim_start().strip_prefix('.') {
-                    // .var or ."var" is supported
-                    if re.trim_start().starts_with('"') {
-                        TaskToken::Variable
-                    } else {
-                        let (r, _) = get_var(re)?;
-                        if r.trim_start().starts_with('(') {
-                            rest = r;
-                            var = &i[..(i.len() - r.len())];
-                            TaskToken::Function
-                        } else {
-                            TaskToken::Variable
-                        }
-                    }
-                } else {
+            } else if let Some(re) = rest.trim_start().strip_prefix('.') {
+                // .var or ."var" is supported
+                if re.trim_start().starts_with('"') {
                     TaskToken::Variable
+                } else {
+                    let (r, _) = get_var(re)?;
+                    if r.trim_start().starts_with('(') {
+                        rest = r;
+                        var = &i[..(i.len() - r.len())];
+                        TaskToken::Function
+                    } else {
+                        TaskToken::Variable
+                    }
                 }
+            } else {
+                TaskToken::Variable
             }
         }
     };
     Ok((rest, Token::new(ty, var)))
 }
 
-fn string<'a>(i: &'a str) -> TokenRes<'a> {
+fn string(i: &str) -> TokenRes<'_> {
     let (rest, s) = context("string", parse_string)(i)?;
     Ok((
         rest,
@@ -326,13 +323,13 @@ fn string<'a>(i: &'a str) -> TokenRes<'a> {
     ))
 }
 
-fn boolean<'a>(i: &'a str) -> TokenRes<'a> {
+fn boolean(i: &str) -> TokenRes<'_> {
     map(alt((tag("true"), tag("false"))), |s| {
         Token::new(TaskToken::Bool, s)
     })(i)
 }
 
-fn integer<'a>(i: &'a str) -> TokenRes<'a> {
+fn integer(i: &str) -> TokenRes<'_> {
     map(
         alt((
             recognize(tuple((
@@ -345,7 +342,7 @@ fn integer<'a>(i: &'a str) -> TokenRes<'a> {
     )(i)
 }
 
-fn float<'a>(i: &'a str) -> TokenRes<'a> {
+fn float(i: &str) -> TokenRes<'_> {
     map(
         alt((
             recognize(tuple((
@@ -364,34 +361,34 @@ fn float<'a>(i: &'a str) -> TokenRes<'a> {
     )(i)
 }
 
-fn date<'a>(i: &'a str) -> TokenRes<'a> {
+fn date(i: &str) -> TokenRes<'_> {
     map(
         recognize(tuple((many1(terminated(digit1, many1(char('-')))), digit1))),
         |s| Token::new(TaskToken::Date, s),
     )(i)
 }
 
-fn time<'a>(i: &'a str) -> TokenRes<'a> {
+fn time(i: &str) -> TokenRes<'_> {
     map(
         recognize(tuple((many1(terminated(digit1, many1(char(':')))), digit1))),
         |s| Token::new(TaskToken::Time, s),
     )(i)
 }
 
-fn datetime<'a>(i: &'a str) -> TokenRes<'a> {
+fn datetime(i: &str) -> TokenRes<'_> {
     map(recognize(tuple((date, one_of(" T"), time))), |s| {
         Token::new(TaskToken::DateTime, s)
     })(i)
 }
 
-fn task_token<'a>(i: &'a str) -> TokenRes<'a> {
+fn task_token(i: &str) -> TokenRes<'_> {
     alt((
         whitespace, newline, comment, string, datetime, date, time, boolean, float, integer,
         variable, none, symbols, operators, invalid,
     ))(i)
 }
 
-fn task_script<'a>(i: &'a str) -> VecTokenRes<'a> {
+fn task_script(i: &str) -> VecTokenRes<'_> {
     context("task script", many0(task_token))(i)
 }
 

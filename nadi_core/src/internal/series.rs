@@ -3,7 +3,7 @@ use nadi_plugin::nadi_internal_plugin;
 #[nadi_internal_plugin]
 mod series {
     use crate::prelude::*;
-    use crate::timeseries::{FromSeries, Series};
+    use crate::timeseries::Series;
     use nadi_plugin::node_func;
 
     /// Number of series in the node
