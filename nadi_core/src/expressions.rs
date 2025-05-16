@@ -1,10 +1,10 @@
-use crate::attrs::{Attribute, HasAttributes};
+use crate::attrs::{Attribute, FromAttribute, HasAttributes};
 use crate::functions::FunctionCtx;
 use crate::node::Node;
 use crate::tasks::{FunctionType, TaskContext, TaskKeyword};
 use std::collections::HashMap;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum EvalError {
     UnresolvedVariable,
     FunctionNotFound(FunctionType, String),
@@ -22,6 +22,7 @@ pub enum EvalError {
     NotANumber,
     NotABool,
     DivideByZero,
+    RegexError(regex::Error),
     LogicalError(&'static str),
     MutexError(&'static str, u32),
 }
@@ -52,6 +53,7 @@ impl EvalError {
             Self::NotANumber => "Numerical Operation on Non Number",
             Self::NotABool => "Boolean Operation on Non Boolean",
             Self::DivideByZero => "Division by Zero",
+            Self::RegexError(e) => return format!("Error in regex: {e}"),
             Self::LogicalError(s) => return format!("Logical Error: {s}, contact developer"),
             Self::MutexError(f, l) => {
                 return format!("Mutex Error on file: {f}::{l}, contact developer")
@@ -73,9 +75,14 @@ impl std::fmt::Display for EvalError {
 pub enum Expression {
     Literal(Attribute),
     Variable(InputVar),
+    // for cases where the evaluation might short circuit, ifelse etc,
+    // this lets the error be ignored during resolve step and raised
+    // during eval step
+    ResolveError(EvalError),
     Function(FunctionCall),
     UniOp(UniOperator, Box<Expression>),
     BiOp(BiOperator, Box<Expression>, Box<Expression>),
+    IfElse(Box<Expression>, Box<Expression>, Box<Expression>),
 }
 
 impl ToString for Expression {
@@ -83,6 +90,7 @@ impl ToString for Expression {
         match self {
             Self::Literal(a) => a.to_toml_string(),
             Self::Variable(v) => v.to_string(),
+            Self::ResolveError(e) => format!("ResolveError: {}", e.to_string()),
             Self::Function(fc) => fc.to_string(),
             Self::UniOp(op, expr) => {
                 if expr.nested() {
@@ -105,6 +113,12 @@ impl ToString for Expression {
                     expr2.to_string()
                 },
             ),
+            Self::IfElse(cond, expr1, expr2) => format!(
+                "if ({}) {{{}}} else {{{}}}",
+                cond.to_string(),
+                expr1.to_string(),
+                expr2.to_string()
+            ),
         }
     }
 }
@@ -113,16 +127,19 @@ impl Expression {
     pub fn nested(&self) -> bool {
         match self {
             Self::Literal(_) => false,
+            Self::ResolveError(_) => false,
             Self::Variable(_) => false,
             Self::Function(_) => false,
             Self::UniOp(_, _) => true,
             Self::BiOp(_, _, _) => true,
+            Self::IfElse(_, _, _) => true,
         }
     }
 
     pub fn has_variables(&self) -> bool {
         match self {
             Self::Literal(_) => false,
+            Self::ResolveError(_) => false,
             Self::Variable(_) => true,
             Self::Function(fc) => {
                 fc.args.iter().any(|e| e.has_variables())
@@ -130,6 +147,9 @@ impl Expression {
             }
             Self::UniOp(_, e) => e.has_variables(),
             Self::BiOp(_, e1, e2) => e1.has_variables() || e2.has_variables(),
+            Self::IfElse(c, e1, e2) => {
+                c.has_variables() || e1.has_variables() || e2.has_variables()
+            }
         }
     }
 
@@ -149,6 +169,8 @@ impl Expression {
                 Ok(Self::Literal(v))
             }
             Self::Variable(v) => Ok(Self::Variable(v)),
+            // this should also be handled on has_variables()
+            Self::ResolveError(e) => Err(e),
             Self::Function(mut fc) => {
                 let mut args = Vec::with_capacity(fc.args.len());
                 for a in fc.args {
@@ -165,6 +187,11 @@ impl Expression {
             Self::UniOp(op, expr) => Ok(Self::UniOp(op, Box::new(expr.simplify(ft, ctx)?))),
             Self::BiOp(op, expr1, expr2) => Ok(Self::BiOp(
                 op,
+                Box::new(expr1.simplify(ft, ctx)?),
+                Box::new(expr2.simplify(ft, ctx)?),
+            )),
+            Self::IfElse(cond, expr1, expr2) => Ok(Self::IfElse(
+                Box::new(cond.simplify(ft, ctx)?),
                 Box::new(expr1.simplify(ft, ctx)?),
                 Box::new(expr2.simplify(ft, ctx)?),
             )),
@@ -198,6 +225,7 @@ impl Expression {
         node: Option<&Node>,
     ) -> Result<Expression, EvalError> {
         match self {
+            Self::ResolveError(_) => Ok(self.clone()),
             Self::Literal(_) => Ok(self.clone()),
             Self::Variable(vt) => {
                 let attr = match &vt.ty {
@@ -262,10 +290,19 @@ impl Expression {
                                             .ok_or(EvalError::MutexError(file!(), line!()))?
                                             .attr_nested(&vt.prefix, &vt.name)
                                             .map(|a| a.cloned());
-                                        vars.push(
-                                            a.map_err(EvalError::AttributeError)?
-                                                .ok_or(EvalError::AttributeNotFound)?,
-                                        );
+                                        match a {
+                                            Ok(Some(v)) => vars.push(v),
+                                            Ok(None) => {
+                                                return Ok(Self::ResolveError(
+                                                    EvalError::AttributeNotFound,
+                                                ))
+                                            }
+                                            Err(e) => {
+                                                return Ok(Self::ResolveError(
+                                                    EvalError::AttributeError(e),
+                                                ))
+                                            }
+                                        }
                                     }
                                     return Ok(Self::Literal(Attribute::Array(vars.into())));
                                 }
@@ -357,9 +394,11 @@ impl Expression {
                         Ok(Self::Literal(false.into()))
                     }
                 } else {
-                    attr.map_err(EvalError::AttributeError)?
-                        .ok_or(EvalError::AttributeNotFound)
-                        .map(Self::Literal)
+                    match attr {
+                        Ok(Some(v)) => Ok(Self::Literal(v)),
+                        Ok(None) => return Ok(Self::ResolveError(EvalError::AttributeNotFound)),
+                        Err(e) => return Ok(Self::ResolveError(EvalError::AttributeError(e))),
+                    }
                 }
             }
             Self::Function(fc) => {
@@ -383,6 +422,11 @@ impl Expression {
             )),
             Self::BiOp(op, expr1, expr2) => Ok(Self::BiOp(
                 op.clone(),
+                Box::new(expr1.resolve(ft, ctx, node)?),
+                Box::new(expr2.resolve(ft, ctx, node)?),
+            )),
+            Self::IfElse(cond, expr1, expr2) => Ok(Self::IfElse(
+                Box::new(cond.resolve(ft, ctx, node)?),
                 Box::new(expr1.resolve(ft, ctx, node)?),
                 Box::new(expr2.resolve(ft, ctx, node)?),
             )),
@@ -422,16 +466,32 @@ impl Expression {
         match self {
             Self::Literal(v) => Ok(v.clone()),
             Self::Variable(_) => Err(EvalError::UnresolvedVariable),
+            Self::ResolveError(e) => Err(e.clone()),
             Self::Function(fc) => match fc.eval(ft, ctx, node) {
                 Ok(None) => Err(EvalError::NoReturnValue(fc.name.to_string())),
                 Ok(Some(v)) => Ok(v),
                 Err(e) => Err(e),
             },
             Self::UniOp(op, expr) => op.eval(expr.eval_value(ft, ctx, node)?),
-            Self::BiOp(op, expr1, expr2) => op.eval(
-                expr1.eval_value(ft, ctx, node)?,
-                expr2.eval_value(ft, ctx, node)?,
-            ),
+            Self::BiOp(op, expr1, expr2) => {
+                let first = expr1.eval_value(ft, ctx, node)?;
+                // short circuit logical operations to prevent eval error
+                match (op, &first) {
+                    (BiOperator::And, Attribute::Bool(false)) => return Ok(false.into()),
+                    (BiOperator::Or, Attribute::Bool(true)) => return Ok(true.into()),
+                    _ => (),
+                }
+                op.eval(first, expr2.eval_value(ft, ctx, node)?)
+            }
+            Self::IfElse(cond, expr1, expr2) => {
+                let cond = cond.eval_value(ft, ctx, node)?;
+                let cond = bool::from_attr(&cond).ok_or(EvalError::NotABool)?;
+                if cond {
+                    expr1.eval_value(ft, ctx, node)
+                } else {
+                    expr2.eval_value(ft, ctx, node)
+                }
+            }
         }
     }
 }
@@ -472,6 +532,8 @@ pub enum BiOperator {
     GreaterThan,
     LessThanEqual,
     GreaterThanEqual,
+    In,
+    Match,
     And,
     Or,
 }
@@ -489,6 +551,8 @@ impl BiOperator {
             Self::GreaterThan => Ok(Attribute::Bool(val1 > val2)),
             Self::LessThanEqual => Ok(Attribute::Bool(val1 <= val2)),
             Self::GreaterThanEqual => Ok(Attribute::Bool(val1 >= val2)),
+            Self::In => val2.contains(&val1).map(Attribute::Bool),
+            Self::Match => val1.str_match(&val2).map(Attribute::Bool),
             Self::And => val1 & val2,
             Self::Or => val1 | val2,
         }
@@ -508,6 +572,8 @@ impl ToString for BiOperator {
             Self::GreaterThan => ">",
             Self::LessThanEqual => "<=",
             Self::GreaterThanEqual => ">=",
+            Self::In => "in",
+            Self::Match => "match",
             Self::And => "&",
             Self::Or => "|",
         }

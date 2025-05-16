@@ -404,11 +404,13 @@ pub enum TaskKeyword {
     Exit,
     End,
     Help,
-    In,
-    Match,
     Inputs,
     Output,
     Nodes,
+    If,
+    Else,
+    In,
+    Match,
 }
 
 impl std::str::FromStr for TaskKeyword {
@@ -422,11 +424,13 @@ impl std::str::FromStr for TaskKeyword {
             "exit" => TaskKeyword::Exit,
             "end" => TaskKeyword::End,
             "help" => TaskKeyword::Help,
-            "in" => TaskKeyword::In,
-            "match" => TaskKeyword::Match,
             "inputs" => TaskKeyword::Inputs,
             "output" => TaskKeyword::Output,
             "nodes" => TaskKeyword::Nodes,
+            "in" => TaskKeyword::In,
+            "match" => TaskKeyword::Match,
+            "if" => TaskKeyword::If,
+            "else" => TaskKeyword::Else,
             k => return Err(format!("{k} is not a keyword")),
         })
     }
@@ -441,11 +445,13 @@ impl ToString for TaskKeyword {
             TaskKeyword::Exit => "exit",
             TaskKeyword::End => "end",
             TaskKeyword::Help => "help",
-            TaskKeyword::In => "in",
-            TaskKeyword::Match => "match",
             TaskKeyword::Inputs => "inputs",
             TaskKeyword::Output => "output",
             TaskKeyword::Nodes => "nodes",
+            TaskKeyword::In => "in",
+            TaskKeyword::Match => "match",
+            TaskKeyword::If => "if",
+            TaskKeyword::Else => "else",
         }
         .to_string()
     }
@@ -460,11 +466,13 @@ impl TaskKeyword {
             TaskKeyword::Exit => "exit",
             TaskKeyword::End => "End the tasks file here (discard everything else)",
             TaskKeyword::Help => "help",
-            TaskKeyword::In => "Check if value is in an array/table",
-            TaskKeyword::Match => "match regex pattern with strings",
             TaskKeyword::Inputs => "inputs of the current node",
             TaskKeyword::Output => "output of the current node",
             TaskKeyword::Nodes => "all the nodes in the network",
+            TaskKeyword::In => "Check if value is in an array/table",
+            TaskKeyword::Match => "match regex pattern with strings",
+            TaskKeyword::If => "if part of if-else block",
+            TaskKeyword::Else => "else part of if-else block",
         }
         .to_string()
     }

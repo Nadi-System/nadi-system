@@ -90,4 +90,26 @@ mod logic {
     ) -> bool {
         !cond
     }
+
+    /// check if all of the bool are true
+    #[env_func]
+    fn all(vars: &[bool]) -> bool {
+        for v in vars {
+            if !*v {
+                return *v;
+            }
+        }
+        true
+    }
+
+    /// check if any of the bool are true
+    #[env_func]
+    fn any(vars: &[bool]) -> bool {
+        for v in vars {
+            if *v {
+                return *v;
+            }
+        }
+        false
+    }
 }

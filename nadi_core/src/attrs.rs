@@ -38,6 +38,10 @@ pub trait HasAttributes {
         self.attr_map_mut().get_mut(name)
     }
     fn del_attr(&mut self, name: &str) -> Option<Attribute> {
+        if name == "_" {
+            // ignore delete
+            return None;
+        }
         self.attr_map_mut().remove(name).into()
     }
     fn set_attr(&mut self, name: &str, val: Attribute) -> Option<Attribute> {
@@ -103,6 +107,34 @@ pub trait HasAttributes {
             };
         }
         Ok(map.set_attr(name, val))
+    }
+
+    fn del_attr_dot(&mut self, names: &str) -> Result<Option<Attribute>, String> {
+        match names.rsplit_once(".") {
+            Some((pre, name)) => self.del_attr_nested(
+                &pre.split(".").map(String::from).collect::<Vec<String>>(),
+                name,
+            ),
+            None => Ok(self.del_attr(names)),
+        }
+    }
+
+    fn del_attr_nested(
+        &mut self,
+        prefix: &[String],
+        name: &str,
+    ) -> Result<Option<Attribute>, String> {
+        let mut map = self.attr_map_mut();
+        for m in prefix {
+            map = match map
+                .entry(m.to_string().into())
+                .or_insert(Attribute::Table(AttrMap::new()))
+            {
+                Attribute::Table(ref mut mp) => mp,
+                _ => return Err(format!("Key {m} is not a Table")),
+            };
+        }
+        Ok(map.del_attr(name))
     }
 
     fn try_attr<T: FromAttribute>(&self, name: &str) -> Result<T, String> {
@@ -385,9 +417,8 @@ impl std::ops::Div for Attribute {
     fn div(self, other: Self) -> Self::Output {
         match self {
             Self::Integer(a) => match other {
-                Self::Integer(b) => Ok(Self::Integer(
-                    a.checked_div(b).ok_or(EvalError::DivideByZero)?,
-                )),
+                // doing integer div by default might be confusing to people
+                Self::Integer(b) => Ok(Self::Float(a as f64 / b as f64)),
                 Self::Float(b) => Ok(Self::Float(a as f64 / b)),
                 _ => Err(EvalError::InvalidOperation),
             },
@@ -416,6 +447,7 @@ impl std::ops::Rem for Attribute {
 }
 
 impl Attribute {
+    // TODO remove: is prob the same as to_string()
     pub fn to_toml_string(&self) -> String {
         match self {
             Self::Bool(v) => format!("{v:?}"),
@@ -506,6 +538,47 @@ impl Attribute {
         match self {
             Self::Table(ref mut t) => Some(t),
             _ => None,
+        }
+    }
+
+    pub fn int_div(&self, other: &Self) -> Result<Self, EvalError> {
+        match self {
+            Self::Integer(a) => match other {
+                Self::Integer(b) => Ok(Self::Integer(
+                    a.checked_div(*b).ok_or(EvalError::DivideByZero)?,
+                )),
+                _ => Err(EvalError::InvalidOperation),
+            },
+            _ => Err(EvalError::InvalidOperation),
+        }
+    }
+
+    pub fn contains(&self, other: &Self) -> Result<bool, EvalError> {
+        match self {
+            Self::String(st) => match other {
+                Self::String(s) => Ok(st.contains(s.as_str())),
+                Self::Array(_) => Err(EvalError::InvalidOperation),
+                Self::Table(_) => Err(EvalError::InvalidOperation),
+                a => Ok(st.contains(a.to_string().as_str())),
+            },
+            Self::Array(ar) => Ok(ar.iter().any(|v| v == other)),
+            Self::Table(am) => match other {
+                Self::String(s) => Ok(am.contains_key(s)),
+                _ => Err(EvalError::InvalidOperation),
+            },
+            _ => Err(EvalError::InvalidOperation),
+        }
+    }
+
+    pub fn str_match(&self, other: &Self) -> Result<bool, EvalError> {
+        match self {
+            Self::String(st) => match other {
+                Self::String(s) => regex::Regex::new(s.as_str())
+                    .map(|p| p.is_match(st.as_str()))
+                    .map_err(EvalError::RegexError),
+                _ => Err(EvalError::InvalidOperation),
+            },
+            _ => Err(EvalError::InvalidOperation),
         }
     }
 }
@@ -777,6 +850,22 @@ where
                 .into_iter()
                 .map(Attribute::from)
                 .collect::<Vec<Attribute>>()
+                .into(),
+        )
+    }
+}
+
+impl<U, T> From<HashMap<U, T>> for Attribute
+where
+    Attribute: From<T>,
+    RString: From<U>,
+{
+    fn from(value: HashMap<U, T>) -> Self {
+        Self::Table(
+            value
+                .into_iter()
+                .map(|(k, v)| (RString::from(k), Attribute::from(v)))
+                .collect::<HashMap<RString, Attribute>>()
                 .into(),
         )
     }

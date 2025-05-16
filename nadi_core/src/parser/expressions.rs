@@ -13,10 +13,11 @@ use nom::{
 
 pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
     alt((
-        uni_operator_expr,
         map(input_variable, Expression::Variable),
         map(attribute, Expression::Literal),
         map(function_call, Expression::Function),
+        uni_operator_expr,
+        if_else_expr,
     ))(inp)
 }
 
@@ -27,6 +28,17 @@ pub fn expression_group<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expres
         cut(err_ctx(
             &ParseErrorType::Unclosed(")"),
             maybe_newline(paren_end),
+        )),
+    )(inp)
+}
+
+pub fn expression_block<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+    delimited(
+        brace_start,
+        maybe_newline(complete_expression),
+        cut(err_ctx(
+            &ParseErrorType::Unclosed("}"),
+            maybe_newline(brace_end),
         )),
     )(inp)
 }
@@ -54,9 +66,25 @@ pub fn bi_operator<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, BiOperator>
         value(BiOperator::GreaterThanEqual, pair(angle_end, assignment)),
         value(BiOperator::LessThan, angle_start),
         value(BiOperator::GreaterThan, angle_end),
+        value(BiOperator::In, kw_in),
+        value(BiOperator::Match, kw_match),
         value(BiOperator::And, and),
         value(BiOperator::Or, or),
     ))(inp)
+}
+
+pub fn if_else_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+    let (rest, (_, cond, iftrue, _, iffalse)) = tuple((
+        kw_if,
+        maybe_newline(expression_group),
+        maybe_newline(expression_block),
+        maybe_newline(kw_else),
+        maybe_newline(expression_block),
+    ))(inp)?;
+    Ok((
+        rest,
+        Expression::IfElse(Box::new(cond), Box::new(iftrue), Box::new(iffalse)),
+    ))
 }
 
 pub fn complete_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {

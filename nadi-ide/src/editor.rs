@@ -150,10 +150,10 @@ impl Editor {
                 Task::none()
             }
             Message::TaskAtMark(task) => {
-                self.curr_func = None;
                 let task = match task {
                     Some(t) => t,
                     None => {
+                        self.curr_func = None;
                         self.status = "".to_string();
                         return Task::none();
                     }
@@ -163,7 +163,11 @@ impl Editor {
                     NadiTask::Eval(et) => {
                         if let Expression::Function(fc) = et.input {
                             if self.embedded {
-                                // self.status = format!("Searching Function {}", &fc.name);
+                                if let Some(curr) = &self.curr_func {
+                                    if curr.ty == et.ty && curr.name == fc.name {
+                                        return Task::none();
+                                    }
+                                }
                                 return Task::perform(
                                     async { (et.ty, fc.name) },
                                     Message::FuncSignature,

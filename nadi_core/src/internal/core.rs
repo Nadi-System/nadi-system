@@ -170,29 +170,154 @@ mod core {
         Attribute::Table(attributes.clone())
     }
 
-    /// Count the number of true values in the array
-    #[env_func(start=Attribute::Integer(0))]
-    fn sum(vars: Vec<Attribute>, start: Attribute) -> Result<Attribute, String> {
+    /// year from date/datetime
+    #[env_func]
+    fn year(
+        /// Date or DateTime
+        value: Attribute,
+    ) -> Result<Attribute, String> {
+        let val = match value {
+            Attribute::Date(d) => d.year,
+            Attribute::DateTime(dt) => dt.date.year,
+            _ => {
+                return Err(format!(
+                    "Got {} instead of date/datetime",
+                    value.type_name()
+                ))
+            }
+        };
+        Ok(Attribute::Integer(val.into()))
+    }
+
+    /// month from date/datetime
+    #[env_func]
+    fn month(
+        /// Date or DateTime
+        value: Attribute,
+    ) -> Result<Attribute, String> {
+        let val = match value {
+            Attribute::Date(d) => d.month,
+            Attribute::DateTime(dt) => dt.date.month,
+            _ => {
+                return Err(format!(
+                    "Got {} instead of date/datetime",
+                    value.type_name()
+                ))
+            }
+        };
+        Ok(Attribute::Integer(val.into()))
+    }
+
+    /// day from date/datetime
+    #[env_func]
+    fn day(
+        /// Date or DateTime
+        value: Attribute,
+    ) -> Result<Attribute, String> {
+        let val = match value {
+            Attribute::Date(d) => d.day,
+            Attribute::DateTime(dt) => dt.date.day,
+            _ => {
+                return Err(format!(
+                    "Got {} instead of date/datetime",
+                    value.type_name()
+                ))
+            }
+        };
+        Ok(Attribute::Integer(val.into()))
+    }
+
+    /// Minimum of the variables
+    ///
+    /// Starts with integer for type purpose, MAX float is larger than
+    /// max int, so it'll be incorrect for large numbers
+    #[env_func(start=Attribute::Integer(i64::MAX))]
+    fn min_num(vars: Vec<Attribute>, start: Attribute) -> Attribute {
         let mut val = start;
         for r in vars {
-            val = (val + r).map_err(|e| e.message())?
+            if r < val {
+                val = r;
+            }
+        }
+        val
+    }
+
+    /// Minimum of the variables
+    ///
+    /// Starts with integer for type purpose, MAX float is larger than
+    /// max int, so it'll be incorrect for large numbers
+    #[env_func(start=Attribute::Integer(i64::MIN))]
+    fn max_num(vars: Vec<Attribute>, start: Attribute) -> Attribute {
+        let mut val = start;
+        for r in vars {
+            if r < val {
+                val = r;
+            }
+        }
+        val
+    }
+
+    /// Minimum of the variables
+    #[env_func]
+    fn min(vars: Vec<Attribute>, start: Attribute) -> Attribute {
+        let mut val = start;
+        for r in vars {
+            if r < val {
+                val = r;
+            }
+        }
+        val
+    }
+
+    /// Minimum of the variables
+    #[env_func]
+    fn max(vars: Vec<Attribute>, start: Attribute) -> Attribute {
+        let mut val = start;
+        for r in vars {
+            if r < val {
+                val = r;
+            }
+        }
+        val
+    }
+
+    /// Sum of the variables
+    #[env_func(start=Attribute::Integer(0))]
+    fn sum(vars: Vec<Attribute>, start: Attribute) -> Result<Attribute, EvalError> {
+        let mut val = start;
+        for r in vars {
+            val = (val + r)?
         }
         Ok(val)
     }
 
-    /// Count the number of true values in the array
-    #[env_func]
-    fn prod(vars: &[Attribute]) -> Result<Attribute, String> {
-        match vars {
-            [] => Ok(Attribute::Float(1.0)),
-            [val] => Ok(val.clone()),
-            [val, rest @ ..] => {
-                let mut val = val.clone();
-                for r in rest {
-                    val = (val * r.clone()).map_err(|e| e.message())?
-                }
-                Ok(val)
-            }
+    /// Product of the variables
+    #[env_func(start=Attribute::Integer(1))]
+    fn prod(vars: Vec<Attribute>, start: Attribute) -> Result<Attribute, EvalError> {
+        let mut val = start;
+        for r in vars {
+            val = (val * r)?
         }
+        Ok(val)
+    }
+
+    /// Get a list of unique string values
+    #[env_func]
+    fn unique_str(vars: Vec<String>) -> Vec<String> {
+        vars.into_iter()
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
+    /// Get a count of unique string values
+    #[env_func]
+    fn count_str(vars: Vec<String>) -> HashMap<String, usize> {
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        vars.into_iter().for_each(|v| {
+            let v = counts.entry(v).or_insert(0);
+            *v += 1;
+        });
+        counts
     }
 }

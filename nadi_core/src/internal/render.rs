@@ -28,8 +28,28 @@ mod render {
         Ok(text)
     }
 
-    #[network_func(safe = false, join = "\n")]
+    /// Render from network attributes
+    #[network_func(safe = false)]
     fn render(
+        network: &Network,
+        /// Path to the template file
+        template: &Template,
+        /// if render fails keep it as it is instead of exiting
+        safe: bool,
+    ) -> Result<String, String> {
+        let text = if safe {
+            network
+                .render(template)
+                .unwrap_or_else(|_| template.original().to_string())
+        } else {
+            network.render(template).map_err(|e| e.to_string())?
+        };
+        Ok(text)
+    }
+
+    /// Render each node of the network and combine to same variable
+    #[network_func(safe = false, join = "\n")]
+    fn render_nodes(
         network: &Network,
         /// Path to the template file
         template: &Template,

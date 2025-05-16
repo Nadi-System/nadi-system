@@ -128,10 +128,17 @@ impl Terminal {
         if text.is_empty() {
             return;
         }
-        self.content
-            .perform(text_editor::Action::Move(text_editor::Motion::DocumentEnd));
-        if !append {
-            self.last_line = self.content.cursor_position().0;
+        if text.lines().count() > 100 {
+            // TODO split the content into history and temp_storage
+            // for output when the output is very large
+            self.content = text_editor::Content::new();
+            self.last_line = 0;
+        } else {
+            self.content
+                .perform(text_editor::Action::Move(text_editor::Motion::DocumentEnd));
+            if !append {
+                self.last_line = self.content.cursor_position().0;
+            }
         }
         let text = if prompt {
             let mut new_lines = Vec::with_capacity(text.lines().count());
@@ -146,10 +153,22 @@ impl Terminal {
         } else {
             format!("{}\n", text.trim())
         };
+        // let lines = text.lines().count();
         self.content
             .perform(text_editor::Action::Edit(text_editor::Edit::Paste(
                 Arc::new(text),
             )));
+        // workaround to trigger highlight, if using the cargo version instead of patched version
+        // for _ in 0..=lines {
+        //     self.content
+        //         .perform(text_editor::Action::Move(text_editor::Motion::Up));
+        // }
+        // self.content
+        //     .perform(text_editor::Action::Move(text_editor::Motion::Home));
+        // self.content
+        //     .perform(text_editor::Action::Edit(text_editor::Edit::Enter));
+        // self.content
+        //     .perform(text_editor::Action::Edit(text_editor::Edit::Backspace));
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
