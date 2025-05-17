@@ -23,6 +23,7 @@ impl AttrView {
                 )
             })
             .collect();
+        self.values.sort_by(|a, b| a.cmp(b));
     }
 
     pub fn view(&self) -> Element<'_, ()> {

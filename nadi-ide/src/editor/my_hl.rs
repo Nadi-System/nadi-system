@@ -123,6 +123,7 @@ impl Highlight {
                 TaskToken::String(_) => Self::String,
                 TaskToken::Integer | TaskToken::Float => Self::Number,
                 TaskToken::Date | TaskToken::Time | TaskToken::DateTime => Self::DateTime,
+                TaskToken::NaN | TaskToken::Infinity => Self::Number,
                 TaskToken::Invalid(_) => Self::Error,
                 TaskToken::NewLine | TaskToken::WhiteSpace => Self::None,
             },

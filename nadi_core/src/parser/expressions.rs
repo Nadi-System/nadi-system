@@ -7,7 +7,7 @@ use crate::parser::{
 use nom::{
     branch::alt,
     combinator::{cut, map, opt, value},
-    multi::{many0, many1, separated_list1},
+    multi::{many1, separated_list1},
     sequence::{delimited, pair, separated_pair, terminated, tuple},
 };
 
@@ -54,24 +54,53 @@ pub fn uni_operator_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expre
     Ok((rest, Expression::UniOp(op, Box::new(expr))))
 }
 
-pub fn bi_operator<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, BiOperator> {
-    alt((
-        value(BiOperator::Add, plus),
-        value(BiOperator::Substract, dash),
-        value(BiOperator::Multiply, star),
-        value(BiOperator::Divide, slash),
-        value(BiOperator::Modulus, percentage),
-        value(BiOperator::Equal, pair(assignment, assignment)),
-        value(BiOperator::LessThanEqual, pair(angle_start, assignment)),
-        value(BiOperator::GreaterThanEqual, pair(angle_end, assignment)),
-        value(BiOperator::LessThan, angle_start),
-        value(BiOperator::GreaterThan, angle_end),
-        value(BiOperator::In, kw_in),
-        value(BiOperator::Match, kw_match),
-        value(BiOperator::And, and),
-        value(BiOperator::Or, or),
-    ))(inp)
+macro_rules! bi_op_pred {
+    ($name:ident, $inner:expr, $($itself:expr)?, $($kw: expr => $op: expr),*) => {
+	fn $name<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+	    map(
+		tuple((
+		    alt((expression_group, $inner)),
+		    maybe_newline(alt((
+			$(value($op, $kw),)*
+		    ))),
+		    maybe_newline(cut(err_ctx(
+			&ParseErrorType::IncompleteExpression,
+			alt((expression_group, $($itself,)? $inner))
+		    )))
+		)),
+		|(lhs, op, rhs)| Expression::BiOp(op, Box::new(lhs), Box::new(rhs)),
+	    )(inp)
+	}
+    }
 }
+
+bi_op_pred!(bi_op_in_match, expression,,
+            kw_in => BiOperator::In,
+            kw_match => BiOperator::Match
+);
+bi_op_pred!(bi_op_mult, expression, bi_op_mult,
+            star => BiOperator::Multiply,
+            pair(slash, slash) => BiOperator::IntDivide,
+            slash => BiOperator::Divide,
+            percentage => BiOperator::Modulus
+);
+bi_op_pred!(bi_op_plusminus, alt((bi_op_mult, expression)), bi_op_plusminus,
+            plus => BiOperator::Add,
+            dash => BiOperator::Substract
+);
+bi_op_pred!(bi_op_and, alt((bi_op_in_match, bi_op_compare, expression)), bi_op_and,
+            and => BiOperator::And
+);
+bi_op_pred!(bi_op_or, alt((bi_op_and, expression)), bi_op_or,
+            or => BiOperator::Or
+);
+bi_op_pred!(bi_op_compare, expression,,
+            pair(assignment, assignment) => BiOperator::Equal,
+            pair(angle_start, assignment) => BiOperator::LessThanEqual,
+            pair(angle_end, assignment) => BiOperator::GreaterThanEqual,
+            angle_start => BiOperator::LessThan,
+            angle_end => BiOperator::GreaterThan
+);
 
 pub fn if_else_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
     let (rest, (_, cond, iftrue, _, iffalse)) = tuple((
@@ -88,31 +117,16 @@ pub fn if_else_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression
 }
 
 pub fn complete_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
-    let (rest, (first, others)) = pair(
-        alt((expression_group, expression)),
-        many0(pair(
-            maybe_newline(bi_operator),
-            cut(err_ctx(
-                &ParseErrorType::IncompleteExpression,
-                maybe_newline(alt((expression_group, expression))),
-            )),
-        )),
-    )(inp)?;
-    // TODO left-first expression evaluation; redo later
-    let mut lhs = first;
-    match others.as_slice() {
-        [] => Ok((rest, lhs)),
-        [others @ .., last] => {
-            // TODO a way to do pattern match without cloning would be nice
-            for (o, v) in others {
-                lhs = Expression::BiOp(o.clone(), Box::new(lhs), Box::new(v.clone()));
-            }
-            Ok((
-                rest,
-                Expression::BiOp(last.0.clone(), Box::new(lhs), Box::new(last.1.clone())),
-            ))
-        }
-    }
+    alt((
+        bi_op_or,
+        bi_op_plusminus,
+        bi_op_and,
+        bi_op_compare,
+        bi_op_in_match,
+        bi_op_mult,
+        expression_group,
+        expression,
+    ))(inp)
 }
 
 pub fn variable_type<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, VarType> {
@@ -249,7 +263,7 @@ mod tests {
     #[case("!(xyz)")]
     #[case("!(-xyz)")]
     #[case("xyz + 12")]
-    // since it doesn't eval, anything is valid
+    #[should_panic]
     #[case("xyz | yzx * 12 + true % func(call)")]
     #[case("(xyz | yzx) * (12 + true)")]
     #[should_panic]
@@ -282,6 +296,7 @@ mod tests {
     #[case("12", 12.into())]
     #[case("2.12", 2.12.into())]
     #[case("- 2.12", (-2.12).into())]
+    #[case("inf - 2.12", (f64::INFINITY).into())]
     #[case("xyz", 12.into())]
     #[should_panic]
     #[case("!(xyz)", 12.into())]
@@ -293,6 +308,10 @@ mod tests {
     #[case("(xyz >= 10) | false", true.into())]
     #[should_panic]
     #[case("(xyz - 1) * (12 + true)", 143.into())]
+    // testing
+    #[case("1 + 2 * 2", 5.into())]
+    #[case("1 + 2 * (2 - 5)", (-5).into())]
+    #[case("10 // 5 + 2", 4.into())]
     pub fn compl_expr_eval_test(
         mut context: TaskContext,
         #[case] txt: &str,
@@ -314,6 +333,12 @@ mod tests {
     #[rstest]
     #[case("12 + 2", "14")]
     #[case("true | false", "true")]
+    #[case("false | false | true & false", "false")]
+    #[case("5 + 12 - 2 + 0 * 100", "15")]
+    #[case("false | (false & true)", "false")]
+    // even though this is invalid, this short circuits after the
+    // first true, so it doesn't fail
+    #[case("true | 12", "true")]
     #[case("12 > 12", "false")]
     #[case("(xyz >= 10) | false", "(xyz >= 10) | false")]
     #[should_panic]
@@ -336,7 +361,7 @@ mod tests {
     // testing the simplify process
     #[rstest]
     #[case("- true", EvalError::NotANumber)]
-    #[case("true | 12", EvalError::NotABool)]
+    #[case("12 | true", EvalError::NotABool)]
     #[case("(xyz - 1) * (12 + true)", EvalError::InvalidOperation)]
     #[case("(xyz - 1) * (true + true)", EvalError::InvalidOperation)]
     #[case("(xyz * \"1\") * (12 + true)", EvalError::InvalidOperation)]
@@ -344,7 +369,7 @@ mod tests {
         let tokens = get_tokens(txt);
         let (rest, expr) = complete_expression(&tokens).unwrap();
         assert_eq!(rest, vec![]);
-        let res = expr.simplify(&FunctionType::Env, &context).err().unwrap();
-        assert_eq!(res, err);
+        let res = expr.simplify(&FunctionType::Env, &context);
+        assert_eq!(res, Err(err));
     }
 }

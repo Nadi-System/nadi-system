@@ -96,6 +96,18 @@ mod core {
         }
     }
 
+    /// check if a float is nan
+    #[env_func]
+    fn isna(val: f64) -> bool {
+        val.is_nan()
+    }
+
+    /// check if a float is +/- infinity
+    #[env_func]
+    fn isinf(val: f64) -> bool {
+        val.is_infinite()
+    }
+
     /// make a float from value
     #[env_func(parse = true)]
     fn float(

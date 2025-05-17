@@ -79,6 +79,8 @@ pub enum TaskToken {
     Date,
     Time,
     DateTime,
+    NaN,
+    Infinity,
     Invalid(char), // any invalid characters
 }
 
@@ -130,6 +132,8 @@ impl TaskToken {
             TaskToken::Date => "cyan",
             TaskToken::Time => "cyan",
             TaskToken::DateTime => "cyan",
+            TaskToken::NaN => "yellow",
+            TaskToken::Infinity => "yellow",
             TaskToken::Invalid(_) => "red",
         }
     }
@@ -178,6 +182,8 @@ impl Token<'_> {
             TaskToken::Date => format!("{}", self.content.cyan()),
             TaskToken::Time => format!("{}", self.content.cyan()),
             TaskToken::DateTime => format!("{}", self.content.cyan()),
+            TaskToken::NaN => format!("{}", self.content.yellow()),
+            TaskToken::Infinity => format!("{}", self.content.yellow()),
             TaskToken::Invalid(_) => format!("{}", self.content.red()),
         }
     }
@@ -204,6 +210,8 @@ impl Token<'_> {
             TaskToken::Date => Attribute::Date(Date::from_str(self.content)?),
             TaskToken::Time => Attribute::Time(Time::from_str(self.content)?),
             TaskToken::DateTime => Attribute::DateTime(DateTime::from_str(self.content)?),
+            TaskToken::NaN => Attribute::Float(f64::NAN),
+            TaskToken::Infinity => Attribute::Float(f64::INFINITY),
             _ => return Ok(None),
         };
         Ok(Some(val))
@@ -308,7 +316,11 @@ fn variable(i: &str) -> TokenRes<'_> {
                     }
                 }
             } else {
-                TaskToken::Variable
+                match var {
+                    "nan" => TaskToken::NaN,
+                    "inf" => TaskToken::Infinity,
+                    _ => TaskToken::Variable,
+                }
             }
         }
     };

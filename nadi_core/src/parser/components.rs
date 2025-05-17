@@ -6,7 +6,7 @@ use crate::tasks::TaskKeyword;
 use nadi_core::attrs::{Attribute, Date, DateTime, Time};
 use nom::{
     branch::alt,
-    combinator::map,
+    combinator::{map, value},
     multi::{many0, many1, separated_list0, separated_list1},
     sequence::{delimited, preceded, separated_pair, terminated},
     IResult,
@@ -61,6 +61,8 @@ macro_rules! one_token {
     };
 }
 
+one_token!(infinity, TaskToken::Infinity);
+one_token!(nan, TaskToken::NaN);
 one_token!(float, TaskToken::Float);
 one_token!(integer, TaskToken::Integer);
 one_token!(boolean, TaskToken::Bool);
@@ -226,6 +228,14 @@ pub fn attr_integer<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute>
 }
 
 pub fn attr_float<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
+    alt((
+        attr_float_number,
+        value(Attribute::Float(f64::NAN), nan),
+        value(Attribute::Float(f64::INFINITY), infinity),
+    ))(inp)
+}
+
+pub fn attr_float_number<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
     let (rest, val) = float(inp)?;
     let val = match val.content.replace('_', "").parse::<f64>() {
         Ok(v) => v,
