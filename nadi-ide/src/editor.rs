@@ -9,8 +9,7 @@ use iced::{Element, Fill, Font, Task, Theme};
 use nadi_core::{
     expressions::Expression,
     functions::{FuncArg, FuncArgType},
-    parser::tasks,
-    parser::tokenizer,
+    parser::{highlight::NadiFileType, tasks, tokenizer},
     tasks::{FunctionType, Task as NadiTask},
 };
 use std::path::{Path, PathBuf};
@@ -346,10 +345,10 @@ impl Editor {
             .and_then(Path::extension)
             .and_then(std::ffi::OsStr::to_str)
             .unwrap_or("tasks");
-        let editor: Element<_> = match my_hl::NadiFileType::from_str(ext) {
+        let editor: Element<_> = match NadiFileType::from_str(ext) {
             // use custom highlights for nadi files
             Ok(nft) => editor
-                .highlight_with::<my_hl::NadiHighlighter>((nft, 0), my_hl::Highlight::to_format)
+                .highlight_with::<my_hl::NadiHighlighter>((nft, 0), my_hl::hlto_format)
                 .into(),
             _ => editor.highlight(ext, self.theme).into(),
         };

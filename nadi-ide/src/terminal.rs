@@ -8,6 +8,7 @@ use iced::widget::{
     progress_bar, row, scrollable, text, text_editor, text_input, toggler,
 };
 use iced::{Element, Fill, Font, Length, Task, Theme};
+use nadi_core::parser::highlight::NadiFileType;
 use nadi_core::string_template::Template;
 use nadi_core::tasks::{FunctionType, Task as NadiTask, TaskContext};
 use std::io::Read;
@@ -332,8 +333,8 @@ impl Terminal {
                 .font(Font::MONOSPACE)
                 .on_action(Message::EditorAction)
                 .highlight_with::<my_hl::NadiHighlighter>(
-                    (my_hl::NadiFileType::Terminal, self.last_line),
-                    my_hl::Highlight::to_format
+                    (NadiFileType::Terminal, self.last_line),
+                    my_hl::hlto_format
                 ),
             text(&self.status).style(text::danger),
             entry,

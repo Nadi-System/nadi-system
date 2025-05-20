@@ -543,6 +543,13 @@ impl NadiFunctions {
         }
 
         for Tuple2(plug, funcs) in self.plugins() {
+            if !funcs.env().is_empty() {
+                for func in funcs.env() {
+                    let fname = format!("{plug}.{func}");
+                    let func_obj = self.env(&fname).expect("Func Should Exist");
+                    print_func(plug, "node", func, func_obj.args());
+                }
+            }
             if !funcs.node().is_empty() {
                 for func in funcs.node() {
                     let fname = format!("{plug}.{func}");

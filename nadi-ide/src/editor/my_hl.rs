@@ -2,7 +2,10 @@ use core::ops::Range;
 use iced::Color;
 use iced::Font;
 use iced_core::text::highlighter::{Format, Highlighter};
-use nadi_core::parser::tokenizer::{TaskToken, get_tokens};
+use nadi_core::parser::{
+    highlight::{Highlight, NadiFileType},
+    tokenizer::{TaskToken, get_tokens},
+};
 use std::collections::HashMap;
 
 struct HlTokens {
@@ -10,145 +13,29 @@ struct HlTokens {
     tokens: Vec<(Highlight, usize)>,
 }
 
-#[derive(Clone, PartialEq)]
-pub enum NadiFileType {
-    Network,
-    Attribute,
-    Tasks,
-    Terminal,
-}
-
-impl std::str::FromStr for NadiFileType {
-    type Err = ();
-    fn from_str(val: &str) -> Result<Self, Self::Err> {
-        match val {
-            "net" | "network" => Ok(Self::Network),
-            "task" | "tasks" => Ok(Self::Tasks),
-            "toml" => Ok(Self::Attribute),
-            "log" => Ok(Self::Terminal),
-            _ => Err(()),
-        }
-    }
+pub fn hlto_format(hl: &Highlight, _theme: &iced::Theme) -> Format<Font> {
+    let color = match hl {
+        Highlight::Comment => Some(Color::new(0.5, 0.5, 0.5, 0.7)),
+        Highlight::Keyword => Some(Color::new(0.7, 0.0, 0.0, 1.0)),
+        Highlight::Symbol => None,
+        Highlight::Operator => Some(Color::new(0.2, 0.7, 0.7, 1.0)),
+        Highlight::Paren => Some(Color::new(0.0, 0.0, 1.0, 1.0)),
+        Highlight::Variable => Some(Color::new(0.0, 0.5, 0.0, 1.0)),
+        Highlight::Function => Some(Color::new(0.5, 0.2, 0.2, 1.0)),
+        Highlight::Bool => Some(Color::new(0.4, 0.6, 0.9, 1.0)),
+        Highlight::Number => None,
+        Highlight::DateTime => Some(Color::new(0.1, 0.7, 0.5, 1.0)),
+        Highlight::String => Some(Color::new(0.1, 0.7, 0.5, 1.0)),
+        Highlight::Error => Some(Color::new(1.0, 0.3, 0.3, 1.0)),
+        Highlight::None => None,
+    };
+    Format { color, font: None }
 }
 
 // pub struct Settings {
 //     pub(super) theme: iced::highlighter::Theme,
 //     pub(super) nft: NadiFileType,
 // }
-
-pub enum Highlight {
-    Comment,
-    Keyword,
-    Symbol,
-    Operator,
-    Paren,
-    Variable,
-    Function,
-    Bool,
-    Number,
-    DateTime,
-    String,
-    Error,
-    None,
-}
-
-impl Highlight {
-    fn from_token(tk: &TaskToken, ntf: &NadiFileType) -> Self {
-        match ntf {
-            NadiFileType::Network => match tk {
-                TaskToken::Comment => Self::Comment,
-                TaskToken::Keyword(_) => Self::Variable,
-                TaskToken::PathSep => Self::Symbol,
-                TaskToken::Variable => Self::Variable,
-                TaskToken::Bool => Self::Variable,
-                TaskToken::String(_) => Self::String,
-                TaskToken::Integer | TaskToken::Float => Self::Variable,
-                TaskToken::Invalid(_) => Self::Error,
-                TaskToken::NewLine | TaskToken::WhiteSpace => Self::None,
-                _ => Self::Error,
-            },
-            NadiFileType::Attribute => match tk {
-                TaskToken::Comment => Self::Comment,
-                TaskToken::Keyword(_) => Self::Variable,
-                TaskToken::ParenStart => Self::Paren,
-                TaskToken::BraceStart => Self::Paren,
-                TaskToken::BracketStart => Self::Paren,
-                TaskToken::Comma => Self::Symbol,
-                TaskToken::Dot => Self::Symbol,
-                TaskToken::ParenEnd => Self::Paren,
-                TaskToken::BraceEnd => Self::Paren,
-                TaskToken::BracketEnd => Self::Paren,
-                TaskToken::Assignment => Self::Symbol,
-                TaskToken::Variable | TaskToken::Dash => Self::Variable,
-                TaskToken::Bool => Self::Bool,
-                TaskToken::String(_) => Self::String,
-                TaskToken::Integer | TaskToken::Float => Self::Number,
-                TaskToken::Date | TaskToken::Time | TaskToken::DateTime => Self::DateTime,
-                TaskToken::Invalid(_) => Self::Error,
-                TaskToken::PathSep => Self::Error,
-                TaskToken::Function => Self::Error,
-                TaskToken::NewLine | TaskToken::WhiteSpace => Self::None,
-                _ => Self::Error,
-            },
-            NadiFileType::Tasks | NadiFileType::Terminal => match tk {
-                TaskToken::Comment => Self::Comment,
-                TaskToken::Keyword(_) => Self::Keyword,
-                TaskToken::AngleStart => Self::Paren,
-                TaskToken::ParenStart => Self::Paren,
-                TaskToken::BraceStart => Self::Paren,
-                TaskToken::BracketStart => Self::Paren,
-                TaskToken::PathSep => Self::Symbol,
-                TaskToken::Comma => Self::Symbol,
-                TaskToken::Dot => Self::Symbol,
-                TaskToken::Dash => Self::Operator,
-                TaskToken::Plus => Self::Operator,
-                TaskToken::Star => Self::Operator,
-                TaskToken::Slash => Self::Operator,
-                TaskToken::Percentage => Self::Operator,
-                TaskToken::Question => Self::Symbol,
-                TaskToken::Semicolon => Self::Operator,
-                TaskToken::None => Self::Comment,
-                TaskToken::Caret => Self::Operator,
-                TaskToken::And => Self::Operator,
-                TaskToken::Or => Self::Operator,
-                TaskToken::Not => Self::Operator,
-                TaskToken::AngleEnd => Self::Paren,
-                TaskToken::ParenEnd => Self::Paren,
-                TaskToken::BraceEnd => Self::Paren,
-                TaskToken::BracketEnd => Self::Paren,
-                TaskToken::Variable => Self::Variable,
-                TaskToken::Function => Self::Function,
-                TaskToken::Assignment => Self::Operator,
-                TaskToken::Bool => Self::Bool,
-                TaskToken::String(_) => Self::String,
-                TaskToken::Integer | TaskToken::Float => Self::Number,
-                TaskToken::Date | TaskToken::Time | TaskToken::DateTime => Self::DateTime,
-                TaskToken::NaN | TaskToken::Infinity => Self::Number,
-                TaskToken::Invalid(_) => Self::Error,
-                TaskToken::NewLine | TaskToken::WhiteSpace => Self::None,
-            },
-        }
-    }
-
-    pub fn to_format(&self, _theme: &iced::Theme) -> Format<Font> {
-        let color = match self {
-            Self::Comment => Some(Color::new(0.5, 0.5, 0.5, 0.7)),
-            Self::Keyword => Some(Color::new(0.7, 0.0, 0.0, 1.0)),
-            Self::Symbol => None,
-            Self::Operator => Some(Color::new(0.2, 0.7, 0.7, 1.0)),
-            Self::Paren => Some(Color::new(0.0, 0.0, 1.0, 1.0)),
-            Self::Variable => Some(Color::new(0.0, 0.5, 0.0, 1.0)),
-            Self::Function => Some(Color::new(0.5, 0.2, 0.2, 1.0)),
-            Self::Bool => Some(Color::new(0.4, 0.6, 0.9, 1.0)),
-            Self::Number => None,
-            Self::DateTime => Some(Color::new(0.1, 0.7, 0.5, 1.0)),
-            Self::String => Some(Color::new(0.1, 0.7, 0.5, 1.0)),
-            Self::Error => Some(Color::new(1.0, 0.3, 0.3, 1.0)),
-            Self::None => None,
-        };
-        Format { color, font: None }
-    }
-}
 
 impl HlTokens {
     fn new(line: &str, nft: &NadiFileType) -> (Option<MultiLineStr>, Self) {
@@ -289,6 +176,9 @@ impl Highlighter for NadiHighlighter {
         self.ml_str.retain(|l, _| l <= &line);
     }
     fn highlight_line(&mut self, line: &str) -> Self::Iterator<'_> {
+        // Can't simply use get_highlight from nadi_core as there
+        // could be multiline strings, and this just reads one line at
+        // a time
         if self.settings == NadiFileType::Terminal {
             return Box::new(HlTokens::new(line, &self.settings).1);
         }

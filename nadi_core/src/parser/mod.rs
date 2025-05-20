@@ -16,6 +16,7 @@ pub mod string;
 pub mod table;
 pub mod tasks;
 pub mod tokenizer;
+pub mod highlight;
 
 pub use errors::{ParseError, ParseErrorType};
 
