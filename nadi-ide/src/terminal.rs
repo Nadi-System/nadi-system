@@ -8,10 +8,11 @@ use iced::widget::{
     progress_bar, row, scrollable, text, text_editor, text_input, toggler,
 };
 use iced::{Element, Fill, Font, Length, Task, Theme};
-use nadi_core::parser::highlight::NadiFileType;
+use nadi_core::parser::{ParseErrorType, highlight::NadiFileType};
 use nadi_core::string_template::Template;
 use nadi_core::tasks::{FunctionType, Task as NadiTask, TaskContext};
 use std::io::Read;
+use std::ops::Not;
 use std::sync::Arc;
 
 pub static NETWORK_HELP: &str = include_str!("../markdown/network.md");
@@ -21,6 +22,7 @@ pub struct Terminal {
     running_msg: Option<String>,
     history_str: Vec<String>,
     history: combo_box::State<String>,
+    residue: String,
     command: String,
     status: String,
     content: text_editor::Content,
@@ -41,6 +43,7 @@ impl Default for Terminal {
             running_msg: None,
             history_str: vec![],
             history: combo_box::State::<String>::default(),
+            residue: String::new(),
             command: String::new(),
             status: String::new(),
             content: text_editor::Content::default(),
@@ -62,6 +65,7 @@ pub enum Message {
     EditorAction(text_editor::Action),
     SaveHistory,
     Run(String),
+    ClearCommand,
     ExecCommand,
     RunTasks(String),
     TemplChange(String),
@@ -159,13 +163,18 @@ impl Terminal {
             }
         }
         let text = if prompt {
-            let mut new_lines = Vec::with_capacity(text.lines().count());
-            let mut lines = text.lines();
-            match lines.next() {
-                Some(l) => new_lines.push(format!(">>> {l}")),
-                None => (),
-            }
-            new_lines.extend(lines.into_iter().map(|l| format!(">.. {l}")));
+            let mut new_lines: Vec<_> = if self.residue.is_empty() {
+                let mut nl = Vec::with_capacity(text.lines().count());
+                let mut lines = text.lines();
+                match lines.next() {
+                    Some(l) => nl.push(format!(">>> {l}")),
+                    None => (),
+                }
+                nl.extend(lines.into_iter().map(|l| format!(">.. {l}")));
+                nl
+            } else {
+                text.lines().map(|l| format!(">.. {l}")).collect()
+            };
             new_lines.push(String::new()); // for trailing newline
             new_lines.join("\n")
         } else {
@@ -209,6 +218,10 @@ impl Terminal {
                     self.content.perform(action);
                 }
             }
+            Message::ClearCommand => {
+                self.residue.clear();
+                self.command.clear();
+            }
             Message::CommandChange(cmd) => {
                 self.command = cmd;
             }
@@ -242,16 +255,34 @@ impl Terminal {
             Message::RunTasks(tasks) => {
                 self.append_term(tasks.trim(), true, false);
                 self.progress = 0.0;
+                let tasks = if self.residue.is_empty() {
+                    tasks
+                } else {
+                    format!("{}\n{}", self.residue, tasks)
+                };
                 let tasks_vec = match nadi_core::parser::tasks::parse(
                     nadi_core::parser::tokenizer::get_tokens(&tasks),
                 ) {
                     Ok(t) => t,
                     Err(e) => {
+                        match e.ty {
+                            // knowing which is actual error and which
+                            // is a continuation is hard while doing
+                            // it line by line; so this works sometimes
+                            ParseErrorType::Incomplete => {
+                                self.residue = tasks;
+                                self.status = "Waiting more input...".to_string();
+                            }
+                            _ => {
+                                self.residue.clear();
+                                self.status = e.to_string();
+                            }
+                        }
                         self.running_msg = None;
-                        self.status = e.to_string();
                         return Task::none();
                     }
                 };
+                self.residue.clear();
                 self.append_history(tasks);
                 self.running_msg = Some(format!("Executing Tasks: {:.2}%", self.progress));
                 return Task::perform(async { tasks_vec.into_iter().rev().collect() }, move |t| {
@@ -330,6 +361,13 @@ impl Terminal {
             controls = controls.push(toggler(self.light_theme).on_toggle(Message::ThemeChange));
         }
         let entry = row![
+            icons::danger_action(
+                icons::trash_icon(),
+                "Clear",
+                (self.residue.is_empty() && self.command.is_empty())
+                    .not()
+                    .then(|| Message::ClearCommand)
+            ),
             text_input(
                 self.running_msg.as_deref().unwrap_or("Command"),
                 &self.command
@@ -342,7 +380,8 @@ impl Terminal {
             )
             .on_submit(Message::ExecCommand)
             .font(Font::MONOSPACE),
-        ];
+        ]
+        .spacing(10);
         column![
             controls.spacing(10).padding(10),
             text_editor(&self.content)

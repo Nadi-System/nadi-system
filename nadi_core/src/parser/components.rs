@@ -48,15 +48,17 @@ pub fn keyword_val<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, TaskKeyword
 macro_rules! one_token {
     ($name:ident, $ty:pat) => {
         pub fn $name<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, &'a Token<'b>> {
-            if let [first, rest @ ..] = inp {
-                match first.ty {
-                    $ty => return Ok((rest, first)),
-                    _ => (),
-                }
+            match inp {
+                [first, rest @ ..] => match first.ty {
+                    $ty => Ok((rest, first)),
+                    _ => Err(nom::Err::Error(
+                        MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch),
+                    )),
+                },
+                [] => Err(nom::Err::Error(
+                    MatchErr::new(inp).ty(&ParseErrorType::Incomplete),
+                )),
             }
-            Err(nom::Err::Error(
-                MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch),
-            ))
         }
     };
 }
