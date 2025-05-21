@@ -281,19 +281,19 @@ pub enum FunctionType {
 
 impl std::fmt::Display for FunctionType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Self::Node => "node",
-                Self::Network => "network",
-                Self::Env => "env",
-            }
-        )
+        write!(f, "{}", self.name())
     }
 }
 
 impl FunctionType {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Node => "node",
+            Self::Network => "network",
+            Self::Env => "env",
+        }
+    }
+
     pub fn from_keyword(kw: &TaskKeyword) -> Option<Self> {
         match kw {
             TaskKeyword::Node => Some(FunctionType::Node),

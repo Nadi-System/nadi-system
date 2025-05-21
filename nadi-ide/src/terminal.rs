@@ -86,14 +86,31 @@ impl Terminal {
     }
 
     pub fn search_function(&self, ty: FunctionType, name: String) -> Option<EditorFunction> {
-        let args = match ty {
-            FunctionType::Network => self.task_ctx.functions.network(&name).map(|f| f.args()),
-            FunctionType::Node => self.task_ctx.functions.node(&name).map(|f| f.args()),
+        let (args, ity) = match ty {
+            FunctionType::Network => self
+                .task_ctx
+                .functions
+                .network(&name)
+                .map(|f| (f.args(), FunctionType::Network)),
+            FunctionType::Node => self
+                .task_ctx
+                .functions
+                .node(&name)
+                .map(|f| (f.args(), FunctionType::Node)),
             _ => None,
         }
-        .or_else(|| self.task_ctx.functions.env(&name).map(|f| f.args()))?
-        .into();
-        Some(EditorFunction { ty, name, args })
+        .or_else(|| {
+            self.task_ctx
+                .functions
+                .env(&name)
+                .map(|f| (f.args(), FunctionType::Env))
+        })?;
+        Some(EditorFunction {
+            ty,
+            ity,
+            name,
+            args: args.to_vec(),
+        })
     }
 
     pub fn append_history(&mut self, entry: String) {

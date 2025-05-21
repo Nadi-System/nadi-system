@@ -7,7 +7,7 @@ pub static ARG_COLOR_TYPE: Color = Color {
     a: 1.0,
 };
 
-pub static ARG_COLOR_FUNC: Color = Color {
+pub static ARG_COLOR_FUNCTY: Color = Color {
     r: 0.7,
     g: 0.0,
     b: 0.0,
