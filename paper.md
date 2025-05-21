@@ -13,7 +13,6 @@ authors:
   - name: Todd Steissberg
     affiliation: 2
   - name: Patrick A. Ray
-    orcid:
     affiliation: 1
 affiliations:
   - name: Department of Chemical and Environmental Engineering, University of Cincinnati, 601, Engineering Research Center, Cincinnati, OH 45221-0012, United States of America
@@ -23,6 +22,11 @@ affiliations:
 date: 20 May 2025
 bibliography: references.bib
 ---
+
+<!-- author: -->
+<!--   - Gaurav Atreya -->
+<!--   - Todd Steissberg -->
+<!--   - Patrick A. Ray -->
 
 # Summary
 We present Network Analysis and Data Integration (NADI), a developing
@@ -77,7 +81,9 @@ NADI System consists of:
 | NADI CLI         | Command Line Interface to run NADI Tasks                    |
 | NADI IDE         | Integrated Development Environment to write/ run NADI Tasks |
 
-NADI IDE consists of sub components like NADI help, text editor, network visualizer, terminal, etc. Some of which can also be ran independently of IDE.
+NADI IDE consists of sub components like NADI help, text editor, network visualizer, terminal, etc. Some of which can also be ran independently of IDE. The figure below shows the GUI of NADI IDE, we can see the editor with tasks on left top, window to browse help on plugin functions on left bottom, terminal on top right, and network viewer and attribute browser on right bottom. These panes can be moves around, resized, turned on/off in a tiling window management style.
+
+![Screenshot of the NADI IDE](ide-screenshot.png)
 
 # Data Structures
 Nadi has the following data structures:

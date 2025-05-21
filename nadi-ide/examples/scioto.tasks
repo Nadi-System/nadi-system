@@ -17,7 +17,8 @@ env count(nodes.area?)
 network subset(nodes.area?)
 
 # visualize size based on area
-network set_nodesize_attrs("area", maxsize=count())
+network set_nodesize_attrs(nodes.area, maxsize=8)
+node(area > 500).nodecolor = "orange";
 
 node.nodelabel = "i={INDEX}; xi = {area:f(2)?\"N/A\"}; yi = {streamflow:f(2)}"
 
