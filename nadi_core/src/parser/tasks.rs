@@ -170,7 +170,7 @@ pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
             } else {
                 let err = maybe_newline(task)(rest) // need this to fail
                     .finish()
-                    .expect_err("Rest should be empty if network parse is complete");
+                    .expect_err("Rest should be empty if tasks parse is complete");
                 Err(ParseError::new(&tokens, err.internal.input, err.ty))
             }
         }
@@ -205,6 +205,14 @@ mod tests {
     #[case("help network var")]
     #[case("env x")]
     pub fn parse_valid_test(#[case] txt: &str) {
+        let tokens = get_tokens(txt);
+        parse(tokens).unwrap();
+    }
+
+    /// Testing the codes in mdbook
+    #[rstest]
+    #[case("network load_file(\"./data/mississippi.net\")\nnode[ohio] render(\"{_NAME:case(title)} River\")")]
+    pub fn parse_valid_mdbook_test(#[case] txt: &str) {
         let tokens = get_tokens(txt);
         parse(tokens).unwrap();
     }

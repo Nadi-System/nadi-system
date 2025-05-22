@@ -273,7 +273,7 @@ pub type NodeFunctionBox = NodeFunction_TO<'static, RBox<()>>;
 pub type NetworkFunctionBox = NetworkFunction_TO<'static, RBox<()>>;
 
 #[repr(C)]
-#[derive(StableAbi, Default)]
+#[derive(StableAbi, Default, Clone)]
 pub struct PluginFunctions {
     env: RVec<RString>,
     node: RVec<RString>,
@@ -325,7 +325,7 @@ impl PluginFunctions {
 // etc. that all functions can read (passed along with args, kwargs to
 // all functions)
 #[repr(C)]
-#[derive(StableAbi, Default)]
+#[derive(StableAbi, Default, Clone)]
 pub struct NadiFunctions {
     env: RHashMap<RString, EnvFunctionBox>,
     env_alias: RHashMap<RString, RString>,

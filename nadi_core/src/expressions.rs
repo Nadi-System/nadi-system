@@ -328,7 +328,7 @@ impl Expression {
                                 None if vt.check => {
                                     return Ok(Self::Literal(Attribute::Bool(false)))
                                 }
-                                None => return Err(EvalError::NoOutputNode),
+                                None => return Ok(Self::ResolveError(EvalError::NoOutputNode)),
                             }
                             .try_lock()
                             .into_option()

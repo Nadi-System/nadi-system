@@ -25,7 +25,7 @@ mod core {
 
     /// Count the number of input nodes in the node
     #[node_func]
-    fn inputs_len(node: &NodeInner) -> usize {
+    fn inputs_count(node: &NodeInner) -> usize {
         node.inputs().len()
     }
 
@@ -262,7 +262,7 @@ mod core {
     fn max_num(vars: Vec<Attribute>, start: Attribute) -> Attribute {
         let mut val = start;
         for r in vars {
-            if r < val {
+            if r > val {
                 val = r;
             }
         }
@@ -286,7 +286,7 @@ mod core {
     fn max(vars: Vec<Attribute>, start: Attribute) -> Attribute {
         let mut val = start;
         for r in vars {
-            if r < val {
+            if r > val {
                 val = r;
             }
         }

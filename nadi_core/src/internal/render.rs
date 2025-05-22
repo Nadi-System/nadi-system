@@ -103,11 +103,9 @@ mod render {
         network: &Network,
         /// Path to the template file
         template: PathBuf,
-        /// output file
-        outfile: Option<PathBuf>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<String> {
         let template = super::render_utils::RenderFileContents::read_file(&template)?;
-        template.print_render(network, outfile)
+        template.render(network)
     }
 }
 
@@ -119,7 +117,6 @@ mod render_utils {
 
     use std::fs::File;
     use std::io::{BufRead, BufReader};
-    use std::io::{BufWriter, Write};
     use std::path::{Path, PathBuf};
     use std::str::FromStr;
     use string_template_plus::Template;
@@ -221,14 +218,8 @@ mod render_utils {
             })
         }
 
-        pub fn print_render(&self, net: &Network, output: Option<PathBuf>) -> anyhow::Result<()> {
-            let file = output.map(|f| File::create(f).unwrap());
-
-            let mut writer: Box<dyn Write> = match file {
-                Some(f) => Box::new(BufWriter::new(f)),
-                None => Box::new(std::io::stdout()),
-            };
-
+        pub fn render(&self, net: &Network) -> anyhow::Result<String> {
+            let mut output = String::new();
             for part in &self.contents {
                 match part {
                     RenderFileContentsType::Include(filename, lines) => {
@@ -242,18 +233,19 @@ mod render_utils {
                             .with_default_end(reader_lines.len())
                             .parse(lines)?;
                         for l in lines {
-                            writeln!(writer, "{}", reader_lines[l - 1])?;
+                            output.push_str(&reader_lines[l - 1]);
+                            output.push('\n');
                         }
                     }
-                    RenderFileContentsType::Literal(s) => write!(writer, "{}", s)?,
+                    RenderFileContentsType::Literal(s) => output.push_str(&s),
                     RenderFileContentsType::Snippet(templ, prop) => {
                         for node in net.nodes_propagation(prop).map_err(anyhow::Error::msg)? {
-                            write!(writer, "{}", node.lock().render(templ)?)?;
+                            output.push_str(&node.lock().render(templ)?);
                         }
                     }
                 }
             }
-            Ok(())
+            Ok(output)
         }
     }
 }

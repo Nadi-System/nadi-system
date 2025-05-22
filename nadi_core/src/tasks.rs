@@ -2,6 +2,7 @@ use crate::expressions::{EvalError, Expression};
 use crate::functions::{FuncArg, FuncArgType, NadiFunctions};
 use crate::prelude::*;
 
+#[derive(Default, Clone)]
 pub struct TaskContext {
     pub network: Network,
     pub functions: NadiFunctions,
