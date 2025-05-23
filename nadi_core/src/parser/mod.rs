@@ -11,12 +11,12 @@ pub mod attrs;
 pub mod components;
 pub mod errors;
 pub mod expressions;
+pub mod highlight;
 pub mod network;
 pub mod string;
 pub mod table;
 pub mod tasks;
 pub mod tokenizer;
-pub mod highlight;
 
 pub use errors::{ParseError, ParseErrorType};
 

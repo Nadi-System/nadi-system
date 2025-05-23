@@ -31,7 +31,7 @@ mod core {
 
     /// Get attributes of the input nodes
     #[node_func(attr = "NAME")]
-    fn inputs(
+    fn inputs_attr(
         node: &NodeInner,
         /// Attribute to get from inputs
         attr: String,
@@ -52,7 +52,7 @@ mod core {
 
     /// Get attributes of the output node
     #[node_func(attr = "NAME")]
-    fn output(
+    fn output_attr(
         node: &NodeInner,
         /// Attribute to get from inputs
         attr: String,

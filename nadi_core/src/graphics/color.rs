@@ -1,14 +1,13 @@
-use cairo::Context;
 use nadi_core::nadi_plugin::FromAttribute;
 use nadi_core::prelude::*;
 
 /// color can be 0.0-1.0; 0-255, [r, g, b], {r=.,g=.,b=.} or name
 #[derive(Debug, Clone, FromAttribute)]
 pub enum AttrColor {
-    MonoInt(i64),
+    MonoInt(u64),
     Mono(f64),
     Named(String),
-    Rgb((f64, f64, f64)),
+    Rgb((u64, u64, u64)),
     RgbNamed(Color),
 }
 
@@ -21,11 +20,11 @@ impl std::default::Default for AttrColor {
 impl AttrColor {
     pub fn color(self) -> Result<Color, String> {
         let (r, g, b) = match self {
-            Self::MonoInt(i) => {
-                let v = i as f64 / 255.0;
+            Self::MonoInt(v) => (v, v, v),
+            Self::Mono(v) => {
+                let v = (v * 255.0).floor() as u64;
                 (v, v, v)
             }
-            Self::Mono(v) => (v, v, v),
             Self::RgbNamed(c) => return Ok(c),
             Self::Named(n) => color_by_name(&n).ok_or(format!("Invalid Color name {n:?}"))?,
             Self::Rgb(v) => v,
@@ -36,19 +35,13 @@ impl AttrColor {
 
 #[derive(Default, Debug, Clone, FromAttribute)]
 pub struct Color {
-    pub r: f64,
-    pub g: f64,
-    pub b: f64,
-}
-
-impl Color {
-    pub fn set(&self, ctx: &Context) {
-        ctx.set_source_rgb(self.r, self.g, self.b);
-    }
+    pub r: u64,
+    pub g: u64,
+    pub b: u64,
 }
 
 // copied from named_colors crate
-fn color_by_name(name: &str) -> Option<(f64, f64, f64)> {
+fn color_by_name(name: &str) -> Option<(u64, u64, u64)> {
     let (r, g, b) = match name {
         "red" => (255, 0, 0),
         "green" => (0, 255, 0),
@@ -185,10 +178,5 @@ fn color_by_name(name: &str) -> Option<(f64, f64, f64)> {
         "indianred" => (205, 92, 92),
         _ => return None,
     };
-
-    let r = r as f64 / 255.0;
-    let g = g as f64 / 255.0;
-    let b = b as f64 / 255.0;
-    // Some(Color{r, g, b})
     Some((r, g, b))
 }

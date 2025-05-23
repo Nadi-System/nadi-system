@@ -1,13 +1,15 @@
 pub mod attrs;
 pub mod expressions;
 pub mod functions;
-pub mod graphics;
 pub mod network;
 pub mod node;
 pub mod plugins;
 pub mod table;
 pub mod tasks;
 pub mod timeseries;
+
+#[cfg(feature = "graphics")]
+mod graphics;
 
 #[cfg(feature = "functions")]
 mod internal;

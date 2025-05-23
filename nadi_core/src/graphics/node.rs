@@ -1,39 +1,38 @@
+use crate::graphics::color::Color;
 use crate::prelude::*;
-
-use crate::graphics::color::{AttrColor, Color};
 use abi_stable::StableAbi;
-use cairo::Context;
 use std::str::FromStr;
+use svg::node::element::*;
 
 // TODO make it better later
 
 pub const NODE_COLOR: (&str, Color) = (
-    "nodecolor",
+    "visual.nodecolor",
     Color {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
+        r: 255,
+        g: 255,
+        b: 255,
     },
 );
 pub const LINE_COLOR: (&str, Color) = (
-    "linecolor",
+    "visual.linecolor",
     Color {
-        r: 1.0,
-        g: 0.6,
-        b: 0.0,
+        r: 255,
+        g: 150,
+        b: 0,
     },
 );
 pub const TEXT_COLOR: (&str, Color) = (
-    "textcolor",
+    "visual.textcolor",
     Color {
-        r: 0.7,
-        g: 0.8,
-        b: 0.9,
+        r: 170,
+        g: 180,
+        b: 200,
     },
 );
-pub const LINE_WIDTH: (&str, f64) = ("linewidth", 1.0);
-pub const NODE_SIZE: (&str, f64) = ("nodesize", 10.0);
-pub const NODE_SHAPE: (&str, NodeShape) = ("nodeshape", NodeShape::Square);
+pub const LINE_WIDTH: (&str, f64) = ("visual.linewidth", 1.0);
+pub const NODE_SIZE: (&str, f64) = ("visual.nodesize", 5.0);
+pub const NODE_SHAPE: (&str, NodeShape) = ("visual.nodeshape", NodeShape::Square);
 pub const DEFAULT_RATIO: f64 = 1.5;
 
 #[repr(C)]
@@ -84,26 +83,16 @@ impl FromAttribute for NodeShape {
     }
 }
 
-impl NodeInner {
-    pub fn draw(&self, ctx: &Context) -> cairo::Result<()> {
-        let shape = self
-            .attr(NODE_SHAPE.0)
-            .and_then(NodeShape::from_attr)
-            .unwrap_or_default();
-        let size = self
-            .attr(NODE_SIZE.0)
-            .and_then(f64::from_attr_relaxed)
-            .unwrap_or(NODE_SIZE.1);
-        match shape {
-            NodeShape::Square => {
-                let dx = size / 2.0;
-                ctx.rel_move_to(-dx, -dx);
-                ctx.rel_line_to(0.0, size);
-                ctx.rel_line_to(size, 0.0);
-                ctx.rel_line_to(0.0, -size);
-                ctx.rel_move_to(-size, 0.0);
-                ctx.fill()
-            }
+impl NodeShape {
+    pub fn svg(&self, x: u64, y: u64, size: f64, color: String) -> Element {
+        match self {
+            NodeShape::Square => Rectangle::new()
+                .set("x", x as f64 - size / 2.0)
+                .set("y", y as f64 - size / 2.0)
+                .set("height", size)
+                .set("width", size)
+                .set("fill", color)
+                .into(),
             NodeShape::Rectangle(r) => {
                 let r = r.abs();
                 let (sizex, sizey) = if r > 1.0 {
@@ -111,73 +100,147 @@ impl NodeInner {
                 } else {
                     (size, size * r)
                 };
-                ctx.rel_move_to(-sizex / 2.0, -sizey / 2.0);
-                ctx.rel_line_to(0.0, sizey);
-                ctx.rel_line_to(sizex, 0.0);
-                ctx.rel_line_to(0.0, -sizey);
-                ctx.rel_move_to(-sizex, 0.0);
-                ctx.fill()
+                Rectangle::new()
+                    .set("x", x as f64 - sizex / 2.0)
+                    .set("y", y as f64 - sizey / 2.0)
+                    .set("height", sizey)
+                    .set("width", sizex)
+                    .set("fill", color)
+                    .into()
             }
-            NodeShape::Circle => {
-                let (xc, yc) = ctx.current_point()?;
-                ctx.arc(xc, yc, size / 2.0, 0.0, 2.0 * 3.1416);
-                ctx.fill()
-            }
+            NodeShape::Circle => Circle::new()
+                .set("cx", x)
+                .set("cy", y)
+                .set("r", size / 2.0)
+                .set("fill", color)
+                .into(),
             NodeShape::Ellipse(r) => {
-                let m = ctx.matrix();
-                let (xc, yc) = ctx.current_point()?;
-                ctx.translate(xc, yc);
                 let r = r.abs();
-                if r > 1.0 {
-                    ctx.scale(1.0 / r, 1.0);
+                let (sizex, sizey) = if r > 1.0 {
+                    (size / r, size)
                 } else {
-                    ctx.scale(1.0, r);
+                    (size, size * r)
                 };
-                ctx.arc(0.0, 0.0, size / 2.0, 0.0, 2.0 * 3.1416);
-                ctx.set_matrix(m);
-                // revert the scale
-                // if r > 1.0 {
-                //     ctx.scale(r, 1.0);
-                // } else {
-                //     ctx.scale(1.0, 1.0 / r);
-                // };
-                ctx.fill()
+                Ellipse::new()
+                    .set("cx", x)
+                    .set("cy", y)
+                    .set("rx", sizex / 2.0)
+                    .set("ry", sizey / 2.0)
+                    .set("fill", color)
+                    .into()
             }
             NodeShape::Triangle => {
                 let ht = 0.8660 * size;
                 let dx = size / 2.0;
-                ctx.rel_move_to(-dx, ht / 3.0);
-                ctx.rel_line_to(dx, -ht);
-                ctx.rel_line_to(dx, ht);
-                ctx.fill()
+                let points = vec![
+                    format!("{},{}", x as f64 - dx, y as f64 + ht / 3.0),
+                    format!("{},{}", x as f64, y as f64 - 2.0 * ht / 3.0),
+                    format!("{},{}", x as f64 + dx, y as f64 + ht / 3.0),
+                ];
+                Polygon::new()
+                    .set("points", points.join(" "))
+                    .set("fill", color)
+                    .into()
             }
             NodeShape::IsoTriangle(r) => {
                 let ht = 0.8660 * size;
                 let dx = size / 2.0;
                 let r = r.abs();
                 let (ht, dx) = if r > 1.0 { (ht / r, dx) } else { (ht, dx * r) };
-                ctx.rel_move_to(-dx, ht / 3.0);
-                ctx.rel_line_to(dx, ht);
-                ctx.rel_line_to(dx, -ht);
-                ctx.fill()
+                let points = vec![
+                    format!("{},{}", x as f64 - dx, y as f64 + ht / 3.0),
+                    format!("{},{}", x as f64, y as f64 - 2.0 * ht / 3.0),
+                    format!("{},{}", x as f64 + dx, y as f64 + ht / 3.0),
+                ];
+                Polygon::new()
+                    .set("points", points.join(" "))
+                    .set("fill", color)
+                    .into()
             }
         }
     }
+}
 
-    pub fn draw_color(&self, ctx: &Context) -> cairo::Result<()> {
-        self.set_color_attr(ctx, NODE_COLOR.0, &NODE_COLOR.1);
-        self.draw(ctx)
+impl NodeInner {
+    pub fn node_size(&self) -> f64 {
+        self.try_attr_relaxed(&NODE_SIZE.0)
+            .ok()
+            .unwrap_or(NODE_SIZE.1) as f64
     }
 
-    pub fn set_color_attr(&self, ctx: &Context, attr: &str, default: &Color) {
-        let c = self.try_attr::<AttrColor>(attr).unwrap_or_default();
-        match c.color() {
-            Ok(c) => c.set(ctx),
-            Err(e) => {
-                eprintln!("{e}");
-                default.set(ctx)
-            }
+    pub fn line_width(&self) -> f64 {
+        self.try_attr_relaxed(&LINE_WIDTH.0)
+            .ok()
+            .unwrap_or(LINE_WIDTH.1) as f64
+    }
+
+    pub fn set_node_size(&mut self, val: f64) {
+        _ = self.set_attr_dot(NODE_SIZE.0, val.into());
+    }
+
+    pub fn node_color(&self) -> String {
+        let c = self
+            .try_attr::<nadi_core::graphics::color::AttrColor>(NODE_COLOR.0)
+            .ok()
+            .unwrap_or_default()
+            .color()
+            .ok()
+            .unwrap_or_default();
+        format!("#{:02X}{:02X}{:02X}", c.r, c.g, c.b,)
+    }
+
+    pub fn text_color(&self) -> Option<String> {
+        let c = self
+            .try_attr::<nadi_core::graphics::color::AttrColor>(TEXT_COLOR.0)
+            .ok()?
+            .color()
+            .ok()?;
+        Some(format!("#{:02X}{:02X}{:02X}", c.r, c.g, c.b,))
+    }
+
+    pub fn line_color(&self) -> String {
+        let c = self
+            .try_attr::<nadi_core::graphics::color::AttrColor>(LINE_COLOR.0)
+            .ok()
+            .unwrap_or_default()
+            .color()
+            .ok()
+            .unwrap_or_default();
+        format!("#{:02X}{:02X}{:02X}", c.r, c.g, c.b,)
+    }
+
+    pub fn node_shape(&self) -> NodeShape {
+        self.try_attr(NODE_SHAPE.0).unwrap_or_default()
+    }
+
+    pub fn node_point(&self, x: u64, y: u64) -> Element {
+        self.node_shape()
+            .svg(x, y, self.node_size(), self.node_color())
+    }
+
+    pub fn node_label(&self, x: u64, y: u64, text: String) -> Text {
+        let lab = Text::new(text)
+            .set("x", x)
+            .set("y", y)
+            .set("text-anchor", "start")
+            .set("font-size", "large");
+        match self.text_color() {
+            Some(c) => lab
+                .set("fill", c.clone())
+                .set("stroke", c)
+                .set("stroke-width", 0.5),
+            None => lab,
         }
+    }
+
+    pub fn node_line(&self, x1: u64, y1: u64, x2: u64, y2: u64) -> Line {
+        Line::new()
+            .set("x1", x1)
+            .set("y1", y1)
+            .set("x2", x2)
+            .set("y2", y2)
+            .set("stroke-width", self.line_width())
+            .set("stroke", self.line_color())
     }
 }
 

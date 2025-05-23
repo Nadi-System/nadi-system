@@ -26,7 +26,7 @@ network save_file("updated.network")
 network export_svg("network.svg")
 
 node.INDEX
-node(INDEX>0).output = output("INDEX")
+node(INDEX>0).output_ind = output_attr("INDEX")
 
 # the following two lines are a complex template example, I used this to generate a table in LaTeX
 network render("\\Node[{LEVEL}]\\{{INDEX}\\}\\{{INDEX}\\} & Node {INDEX} & {area:f(2)?} & {streamflow:f(2)?} \\\\[2mm]")

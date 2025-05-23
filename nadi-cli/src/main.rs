@@ -1,5 +1,6 @@
 use clap::{Parser, ValueEnum};
 use nadi_core::parser::tokenizer::TaskToken;
+use nadi_core::tasks::TaskContext;
 use nadi_core::{functions::NadiFunctions, network::Network};
 use std::{
     io::Read,
@@ -39,38 +40,39 @@ impl FunctionType {
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct CliArgs {
+    /// list all functions and exit for completions
+    #[arg(short = 'C', long, value_name = "FUNC_TYPE")]
+    completion: Option<FunctionType>,
+    /// print code for a function
+    #[arg(short = 'c', long, value_name = "FUNCTION")]
+    fncode: Option<String>,
+    /// print help for a function
+    #[arg(short, long, value_name = "FUNCTION")]
+    fnhelp: Option<String>,
     /// Generate markdown doc for all plugins and functions
-    #[arg(short, long)]
+    #[arg(short, long, value_name = "DOC_DIR")]
     generate_doc: Option<PathBuf>,
     /// list all functions and exit
     #[arg(short, long)]
     list_functions: bool,
-    /// list all functions and exit for completions
-    #[arg(short = 'C', long)]
-    completion: Option<FunctionType>,
-    /// print help for a function
-    #[arg(short, long)]
-    fnhelp: Option<String>,
-    /// print code for a function
-    #[arg(short = 'c', long)]
-    fncode: Option<String>,
-    /// print tasks file and exit
+    /// network file to load before executing tasks
+    #[arg(short, long, value_name = "NETWORK_FILE")]
+    network: Option<PathBuf>,
+    /// print tasks before running
     #[arg(short, long)]
     print_tasks: bool,
-    /// connections file
-    #[arg(short, long)]
-    network: Option<PathBuf>,
-    #[arg(short, long)]
-    /// Run given string as tasks
-    task: Option<String>,
-    /// Tasks file to run; if `--stdin` is also provided runs this before stdin
-    tasks: Option<PathBuf>,
     /// Show the tasks file, do not do anything
     #[arg(short, long, action, requires = "tasks")]
     show: bool,
     /// Use stdin for the tasks; reads the whole stdin before execution
     #[arg(short = 'S', long, action)]
     stdin: bool,
+    /// Run given string as task before running the file
+    #[arg(short, long, value_name = "TASK_STR")]
+    task: Option<String>,
+    /// Tasks file to run; if `--stdin` is also provided this runs before stdin
+    #[arg(value_name = "TASK_FILE")]
+    tasks: Option<PathBuf>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -94,17 +96,24 @@ fn main() -> anyhow::Result<()> {
         }
         FunctionType::Env.print_functions(&functions);
     } else {
+        let net = if let Some(ref net) = args.network {
+            Some(Network::from_file(net)?)
+        } else {
+            None
+        };
+        let mut tasks_ctx = nadi_core::tasks::TaskContext::new(net);
+
+        if let Some(ref txt) = args.task {
+            execute_tasks(txt, args.print_tasks, &mut tasks_ctx)?;
+        }
         if let Some(ref tasks) = args.tasks {
             let txt = std::fs::read_to_string(tasks)?;
-            execute_tasks(&txt, &args)?;
-        }
-        if let Some(ref txt) = args.task {
-            execute_tasks(txt, &args)?;
+            execute_tasks(&txt, args.print_tasks, &mut tasks_ctx)?;
         }
         if args.stdin {
             let mut txt = String::new();
             std::io::stdin().read_to_string(&mut txt)?;
-            execute_tasks(&txt, &args)?;
+            execute_tasks(&txt, args.print_tasks, &mut tasks_ctx)?;
         }
     }
     Ok(())
@@ -139,27 +148,17 @@ fn show_tasks(filename: &Path) {
     };
 }
 
-fn execute_tasks(txt: &str, args: &CliArgs) -> anyhow::Result<()> {
+fn execute_tasks(txt: &str, print_tasks: bool, tasks_ctx: &mut TaskContext) -> anyhow::Result<()> {
     let tokens = nadi_core::parser::tokenizer::get_tokens(&txt);
     let tasks = match nadi_core::parser::tasks::parse(tokens) {
         Ok(t) => t,
         Err(e) => return Err(anyhow::Error::msg(e.user_msg(None))),
     };
-    if args.print_tasks {
-        for fc in &tasks {
+
+    for fc in tasks {
+        if print_tasks {
             println!("{}", fc.to_string());
         }
-    }
-
-    let net = if let Some(ref net) = args.network {
-        Some(Network::from_file(net)?)
-    } else {
-        None
-    };
-    eprintln!("** Running {} Script **", tasks.len());
-
-    let mut tasks_ctx = nadi_core::tasks::TaskContext::new(net);
-    for fc in tasks {
         match tasks_ctx.execute(fc) {
             Ok(Some(p)) => println!("{p}"),
             Err(p) => return Err(anyhow::Error::msg(p)),
