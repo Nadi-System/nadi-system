@@ -4,8 +4,10 @@ use crate::{
     node::PyNode,
 };
 use nadi_core::abi_stable::std_types::RString;
+use nadi_core::functions::{
+    EnvFunctionBox, FuncArg, FuncArgType, NadiFunctions, NetworkFunctionBox, NodeFunctionBox,
+};
 use nadi_core::functions::{FunctionCtx, FunctionRet};
-use nadi_core::functions::{NadiFunctions, NetworkFunctionBox, NodeFunctionBox};
 use nadi_core::prelude::*;
 
 use pyo3::{
@@ -22,9 +24,9 @@ pub struct PyNodeFunction {
 
 impl PyNodeFunction {
     fn new(func: NodeFunctionBox) -> Self {
-        let sig = func.signature();
-        let pysig = sig_to_py(sig.as_str(), "node", true).into();
-        let sig = sig_to_py(sig.as_str(), "node", false).into();
+        let args = func.args().to_vec();
+        let pysig = sig_to_py(&args, Some("node"), true).into();
+        let sig = sig_to_py(&args, Some("node"), false).into();
         Self { func, sig, pysig }
     }
 }
@@ -81,9 +83,9 @@ pub struct PyNetworkFunction {
 
 impl PyNetworkFunction {
     fn new(func: NetworkFunctionBox) -> Self {
-        let sig = func.signature();
-        let pysig = sig_to_py(sig.as_str(), "network", true).into();
-        let sig = sig_to_py(sig.as_str(), "network", false).into();
+        let args = func.args().to_vec();
+        let pysig = sig_to_py(&args, Some("network"), true).into();
+        let sig = sig_to_py(&args, Some("network"), false).into();
         Self { func, sig, pysig }
     }
 }
@@ -129,6 +131,69 @@ impl PyNetworkFunction {
         self.sig.as_str()
     }
 }
+
+#[pyclass(unsendable, module = "nadi", name = "EnvFunction")]
+pub struct PyEnvFunction {
+    pub func: EnvFunctionBox,
+    pub sig: RString,
+    pub pysig: RString,
+}
+
+impl PyEnvFunction {
+    fn new(func: EnvFunctionBox) -> Self {
+        let args = func.args().to_vec();
+        let pysig = sig_to_py(&args, None, true).into();
+        let sig = sig_to_py(&args, None, false).into();
+        Self { func, sig, pysig }
+    }
+}
+#[pymethods]
+impl PyEnvFunction {
+    #[pyo3(signature = (*args, **kwargs))]
+    fn __call__(
+        &self,
+        args: Vec<PyAttribute>,
+        kwargs: Option<PyAttrMap>,
+    ) -> PyResult<Option<PyAttribute>> {
+        let ctx = py_args_kwargs_to_ctx(args, kwargs);
+        match self.func.call(&ctx) {
+            FunctionRet::None => Ok(None),
+            FunctionRet::Some(v) => Ok(Some(v.into())),
+            FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
+        }
+    }
+
+    #[getter]
+    fn __name__(&self) -> String {
+        self.func.name().to_string()
+    }
+
+    #[getter]
+    fn __doc__(&self) -> String {
+        self.func.help().to_string()
+    }
+
+    #[getter]
+    fn __code__(&self) -> String {
+        self.func.code().to_string()
+    }
+
+    #[getter]
+    fn __signature__(&self) -> &str {
+        self.pysig.as_str()
+    }
+
+    #[getter]
+    fn __text_signature__(&self) -> &str {
+        self.sig.as_str()
+    }
+}
+
+// fn register_child_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
+//     let child_module = PyModule::new(parent_module.py(), "child_module")?;
+//     child_module.add_function(wrap_pyfunction!(func, &child_module)?)?;
+//     parent_module.add_submodule(&child_module)
+// }
 
 // let's just make these into submodule of nadi; and put all functions
 // into either nadi.functions.node.* or nadi.functions.network.*; then
@@ -195,6 +260,29 @@ impl PyNadiFunctions {
         }
     }
 
+    #[pyo3(signature = (function, *args, **kwargs))]
+    fn env(
+        &self,
+        function: &str,
+        args: Vec<PyAttribute>,
+        kwargs: Option<PyAttrMap>,
+    ) -> PyResult<Option<PyAttribute>> {
+        let ctx = py_args_kwargs_to_ctx(args, kwargs);
+        let func = match self.0.env(function) {
+            Some(f) => f,
+            None => {
+                return Err(PyKeyError::new_err(format!(
+                    "Env Function {function} not found"
+                )))
+            }
+        };
+        match func.call(&ctx) {
+            FunctionRet::None => Ok(None),
+            FunctionRet::Some(v) => Ok(Some(v.into())),
+            FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
+        }
+    }
+
     // todo register python functions into nadi/node function
 
     fn node_function(&self, name: &str) -> PyResult<PyNodeFunction> {
@@ -211,6 +299,15 @@ impl PyNadiFunctions {
             Some(f) => Ok(PyNetworkFunction::new(f.clone())),
             None => Err(PyKeyError::new_err(format!(
                 "Network Function {name} not found"
+            ))),
+        }
+    }
+
+    fn env_function(&self, name: &str) -> PyResult<PyEnvFunction> {
+        match self.0.env(name) {
+            Some(f) => Ok(PyEnvFunction::new(f.clone())),
+            None => Err(PyKeyError::new_err(format!(
+                "Env Function {name} not found"
             ))),
         }
     }
@@ -294,73 +391,64 @@ impl PyNadiFunctions {
     }
 }
 
-fn sig_to_py(sig: &str, arg0: &str, notype: bool) -> String {
-    let sig = sig.replace(" ", "");
-    if sig == "()" {
-        return format!("({arg0})");
-    }
-    let args: Vec<String> = sig
-        .trim_start_matches('(')
-        .trim_end_matches(')')
-        .split(",")
-        .map(|a| {
-            let (key, ty, val) = match a.split_once(":") {
-                Some((key, tyval)) => match tyval.split_once("=") {
-                    Some((ty, val)) => (key, Some(ty), Some(val)),
-                    None => (key, Some(tyval), None),
-                },
-                None => match a.split_once("=") {
-                    Some((key, val)) => (key, None, Some(val)),
-                    None => (a, None, None),
-                },
+fn sig_to_py(sig: &[FuncArg], arg0: Option<&str>, notype: bool) -> String {
+    let mut args = Vec::new();
+    if let Some(a) = arg0 {
+        let ty = if notype {
+            String::new()
+        } else {
+            let mut c = a.chars();
+            let ty = match c.next() {
+                None => String::new(),
+                Some(first_char) => String::from_iter(first_char.to_uppercase().chain(c)),
             };
-            let mut arg = key.to_string();
-            if let Some(ty) = ty {
-                let ty = ty.trim_matches('\'').trim_start_matches('&');
-                if !notype {
-                    arg.push_str(": ");
-                    arg.push_str(type_to_py(ty));
-                }
-                if ty.starts_with("Option") {
-                    arg.push_str(" = None");
-                }
+            format!(" : {}", ty)
+        };
+        args.push(format!("{}{}", a, ty));
+    }
+    for a in sig {
+        args.push(if notype {
+            match &a.category {
+                FuncArgType::Arg => format!("{}", a.name),
+                FuncArgType::OptArg => format!("{}", a.name),
+                FuncArgType::DefArg(val) => format!("{} = {}", a.name, val),
+                FuncArgType::Args => format!("*{}", a.name),
+                FuncArgType::KwArgs => format!("**{}", a.name),
             }
-            if let Some(val) = val {
-                arg.push_str(" = ");
-                arg.push_str(val_to_py(val));
+        } else {
+            match &a.category {
+                FuncArgType::Arg => format!("{}: {}", a.name, type_to_py(a.ty.as_str())),
+                FuncArgType::OptArg => format!("{}: {}", a.name, type_to_py(a.ty.as_str())),
+                FuncArgType::DefArg(val) => {
+                    format!("{}: {} = {}", a.name, type_to_py(a.ty.as_str()), val)
+                }
+                FuncArgType::Args => format!("*{}", a.name),
+                FuncArgType::KwArgs => format!("**{}", a.name),
             }
-            arg
+        });
+    }
+    format!("({})", args.join(", "))
+}
+
+fn type_to_py(ty: &str) -> String {
+    ty.split(' ')
+        .map(|p| match p {
+            "i64" => "int",
+            "f64" => "float",
+            "String" | "Template" | "str" => "str",
+            "bool" => "bool",
+            "Date" => "NDate",
+            "Time" => "NTime",
+            "DateTime" => "NDateTime",
+            "Array" | "Vec" => "List",
+            "Table" | "HashMap" => "Dict",
+            "Attribute" => "Any",
+            "<" => "[",
+            ">" => "]",
+            _ => "...",
         })
-        .collect();
-    format!("({arg0}, {})", args.join(", "))
-}
-
-// this is not used now as type annotation is not supported in __signature__
-#[allow(dead_code)]
-fn type_to_py(ty: &str) -> &'static str {
-    match ty {
-        "i64" => "int",
-        "f64" => "float",
-        "String" | "Template" | "str" => "str",
-        "bool" => "bool",
-        _ => "Any",
-    }
-}
-
-fn val_to_py(val: &str) -> &str {
-    match val {
-        "true" => "True",
-        "false" => "False",
-        v => {
-            if v.parse::<f64>().is_ok() {
-                v
-            } else if v.starts_with('"') && v.ends_with('"') {
-                v
-            } else {
-                "..."
-            }
-        }
-    }
+        .collect::<Vec<&str>>()
+        .join("")
 }
 
 fn py_args_kwargs_to_ctx(args: Vec<PyAttribute>, kwargs: Option<PyAttrMap>) -> FunctionCtx {

@@ -25,6 +25,7 @@ filetime = {version = "0.2.25", optional = true}
 svg = {version="0.18.0", optional=true}
 termimad = "0.31.1"
 regex = "1.11.1"
+pyo3 = {version = "0.25.0", features = ["anyhow"], optional=true}
 
 [dev-dependencies]
 rstest = "0.25.0"
@@ -35,3 +36,4 @@ chrono = ["dep:chrono"]
 functions = ["dep:filetime", "graphics", "parser"]
 graphics = ["dep:svg"]
 parser = ["dep:nom"]
+python = ["dep:pyo3"]

@@ -243,7 +243,7 @@ mod core {
     ///
     /// Starts with integer for type purpose, MAX float is larger than
     /// max int, so it'll be incorrect for large numbers
-    #[env_func(start=Attribute::Integer(i64::MAX))]
+    #[env_func(start=i64::MAX)]
     fn min_num(vars: Vec<Attribute>, start: Attribute) -> Attribute {
         let mut val = start;
         for r in vars {
@@ -258,7 +258,7 @@ mod core {
     ///
     /// Starts with integer for type purpose, MAX float is larger than
     /// max int, so it'll be incorrect for large numbers
-    #[env_func(start=Attribute::Integer(i64::MIN))]
+    #[env_func(start=i64::MIN)]
     fn max_num(vars: Vec<Attribute>, start: Attribute) -> Attribute {
         let mut val = start;
         for r in vars {
@@ -294,7 +294,7 @@ mod core {
     }
 
     /// Sum of the variables
-    #[env_func(start=Attribute::Integer(0))]
+    #[env_func(start = 0)]
     fn sum(vars: Vec<Attribute>, start: Attribute) -> Result<Attribute, EvalError> {
         let mut val = start;
         for r in vars {
@@ -304,7 +304,7 @@ mod core {
     }
 
     /// Product of the variables
-    #[env_func(start=Attribute::Integer(1))]
+    #[env_func(start = 1)]
     fn prod(vars: Vec<Attribute>, start: Attribute) -> Result<Attribute, EvalError> {
         let mut val = start;
         for r in vars {

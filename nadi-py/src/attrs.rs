@@ -12,17 +12,16 @@ pub struct PyNDate(Date);
 
 #[pymethods]
 impl PyNDate {
-    // #[new]
-    // #[pyo3(signature = (year, month = 1, day = 1))]
-    // fn new(year: u16, month: u8, day: u8) -> Self {
-    //     PyNDate(Date::new(year, month, day))
-    // }
-
     #[new]
     fn parse(date: &str) -> PyResult<Self> {
         Ok(Date::from_str(&date)
             .map(PyNDate)
             .map_err(anyhow::Error::msg)?)
+    }
+
+    #[staticmethod]
+    fn from_ymd(year: u16, month: u8, day: u8) -> Self {
+        Self(Date { year, month, day })
     }
 
     #[getter]
@@ -38,6 +37,10 @@ impl PyNDate {
         self.0.day
     }
 
+    fn to_date<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyDate>> {
+        PyDate::new(py, self.year().into(), self.month(), self.day())
+    }
+
     fn __repr__(&self) -> String {
         let d = &self.0;
         format!("<Date {}>", d)
@@ -51,18 +54,21 @@ pub struct PyNTime(Time);
 
 #[pymethods]
 impl PyNTime {
-    // #[new]
-    // #[pyo3(signature = (hour, minute = 0, second = 0))]
-    // fn new(hour: u8, minute: u8, second: u8) -> Self {
-    //     // TODO add nanoseconds support later
-    //     PyNTime(Time::new(hour, minute, second, 0))
-    // }
-
     #[new]
     fn parse(time: &str) -> PyResult<Self> {
         Ok(Time::from_str(&time)
             .map(PyNTime)
             .map_err(anyhow::Error::msg)?)
+    }
+
+    #[staticmethod]
+    fn from_hms(hour: u8, minute: u8, second: u8) -> Self {
+        Self(Time {
+            hour,
+            min: minute,
+            sec: second,
+            nanosecond: 0,
+        })
     }
 
     #[getter]
@@ -82,6 +88,10 @@ impl PyNTime {
         let t = &self.0;
         format!("<Time {}>", t)
     }
+
+    fn to_time<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyTime>> {
+        PyTime::new(py, self.hour(), self.minute(), self.second(), 0, None)
+    }
 }
 
 #[pyclass(module = "nadi", name = "DateTime")]
@@ -91,19 +101,25 @@ pub struct PyNDateTime(DateTime);
 
 #[pymethods]
 impl PyNDateTime {
-    // #[new]
-    // #[pyo3(signature = (year, month = 1, day = 1, hour = 0, minute = 0, second = 0))]
-    // fn new(year: u16, month: u8, day: u8, hour: u8, minute: u8, second: u8) -> Self {
-    //     let d = Date::new(year, month, day);
-    //     let t = Time::new(hour, minute, second, 0);
-    //     PyNDateTime(DateTime::new(d, t, None))
-    // }
-
     #[new]
     fn parse(dt: &str) -> PyResult<Self> {
         Ok(DateTime::from_str(&dt)
             .map(PyNDateTime)
             .map_err(anyhow::Error::msg)?)
+    }
+
+    #[staticmethod]
+    fn from_ymdhms(year: u16, month: u8, day: u8, hour: u8, minute: u8, second: u8) -> Self {
+        Self(DateTime {
+            date: Date { year, month, day },
+            time: Time {
+                hour,
+                min: minute,
+                sec: second,
+                nanosecond: 0,
+            },
+            offset: None.into(),
+        })
     }
 
     #[getter]
@@ -135,9 +151,23 @@ impl PyNDateTime {
         let dt = &self.0;
         format!("<DateTime {} {}>", dt.date, dt.time)
     }
+
+    fn to_datetime<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyDateTime>> {
+        PyDateTime::new(
+            py,
+            self.year().into(),
+            self.month(),
+            self.day(),
+            self.hour(),
+            self.minute(),
+            self.second(),
+            0,
+            None,
+        )
+    }
 }
 
-#[derive(Clone, Debug, PartialEq, FromPyObject)]
+#[derive(Clone, Debug, PartialEq, FromPyObject, IntoPyObject)]
 pub enum PyAttribute {
     String(String),
     Bool(bool),
@@ -148,22 +178,6 @@ pub enum PyAttribute {
     DateTime(PyNDateTime),
     Array(Vec<PyAttribute>),
     Table(PyAttrMap),
-}
-
-impl IntoPy<PyObject> for PyAttribute {
-    fn into_py(self, py: Python<'_>) -> PyObject {
-        match self {
-            Self::String(s) => s.into_py(py),
-            Self::Bool(b) => b.into_py(py),
-            Self::Float(f) => f.into_py(py),
-            Self::Integer(i) => i.into_py(py),
-            Self::Date(v) => v.into_py(py),
-            Self::Time(v) => v.into_py(py),
-            Self::DateTime(v) => v.into_py(py),
-            Self::Array(v) => v.into_py(py),
-            Self::Table(v) => v.into_py(py),
-        }
-    }
 }
 
 pub type PyAttrMap = HashMap<String, PyAttribute>;
@@ -215,9 +229,9 @@ impl ToString for PyAttribute {
             Self::String(v) => format!("{v:?}"),
             Self::Integer(v) => format!("{v:?}"),
             Self::Float(v) => format!("{v:?}"),
-            Self::Date(v) => format!("{:?}", v.0),
-            Self::Time(v) => format!("{:?}", v.0),
-            Self::DateTime(v) => format!("{:?}", v.0),
+            Self::Date(v) => format!("{:?}", v),
+            Self::Time(v) => format!("{:?}", v),
+            Self::DateTime(v) => format!("{:?}", v),
             Self::Array(v) => format!("{v:?}"),
             Self::Table(v) => format!("{v:?}"),
         }

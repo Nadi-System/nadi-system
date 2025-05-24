@@ -1,6 +1,7 @@
 use crate::node::PyNode;
 use nadi_core::network::{Network, StrPath};
 use pyo3::{exceptions::PyKeyError, prelude::*};
+use std::str::FromStr;
 
 #[derive(FromPyObject, Clone)]
 enum NodeIndOrName {
@@ -23,6 +24,12 @@ impl PyNetwork {
         if let Some(dir) = attrs_dir {
             net.load_attrs(&dir)?
         }
+        Ok(Self(net))
+    }
+
+    #[staticmethod]
+    fn from_str(network: String) -> PyResult<Self> {
+        let net = Network::from_str(&network)?;
         Ok(Self(net))
     }
 
@@ -54,6 +61,7 @@ impl PyNetwork {
         Ok(path)
     }
 
+    #[getter]
     fn nodes(&self) -> Vec<PyNode> {
         self.0.nodes().map(|n| PyNode(n.clone())).collect()
     }

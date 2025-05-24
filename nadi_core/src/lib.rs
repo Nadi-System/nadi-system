@@ -9,13 +9,16 @@ pub mod tasks;
 pub mod timeseries;
 
 #[cfg(feature = "graphics")]
-mod graphics;
+pub mod graphics;
 
 #[cfg(feature = "functions")]
 mod internal;
 
 #[cfg(feature = "parser")]
 pub mod parser;
+
+#[cfg(feature = "python")]
+pub mod python;
 
 /// Prelude for the most basic NADI types: node, network and attributes
 pub mod prelude {
