@@ -41,7 +41,7 @@ impl PyNodeFunction {
         kwargs: Option<PyAttrMap>,
     ) -> PyResult<Option<PyAttribute>> {
         let ctx = py_args_kwargs_to_ctx(args, kwargs);
-        match self.func.call(&mut node.0.lock(), &ctx) {
+        match self.func.call_mut(&mut node.0.lock(), &ctx) {
             FunctionRet::None => Ok(None),
             FunctionRet::Some(v) => Ok(Some(v.into())),
             FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
@@ -99,7 +99,7 @@ impl PyNetworkFunction {
         kwargs: Option<PyAttrMap>,
     ) -> PyResult<Option<PyAttribute>> {
         let ctx = py_args_kwargs_to_ctx(args, kwargs);
-        match self.func.call(&mut network.0, &ctx) {
+        match self.func.call_mut(&mut network.0, &ctx) {
             FunctionRet::None => Ok(None),
             FunctionRet::Some(v) => Ok(Some(v.into())),
             FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
