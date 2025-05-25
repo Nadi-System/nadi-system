@@ -158,28 +158,6 @@ fn from_attr_derive(input: TokenStream, relaxed: bool) -> TokenStream {
     TokenStream::from(expanded)
 }
 
-// // This needs more thought, Preferably written as dyn HasAttributes + HasTimeseries
-
-// /// register this function as a node function and network function on nadi plugin
-// #[proc_macro_attribute]
-// pub fn nadi_func(args: TokenStream, mut item: TokenStream) -> TokenStream {
-//     let mut item = parse_macro_input!(item as ItemFn);
-//     let mut item_n = item.clone();
-//     let narg = quote!(_node: &mut ::nadi_core::node::NodeInner).into();
-//     item_n
-//         .sig
-//         .inputs
-//         .insert(0, parse_macro_input!(narg as FnArg).into());
-//     let mut node_f = nadi_func_inner(args.clone(), item_n, FuncType::Node);
-//     let narg = quote!(_net: &mut ::nadi_core::network::Network).into();
-//     item.sig
-//         .inputs
-//         .insert(0, parse_macro_input!(narg as FnArg).into());
-//     let net_f = nadi_func_inner(args, item, FuncType::Network);
-//     node_f.extend([net_f]);
-//     node_f
-// }
-
 /// register this function as a node function on nadi plugin
 #[proc_macro_attribute]
 pub fn env_func(args: TokenStream, item: TokenStream) -> TokenStream {

@@ -23,7 +23,7 @@ pub struct PyNodeFunction {
 }
 
 impl PyNodeFunction {
-    fn new(func: NodeFunctionBox) -> Self {
+    pub fn new(func: NodeFunctionBox) -> Self {
         let args = func.args().to_vec();
         let pysig = sig_to_py(&args, Some("node"), true).into();
         let sig = sig_to_py(&args, Some("node"), false).into();
@@ -82,7 +82,7 @@ pub struct PyNetworkFunction {
 }
 
 impl PyNetworkFunction {
-    fn new(func: NetworkFunctionBox) -> Self {
+    pub fn new(func: NetworkFunctionBox) -> Self {
         let args = func.args().to_vec();
         let pysig = sig_to_py(&args, Some("network"), true).into();
         let sig = sig_to_py(&args, Some("network"), false).into();
@@ -140,7 +140,7 @@ pub struct PyEnvFunction {
 }
 
 impl PyEnvFunction {
-    fn new(func: EnvFunctionBox) -> Self {
+    pub fn new(func: EnvFunctionBox) -> Self {
         let args = func.args().to_vec();
         let pysig = sig_to_py(&args, None, true).into();
         let sig = sig_to_py(&args, None, false).into();
@@ -188,12 +188,6 @@ impl PyEnvFunction {
         self.sig.as_str()
     }
 }
-
-// fn register_child_module(parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
-//     let child_module = PyModule::new(parent_module.py(), "child_module")?;
-//     child_module.add_function(wrap_pyfunction!(func, &child_module)?)?;
-//     parent_module.add_submodule(&child_module)
-// }
 
 // let's just make these into submodule of nadi; and put all functions
 // into either nadi.functions.node.* or nadi.functions.network.*; then

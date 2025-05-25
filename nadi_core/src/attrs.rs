@@ -8,6 +8,7 @@ use abi_stable::{
     StableAbi,
 };
 use colored::Colorize;
+use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use string_template_plus::{Render, RenderOptions, Template};
@@ -828,6 +829,7 @@ convert_impls!(i64 => usize);
 convert_impls!(RString => String);
 // since we have String now, we can use that to convert to others
 convert_impls!(String => PathBuf);
+convert_impls!(String => Regex);
 
 // TODO impl try_from for String => Template in string_template crate
 impl FromAttribute for Template {

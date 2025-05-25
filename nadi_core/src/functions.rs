@@ -188,6 +188,12 @@ pub trait EnvFunction: Debug + Clone {
             .unwrap_or("No Help")
             .into()
     }
+    fn has_kw_args(&self) -> bool {
+        self.args().iter().any(|a| match a.category {
+            FuncArgType::Args | FuncArgType::KwArgs => true,
+            _ => false,
+        })
+    }
     fn args(&self) -> RVec<FuncArg>;
     fn signature(&self) -> RString {
         self.args()
@@ -212,6 +218,12 @@ pub trait NodeFunction: Debug + Clone {
             .next()
             .unwrap_or("No Help")
             .into()
+    }
+    fn has_kw_args(&self) -> bool {
+        self.args().iter().any(|a| match a.category {
+            FuncArgType::Args | FuncArgType::KwArgs => true,
+            _ => false,
+        })
     }
     fn args(&self) -> RVec<FuncArg>;
     fn signature(&self) -> RString {
@@ -246,6 +258,12 @@ pub trait NetworkFunction: Debug + Clone {
             .next()
             .unwrap_or("No Help")
             .into()
+    }
+    fn has_kw_args(&self) -> bool {
+        self.args().iter().any(|a| match a.category {
+            FuncArgType::Args | FuncArgType::KwArgs => true,
+            _ => false,
+        })
     }
     fn args(&self) -> RVec<FuncArg>;
     fn signature(&self) -> RString {

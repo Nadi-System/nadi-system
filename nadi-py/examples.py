@@ -1,4 +1,4 @@
-import nadi_py as nadi
+import nadi
 
 
 net = nadi.Network.from_str("""
@@ -10,6 +10,9 @@ b -> d
 net.nodes
 
 functions = nadi.NadiFunctions()
+
+nadi.functions.env.sum([1, 2])
+nadi.plugins.core.env.sum([1, 2])
 
 functions.env("sum", [1, 2.0])
 
