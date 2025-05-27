@@ -2,8 +2,14 @@
 
 Collection of Utilities to do Network Analysis and Data Integration. 
 
+For more details, refer to the [NADI Book](https://nadi-system.github.io/)
+
 # Installation
-Clone this repository. And build it with cargo:
+Prebuilt binaries are available for windows in the releases page. Use the `nadi-ide` binary for the GUI, refer to Nadi Book for details on other binaries.
+
+![Nadi IDE Screenshot](ide-screenshot.png)
+
+If you want to build it from source, clone this repository. And build it with cargo:
 
 ```bash
 git clone https://github.com/Nadi-System/nadi-system
