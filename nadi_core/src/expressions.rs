@@ -27,6 +27,12 @@ pub enum EvalError {
     MutexError(&'static str, u32),
 }
 
+impl From<EvalError> for String {
+    fn from(val: EvalError) -> String {
+        val.message()
+    }
+}
+
 impl EvalError {
     pub fn message(&self) -> String {
         match self {

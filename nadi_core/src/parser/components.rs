@@ -105,6 +105,7 @@ one_token!(invalid, TaskToken::Invalid(_));
 
 one_token!(kw_if, TaskToken::Keyword(TaskKeyword::If));
 one_token!(kw_else, TaskToken::Keyword(TaskKeyword::Else));
+one_token!(kw_while, TaskToken::Keyword(TaskKeyword::While));
 one_token!(kw_in, TaskToken::Keyword(TaskKeyword::In));
 one_token!(kw_match, TaskToken::Keyword(TaskKeyword::Match));
 one_token!(kw_help, TaskToken::Keyword(TaskKeyword::Help));

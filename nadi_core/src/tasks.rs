@@ -22,6 +22,54 @@ impl TaskContext {
         match task {
             Task::Eval(et) => self.eval_task(et),
             Task::Attr(at) => self.attr_task(at).map(Some),
+            Task::Conditional(ct) => {
+                let mut outputs = vec![];
+                let cond = ct.cond.resolve(&FunctionType::Env, self, None)?;
+                let res = cond.eval_value(&FunctionType::Env, self, None)?;
+                match bool::try_from_attr(&res).map_err(EvalError::AttributeError)? {
+                    true => {
+                        for task in ct.iftrue {
+                            outputs.push(self.execute(task)?)
+                        }
+                    }
+                    false => {
+                        for task in ct.iffalse {
+                            outputs.push(self.execute(task)?)
+                        }
+                    }
+                }
+                let outputs: Vec<String> = outputs.into_iter().filter_map(|x| x).collect();
+                if outputs.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(outputs.join("\n")))
+                }
+            }
+            Task::WhileLoop(lt) => {
+                let max_iter = 1_000_000; // todo make it a constant (maybe configurable)
+                let mut outputs = vec![];
+                for _ in 0..max_iter {
+                    let cond = lt.cond.resolve(&FunctionType::Env, self, None)?;
+                    let res = cond.eval_value(&FunctionType::Env, self, None)?;
+                    match bool::try_from_attr(&res).map_err(EvalError::AttributeError)? {
+                        true => {
+                            for task in &lt.tasks {
+                                // TODO really need to work on a way
+                                // to get the output as it runs in
+                                // async manner
+                                outputs.push(self.execute(task.clone())?)
+                            }
+                        }
+                        false => break,
+                    }
+                }
+                let outputs: Vec<String> = outputs.into_iter().filter_map(|x| x).collect();
+                if outputs.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(outputs.join("\n")))
+                }
+            }
             Task::Help(kw, var) => self.help(kw, var),
             Task::Exit => std::process::exit(0),
         }
@@ -29,8 +77,8 @@ impl TaskContext {
 
     pub fn eval_task(&mut self, task: EvalTask) -> Result<Option<String>, String> {
         match task.ty {
-            FunctionType::Env => match task.input.resolve_eval(&FunctionType::Env, self, None) {
-                Ok(Some(a)) => {
+            FunctionType::Env => match task.input.resolve_eval(&FunctionType::Env, self, None)? {
+                Some(a) => {
                     if let Some(attr) = &task.attr {
                         if let Some(old) =
                             self.env.set_attr_nested(&task.attr_pre, attr, a.clone())?
@@ -49,8 +97,7 @@ impl TaskContext {
                         Ok(Some(a.to_string()))
                     }
                 }
-                Ok(None) => Ok(None),
-                Err(e) => Err(e.message()),
+                None => Ok(None),
             },
             FunctionType::Node => {
                 let nodes = self
@@ -60,9 +107,8 @@ impl TaskContext {
                 for n in nodes {
                     let res = match task
                         .input
-                        .resolve_eval_mut(&FunctionType::Node, self, Some(&n))
                         // add node name to this error
-                        .map_err(|e| e.message())?
+                        .resolve_eval_mut(&FunctionType::Node, self, Some(&n))?
                     {
                         Some(r) => r,
                         None => continue,
@@ -70,8 +116,7 @@ impl TaskContext {
                     let mut n = n
                         .try_lock()
                         .into_option()
-                        .ok_or(EvalError::MutexError(file!(), line!()))
-                        .map_err(|e| e.message())?;
+                        .ok_or(EvalError::MutexError(file!(), line!()))?;
                     if let Some(attr) = &task.attr {
                         let old = n.set_attr_nested(&task.attr_pre, attr, res.clone())?;
                         if !task.silent {
@@ -135,9 +180,7 @@ impl TaskContext {
                 .ok_or(EvalError::AttributeNotFound)
                 .map_err(|e| e.to_string()),
             FunctionType::Node => {
-                let nodes = self
-                    .propagation(task.propagation.unwrap_or_default())
-                    .map_err(|e| e.message())?;
+                let nodes = self.propagation(task.propagation.unwrap_or_default())?;
                 let attrs = nodes
                     .iter()
                     .map(|n| {
@@ -376,9 +419,63 @@ impl ToString for AttrTask {
 }
 
 #[derive(Clone, PartialEq, Debug)]
+pub struct CondTask {
+    pub cond: Expression,
+    pub iftrue: Vec<Task>,
+    pub iffalse: Vec<Task>,
+}
+
+impl ToString for CondTask {
+    fn to_string(&self) -> String {
+        let tasks = self
+            .iftrue
+            .iter()
+            .map(|p| p.to_string())
+            .collect::<Vec<String>>()
+            .join("\n");
+        if self.iffalse.is_empty() {
+            format!("if ({}) {{\n\t{}\n}}", self.cond.to_string(), tasks,)
+        } else {
+            format!(
+                "if ({}) {{\n\t{}\n}} else {{\n\t{}\n}}",
+                self.cond.to_string(),
+                tasks,
+                self.iffalse
+                    .iter()
+                    .map(|p| p.to_string())
+                    .collect::<Vec<String>>()
+                    .join("\n")
+            )
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct WhileTask {
+    pub cond: Expression,
+    pub tasks: Vec<Task>,
+}
+
+impl ToString for WhileTask {
+    fn to_string(&self) -> String {
+        format!(
+            "while ({}) {{\n\t{}\n}}",
+            self.cond.to_string(),
+            self.tasks
+                .iter()
+                .map(|p| p.to_string())
+                .collect::<Vec<String>>()
+                .join("\n"),
+        )
+    }
+}
+
+#[derive(Clone, PartialEq, Debug)]
 pub enum Task {
     Eval(EvalTask),
     Attr(AttrTask),
+    Conditional(CondTask),
+    WhileLoop(WhileTask),
     Help(Option<TaskKeyword>, Option<String>),
     Exit,
 }
@@ -388,6 +485,8 @@ impl ToString for Task {
         match self {
             Self::Eval(et) => et.to_string(),
             Self::Attr(at) => at.to_string(),
+            Self::Conditional(t) => t.to_string(),
+            Self::WhileLoop(t) => t.to_string(),
             Self::Help(None, None) => "help".to_string(),
             Self::Help(Some(kw), None) => format!("help {}", kw.to_string()),
             Self::Help(None, Some(s)) => format!("help {s}"),
@@ -410,8 +509,15 @@ pub enum TaskKeyword {
     Nodes,
     If,
     Else,
+    While,
     In,
     Match,
+    // reserved
+    Function,
+    Map,
+    Attrs,
+    Loop,
+    For,
 }
 
 impl std::str::FromStr for TaskKeyword {
@@ -428,10 +534,16 @@ impl std::str::FromStr for TaskKeyword {
             "inputs" => TaskKeyword::Inputs,
             "output" => TaskKeyword::Output,
             "nodes" => TaskKeyword::Nodes,
-            "in" => TaskKeyword::In,
-            "match" => TaskKeyword::Match,
             "if" => TaskKeyword::If,
             "else" => TaskKeyword::Else,
+            "while" => TaskKeyword::While,
+            "in" => TaskKeyword::In,
+            "match" => TaskKeyword::Match,
+            "function" => TaskKeyword::Function,
+            "map" => TaskKeyword::Map,
+            "attrs" => TaskKeyword::Attrs,
+            "loop" => TaskKeyword::Loop,
+            "for" => TaskKeyword::For,
             k => return Err(format!("{k} is not a keyword")),
         })
     }
@@ -449,10 +561,16 @@ impl ToString for TaskKeyword {
             TaskKeyword::Inputs => "inputs",
             TaskKeyword::Output => "output",
             TaskKeyword::Nodes => "nodes",
-            TaskKeyword::In => "in",
-            TaskKeyword::Match => "match",
             TaskKeyword::If => "if",
             TaskKeyword::Else => "else",
+            TaskKeyword::While => "while",
+            TaskKeyword::In => "in",
+            TaskKeyword::Match => "match",
+            TaskKeyword::Function => "function",
+            TaskKeyword::Map => "map",
+            TaskKeyword::Attrs => "attrs",
+            TaskKeyword::Loop => "loop",
+            TaskKeyword::For => "for",
         }
         .to_string()
     }
@@ -470,10 +588,16 @@ impl TaskKeyword {
             TaskKeyword::Inputs => "inputs of the current node",
             TaskKeyword::Output => "output of the current node",
             TaskKeyword::Nodes => "all the nodes in the network",
-            TaskKeyword::In => "Check if value is in an array/table",
-            TaskKeyword::Match => "match regex pattern with strings",
             TaskKeyword::If => "if part of if-else block",
             TaskKeyword::Else => "else part of if-else block",
+            TaskKeyword::While => "while loop",
+            TaskKeyword::In => "Check if value is in an array/table",
+            TaskKeyword::Match => "match regex pattern with strings",
+            TaskKeyword::Function => "function definition",
+            TaskKeyword::Map => "map array to a function",
+            TaskKeyword::Attrs => "attrs of a node or network",
+            TaskKeyword::Loop => "a generic loop",
+            TaskKeyword::For => "for loop",
         }
         .to_string()
     }

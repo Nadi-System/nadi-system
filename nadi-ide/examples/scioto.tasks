@@ -1,6 +1,13 @@
 # load network
 network load_file("scioto.network")
 
+# simple loop
+env.count = 1;
+while (count < 5) {
+    env.count = env.count + 1;
+    env.count
+}
+
 # output not being available should be checked as well?
 node output.INDEX?
 node(output.INDEX?) output.INDEX == (node.INDEX - 1)

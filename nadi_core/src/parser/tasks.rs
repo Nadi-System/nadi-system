@@ -1,14 +1,14 @@
 use crate::parser::{
     components::*,
     errors::MatchErr,
-    expressions::complete_expression,
+    expressions::{complete_expression, expression_group},
     network::{node_name, str_path},
     tokenizer::{check_tokens, Token},
     ParseError, ParseErrorType,
 };
 use crate::{
     functions::Propagation,
-    tasks::{AttrTask, EvalTask, FunctionType, Task},
+    tasks::{AttrTask, CondTask, EvalTask, FunctionType, Task, WhileTask},
 };
 use abi_stable::std_types::{RString, RVec};
 use nom::{
@@ -148,8 +148,34 @@ pub fn help_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
     )(inp)
 }
 
+pub fn cond_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, CondTask> {
+    let (rest, (cond, iftrue, iffalse)) = tuple((
+        preceded(kw_if, maybe_space(expression_group)),
+        maybe_newline(tasks_block),
+        opt(maybe_newline(preceded(kw_else, maybe_newline(tasks_block)))),
+    ))(inp)?;
+    Ok((
+        rest,
+        CondTask {
+            cond,
+            iftrue,
+            iffalse: iffalse.unwrap_or_default(),
+        },
+    ))
+}
+
+pub fn while_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, WhileTask> {
+    let (rest, (cond, tasks)) = tuple((
+        preceded(kw_while, maybe_space(expression_group)),
+        maybe_newline(tasks_block),
+    ))(inp)?;
+    Ok((rest, WhileTask { cond, tasks }))
+}
+
 pub fn task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
     alt((
+        map(cond_task, Task::Conditional),
+        map(while_task, Task::WhileLoop),
         map(eval_task, Task::Eval),
         map(attr_task, Task::Attr),
         help_task,
@@ -159,6 +185,10 @@ pub fn task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
 
 pub fn tasks<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<Task>> {
     trailing_newlines(newline_separated(task))(inp)
+}
+
+pub fn tasks_block<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<Task>> {
+    delimited(brace_start, maybe_newline(tasks), maybe_newline(brace_end))(inp)
 }
 
 pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
