@@ -229,15 +229,28 @@ mod tests {
     use super::*;
     use crate::attrs::{Attribute, HasAttributes};
     use crate::expressions::EvalError;
+    use crate::functions::NadiFunctions;
     use crate::parser::tokenizer::get_tokens;
     use crate::tasks::FunctionType;
     use crate::tasks::TaskContext;
     use rstest::{fixture, rstest};
+    use std::sync::OnceLock;
+
+    static mut NADI_FUNCS: OnceLock<NadiFunctions> = OnceLock::new();
 
     #[fixture]
     fn context() -> TaskContext {
-        // Since TaskContext is not thread safe, we cannot share references between tests
-        let mut ctx = TaskContext::new(None);
+        // The static mut ref is for OnceLock, and it is immediately
+        // cloned to be used, so it is safe. This just saves us from
+        // loading the plugins over and over again for each test,
+        // significantly improving the runtime speed.
+        #[allow(static_mut_refs)]
+        let functions = unsafe { NADI_FUNCS.get_or_init(|| NadiFunctions::new()) }.clone();
+
+        let mut ctx = TaskContext {
+            functions,
+            ..Default::default()
+        };
         ctx.env.set_attr("xyz", 12.into());
         ctx
     }
