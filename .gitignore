@@ -2,6 +2,7 @@
 target/
 debug/
 **/*.rs.bk
+Cargo.lock
 
 # emacs
 *~
