@@ -59,7 +59,7 @@ macro_rules! bi_op_pred {
 	fn $name<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
 	    map(
 		tuple((
-		    alt((expression_group, $inner)),
+		    alt(($inner, expression_group)),
 		    maybe_newline(alt((
 			$(value($op, $kw),)*
 		    ))),
@@ -91,7 +91,7 @@ bi_op_pred!(bi_op_plusminus, alt((bi_op_mult, expression)), bi_op_plusminus,
 bi_op_pred!(bi_op_and, alt((bi_op_in_match, bi_op_compare, expression)), bi_op_and,
             and => BiOperator::And
 );
-bi_op_pred!(bi_op_or, alt((bi_op_and, expression)), bi_op_or,
+bi_op_pred!(bi_op_or, alt((bi_op_and, bi_op_in_match, bi_op_compare, expression)), bi_op_or,
             or => BiOperator::Or
 );
 bi_op_pred!(bi_op_compare, expression,,
@@ -119,10 +119,10 @@ pub fn if_else_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression
 pub fn complete_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
     alt((
         bi_op_or,
-        bi_op_plusminus,
         bi_op_and,
-        bi_op_compare,
         bi_op_in_match,
+        bi_op_compare,
+        bi_op_plusminus,
         bi_op_mult,
         expression_group,
         expression,
@@ -311,6 +311,8 @@ mod tests {
     // testing
     #[case("1 + 2 * 2", 5.into())]
     #[case("1 + 2 * (2 - 5)", (-5).into())]
+    #[case("(2 - 5) * 2 + 1", (-5).into())]
+    #[case("(2 - 1)  + 1", 2.into())]
     #[case("10 // 5 + 2", 4.into())]
     pub fn compl_expr_eval_test(
         mut context: TaskContext,
@@ -329,6 +331,85 @@ mod tests {
         assert_eq!(res, val);
     }
 
+    #[rstest]
+    #[case("1 + 2 * 2", (5).into())]
+    #[case("1 + 2 * (2 - 5)", (-5).into())]
+    #[case("(2 - 5) * 2 + 1", (-5).into())]
+    #[case("(2 - 1) + 1", (2).into())]
+    #[case("10 // 5 + 2", (4).into())]
+    #[case("10 % 5 + 2", (2).into())]
+    #[case("1 + 2 * (3 - 2)", (3).into())]
+    #[case("(3 + 2) * 2 - 1", (9).into())]
+    #[case("((10 - 2) / (2 + 1)) * 3", (8.0).into())]
+    #[case("2 * (4 - 2) + 3", (7).into())]
+    #[case("(8 - 6) / 2 + 1", (2.0).into())]
+    #[case("(9 - 5) * (3 + 1)", (16).into())]
+    #[case("(7 + 3) * (2 - 1)", (10).into())]
+    #[case("10 // (2 * 2) + 1", (3).into())]
+    #[case("(4 + 2) / (3 - 1) + 2", (5.0).into())]
+    #[case("(8 - 5) * (2 + 1)", (9).into())]
+    #[case("(6 - 3) / (3 + 1) + 1", (1.75).into())]
+    #[case("12 // (4 * 2) + 2", (3).into())]
+    #[case("(10 + 2) * (5 - 3)", (24).into())]
+    #[case("(9 + 1) / (4 - 2) + 2", (7.0).into())]
+    #[case("(8 + 6) // (2 * 2) + 1", (4).into())]
+    #[case("(7 - 3) * (5 + 1)", (24).into())]
+    #[case("3 * ((6 - 2) / (4 - 1) + 2)", (10.0).into())]
+    #[case("18 // (9 * 2) + 3", (4).into())]
+    #[case("(11 + 5) * (8 - 4)", (64).into())]
+    #[case("(10 + 3) / (7 - 2) + 3", (5.6).into())]
+    #[case("(10 + 3) % (7 - 2) + 3", (6).into())]
+    #[case("(9 + 1) // (5 * 2) + 2", (3).into())]
+    #[case("(8 + 2) * (7 - 1)", (60).into())]
+    #[case("(7 - 1) / (6 - 2) + 3", (4.5).into())]
+    #[case("20 // (10 * 2) + 5", (6).into())]
+    #[case("(13 + 9) * (11 - 5)", (132).into())]
+    #[case("(12 + 4) / (9 - 1) + 6", (8.0).into())]
+    #[case("(11 - 3) * (10 + 2)", (96).into())]
+    #[case("(10 - 2) // (8 - 4) + 5", (7).into())]
+    #[case("(9 + 3) / (7 - 1) + 6", (8.0).into())]
+    #[case("(8 + 1) * (7 - 2)", (45).into())]
+    #[case("(7 + 1) / (6 - 2) + 5", (7.0).into())]
+    #[case("25 // (13 * 2) + 7", (7).into())]
+    #[case("(16 + 9) * (15 - 7)", (200).into())]
+    #[case("(15 + 3) / (12 - 2) + 8", (9.8).into())]
+    #[case("(14 - 4) * (13 + 1)", (140).into())]
+    #[case("(13 - 3) // (11 - 1) + 9", (10).into())]
+    #[case("(12 + 2) * (11 - 2)", (126).into())]
+    #[case("(11 - 1) / (10 - 2) + 10", (11.25).into())]
+    #[case("30 // (15 * 2) + 12", (13).into())]
+    #[case("(19 + 13) * (18 - 9)", (288).into())]
+    #[case("true & true", true.into())]
+    #[case("true & (2 < 0.9)", false.into())]
+    #[case("10 <=9 & true", false.into())]
+    #[case("false & false", false.into())]
+    #[case("true | true", true.into())]
+    #[case("true | false", true.into())]
+    // this here can be invalid if xyz is bool, but valid when it's
+    // number, so > is evaluated before the boolean operation |
+    #[case("false | xyz > -12", true.into())]
+    #[case("false | false", false.into())]
+    #[case("! true", false.into())]
+    #[case("! false", true.into())]
+    #[case("!(true & true)", false.into())]
+    #[case("!(true & false)", true.into())]
+    #[case("!!(false & true)", false.into())]
+    pub fn compl_expr_eval_test_2(
+        mut context: TaskContext,
+        #[case] txt: &str,
+        #[case] val: Attribute,
+    ) {
+        let tokens = get_tokens(txt);
+        let (rest, expr) = complete_expression(&tokens).unwrap();
+        assert_eq!(rest, vec![]);
+        let res = expr
+            .resolve(&FunctionType::Env, &context, None)
+            .unwrap()
+            .eval(&FunctionType::Env, &mut context, None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(res, val);
+    }
     // testing the simplify process
     #[rstest]
     #[case("12 + 2", "14")]
