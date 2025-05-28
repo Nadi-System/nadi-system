@@ -182,6 +182,34 @@ mod core {
         Attribute::Table(attributes.clone())
     }
 
+    /// append a value to an array
+    #[env_func]
+    fn append(
+        /// List of attributes
+        array: Vec<Attribute>,
+        value: Attribute,
+    ) -> Attribute {
+        let mut a = array;
+        a.push(value);
+        Attribute::Array(a.into())
+    }
+
+    /// length of an array or hashmap
+    #[env_func]
+    fn length(
+        /// Array or a HashMap
+        value: &Attribute,
+    ) -> Result<usize, String> {
+        match value {
+            Attribute::Array(a) => Ok(a.len()),
+            Attribute::Table(t) => Ok(t.len()),
+            _ => Err(format!(
+                "Got {} instead of array/attrmap",
+                value.type_name()
+            )),
+        }
+    }
+
     /// year from date/datetime
     #[env_func]
     fn year(
@@ -331,5 +359,18 @@ mod core {
             *v += 1;
         });
         counts
+    }
+
+    /// Concat the strings
+    #[env_func(join = "")]
+    fn concat(#[args] vars: &[Attribute], join: &str) -> String {
+        let reprs: Vec<String> = vars
+            .iter()
+            .map(|a| match a {
+                Attribute::String(s) => s.to_string(),
+                x => x.to_string(),
+            })
+            .collect();
+        reprs.join(join)
     }
 }

@@ -745,6 +745,34 @@ impl FunctionCtx {
         self.kwargs.get(name)
     }
 
+    pub fn just_kwarg<P: FromAttribute>(&self, name: &str) -> Option<Result<P, String>> {
+        self.kwarg(name)
+            .map(|arg| match FromAttribute::try_from_attr(arg) {
+                Ok(v) => Ok(v),
+                Err(e) => Err(format!(
+                    "Argument {} [{}]: {e}",
+                    name,
+                    nadi_core::attrs::type_name::<P>()
+                )),
+            })
+    }
+
+    pub fn just_kwarg_relaxed<P: FromAttributeRelaxed>(
+        &self,
+        name: &str,
+    ) -> Option<Result<P, String>> {
+        self.kwarg(name).map(
+            |arg| match FromAttributeRelaxed::try_from_attr_relaxed(arg) {
+                Ok(v) => Ok(v),
+                Err(e) => Err(format!(
+                    "Argument {} [{}]: {e}",
+                    name,
+                    nadi_core::attrs::type_name::<P>()
+                )),
+            },
+        )
+    }
+
     pub fn arg_kwarg<P: FromAttribute>(&self, ind: usize, name: &str) -> Option<Result<P, String>> {
         self.kwarg(name).or_else(|| self.arg(ind)).map(|arg| {
             match FromAttribute::try_from_attr(arg) {

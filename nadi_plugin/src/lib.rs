@@ -600,21 +600,26 @@ fn get_call_func(
     let mut defaults_expr: Vec<proc_macro2::TokenStream> = Vec::new();
     let ret_err = quote! { ::nadi_core::functions::FunctionRet::Error };
     let mut argc: usize = 0;
+    let mut kwonly = false;
     let extract_args: Vec<proc_macro2::TokenStream> = args
         .iter()
         .map(|(arg, ty, at)| {
             argc += 1;
             let arg_name = arg.to_string();
             let ty_name = ty.to_token_stream().to_string();
-            let arg_func = match at {
-                FuncArgType::Arg => quote! { ctx.arg_kwarg },
-                FuncArgType::Relaxed => quote! { ctx.arg_kwarg_relaxed },
+            let arg_func_call = match at {
+                FuncArgType::Arg if kwonly => quote! { ctx.just_kwarg (#arg_name) },
+                FuncArgType::Arg => quote! { ctx.arg_kwarg (#argc - 1, #arg_name)},
+                FuncArgType::Relaxed if kwonly => quote! { ctx.just_kwarg_relaxed (#arg_name)},
+                FuncArgType::Relaxed => quote! { ctx.arg_kwarg_relaxed (#argc - 1, #arg_name)},
                 FuncArgType::Args => {
+                    kwonly = true;
                     return quote! {
                         let #arg: #ty = ctx.args().into();
                     };
                 }
                 FuncArgType::KwArgs => {
+                    kwonly = true;
                     return quote! {
                         let #arg: #ty = ctx.kwargs().into();
                     };
@@ -682,7 +687,7 @@ fn get_call_func(
                     let inner_ty = ref_type_inner(&r, false).0;
                     let m = r.mutability;
                     quote! {
-                    let #m #arg_o : #inner_ty = match #arg_func (#argc - 1, #arg_name) {
+                    let #m #arg_o : #inner_ty = match #arg_func_call {
                         #patterns
                     };
                     let #arg : #ty = & #arg_o;
@@ -701,14 +706,14 @@ fn get_call_func(
                             (true, false) => quote!(std::option::Option::as_deref),
                         };
                         quote! {
-                            let #m #arg_o : Option<#inner_ty> = match #arg_func (#argc - 1, #arg_name) {
+                            let #m #arg_o : Option<#inner_ty> = match #arg_func_call {
                             #patterns
                             };
                             let #arg : #ty = #asref (& #m #arg_o);
                         }
                     } else {
                         quote! {
-                            let #arg : #ty = match #arg_func (#argc - 1, #arg_name) {
+                            let #arg : #ty = match #arg_func_call {
                             #patterns
                             };
                         }
