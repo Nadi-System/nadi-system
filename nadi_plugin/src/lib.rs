@@ -369,7 +369,8 @@ fn get_opt_type(ty: &Type) -> Option<&Type> {
 /// register them
 ///
 /// # Example Use:
-/// ```rust
+/// ```rust,ignore
+/// // This requies you to have nadi_core in your direct dependency
 /// #[nadi_plugin::nadi_plugin]
 /// mod plugin_name {
 ///     #[nadi_plugin::node_func]

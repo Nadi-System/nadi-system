@@ -3,9 +3,31 @@ use nadi_plugin::nadi_internal_plugin;
 #[nadi_internal_plugin]
 mod render {
     use crate::prelude::*;
-    use nadi_plugin::{network_func, node_func};
+    use nadi_plugin::{env_func, network_func, node_func};
     use std::path::PathBuf;
     use string_template_plus::Template;
+
+    /// Render the template based on the node attributes
+    ///
+    /// For more details on the template system. Refer to the String
+    /// Template section of the NADI book.
+    #[env_func(safe = false)]
+    fn render(
+        /// String template to render
+        template: &Template,
+        #[kwargs] keyval: &AttrMap,
+        /// if render fails keep it as it is instead of exiting
+        safe: bool,
+    ) -> Result<String, String> {
+        let text = if safe {
+            keyval
+                .render(template)
+                .unwrap_or_else(|_| template.original().to_string())
+        } else {
+            keyval.render(template).map_err(|e| e.to_string())?
+        };
+        Ok(text)
+    }
 
     /// Render the template based on the node attributes
     ///

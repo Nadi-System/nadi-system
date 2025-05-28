@@ -6,6 +6,7 @@ mod command;
 mod connections;
 mod core;
 mod debug;
+mod files;
 mod logic;
 mod regex;
 mod render;
@@ -27,6 +28,7 @@ pub(crate) fn register_internal(funcs: &mut NadiFunctions) {
     connections::ConnectionsMod {}.register(funcs);
     core::CoreMod {}.register(funcs);
     debug::DebugMod {}.register(funcs);
+    files::FilesMod {}.register(funcs);
     logic::LogicMod {}.register(funcs);
     regex::RegexMod {}.register(funcs);
     render::RenderMod {}.register(funcs);
