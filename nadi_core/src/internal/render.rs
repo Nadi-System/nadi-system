@@ -259,7 +259,7 @@ mod render_utils {
                             output.push('\n');
                         }
                     }
-                    RenderFileContentsType::Literal(s) => output.push_str(&s),
+                    RenderFileContentsType::Literal(s) => output.push_str(s),
                     RenderFileContentsType::Snippet(templ, prop) => {
                         for node in net.nodes_propagation(prop).map_err(anyhow::Error::msg)? {
                             output.push_str(&node.lock().render(templ)?);

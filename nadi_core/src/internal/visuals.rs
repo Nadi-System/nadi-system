@@ -30,7 +30,7 @@ mod visuals {
         let diffs = maxsize - minsize;
         attrs.iter().zip(net.nodes()).for_each(|(v, n)| {
             let s = (v - min) / diff * diffs + minsize;
-            n.lock().set_node_size(s.into());
+            n.lock().set_node_size(s);
         });
         Ok(Attribute::Array(vec![max.into(), min.into()].into()))
     }
@@ -45,6 +45,7 @@ mod visuals {
         width = 500u64,
         height = 240u64,
     )]
+    #[allow(clippy::too_many_arguments)]
     fn svg_save(
         net: &mut Network,
         outfile: &Path,
@@ -67,14 +68,14 @@ mod visuals {
             .nodes()
             .map(|n| n.lock().level())
             .max()
-            .unwrap_or_default() as u64;
+            .unwrap_or_default();
         let mut max_textlen: usize = 0;
 
         let mut nodes = Group::new();
         let mut edges = Group::new();
         for node in net.nodes() {
             let n = node.lock();
-            let x = n.level() as u64 * x_spacing + offset;
+            let x = n.level() * x_spacing + offset;
             let y = (count - n.index() as u64) * y_spacing + offset;
             let lab = n
                 .render(&label)
@@ -88,7 +89,7 @@ mod visuals {
                     .add(n.node_label((level + 2) * x_spacing, y, lab));
             if let RSome(out) = n.output() {
                 let o = out.lock();
-                let xo = o.level() as u64 * x_spacing + offset;
+                let xo = o.level() * x_spacing + offset;
                 let yo = (count - o.index() as u64) * y_spacing + offset;
                 edges = edges.add(n.node_line(x, y, xo, yo));
             }
@@ -104,7 +105,7 @@ mod visuals {
                             + offset
                             + (twidth * max_textlen as f64).ceil() as u64,
                     ),
-                    page_height.unwrap_or(2 * offset + y_spacing * count as u64),
+                    page_height.unwrap_or(2 * offset + y_spacing * count),
                 ),
             )
             .set("height", height)

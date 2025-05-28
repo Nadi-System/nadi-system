@@ -166,11 +166,8 @@ impl Terminal {
             let mut new_lines: Vec<_> = if self.residue.is_empty() {
                 let mut nl = Vec::with_capacity(text.lines().count());
                 let mut lines = text.lines();
-                match lines.next() {
-                    Some(l) => nl.push(format!(">>> {l}")),
-                    None => (),
-                }
-                nl.extend(lines.into_iter().map(|l| format!(">.. {l}")));
+                if let Some(l) = lines.next() { nl.push(format!(">>> {l}")) }
+                nl.extend(lines.map(|l| format!(">.. {l}")));
                 nl
             } else {
                 text.lines().map(|l| format!(">.. {l}")).collect()

@@ -90,18 +90,12 @@ impl HlTokens {
                 }
                 // the quote was closed
                 TaskToken::String(_) => {
-                    mls = Some(
-                        if tk
-                            .iter()
-                            .position(|t| t.ty == TaskToken::Invalid('"'))
-                            .is_some()
-                        {
-                            // but another quote is open
-                            MultiLineStr::CloseOpen
-                        } else {
-                            MultiLineStr::Close
-                        },
-                    );
+                    mls = Some(if tk.iter().any(|t| t.ty == TaskToken::Invalid('"')) {
+                        // but another quote is open
+                        MultiLineStr::CloseOpen
+                    } else {
+                        MultiLineStr::Close
+                    });
                     vec![(Highlight::String, t.content.len() - 1)]
                 }
                 // shouldn't happen

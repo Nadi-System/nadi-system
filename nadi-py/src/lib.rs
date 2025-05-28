@@ -51,21 +51,21 @@ pub fn register_function_modules(py: Python, parent: &Bound<'_, PyModule>) -> Py
     for f in nadi_funcs.node_alias() {
         let name = f.0.as_str();
         let f = nadi_funcs
-            .node(&f.1)
+            .node(f.1)
             .expect("Function in alias should exist");
         node.setattr(name, PyNodeFunction::new(f.clone()))?;
     }
     for f in nadi_funcs.network_alias() {
         let name = f.0.as_str();
         let f = nadi_funcs
-            .network(&f.1)
+            .network(f.1)
             .expect("Function in alias should exist");
         network.setattr(name, PyNetworkFunction::new(f.clone()))?;
     }
     for f in nadi_funcs.env_alias() {
         let name = f.0.as_str();
         let f = nadi_funcs
-            .env(&f.1)
+            .env(f.1)
             .expect("Function in alias should exist");
         env.setattr(name, PyEnvFunction::new(f.clone()))?;
     }
@@ -109,10 +109,10 @@ pub fn register_function_modules(py: Python, parent: &Bound<'_, PyModule>) -> Py
         pmod.add_submodule(&env)?;
         plugins.add_submodule(&pmod)?;
 
-        mods.set_item(&format!("nadi.plugins.{}", name), pmod)?;
-        mods.set_item(&format!("nadi.plugins.{}.node", name), node)?;
-        mods.set_item(&format!("nadi.plugins.{}.network", name), network)?;
-        mods.set_item(&format!("nadi.plugins.{}.env", name), env)?;
+        mods.set_item(format!("nadi.plugins.{}", name), pmod)?;
+        mods.set_item(format!("nadi.plugins.{}.node", name), node)?;
+        mods.set_item(format!("nadi.plugins.{}.network", name), network)?;
+        mods.set_item(format!("nadi.plugins.{}.env", name), env)?;
     }
     parent.add_submodule(&plugins)?;
     mods.set_item("nadi.plugins", plugins)?;

@@ -38,7 +38,7 @@ impl TaskContext {
                         }
                     }
                 }
-                let outputs: Vec<String> = outputs.into_iter().filter_map(|x| x).collect();
+                let outputs: Vec<String> = outputs.into_iter().flatten().collect();
                 if outputs.is_empty() {
                     Ok(None)
                 } else {
@@ -63,7 +63,7 @@ impl TaskContext {
                         false => break,
                     }
                 }
-                let outputs: Vec<String> = outputs.into_iter().filter_map(|x| x).collect();
+                let outputs: Vec<String> = outputs.into_iter().flatten().collect();
                 if outputs.is_empty() {
                     Ok(None)
                 } else {
@@ -375,7 +375,7 @@ impl ToString for EvalTask {
         };
         format!(
             "{}{}{} {}{}",
-            self.ty.to_string(),
+            self.ty,
             self.propagation
                 .as_ref()
                 .map(|p| p.to_string())
@@ -408,7 +408,7 @@ impl ToString for AttrTask {
         );
         format!(
             "{}{}{}",
-            self.ty.to_string(),
+            self.ty,
             self.propagation
                 .as_ref()
                 .map(|p| p.to_string())

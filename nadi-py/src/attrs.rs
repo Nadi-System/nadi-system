@@ -14,7 +14,7 @@ pub struct PyNDate(Date);
 impl PyNDate {
     #[new]
     fn parse(date: &str) -> PyResult<Self> {
-        Ok(Date::from_str(&date)
+        Ok(Date::from_str(date)
             .map(PyNDate)
             .map_err(anyhow::Error::msg)?)
     }
@@ -56,7 +56,7 @@ pub struct PyNTime(Time);
 impl PyNTime {
     #[new]
     fn parse(time: &str) -> PyResult<Self> {
-        Ok(Time::from_str(&time)
+        Ok(Time::from_str(time)
             .map(PyNTime)
             .map_err(anyhow::Error::msg)?)
     }
@@ -103,7 +103,7 @@ pub struct PyNDateTime(DateTime);
 impl PyNDateTime {
     #[new]
     fn parse(dt: &str) -> PyResult<Self> {
-        Ok(DateTime::from_str(&dt)
+        Ok(DateTime::from_str(dt)
             .map(PyNDateTime)
             .map_err(anyhow::Error::msg)?)
     }

@@ -245,7 +245,7 @@ mod tests {
         // loading the plugins over and over again for each test,
         // significantly improving the runtime speed.
         #[allow(static_mut_refs)]
-        let functions = unsafe { NADI_FUNCS.get_or_init(|| NadiFunctions::new()) }.clone();
+        let functions = unsafe { NADI_FUNCS.get_or_init(NadiFunctions::new) }.clone();
 
         let mut ctx = TaskContext {
             functions,
@@ -328,7 +328,7 @@ mod tests {
     #[case("(2 - 1)  + 1", 2.into())]
     #[case("10 // 5 + 2", 4.into())]
     pub fn compl_expr_eval_test(
-        mut context: TaskContext,
+        context: TaskContext,
         #[case] txt: &str,
         #[case] val: Attribute,
     ) {
@@ -338,7 +338,7 @@ mod tests {
         let res = expr
             .resolve(&FunctionType::Env, &context, None)
             .unwrap()
-            .eval(&FunctionType::Env, &mut context, None)
+            .eval(&FunctionType::Env, &context, None)
             .unwrap()
             .unwrap();
         assert_eq!(res, val);
@@ -408,7 +408,7 @@ mod tests {
     #[case("!(true & false)", true.into())]
     #[case("!!(false & true)", false.into())]
     pub fn compl_expr_eval_test_2(
-        mut context: TaskContext,
+        context: TaskContext,
         #[case] txt: &str,
         #[case] val: Attribute,
     ) {
@@ -418,7 +418,7 @@ mod tests {
         let res = expr
             .resolve(&FunctionType::Env, &context, None)
             .unwrap()
-            .eval(&FunctionType::Env, &mut context, None)
+            .eval(&FunctionType::Env, &context, None)
             .unwrap()
             .unwrap();
         assert_eq!(res, val);

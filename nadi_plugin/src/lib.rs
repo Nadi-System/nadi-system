@@ -19,14 +19,17 @@ enum FuncType {
     Network,
 }
 
-impl ToString for FuncType {
-    fn to_string(&self) -> String {
-        match self {
-            FuncType::Env => "Env",
-            FuncType::Node => "Node",
-            FuncType::Network => "Network",
-        }
-        .to_string()
+impl std::fmt::Display for FuncType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                FuncType::Env => "Env",
+                FuncType::Node => "Node",
+                FuncType::Network => "Network",
+            }
+        )
     }
 }
 
@@ -162,21 +165,21 @@ fn from_attr_derive(input: TokenStream, relaxed: bool) -> TokenStream {
 #[proc_macro_attribute]
 pub fn env_func(args: TokenStream, item: TokenStream) -> TokenStream {
     let item = parse_macro_input!(item as ItemFn);
-    nadi_func_inner(args, item, FuncType::Env).into()
+    nadi_func_inner(args, item, FuncType::Env)
 }
 
 /// register this function as a node function on nadi plugin
 #[proc_macro_attribute]
 pub fn node_func(args: TokenStream, item: TokenStream) -> TokenStream {
     let item = parse_macro_input!(item as ItemFn);
-    nadi_func_inner(args, item, FuncType::Node).into()
+    nadi_func_inner(args, item, FuncType::Node)
 }
 
 /// register this function as a network function on nadi plugin
 #[proc_macro_attribute]
 pub fn network_func(args: TokenStream, item: TokenStream) -> TokenStream {
     let item = parse_macro_input!(item as ItemFn);
-    nadi_func_inner(args, item, FuncType::Network).into()
+    nadi_func_inner(args, item, FuncType::Network)
 }
 
 #[derive(Clone, Copy, Default, PartialEq)]
@@ -273,9 +276,7 @@ fn check_args_kwargs_order(
         .collect();
     let mut flag = false;
     for (a, t, _) in args {
-        if type_is_opt(t) {
-            flag = true;
-        } else if default_args.contains_key(a) {
+        if type_is_opt(t) || default_args.contains_key(a) {
             flag = true;
         } else if flag {
             warnings.push(quote_spanned! {
@@ -629,7 +630,7 @@ fn get_call_func(
             let def = if let Some(val) = defaults.get(arg) {
                 match ty {
                     Type::Reference(r) => {
-                        let inner_ty = ref_type_inner(&r, true).0;
+                        let inner_ty = ref_type_inner(r, true).0;
                         let warn = r.mutability.map(|m| {
                             // mut reference on the network functions
                             // are useless as they are one time
@@ -685,7 +686,7 @@ fn get_call_func(
             match ty {
                 Type::Reference(r) => {
                     let arg_o = format_ident!("{}_o", arg);
-                    let inner_ty = ref_type_inner(&r, false).0;
+                    let inner_ty = ref_type_inner(r, false).0;
                     let m = r.mutability;
                     quote! {
                     let #m #arg_o : #inner_ty = match #arg_func_call {
@@ -697,7 +698,7 @@ fn get_call_func(
                 _ => {
                     if let Some(Type::Reference(r)) = get_opt_type(ty) {
                         let arg_o = format_ident!("{}_o", arg);
-                        let (inner_ty, deref) = ref_type_inner(&r, false);
+                        let (inner_ty, deref) = ref_type_inner(r, false);
                         let m = r.mutability;
                         // all this since deref doesn't happen automatically inside option like with & #arg_o above
                         let asref = match (deref, m.is_some()) {
@@ -789,7 +790,7 @@ fn get_signature_func(
         .inputs
         .iter()
         .skip((FuncType::Env != *ft) as usize)
-        .filter_map(|a| {
+        .map(|a| {
             match a {
                 syn::FnArg::Typed(a) => {
                     match a.pat.as_ref() {
@@ -807,22 +808,20 @@ fn get_signature_func(
                             } else if default_args.contains_key(&i.ident) {
                                 let v = format!("{{{}:?}}", i.ident);
                                 quote! { DefArg(format!(#v) .into()) }
+                            } else if type_is_opt(&a.ty) {
+                                quote! { OptArg }
                             } else {
-                                if type_is_opt(&a.ty) {
-                                    quote! { OptArg }
-                                } else {
-                                    quote! { Arg }
-                                }
+                                quote! { Arg }
                             };
 
-                            Some(quote! {
+                            quote! {
                             ::nadi_core::functions::FuncArg {
                                             name: #n .into(),
                                             ty: #t .into(),
                                             help: #doc .into(),
                                 category: ::nadi_core::functions::FuncArgType:: #ft
                             }
-                            })
+                            }
                         }
                         _ => panic!("Not supported"),
                     }

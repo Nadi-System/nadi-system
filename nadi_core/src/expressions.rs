@@ -38,7 +38,7 @@ impl EvalError {
         match self {
             Self::UnresolvedVariable => "Unresolved variable in expression",
             Self::FunctionNotFound(t, n) => {
-                return format!("{} function: {n:?} not found", t.to_string())
+                return format!("{} function: {n:?} not found", t)
             }
             Self::FunctionError(n, s) => return format!("Error in function {n}: {s}"),
             Self::NoReturnValue(n) => return format!("Function {n} did not return a value"),
@@ -96,7 +96,7 @@ impl ToString for Expression {
         match self {
             Self::Literal(a) => a.to_toml_string(),
             Self::Variable(v) => v.to_string(),
-            Self::ResolveError(e) => format!("ResolveError: {}", e.to_string()),
+            Self::ResolveError(e) => format!("ResolveError: {}", e),
             Self::Function(fc) => fc.to_string(),
             Self::UniOp(op, expr) => {
                 if expr.nested() {
@@ -402,8 +402,8 @@ impl Expression {
                 } else {
                     match attr {
                         Ok(Some(v)) => Ok(Self::Literal(v)),
-                        Ok(None) => return Ok(Self::ResolveError(EvalError::AttributeNotFound)),
-                        Err(e) => return Ok(Self::ResolveError(EvalError::AttributeError(e))),
+                        Ok(None) => Ok(Self::ResolveError(EvalError::AttributeNotFound)),
+                        Err(e) => Ok(Self::ResolveError(EvalError::AttributeError(e))),
                     }
                 }
             }

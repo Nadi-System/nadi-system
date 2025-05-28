@@ -149,7 +149,7 @@ fn show_tasks(filename: &Path) {
 }
 
 fn execute_tasks(txt: &str, print_tasks: bool, tasks_ctx: &mut TaskContext) -> anyhow::Result<()> {
-    let tokens = nadi_core::parser::tokenizer::get_tokens(&txt);
+    let tokens = nadi_core::parser::tokenizer::get_tokens(txt);
     let tasks = match nadi_core::parser::tasks::parse(tokens) {
         Ok(t) => t,
         Err(e) => return Err(anyhow::Error::msg(e.user_msg(None))),

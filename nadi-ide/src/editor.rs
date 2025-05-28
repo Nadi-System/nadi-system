@@ -76,15 +76,12 @@ impl EditorFunction {
             Span::new(&self.name),
             Span::new("(").color(colors::ARG_COLOR_SYM),
         ];
-        match args.pop() {
-            Some(last) => {
-                for txt in args {
-                    texts.extend(txt);
-                    texts.push(Span::new(", ").color(colors::ARG_COLOR_SYM));
-                }
-                texts.extend(last);
+        if let Some(last) = args.pop() {
+            for txt in args {
+                texts.extend(txt);
+                texts.push(Span::new(", ").color(colors::ARG_COLOR_SYM));
             }
-            None => (),
+            texts.extend(last);
         }
         texts.push(Span::new(")").color(colors::ARG_COLOR_SYM));
         Rich::with_spans(texts).font(iced::font::Font::MONOSPACE)
@@ -523,12 +520,12 @@ async fn func_at_mark(text: String, mark: (usize, usize)) -> Option<(FunctionTyp
                         continue;
                     }
                 }
-                ty = FunctionType::from_keyword(&kw);
+                ty = FunctionType::from_keyword(kw);
             }
             _ => (),
         }
     }
-    ty.map(|t| name.map(|n| (t, n))).flatten()
+    ty.and_then(|t| name.map(|n| (t, n)))
 }
 
 fn toggle_comment(selection: &str) -> String {
@@ -543,11 +540,8 @@ fn toggle_comment(selection: &str) -> String {
             if !l.trim().is_empty() {
                 let (x, y) = l.split_once('#').expect("should have #");
                 newlines.push_str(x);
-                if y.starts_with(' ') {
-                    newlines.push_str(&y[1..]);
-                } else {
-                    newlines.push_str(y);
-                }
+                let y = y.strip_prefix(' ').unwrap_or(y);
+                newlines.push_str(y);
             }
             newlines.push('\n');
         }

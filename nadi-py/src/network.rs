@@ -54,7 +54,7 @@ impl PyNetwork {
         let path = self
             .0
             .nodes_path(&path)
-            .map_err(|s| PyKeyError::new_err(s))?
+            .map_err(PyKeyError::new_err)?
             .into_iter()
             .map(PyNode)
             .collect();

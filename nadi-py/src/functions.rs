@@ -223,7 +223,7 @@ impl PyNadiFunctions {
                 )))
             }
         };
-        match func.call(&mut node.0.lock(), &ctx) {
+        match func.call_mut(&mut node.0.lock(), &ctx) {
             FunctionRet::None => Ok(None),
             FunctionRet::Some(v) => Ok(Some(v.into())),
             FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
@@ -247,7 +247,7 @@ impl PyNadiFunctions {
                 )))
             }
         };
-        match func.call(&mut network.0, &ctx) {
+        match func.call_mut(&mut network.0, &ctx) {
             FunctionRet::None => Ok(None),
             FunctionRet::Some(v) => Ok(Some(v.into())),
             FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
@@ -448,7 +448,7 @@ fn type_to_py(ty: &str) -> String {
 fn py_args_kwargs_to_ctx(args: Vec<PyAttribute>, kwargs: Option<PyAttrMap>) -> FunctionCtx {
     let args: Vec<Attribute> = args.into_iter().map(|v| v.into()).collect();
     let kwargs = kwargs
-        .map(|kw| kw.into_iter().map(|(k, v)| (k.into(), v.into())).collect())
+        .map(|kw| kw.into_iter().map(|(k, v)| (k, v.into())).collect())
         .unwrap_or_default();
     FunctionCtx::from_arg_kwarg(args, kwargs)
 }

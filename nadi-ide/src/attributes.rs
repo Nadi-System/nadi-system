@@ -23,7 +23,7 @@ impl AttrView {
                 )
             })
             .collect();
-        self.values.sort_by(|a, b| a.cmp(b));
+        self.values.sort();
     }
 
     pub fn view(&self) -> Element<'_, ()> {
@@ -65,29 +65,33 @@ impl AttrView {
 }
 
 fn tab_title(theme: &iced::Theme) -> container::Style {
-    let mut style = container::Style::default();
-    style.background = Some(iced::Background::Color(
-        if theme.extended_palette().is_dark {
-            color!(0xaaaaaa)
-        } else {
-            color!(0x444444)
-        }
-        .scale_alpha(0.3),
-    ));
+    let mut style = container::Style {
+        background: Some(iced::Background::Color(
+            if theme.extended_palette().is_dark {
+                color!(0xaaaaaa)
+            } else {
+                color!(0x444444)
+            }
+            .scale_alpha(0.3),
+        )),
+        ..Default::default()
+    };
     style.border.radius = iced::border::Radius::new(0).top(5);
     style
 }
 
 fn tab_contents(theme: &iced::Theme) -> container::Style {
-    let mut style = container::Style::default();
-    style.background = Some(iced::Background::Color(
-        if theme.extended_palette().is_dark {
-            color!(0x444444)
-        } else {
-            color!(0xaaaaaa)
-        }
-        .scale_alpha(0.3),
-    ));
+    let mut style = container::Style {
+        background: Some(iced::Background::Color(
+            if theme.extended_palette().is_dark {
+                color!(0x444444)
+            } else {
+                color!(0xaaaaaa)
+            }
+            .scale_alpha(0.3),
+        )),
+        ..Default::default()
+    };
     style.border.radius = iced::border::Radius::new(5);
     style
 }

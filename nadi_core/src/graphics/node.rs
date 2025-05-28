@@ -132,11 +132,9 @@ impl NodeShape {
             NodeShape::Triangle => {
                 let ht = 0.8660 * size;
                 let dx = size / 2.0;
-                let points = vec![
-                    format!("{},{}", x as f64 - dx, y as f64 + ht / 3.0),
+                let points = [format!("{},{}", x as f64 - dx, y as f64 + ht / 3.0),
                     format!("{},{}", x as f64, y as f64 - 2.0 * ht / 3.0),
-                    format!("{},{}", x as f64 + dx, y as f64 + ht / 3.0),
-                ];
+                    format!("{},{}", x as f64 + dx, y as f64 + ht / 3.0)];
                 Polygon::new()
                     .set("points", points.join(" "))
                     .set("fill", color)
@@ -147,11 +145,9 @@ impl NodeShape {
                 let dx = size / 2.0;
                 let r = r.abs();
                 let (ht, dx) = if r > 1.0 { (ht / r, dx) } else { (ht, dx * r) };
-                let points = vec![
-                    format!("{},{}", x as f64 - dx, y as f64 + ht / 3.0),
+                let points = [format!("{},{}", x as f64 - dx, y as f64 + ht / 3.0),
                     format!("{},{}", x as f64, y as f64 - 2.0 * ht / 3.0),
-                    format!("{},{}", x as f64 + dx, y as f64 + ht / 3.0),
-                ];
+                    format!("{},{}", x as f64 + dx, y as f64 + ht / 3.0)];
                 Polygon::new()
                     .set("points", points.join(" "))
                     .set("fill", color)
@@ -163,15 +159,15 @@ impl NodeShape {
 
 impl NodeInner {
     pub fn node_size(&self) -> f64 {
-        self.try_attr_relaxed(&NODE_SIZE.0)
+        self.try_attr_relaxed(NODE_SIZE.0)
             .ok()
-            .unwrap_or(NODE_SIZE.1) as f64
+            .unwrap_or(NODE_SIZE.1)
     }
 
     pub fn line_width(&self) -> f64 {
-        self.try_attr_relaxed(&LINE_WIDTH.0)
+        self.try_attr_relaxed(LINE_WIDTH.0)
             .ok()
-            .unwrap_or(LINE_WIDTH.1) as f64
+            .unwrap_or(LINE_WIDTH.1)
     }
 
     pub fn set_node_size(&mut self, val: f64) {
