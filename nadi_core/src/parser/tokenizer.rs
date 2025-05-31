@@ -224,7 +224,16 @@ pub(crate) type VecTokenRes<'a> = IResult<&'a str, Vec<Token<'a>>, VerboseError<
 
 // catch all one char token
 fn invalid(i: &str) -> TokenRes<'_> {
-    map(anychar, |c| Token::new(TaskToken::Invalid(c), &i[..1]))(i)
+    map(anychar, |c| {
+        Token::new(TaskToken::Invalid(c), {
+            // so that we split at utf-8 boundary, since the utf-8
+            // char is invalid we don't care about the actual char
+            match i.char_indices().nth(1) {
+                Some((ind, _)) => &i[..ind],
+                None => &i,
+            }
+        })
+    })(i)
 }
 
 fn whitespace(i: &str) -> TokenRes<'_> {
