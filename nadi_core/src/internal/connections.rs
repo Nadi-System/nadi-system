@@ -4,6 +4,7 @@ use nadi_plugin::nadi_internal_plugin;
 mod connections {
     use crate::parser::tokenizer::valid_variable_name;
     use crate::prelude::*;
+    use anyhow::Context;
     use nadi_plugin::network_func;
     use std::fs::File;
     use std::io::{BufWriter, Write};
@@ -23,7 +24,15 @@ mod connections {
         append: bool,
     ) -> anyhow::Result<()> {
         if append {
-            todo!()
+            let contents =
+                std::fs::read_to_string(&file).context("Error while accessing the network file")?;
+            let tokens = crate::parser::tokenizer::get_tokens(&contents);
+            let paths = crate::parser::network::parse(&tokens)?;
+            let edges: Vec<(&str, &str)> = paths
+                .iter()
+                .map(|p| (p.start.as_str(), p.end.as_str()))
+                .collect();
+            net.append_edges(&edges).map_err(anyhow::Error::msg)?;
         } else {
             *net = Network::from_file(file)?;
         }
@@ -41,11 +50,38 @@ mod connections {
         contents: &str,
         /// Append the connections in the current network
         append: bool,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), String> {
         if append {
-            todo!()
+            let tokens = crate::parser::tokenizer::get_tokens(contents);
+            let paths = crate::parser::network::parse(&tokens).map_err(|e| e.to_string())?;
+            let edges: Vec<(&str, &str)> = paths
+                .iter()
+                .map(|p| (p.start.as_str(), p.end.as_str()))
+                .collect();
+            net.append_edges(&edges)?;
         } else {
-            *net = Network::from_str(contents).map_err(|e| anyhow::Error::msg(e.user_msg(None)))?;
+            *net = Network::from_str(contents).map_err(|e| e.user_msg(None))?;
+        }
+        Ok(())
+    }
+
+    /// Load the given edges into the network
+    ///
+    /// This replaces the current network with the one loaded from the
+    /// file.
+    #[network_func(append = false)]
+    fn load_edges(
+        net: &mut Network,
+        /// String containing Network connections
+        edges: &[(String, String)],
+        /// Append the connections in the current network
+        append: bool,
+    ) -> Result<(), String> {
+        let edges: Vec<(&str, &str)> = edges.iter().map(|p| (p.0.as_str(), p.1.as_str())).collect();
+        if append {
+            net.append_edges(&edges)?;
+        } else {
+            *net = Network::from_edges(&edges)?;
         }
         Ok(())
     }

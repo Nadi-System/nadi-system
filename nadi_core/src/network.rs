@@ -130,25 +130,37 @@ impl Network {
         })
     }
 
-    pub fn from_edges(edges: &[(&str, &str)]) -> Self {
-        let mut network = Self::default();
+    pub fn append_edges(&mut self, edges: &[(&str, &str)]) -> Result<(), String> {
         for (start, end) in edges {
-            if !network.nodes_map.contains_key(*start) {
-                network.insert_node_by_name(start);
+            if !self.nodes_map.contains_key(*start) {
+                self.insert_node_by_name(start);
             }
-            if !network.nodes_map.contains_key(*end) {
-                network.insert_node_by_name(end);
+            if !self.nodes_map.contains_key(*end) {
+                self.insert_node_by_name(end);
             }
-            let inp = network.node_by_name(start).unwrap();
-            let out = network.node_by_name(end).unwrap();
+            let inp = self.node_by_name(start).unwrap();
+            let out = self.node_by_name(end).unwrap();
             {
-                inp.lock().set_output(out.clone());
+                if let RSome(n) = inp.lock().set_output(out.clone()) {
+                    return Err(format!(
+                        "Node {:?} already has {:?} as output (new: {:?})",
+                        start,
+                        n.lock().name(),
+                        end
+                    ));
+                }
                 out.lock().add_input(inp.clone());
             }
         }
-        network.reorder();
-        network.set_levels();
-        network
+        self.reorder();
+        self.set_levels();
+        Ok(())
+    }
+
+    pub fn from_edges(edges: &[(&str, &str)]) -> Result<Self, String> {
+        let mut network = Self::default();
+        network.append_edges(edges)?;
+        Ok(network)
     }
 
     pub fn edges_str(&self) -> impl Iterator<Item = (&str, &str)> + '_ {

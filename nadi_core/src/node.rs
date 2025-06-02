@@ -167,8 +167,8 @@ impl NodeInner {
         self.output.as_ref()
     }
 
-    pub fn set_output(&mut self, output: Node) {
-        self.output = RSome(output);
+    pub fn set_output(&mut self, output: Node) -> ROption<Node> {
+        self.output.replace(output)
     }
 
     pub fn unset_output(&mut self) -> ROption<Node> {
@@ -180,7 +180,7 @@ impl NodeInner {
         if let RSome(o) = self.output() {
             self.inputs().iter().for_each(|i| {
                 o.lock().add_input(i.clone());
-                i.lock().set_output(o.clone())
+                i.lock().set_output(o.clone());
             });
         } else {
             self.inputs().iter().for_each(|i| {

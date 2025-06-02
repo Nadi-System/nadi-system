@@ -1,6 +1,9 @@
 use crate::node::PyNode;
 use nadi_core::network::{Network, StrPath};
-use pyo3::{exceptions::PyKeyError, prelude::*};
+use pyo3::{
+    exceptions::{PyKeyError, PyValueError},
+    prelude::*,
+};
 use std::str::FromStr;
 
 #[derive(FromPyObject, Clone)]
@@ -30,6 +33,13 @@ impl PyNetwork {
     #[staticmethod]
     fn from_str(network: String) -> PyResult<Self> {
         let net = Network::from_str(&network)?;
+        Ok(Self(net))
+    }
+
+    #[staticmethod]
+    fn from_edges(edges: Vec<(String, String)>) -> PyResult<Self> {
+        let edges: Vec<(&str, &str)> = edges.iter().map(|p| (p.0.as_str(), p.1.as_str())).collect();
+        let net = Network::from_edges(&edges).map_err(|e| PyValueError::new_err(e))?;
         Ok(Self(net))
     }
 

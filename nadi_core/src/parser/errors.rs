@@ -117,6 +117,7 @@ pub enum ParseErrorType {
     ExpectedPath,
     InvalidToken,
     TokenMismatch,
+    MultipleOutput(String),
     Custom(String),
 }
 
@@ -143,6 +144,7 @@ impl ParseErrorType {
             Self::ExpectedPath => "Path symbol not found",
             Self::InvalidToken => "Unsupported Token",
             Self::TokenMismatch => "Unexpected Token",
+            Self::MultipleOutput(msg) => return format!("Multiple output not supported: {msg}"),
             Self::Custom(msg) => msg.as_str(),
         }
         .to_string()

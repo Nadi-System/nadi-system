@@ -61,6 +61,9 @@ struct CliArgs {
     /// print tasks before running
     #[arg(short, long)]
     print_tasks: bool,
+    /// Create the files for a new nadi_plugin
+    #[arg(short = 'P', long)]
+    new_plugin: Option<String>,
     /// Show the tasks file, do not do anything
     #[arg(short, long, action, requires = "tasks")]
     show: bool,
@@ -95,6 +98,8 @@ fn main() -> anyhow::Result<()> {
             _ => comp.print_functions(&functions),
         }
         FunctionType::Env.print_functions(&functions);
+    } else if let Some(p) = &args.new_plugin {
+        init_plugin(p)?;
     } else {
         let net = if let Some(ref net) = args.network {
             Some(Network::from_file(net)?)
@@ -116,6 +121,73 @@ fn main() -> anyhow::Result<()> {
             execute_tasks(&txt, args.print_tasks, &mut tasks_ctx)?;
         }
     }
+    Ok(())
+}
+
+fn init_plugin(name: &str) -> std::io::Result<()> {
+    let path = PathBuf::from(name);
+    std::fs::create_dir(&path)?;
+    std::fs::write(
+        path.join("Cargo.toml"),
+        format!(
+            "
+[package]
+name = \"{name}\"
+version = \"0.4.0\"
+edition = \"2021\"
+
+
+[lib]
+crate-type = [\"cdylib\"]
+
+# make sure you use the same version of nadi_core, your nadi-system is in
+[dependencies]
+nadi_core = \"0.7.0\"
+"
+        ),
+    )?;
+    std::fs::create_dir(path.join("src"))?;
+    std::fs::write(
+        path.join("src").join("lib.rs"),
+        format!(
+            "
+use nadi_core::nadi_plugin::nadi_plugin;
+
+#[nadi_plugin]
+mod {name} {{
+    use nadi_core::prelude::*;
+    use nadi_core::nadi_plugin::{{node_func, network_func, env_func}};
+
+    /// Example Environment function for the plugin
+    #[env_func(pre = \"Message: \")]
+    fn echo(message: String, pre: String) -> String {{
+         format!(\"{{}}{{}}\", pre, message)
+    }}
+
+    /// Example Node function for the plugin
+    #[node_func]
+    fn node_name(node: &NodeInner) -> String {{
+         node.name().to_string()
+    }}
+
+    /// Example Network function for the plugin
+    #[network_func]
+    fn node_first_with_attr(
+        net: &Network,
+        /// Name of the attribute to search
+        attrname: String,
+    ) -> Option<String> {{
+         for node in net.nodes() {{
+             if node.lock().attr_dot(&attrname).is_ok() {{
+                 return Some(node.name().to_string())
+             }}
+        }}
+        None
+    }}
+}}
+",
+        ),
+    )?;
     Ok(())
 }
 

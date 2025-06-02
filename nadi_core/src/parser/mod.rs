@@ -108,7 +108,8 @@ impl FromStr for Network {
             .iter()
             .map(|p| (p.start.as_str(), p.end.as_str()))
             .collect();
-        Ok(Self::from_edges(&edges))
+        Self::from_edges(&edges)
+            .map_err(|e| ParseError::new(&tokens, &tokens, ParseErrorType::MultipleOutput(e)))
     }
 }
 
