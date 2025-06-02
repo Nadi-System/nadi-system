@@ -64,6 +64,9 @@ struct CliArgs {
     /// Create the files for a new nadi_plugin
     #[arg(short = 'P', long)]
     new_plugin: Option<String>,
+    /// Path to the nadi_core library for the new nadi_plugin
+    #[arg(short = 'N', long)]
+    nadi_core: Option<PathBuf>,
     /// Show the tasks file, do not do anything
     #[arg(short, long, action, requires = "tasks")]
     show: bool,
@@ -99,7 +102,7 @@ fn main() -> anyhow::Result<()> {
         }
         FunctionType::Env.print_functions(&functions);
     } else if let Some(p) = &args.new_plugin {
-        init_plugin(p)?;
+        init_plugin(p, &args.nadi_core)?;
     } else {
         let net = if let Some(ref net) = args.network {
             Some(Network::from_file(net)?)
@@ -124,9 +127,17 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn init_plugin(name: &str) -> std::io::Result<()> {
+fn init_plugin(name: &str, nadi_core: &Option<PathBuf>) -> std::io::Result<()> {
     let path = PathBuf::from(name);
     std::fs::create_dir(&path)?;
+    let nadi_core = match nadi_core {
+        Some(path) => format!(
+            "{{path = {:?}, version=\"0.7.0\"}}",
+            // One step up since the Cargo.toml will be inside the plugin dir
+            PathBuf::from("..").join(path)
+        ),
+        None => "\"0.7.0\"".to_string(),
+    };
     std::fs::write(
         path.join("Cargo.toml"),
         format!(
@@ -142,7 +153,8 @@ crate-type = [\"cdylib\"]
 
 # make sure you use the same version of nadi_core, your nadi-system is in
 [dependencies]
-nadi_core = \"0.7.0\"
+abi_stable = \"0.11.3\"
+nadi_core = {nadi_core}
 "
         ),
     )?;
@@ -156,9 +168,18 @@ use nadi_core::nadi_plugin::nadi_plugin;
 #[nadi_plugin]
 mod {name} {{
     use nadi_core::prelude::*;
+
+    /// The macros imported from nadi_plugin read the rust function you
+    /// write and use that as a base to write more core internally that
+    /// will be compiled into the shared libraries. This means it'll
+    /// automatically get the argument types, documentation, mutability,
+    /// etc. For more details on what they can do, refer to nadi book.
     use nadi_core::nadi_plugin::{{node_func, network_func, env_func}};
 
     /// Example Environment function for the plugin
+    ///
+    /// You can use markdown format to write detailed documentation for the
+    /// function you write. This will be availble from nadi-help.
     #[env_func(pre = \"Message: \")]
     fn echo(message: String, pre: String) -> String {{
          format!(\"{{}}{{}}\", pre, message)
@@ -171,6 +192,11 @@ mod {name} {{
     }}
 
     /// Example Network function for the plugin
+    ///
+    /// You can also write docstrings for the arguments, this syntax is not
+    /// a valid rust syntax, but our macro will read those docstrings, saves
+    /// it and then removes it so that rust does not get confused. This means
+    /// You do not have to write separate documentation for functions.
     #[network_func]
     fn node_first_with_attr(
         net: &Network,
@@ -178,7 +204,8 @@ mod {name} {{
         attrname: String,
     ) -> Option<String> {{
          for node in net.nodes() {{
-             if node.lock().attr_dot(&attrname).is_ok() {{
+             let node = node.lock();
+             if node.attr_dot(&attrname).is_ok() {{
                  return Some(node.name().to_string())
              }}
         }}
