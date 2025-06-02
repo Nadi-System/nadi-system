@@ -327,11 +327,7 @@ mod tests {
     #[case("(2 - 5) * 2 + 1", (-5).into())]
     #[case("(2 - 1)  + 1", 2.into())]
     #[case("10 // 5 + 2", 4.into())]
-    pub fn compl_expr_eval_test(
-        context: TaskContext,
-        #[case] txt: &str,
-        #[case] val: Attribute,
-    ) {
+    pub fn compl_expr_eval_test(context: TaskContext, #[case] txt: &str, #[case] val: Attribute) {
         let tokens = get_tokens(txt);
         let (rest, expr) = complete_expression(&tokens).unwrap();
         assert_eq!(rest, vec![]);
@@ -407,11 +403,7 @@ mod tests {
     #[case("!(true & true)", false.into())]
     #[case("!(true & false)", true.into())]
     #[case("!!(false & true)", false.into())]
-    pub fn compl_expr_eval_test_2(
-        context: TaskContext,
-        #[case] txt: &str,
-        #[case] val: Attribute,
-    ) {
+    pub fn compl_expr_eval_test_2(context: TaskContext, #[case] txt: &str, #[case] val: Attribute) {
         let tokens = get_tokens(txt);
         let (rest, expr) = complete_expression(&tokens).unwrap();
         assert_eq!(rest, vec![]);

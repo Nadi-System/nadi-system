@@ -130,6 +130,27 @@ impl Network {
         })
     }
 
+    pub fn from_edges(edges: &[(&str, &str)]) -> Self {
+        let mut network = Self::default();
+        for (start, end) in edges {
+            if !network.nodes_map.contains_key(*start) {
+                network.insert_node_by_name(start);
+            }
+            if !network.nodes_map.contains_key(*end) {
+                network.insert_node_by_name(end);
+            }
+            let inp = network.node_by_name(start).unwrap();
+            let out = network.node_by_name(end).unwrap();
+            {
+                inp.lock().set_output(out.clone());
+                out.lock().add_input(inp.clone());
+            }
+        }
+        network.reorder();
+        network.set_levels();
+        network
+    }
+
     pub fn edges_str(&self) -> impl Iterator<Item = (&str, &str)> + '_ {
         self.edges_ind()
             .map(|(s, e)| (self.nodes[s].as_str(), self.nodes[e].as_str()))

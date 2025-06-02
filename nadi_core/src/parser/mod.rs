@@ -104,24 +104,11 @@ impl FromStr for Network {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let tokens = tokenizer::get_tokens(s);
         let paths = network::parse(&tokens)?;
-        let mut network = Self::default();
-        for path in paths {
-            if !network.nodes_map.contains_key(&path.start) {
-                network.insert_node_by_name(&path.start);
-            }
-            if !network.nodes_map.contains_key(&path.end) {
-                network.insert_node_by_name(&path.end);
-            }
-            let inp = network.node_by_name(&path.start).unwrap();
-            let out = network.node_by_name(&path.end).unwrap();
-            {
-                inp.lock().set_output(out.clone());
-                out.lock().add_input(inp.clone());
-            }
-        }
-        network.reorder();
-        network.set_levels();
-        Ok(network)
+        let edges: Vec<(&str, &str)> = paths
+            .iter()
+            .map(|p| (p.start.as_str(), p.end.as_str()))
+            .collect();
+        Ok(Self::from_edges(&edges))
     }
 }
 
