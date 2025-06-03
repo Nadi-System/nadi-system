@@ -18,8 +18,7 @@ pub struct NodeData {
 impl NodeData {
     fn new(node: &NodeInner, label: &Option<Template>) -> Self {
         let size = node
-            .attr(nadi_core::graphics::node::NODE_SIZE.0)
-            .and_then(f64::from_attr_relaxed)
+            .try_attr_relaxed(nadi_core::graphics::node::NODE_SIZE.0)
             .unwrap_or(NODE_SIZE.1) as f32;
         let color = node_color(node, NODE_COLOR.0);
         let linecolor = node_color(node, LINE_COLOR.0);

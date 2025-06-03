@@ -5,7 +5,7 @@ mod attrs {
     use crate::prelude::*;
     use abi_stable::std_types::Tuple2;
     use nadi_plugin::{env_func, network_func, node_func};
-
+    use std::str::FromStr;
     use string_template_plus::Template;
 
     /// Set node attributes
@@ -142,6 +142,26 @@ mod attrs {
         let attrs = crate::parser::attrs::parse(tokens)?;
         node.attr_map_mut().extend(attrs);
         Ok(())
+    }
+
+    /// Set node attributes based on string templates
+    #[env_func]
+    fn parse_attr(
+        /// String to parse into attribute
+        toml: &str,
+    ) -> Result<Attribute, String> {
+        Attribute::from_str(toml).map_err(|e| e.to_string())
+    }
+
+    /// Set node attributes based on string templates
+    #[env_func]
+    fn parse_attrmap(
+        /// String to parse into attribute
+        toml: String,
+    ) -> Result<AttrMap, String> {
+        let tokens = crate::parser::tokenizer::get_tokens(&toml);
+        let attrs = crate::parser::attrs::parse(tokens).map_err(|e| e.to_string())?;
+        Ok(attrs)
     }
 
     /// map values from the attribute based on the given table

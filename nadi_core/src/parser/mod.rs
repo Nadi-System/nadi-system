@@ -20,6 +20,20 @@ pub mod tokenizer;
 
 pub use errors::{ParseError, ParseErrorType};
 
+impl std::str::FromStr for Attribute {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let tokens = crate::parser::tokenizer::get_tokens(s);
+        let (rest, val) =
+            crate::parser::components::attribute(&tokens).map_err(|e| e.to_string())?;
+        if !rest.is_empty() {
+            Err(ParseError::new(&tokens, rest, ParseErrorType::InvalidToken).to_string())
+        } else {
+            Ok(val)
+        }
+    }
+}
+
 impl std::str::FromStr for Date {
     type Err = &'static str;
     fn from_str(s: &str) -> Result<Self, Self::Err> {

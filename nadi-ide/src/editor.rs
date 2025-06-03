@@ -515,11 +515,6 @@ async fn func_at_mark(text: String, mark: (usize, usize)) -> Option<(FunctionTyp
                 name = Some(tk.content.to_string());
             }
             TaskToken::Keyword(kw) if ty.is_none() => {
-                if let Some(t) = tokens.peek() {
-                    if let TaskToken::Dot = t.ty {
-                        continue;
-                    }
-                }
                 ty = FunctionType::from_keyword(kw);
             }
             _ => (),

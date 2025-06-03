@@ -267,18 +267,38 @@ mod command {
                 println!("{}", l);
             }
             if let Some(var) = l.strip_prefix("nadi:var:") {
-                let (k, v) = key_val(var)?;
-                if verbose {
-                    match net.attr(&k) {
-                        Some(vold) => {
-                            if !(vold == &v) {
-                                println!("{k}={} -> {}", vold.to_string(), v.to_string())
-                            }
+                if let Some((node, var)) = var.split_once(":") {
+                    // node attributes
+                    if let Some(n) = net.node_by_name(node) {
+                        let mut node = n.lock();
+                        let (k, v) = key_val(var)?;
+                        if verbose {
+                            match node.attr(&k) {
+                                Some(vold) => {
+                                    if !(vold == &v) {
+                                        println!("{k}={} -> {}", vold.to_string(), v.to_string())
+                                    }
+                                }
+                                None => println!("{k}={}", v.to_string()),
+                            };
                         }
-                        None => println!("{k}={}", v.to_string()),
-                    };
+                        node.set_attr(&k, v);
+                    }
+                } else {
+                    // network attribute
+                    let (k, v) = key_val(var)?;
+                    if verbose {
+                        match net.attr(&k) {
+                            Some(vold) => {
+                                if !(vold == &v) {
+                                    println!("{k}={} -> {}", vold.to_string(), v.to_string())
+                                }
+                            }
+                            None => println!("{k}={}", v.to_string()),
+                        };
+                    }
+                    net.set_attr(&k, v);
                 }
-                net.set_attr(&k, v);
             }
         }
         Ok(())
