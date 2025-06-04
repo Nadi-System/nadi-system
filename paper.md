@@ -147,8 +147,6 @@ Since plugins allow arbitrary code to be run in your computer, it is a security 
 
 # Acknowledgements
 
-Grant: #W912HQ-24-P-0060 Investigators:Ray, Patrick 09-30-2024 -- 03-31-2025 U.S. Army Corps of Engineers Advanced Software Tools for Network Analysis and Data Integration (NADI) 19880.00 Hold Level:Federal
-
 Grant: #W912HZ-24-2-0049 Investigators:Ray, Patrick 09-30-2024 -- 09-29-2025 U.S. Army Corps of Engineers Advanced Software Tools for Network Analysis and Data Integration (NADI) 74263.03 Hold Level:Federal
 
 # References

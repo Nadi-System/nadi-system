@@ -23,7 +23,7 @@ pub(crate) fn register_internal(funcs: &mut NadiFunctions) {
     // think that is possible: search all types that implement
     // NadiPlugin trait within functions
     attrs::AttrsMod {}.register(funcs);
-    attrs2::AttrsMod {}.register(funcs);
+    attrs2::AttributesMod {}.register(funcs);
     command::CommandMod {}.register(funcs);
     connections::ConnectionsMod {}.register(funcs);
     core::CoreMod {}.register(funcs);

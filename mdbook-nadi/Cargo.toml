@@ -14,5 +14,5 @@ pulldown-cmark = "0.10.3"
 pulldown-cmark-to-cmark = "14.0.1"
 nadi_core = {path = "../nadi_core/", features=["parser", "functions"]}
 strip-ansi-escapes = "0.2.1"
-mdbook = "0.4.49"
+mdbook = "0.4.51"
 gag = "1.0.0"

@@ -1,7 +1,7 @@
 use nadi_plugin::nadi_internal_plugin;
 
 #[nadi_internal_plugin]
-mod attrs {
+mod attributes {
     use crate::prelude::*;
     use abi_stable::std_types::Tuple2;
     use nadi_plugin::{env_func, network_func, node_func};

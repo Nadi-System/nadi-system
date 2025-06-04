@@ -18,11 +18,20 @@ mod table {
         net: &Network,
         path: &Path,
         fields: &[String],
-        filter: Vec<bool>,
+        filter: Option<Vec<bool>>,
     ) -> anyhow::Result<()> {
         let mut file = File::create(path)?;
         writeln!(file, "{}", fields.join(","))?;
-        for (node, _) in net.nodes().zip(filter).filter(|(_, f)| *f) {
+        let nodes: Vec<_> = match filter {
+            Some(filt) => net
+                .nodes()
+                .zip(filt)
+                .filter(|(_, f)| *f)
+                .map(|(n, _)| n)
+                .collect(),
+            None => net.nodes().collect(),
+        };
+        for node in nodes {
             let values = fields
                 .iter()
                 .map(|a| {

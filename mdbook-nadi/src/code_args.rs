@@ -47,7 +47,17 @@ pub fn run_task(task: &str, args: &str, pwd: &Path) -> anyhow::Result<Vec<Event<
     tasks.push('\n');
 
     let tokens = get_tokens(&tasks);
-    let tasks = tasks::parse(tokens)?;
+    let tasks = match tasks::parse(tokens) {
+        Ok(t) => t,
+        Err(e) => {
+            return Ok(output_verbose(
+                vec![Event::Text("ParseError:".into())],
+                e.user_msg(None),
+                "error",
+                pwd,
+            ))
+        }
+    };
 
     let mut ctx = new_ctx();
 
@@ -56,8 +66,10 @@ pub fn run_task(task: &str, args: &str, pwd: &Path) -> anyhow::Result<Vec<Event<
     for task in tasks {
         let mut buf = gag::BufferRedirect::stdout().unwrap();
         let res = ctx.execute(task);
-        buf.read_to_string(&mut response).unwrap();
-        response.push('\n');
+        let r = buf.read_to_string(&mut response).unwrap();
+        if r > 0 {
+            response.push('\n');
+        }
         match res {
             Ok(Some(out)) => {
                 response.push_str(&out);
@@ -67,7 +79,7 @@ pub fn run_task(task: &str, args: &str, pwd: &Path) -> anyhow::Result<Vec<Event<
             Err(e) => {
                 return Ok(output_verbose(
                     vec![Event::Text("*Error*:".into())],
-                    e,
+                    format!("{response}{e}"),
                     "error",
                     pwd,
                 ))
