@@ -3,7 +3,7 @@ use nadi_core::parser::tokenizer::TaskToken;
 use nadi_core::tasks::TaskContext;
 use nadi_core::{functions::NadiFunctions, network::Network};
 use std::{
-    io::Read,
+    io::{Read, Write},
     path::{Path, PathBuf},
 };
 
@@ -73,6 +73,9 @@ struct CliArgs {
     /// Use stdin for the tasks; reads the whole stdin before execution
     #[arg(short = 'S', long, action)]
     stdin: bool,
+    /// Open the REPL (interactive session) before exiting
+    #[arg(short, long, action)]
+    repl: bool,
     /// Run given string as task before running the file
     #[arg(short, long, value_name = "TASK_STR")]
     task: Option<String>,
@@ -123,8 +126,43 @@ fn main() -> anyhow::Result<()> {
             std::io::stdin().read_to_string(&mut txt)?;
             execute_tasks(&txt, args.print_tasks, &mut tasks_ctx)?;
         }
+        if args.repl {
+            repl(tasks_ctx);
+        }
     }
     Ok(())
+}
+
+fn repl(mut ctx: TaskContext) {
+    let mut input = String::new();
+    loop {
+        input.clear();
+        print!(">>> ");
+        _ = std::io::stdout().flush();
+        match std::io::stdin().read_line(&mut input) {
+            Ok(_) => {
+                let tokens = nadi_core::parser::tokenizer::get_tokens(&input);
+                let tasks = match nadi_core::parser::tasks::parse(tokens) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        println!("{}", e.user_msg(None));
+                        continue;
+                    }
+                };
+                for task in tasks {
+                    match ctx.execute(task) {
+                        Ok(Some(p)) => println!("{p}"),
+                        Err(p) => {
+                            println!("{}", p.to_string());
+                            continue;
+                        }
+                        _ => (),
+                    }
+                }
+            }
+            Err(error) => println!("error: {error}"),
+        }
+    }
 }
 
 fn init_plugin(name: &str, nadi_core: &Option<PathBuf>) -> std::io::Result<()> {
