@@ -26,10 +26,10 @@ pub fn prop_seq<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Propagation> {
         maybe_newline(cut(err_ctx(&ParseErrorType::Unclosed(">"), angle_end))),
     )(inp)?;
     let prop = match var.content {
-        "sequential" => Propagation::Sequential,
-        "inverse" => Propagation::Inverse,
-        "inputsfirst" => Propagation::InputsFirst,
-        "outputfirst" => Propagation::OutputFirst,
+        "sequential" | "seq" => Propagation::Sequential,
+        "inverse" | "inv" => Propagation::Inverse,
+        "inputsfirst" | "inp" => Propagation::InputsFirst,
+        "outputfirst" | "out" => Propagation::OutputFirst,
         _ => {
             return Err(nom::Err::Failure(
                 MatchErr::new(inp).ty(&ParseErrorType::InvalidPropagation),

@@ -30,14 +30,14 @@ node(area > 500).nodecolor = "orange";
 node.nodelabel = "i={INDEX}; xi = {area:f(2)?\"N/A\"}; yi = {streamflow:f(2)}"
 
 network save_file("updated.network")
-network export_svg("network.svg")
+# network export_svg("network.svg")
 
 node.INDEX
 node(INDEX>0).output_ind = output_attr("INDEX")
 
 # the following two lines are a complex template example, I used this to generate a table in LaTeX
-network render("\\Node[{LEVEL}]\\{{INDEX}\\}\\{{INDEX}\\} & Node {INDEX} & {area:f(2)?} & {streamflow:f(2)?} \\\\[2mm]")
-node(INDEX>0) render("({INDEX}) edge ({output})")
+network render_nodes("\\Node[{LEVEL}]\\{{INDEX}\\}\\{{INDEX}\\} & Node {INDEX} & {area:f(2)?} & {streamflow:f(2)?} \\\\[2mm]")
+node(INDEX>0) render("({INDEX}) edge ({output_ind})")
 
 # this just prints the attributes in csv format.
 # writing it to file and other functions are to be added
