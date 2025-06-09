@@ -26,8 +26,7 @@ pub mod prelude {
         AttrMap, AttrSlice, Attribute, FromAttribute, FromAttributeRelaxed, HasAttributes,
     };
     pub use crate::expressions::{EvalError, Expression};
-    pub use crate::functions::Propagation;
-    pub use crate::network::Network;
+    pub use crate::network::{Network, Propagation};
     pub use crate::node::{Node, NodeInner};
     pub use crate::timeseries::{HasSeries, HasTimeSeries};
 }

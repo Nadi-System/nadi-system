@@ -1,5 +1,5 @@
 use crate::attrs::{Date, DateTime, Time};
-use crate::functions::Propagation;
+use crate::network::Propagation;
 use crate::prelude::*;
 use crate::table::Table;
 use abi_stable::std_types::Tuple2;

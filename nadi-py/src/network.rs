@@ -1,5 +1,5 @@
 use crate::node::PyNode;
-use nadi_core::network::{Network, StrPath};
+use nadi_core::network::{Network, PropOrder, StrPath};
 use pyo3::{
     exceptions::{PyKeyError, PyValueError},
     prelude::*,
@@ -63,7 +63,7 @@ impl PyNetwork {
         let path = StrPath::new(start.into(), end.into());
         let path = self
             .0
-            .nodes_path(&path)
+            .nodes_path(&PropOrder::Auto, &path)
             .map_err(PyKeyError::new_err)?
             .into_iter()
             .map(PyNode)

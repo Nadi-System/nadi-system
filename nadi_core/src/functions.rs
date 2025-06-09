@@ -1,8 +1,6 @@
 #![allow(clippy::module_inception)]
 #![allow(non_local_definitions)] // warning from sabi_trait macro
 use crate::attrs::{AttrMap, AttrSlice};
-use crate::expressions::Expression;
-use crate::network::StrPath;
 use crate::plugins::{load_library_safe, NadiPlugin};
 use crate::prelude::*;
 use crate::table::{contents_2_md, ColumnAlign};
@@ -803,38 +801,6 @@ impl FunctionCtx {
                 )),
             }
         })
-    }
-}
-
-#[derive(Debug, Default, Clone, PartialEq)]
-pub enum Propagation {
-    #[default]
-    Sequential,
-    Inverse,
-    InputsFirst,
-    OutputFirst,
-    Conditional(Expression),
-    List(RVec<RString>),
-    Path(StrPath),
-}
-
-impl ToString for Propagation {
-    fn to_string(&self) -> String {
-        match self {
-            Self::Sequential => "<sequential>".to_string(),
-            Self::Inverse => "<inverse>".to_string(),
-            Self::InputsFirst => "<inputsfirst>".to_string(),
-            Self::OutputFirst => "<outputfirst>".to_string(),
-            Self::Conditional(expr) => format!("({})", expr.to_string()),
-            Self::List(v) => format!(
-                "[{}]",
-                v.iter()
-                    .map(|a| a.to_string())
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            ),
-            Self::Path(p) => format!("[{}]", p.to_string()),
-        }
     }
 }
 

@@ -132,9 +132,11 @@ impl NodeShape {
             NodeShape::Triangle => {
                 let ht = 0.8660 * size;
                 let dx = size / 2.0;
-                let points = [format!("{},{}", x as f64 - dx, y as f64 + ht / 3.0),
+                let points = [
+                    format!("{},{}", x as f64 - dx, y as f64 + ht / 3.0),
                     format!("{},{}", x as f64, y as f64 - 2.0 * ht / 3.0),
-                    format!("{},{}", x as f64 + dx, y as f64 + ht / 3.0)];
+                    format!("{},{}", x as f64 + dx, y as f64 + ht / 3.0),
+                ];
                 Polygon::new()
                     .set("points", points.join(" "))
                     .set("fill", color)
@@ -145,9 +147,11 @@ impl NodeShape {
                 let dx = size / 2.0;
                 let r = r.abs();
                 let (ht, dx) = if r > 1.0 { (ht / r, dx) } else { (ht, dx * r) };
-                let points = [format!("{},{}", x as f64 - dx, y as f64 + ht / 3.0),
+                let points = [
+                    format!("{},{}", x as f64 - dx, y as f64 + ht / 3.0),
                     format!("{},{}", x as f64, y as f64 - 2.0 * ht / 3.0),
-                    format!("{},{}", x as f64 + dx, y as f64 + ht / 3.0)];
+                    format!("{},{}", x as f64 + dx, y as f64 + ht / 3.0),
+                ];
                 Polygon::new()
                     .set("points", points.join(" "))
                     .set("fill", color)

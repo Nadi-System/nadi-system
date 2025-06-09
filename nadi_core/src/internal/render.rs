@@ -132,7 +132,7 @@ mod render {
 }
 
 mod render_utils {
-    use crate::functions::Propagation;
+    use crate::network::Propagation;
     use crate::prelude::*;
     use anyhow::{Context, Error};
     use number_range::NumberRangeOptions;
@@ -261,7 +261,10 @@ mod render_utils {
                     }
                     RenderFileContentsType::Literal(s) => output.push_str(s),
                     RenderFileContentsType::Snippet(templ, prop) => {
-                        for node in net.nodes_propagation(prop).map_err(anyhow::Error::msg)? {
+                        for node in net
+                            .nodes_select(&prop.order, &prop.nodes)
+                            .map_err(anyhow::Error::msg)?
+                        {
                             output.push_str(&node.lock().render(templ)?);
                         }
                     }

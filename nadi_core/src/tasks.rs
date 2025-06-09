@@ -1,5 +1,6 @@
 use crate::expressions::{EvalError, Expression};
 use crate::functions::{FuncArg, FuncArgType, NadiFunctions};
+use crate::network::PropCondition;
 use crate::prelude::*;
 
 #[derive(Default, Clone)]
@@ -272,24 +273,19 @@ impl TaskContext {
     }
 
     pub fn propagation(&self, prop: Propagation) -> Result<Vec<Node>, EvalError> {
-        match prop {
-            Propagation::Sequential | Propagation::OutputFirst => {
-                Ok(self.network.nodes().cloned().collect())
-            }
-            Propagation::Inverse | Propagation::InputsFirst => {
-                Ok(self.network.nodes_rev().cloned().collect())
-            }
-            Propagation::Conditional(expr) => {
-                let mut nodes = Vec::with_capacity(self.network.nodes().count());
-                // simplify to save computation
+        let nodes = self.network.nodes_select(&prop.order, &prop.nodes)?;
+        match prop.condition {
+            PropCondition::All => Ok(nodes),
+            PropCondition::Expr(expr) => {
+                let mut sel_nodes = Vec::with_capacity(self.network.nodes().count());
+                // simplify to save computation (not tested/benchmarked)
                 let expr = expr.simplify(&FunctionType::Node, self)?;
-                // propagation is evaluated for each node even if it's
-                // in network function
-                for n in self.network.nodes() {
-                    let cond = expr.resolve(&FunctionType::Node, self, Some(n))?;
-                    let res = cond.eval_value(&FunctionType::Node, self, Some(n))?;
+                // expression is evaluated for each node
+                for n in nodes {
+                    let cond = expr.resolve(&FunctionType::Node, self, Some(&n))?;
+                    let res = cond.eval_value(&FunctionType::Node, self, Some(&n))?;
                     match bool::try_from_attr(&res) {
-                        Ok(true) => nodes.push(n.clone()),
+                        Ok(true) => sel_nodes.push(n),
                         Ok(false) => (),
                         Err(e) => {
                             return Err(EvalError::NodeAttributeError(
@@ -299,19 +295,8 @@ impl TaskContext {
                         }
                     }
                 }
-                Ok(nodes)
+                Ok(sel_nodes)
             }
-            Propagation::List(lst) => lst
-                .iter()
-                .map(|n| {
-                    self.network
-                        .nodes_map
-                        .get(n)
-                        .cloned()
-                        .ok_or_else(|| EvalError::NodeNotFound(n.to_string()))
-                })
-                .collect(),
-            Propagation::Path(p) => self.network.nodes_path(&p),
         }
     }
 }
@@ -525,8 +510,7 @@ impl std::str::FromStr for TaskKeyword {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
             "node" => TaskKeyword::Node,
-            "network" => TaskKeyword::Network,
-            "net" => TaskKeyword::Network,
+            "network" | "net" => TaskKeyword::Network,
             "env" => TaskKeyword::Env,
             "exit" => TaskKeyword::Exit,
             "end" => TaskKeyword::End,
@@ -539,7 +523,7 @@ impl std::str::FromStr for TaskKeyword {
             "while" => TaskKeyword::While,
             "in" => TaskKeyword::In,
             "match" => TaskKeyword::Match,
-            "function" => TaskKeyword::Function,
+            "function" | "func" => TaskKeyword::Function,
             "map" => TaskKeyword::Map,
             "attrs" => TaskKeyword::Attrs,
             "loop" => TaskKeyword::Loop,

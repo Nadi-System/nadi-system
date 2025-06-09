@@ -1,9 +1,8 @@
 use crate::attrs::{AttrMap, HasAttributes};
-use crate::expressions::EvalError;
-use crate::functions::Propagation;
+use crate::expressions::{EvalError, Expression};
 use crate::node::{new_node, Node, NodeInner};
 use crate::timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap};
-use abi_stable::std_types::{RDuration, Tuple2};
+use abi_stable::std_types::RDuration;
 use abi_stable::{
     std_types::{
         RHashMap,
@@ -13,7 +12,7 @@ use abi_stable::{
     StableAbi,
 };
 use colored::Colorize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 
 /// Network is a collection of Nodes, with Connection information. The
@@ -211,40 +210,53 @@ impl Network {
     }
 
     /// use TaskContext::propagation whenever possible
-    pub fn nodes_propagation(&self, prop: &Propagation) -> Result<Vec<Node>, EvalError> {
+    pub fn nodes_order(&self, prop: &PropOrder) -> Vec<Node> {
         match prop {
-            Propagation::Sequential | Propagation::OutputFirst => {
-                Ok(self.nodes().cloned().collect())
+            PropOrder::Auto | PropOrder::Sequential | PropOrder::OutputFirst => {
+                self.nodes().cloned().collect()
             }
-            Propagation::Inverse | Propagation::InputsFirst => {
-                Ok(self.nodes_rev().cloned().collect())
-            }
-            Propagation::Conditional(_) => Err(EvalError::LogicalError(
-                "Conditional cannot be evaluated without task context",
-            )),
-            Propagation::List(lst) => lst
-                .iter()
-                .map(|n| {
-                    self.nodes_map
-                        .get(n)
-                        .cloned()
-                        .ok_or_else(|| EvalError::NodeNotFound(n.to_string()))
-                })
-                .collect(),
-            Propagation::Path(p) => self.nodes_path(p),
+            PropOrder::Inverse | PropOrder::InputsFirst => self.nodes_rev().cloned().collect(),
         }
     }
 
-    pub fn nodes_path(&self, path: &StrPath) -> Result<Vec<Node>, EvalError> {
+    /// use TaskContext::propagation whenever possible
+    pub fn nodes_select(
+        &self,
+        order: &PropOrder,
+        prop: &PropNodes,
+    ) -> Result<Vec<Node>, EvalError> {
+        match prop {
+            PropNodes::All => Ok(self.nodes_order(order)),
+            PropNodes::List(lst) => {
+                let mut sel_lst: HashSet<&str> = lst.iter().map(|n| n.as_str()).collect();
+                let res = self
+                    .nodes_order(order)
+                    .into_iter()
+                    .filter(|n| sel_lst.remove(n.lock().name()))
+                    .map(|n| n.clone())
+                    .collect();
+                if sel_lst.is_empty() {
+                    Ok(res)
+                } else {
+                    Err(EvalError::NodeNotFound(
+                        sel_lst.into_iter().collect::<Vec<&str>>().join(", "),
+                    ))
+                }
+            }
+            PropNodes::Path(p) => self.nodes_path(order, p),
+        }
+    }
+
+    pub fn nodes_path(&self, order: &PropOrder, path: &StrPath) -> Result<Vec<Node>, EvalError> {
         let start = self.try_node_by_name(path.start.as_str())?;
         let end = self.try_node_by_name(path.end.as_str())?;
         // we'll assume the network is indexed based on order, small
         // indices are closer to outlet; and resuffle the nodes
-        // let (start, end) = if start.lock().index() > end.lock().index() {
-        //     (start, end)
-        // } else {
-        //     (end, start)
-        // };
+        let (start, end, flipped) = if start.lock().index() > end.lock().index() {
+            (start, end, false)
+        } else {
+            (end, start, true)
+        };
         let mut curr = start.clone();
         let mut path_nodes = vec![];
         let start_name = self.nodes[start.lock().index()].as_str();
@@ -265,7 +277,14 @@ impl Network {
             };
             curr = tmp;
         }
-        Ok(path_nodes)
+        match order {
+            PropOrder::Auto if flipped => Ok(path_nodes.into_iter().rev().collect()),
+            PropOrder::Auto => Ok(path_nodes),
+            PropOrder::Sequential | PropOrder::OutputFirst => Ok(path_nodes),
+            PropOrder::Inverse | PropOrder::InputsFirst => {
+                Ok(path_nodes.into_iter().rev().collect())
+            }
+        }
     }
 
     pub fn calc_order(&mut self) {
@@ -494,34 +513,17 @@ impl Network {
 pub struct StrPath {
     pub start: RString,
     pub end: RString,
-    attributes: ROption<AttrMap>,
 }
 
-impl ToString for StrPath {
-    fn to_string(&self) -> String {
-        if let RSome(ref a) = &self.attributes {
-            format!(
-                "{} -> {} [{}]",
-                self.start,
-                self.end,
-                a.iter()
-                    .map(|Tuple2(k, v)| format!("{}={}", k, v.to_string()))
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            )
-        } else {
-            format!("{} -> {}", self.start, self.end)
-        }
+impl std::fmt::Display for StrPath {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        write!(fmt, "{} -> {}", self.start, self.end)
     }
 }
 
 impl StrPath {
     pub fn new(start: RString, end: RString) -> Self {
-        Self {
-            start,
-            end,
-            attributes: RNone,
-        }
+        Self { start, end }
     }
 
     pub fn to_colored_string(&self) -> String {
@@ -530,6 +532,84 @@ impl StrPath {
             self.start.to_string().green(),
             self.end.to_string().green()
         )
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct Propagation {
+    pub order: PropOrder,
+    pub nodes: PropNodes,
+    pub condition: PropCondition,
+}
+
+impl std::fmt::Display for Propagation {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        write!(fmt, "{}{}{}", self.order, self.nodes, self.condition)
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq)]
+pub enum PropOrder {
+    #[default]
+    Auto,
+    Sequential,
+    Inverse,
+    InputsFirst,
+    OutputFirst,
+}
+
+impl std::fmt::Display for PropOrder {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        match self {
+            Self::Auto => Ok(()),
+            Self::Sequential => write!(fmt, "<sequential>"),
+            Self::Inverse => write!(fmt, "<inverse>"),
+            Self::InputsFirst => write!(fmt, "<inputsfirst>"),
+            Self::OutputFirst => write!(fmt, "<outputfirst>"),
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq)]
+pub enum PropNodes {
+    #[default]
+    All,
+    List(RVec<RString>),
+    Path(StrPath),
+}
+
+impl std::fmt::Display for PropNodes {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        match self {
+            Self::All => Ok(()),
+            Self::List(v) => write!(
+                fmt,
+                "[{}]",
+                v.iter()
+                    .map(|a| a.as_str())
+                    .collect::<Vec<&str>>()
+                    .join(", ")
+            ),
+            Self::Path(p) => write!(fmt, "[{}]", p),
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq)]
+pub enum PropCondition {
+    #[default]
+    All,
+    Expr(Expression),
+    // Head(usize),
+    // Tail(usize),
+}
+
+impl std::fmt::Display for PropCondition {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        match self {
+            Self::All => Ok(()),
+            Self::Expr(expr) => write!(fmt, "({})", expr.to_string()),
+        }
     }
 }
 

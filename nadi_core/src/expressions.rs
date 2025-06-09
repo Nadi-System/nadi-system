@@ -37,9 +37,7 @@ impl EvalError {
     pub fn message(&self) -> String {
         match self {
             Self::UnresolvedVariable => "Unresolved variable in expression",
-            Self::FunctionNotFound(t, n) => {
-                return format!("{} function: {n:?} not found", t)
-            }
+            Self::FunctionNotFound(t, n) => return format!("{} function: {n:?} not found", t),
             Self::FunctionError(n, s) => return format!("Error in function {n}: {s}"),
             Self::NoReturnValue(n) => return format!("Function {n} did not return a value"),
             Self::NodeNotFound(n) => return format!("Node: {n:?} not found"),

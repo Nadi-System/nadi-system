@@ -7,7 +7,7 @@ use crate::parser::{
     ParseError, ParseErrorType,
 };
 use crate::{
-    functions::Propagation,
+    network::{PropCondition, PropNodes, PropOrder, Propagation},
     tasks::{AttrTask, CondTask, EvalTask, FunctionType, Task, WhileTask},
 };
 use abi_stable::std_types::{RString, RVec};
@@ -19,17 +19,17 @@ use nom::{
     Finish,
 };
 
-pub fn prop_seq<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Propagation> {
+pub fn prop_order<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, PropOrder> {
     let (rest, var) = delimited(
         angle_start,
         maybe_newline(cut(err_ctx(&ParseErrorType::Incomplete, variable))),
         maybe_newline(cut(err_ctx(&ParseErrorType::Unclosed(">"), angle_end))),
     )(inp)?;
     let prop = match var.content {
-        "sequential" | "seq" => Propagation::Sequential,
-        "inverse" | "inv" => Propagation::Inverse,
-        "inputsfirst" | "inp" => Propagation::InputsFirst,
-        "outputfirst" | "out" => Propagation::OutputFirst,
+        "sequential" | "seq" => PropOrder::Sequential,
+        "inverse" | "inv" => PropOrder::Inverse,
+        "inputsfirst" | "inp" => PropOrder::InputsFirst,
+        "outputfirst" | "out" => PropOrder::OutputFirst,
         _ => {
             return Err(nom::Err::Failure(
                 MatchErr::new(inp).ty(&ParseErrorType::InvalidPropagation),
@@ -46,26 +46,42 @@ pub fn node_list<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, RVec<RString>
     )(inp)
 }
 
-pub fn propagation<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Propagation> {
-    alt((
-        prop_seq,
-        delimited(
-            bracket_start,
-            cut(alt((
-                map(maybe_newline(str_path), Propagation::Path),
-                map(maybe_newline(node_list), Propagation::List),
-            ))),
-            maybe_newline(cut(err_ctx(&ParseErrorType::Unclosed("]"), bracket_end))),
-        ),
-        map(
+pub fn prop_nodes<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, PropNodes> {
+    delimited(
+        bracket_start,
+        cut(alt((
+            map(maybe_newline(str_path), PropNodes::Path),
+            map(maybe_newline(node_list), PropNodes::List),
+        ))),
+        maybe_newline(cut(err_ctx(&ParseErrorType::Unclosed("]"), bracket_end))),
+    )(inp)
+}
+
+pub fn propagation<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Option<Propagation>> {
+    let (rest, (order, nodes, cond)) = tuple((
+        opt(prop_order),
+        opt(prop_nodes),
+        opt(map(
             delimited(
                 paren_start,
                 maybe_newline(complete_expression),
                 maybe_newline(paren_end),
             ),
-            Propagation::Conditional,
-        ),
-    ))(inp)
+            PropCondition::Expr,
+        )),
+    ))(inp)?;
+    if order.is_none() && nodes.is_none() && cond.is_none() {
+        Ok((rest, None))
+    } else {
+        Ok((
+            rest,
+            Some(Propagation {
+                order: order.unwrap_or_default(),
+                nodes: nodes.unwrap_or_default(),
+                condition: cond.unwrap_or_default(),
+            }),
+        ))
+    }
 }
 
 pub fn function_type<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionType> {
@@ -79,28 +95,37 @@ pub fn function_type<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionT
 }
 
 pub fn attr_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, AttrTask> {
-    map(
-        tuple((
-            function_type,
-            opt(maybe_space(propagation)),
-            preceded(opt(dot), dot_variable),
-        )),
-        |(ty, propagation, mut attr_pre)| {
-            let attr = attr_pre.pop().expect("should have at least one component");
-            AttrTask {
-                ty,
-                attr_pre,
-                attr,
-                propagation,
-            }
+    let (rest, (ty, propagation, mut attr_pre)) = tuple((
+        function_type,
+        maybe_space(propagation),
+        preceded(opt(dot), dot_variable),
+    ))(inp)?;
+
+    match (&ty, propagation.is_some()) {
+        (FunctionType::Node, true) => (),
+        (_, true) => {
+            return Err(nom::Err::Error(
+                MatchErr::new(function_type(inp)?.0).ty(&ParseErrorType::PropagationNotSupported),
+            ))
+        }
+        _ => (),
+    }
+    let attr = attr_pre.pop().expect("should have at least one component");
+    Ok((
+        rest,
+        AttrTask {
+            ty,
+            attr_pre,
+            attr,
+            propagation,
         },
-    )(inp)
+    ))
 }
 
 pub fn eval_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, EvalTask> {
     let (rest, (ty, propagation, attr, input, sc)) = tuple((
         function_type,
-        opt(maybe_space(propagation)),
+        maybe_space(propagation),
         opt(delimited(opt(dot), dot_variable, maybe_space(assignment))),
         maybe_newline(complete_expression),
         opt(semicolon),
