@@ -9,6 +9,7 @@ mod command {
     use nadi_core::nadi_plugin::{network_func, node_func};
     use std::io::BufRead;
     use std::sync::mpsc::{self, Receiver, Sender};
+    use std::sync::{Arc, Mutex};
     use std::thread;
     use string_template_plus::Template;
     use subprocess::Exec;
@@ -148,27 +149,28 @@ mod command {
 
     /** Run the given template as a shell command for each nodes in the network in parallel.
 
-    # Warning
-    Currently there is no way to limit the number of parallel
-    processes, so please be careful with this command if you have very
-    large number of nodes.
-     */
-    #[network_func(_workers = 4, verbose = true, echo = false)]
+    */
+    #[network_func(workers = 16, verbose = true, echo = false)]
     fn parallel(
         net: &mut Network,
         /// String Command template to run
         cmd: &Template,
         /// Number of workers to run in parallel
-        _workers: i64,
+        workers: i64,
         /// Print the command being run
         verbose: bool,
         /// Show the output of the command
         echo: bool,
     ) -> anyhow::Result<()> {
-        let commands: Vec<_> = net
-            .nodes()
-            .map(|n| n.lock().render(cmd))
-            .collect::<Result<Vec<_>, anyhow::Error>>()?;
+        let commands: Arc<Mutex<Vec<_>>> = Arc::new(Mutex::new(
+            net.nodes()
+                .enumerate()
+                .map(|(i, n)| Ok((i, n.lock().render(cmd)?)))
+                .collect::<Result<Vec<_>, anyhow::Error>>()?
+                .into_iter()
+                .rev()
+                .collect(),
+        ));
 
         // todo: put commands in a mutex, and then pop it from each
         // thread until it is exhausted to implement the number of
@@ -177,23 +179,34 @@ mod command {
         let (tx, rx): (Sender<(usize, String)>, Receiver<(usize, String)>) = mpsc::channel();
         let mut children = Vec::new();
 
-        for (i, cmd) in commands.into_iter().enumerate() {
+        for _ in 0..workers {
             let ctx = tx.clone();
+            let cmd_lst = commands.clone();
             let child = thread::spawn(move || -> Result<(), anyhow::Error> {
-                if verbose {
-                    println!("$ {}", cmd.dimmed());
-                }
-                let output = Exec::shell(&cmd)
-                    .stream_stdout()
-                    .context(format!("Running: {cmd}"))?;
-                let buf = std::io::BufReader::new(output);
-                for line in buf.lines() {
-                    let l = line?;
-                    if echo {
-                        println!("{}", l);
-                    }
-                    if let Some(line) = l.strip_prefix("nadi:var:") {
-                        ctx.send((i, line.to_string()))?;
+                loop {
+                    let cmd = cmd_lst
+                        .lock()
+                        .map_err(|e| anyhow::Error::msg(e.to_string()))?
+                        .pop();
+                    if let Some((i, cmd)) = cmd {
+                        if verbose {
+                            println!("$ {}", cmd.dimmed());
+                        }
+                        let output = Exec::shell(&cmd)
+                            .stream_stdout()
+                            .context(format!("Running: {cmd}"))?;
+                        let buf = std::io::BufReader::new(output);
+                        for line in buf.lines() {
+                            let l = line?;
+                            if echo {
+                                println!("{}", l);
+                            }
+                            if let Some(line) = l.strip_prefix("nadi:var:") {
+                                ctx.send((i, line.to_string()))?;
+                            }
+                        }
+                    } else {
+                        break;
                     }
                 }
                 Ok::<(), anyhow::Error>(())
