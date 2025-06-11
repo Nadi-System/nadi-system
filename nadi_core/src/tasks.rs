@@ -343,8 +343,8 @@ pub struct EvalTask {
     pub silent: bool,
 }
 
-impl ToString for EvalTask {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for EvalTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let outattr = if let Some(attr) = &self.attr {
             format!(
                 ".{} =",
@@ -358,7 +358,8 @@ impl ToString for EvalTask {
         } else {
             "".to_string()
         };
-        format!(
+        write!(
+            f,
             "{}{}{} {}{}",
             self.ty,
             self.propagation
@@ -380,8 +381,8 @@ pub struct AttrTask {
     pub attr: String,
 }
 
-impl ToString for AttrTask {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for AttrTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let outattr = format!(
             ".{} =",
             self.attr_pre
@@ -391,7 +392,8 @@ impl ToString for AttrTask {
                 .collect::<Vec<&str>>()
                 .join(".")
         );
-        format!(
+        write!(
+            f,
             "{}{}{}",
             self.ty,
             self.propagation
@@ -410,8 +412,8 @@ pub struct CondTask {
     pub iffalse: Vec<Task>,
 }
 
-impl ToString for CondTask {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for CondTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let tasks = self
             .iftrue
             .iter()
@@ -419,9 +421,10 @@ impl ToString for CondTask {
             .collect::<Vec<String>>()
             .join("\n");
         if self.iffalse.is_empty() {
-            format!("if ({}) {{\n\t{}\n}}", self.cond.to_string(), tasks,)
+            write!(f, "if ({}) {{\n\t{}\n}}", self.cond.to_string(), tasks,)
         } else {
-            format!(
+            write!(
+                f,
                 "if ({}) {{\n\t{}\n}} else {{\n\t{}\n}}",
                 self.cond.to_string(),
                 tasks,
@@ -441,9 +444,10 @@ pub struct WhileTask {
     pub tasks: Vec<Task>,
 }
 
-impl ToString for WhileTask {
-    fn to_string(&self) -> String {
-        format!(
+impl std::fmt::Display for WhileTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
             "while ({}) {{\n\t{}\n}}",
             self.cond.to_string(),
             self.tasks
@@ -465,18 +469,18 @@ pub enum Task {
     Exit,
 }
 
-impl ToString for Task {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for Task {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Self::Eval(et) => et.to_string(),
-            Self::Attr(at) => at.to_string(),
-            Self::Conditional(t) => t.to_string(),
-            Self::WhileLoop(t) => t.to_string(),
-            Self::Help(None, None) => "help".to_string(),
-            Self::Help(Some(kw), None) => format!("help {}", kw.to_string()),
-            Self::Help(None, Some(s)) => format!("help {s}"),
-            Self::Help(Some(kw), Some(s)) => format!("help {} {s}", kw.to_string()),
-            Self::Exit => "exit".to_string(),
+            Self::Eval(et) => std::fmt::Display::fmt(et, f),
+            Self::Attr(at) => std::fmt::Display::fmt(at, f),
+            Self::Conditional(t) => std::fmt::Display::fmt(t, f),
+            Self::WhileLoop(t) => std::fmt::Display::fmt(t, f),
+            Self::Help(None, None) => write!(f, "help"),
+            Self::Help(Some(kw), None) => write!(f, "help {kw}"),
+            Self::Help(None, Some(s)) => write!(f, "help {s}"),
+            Self::Help(Some(kw), Some(s)) => write!(f, "help {kw} {s}"),
+            Self::Exit => write!(f, "exit"),
         }
     }
 }
@@ -533,30 +537,33 @@ impl std::str::FromStr for TaskKeyword {
     }
 }
 
-impl ToString for TaskKeyword {
-    fn to_string(&self) -> String {
-        match self {
-            TaskKeyword::Node => "node",
-            TaskKeyword::Network => "network",
-            TaskKeyword::Env => "env",
-            TaskKeyword::Exit => "exit",
-            TaskKeyword::End => "end",
-            TaskKeyword::Help => "help",
-            TaskKeyword::Inputs => "inputs",
-            TaskKeyword::Output => "output",
-            TaskKeyword::Nodes => "nodes",
-            TaskKeyword::If => "if",
-            TaskKeyword::Else => "else",
-            TaskKeyword::While => "while",
-            TaskKeyword::In => "in",
-            TaskKeyword::Match => "match",
-            TaskKeyword::Function => "function",
-            TaskKeyword::Map => "map",
-            TaskKeyword::Attrs => "attrs",
-            TaskKeyword::Loop => "loop",
-            TaskKeyword::For => "for",
-        }
-        .to_string()
+impl std::fmt::Display for TaskKeyword {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                TaskKeyword::Node => "node",
+                TaskKeyword::Network => "network",
+                TaskKeyword::Env => "env",
+                TaskKeyword::Exit => "exit",
+                TaskKeyword::End => "end",
+                TaskKeyword::Help => "help",
+                TaskKeyword::Inputs => "inputs",
+                TaskKeyword::Output => "output",
+                TaskKeyword::Nodes => "nodes",
+                TaskKeyword::If => "if",
+                TaskKeyword::Else => "else",
+                TaskKeyword::While => "while",
+                TaskKeyword::In => "in",
+                TaskKeyword::Match => "match",
+                TaskKeyword::Function => "function",
+                TaskKeyword::Map => "map",
+                TaskKeyword::Attrs => "attrs",
+                TaskKeyword::Loop => "loop",
+                TaskKeyword::For => "for",
+            }
+        )
     }
 }
 

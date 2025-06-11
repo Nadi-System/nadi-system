@@ -89,21 +89,22 @@ pub enum Expression {
     IfElse(Box<Expression>, Box<Expression>, Box<Expression>),
 }
 
-impl ToString for Expression {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for Expression {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Self::Literal(a) => a.to_toml_string(),
-            Self::Variable(v) => v.to_string(),
-            Self::ResolveError(e) => format!("ResolveError: {}", e),
-            Self::Function(fc) => fc.to_string(),
+            Self::Literal(a) => std::fmt::Display::fmt(a, f),
+            Self::Variable(v) => std::fmt::Display::fmt(v, f),
+            Self::ResolveError(e) => write!(f, "ResolveError: {}", e),
+            Self::Function(fc) => std::fmt::Display::fmt(fc, f),
             Self::UniOp(op, expr) => {
                 if expr.nested() {
-                    format!("{} ({})", op.to_string(), expr.to_string())
+                    write!(f, "{} ({})", op.to_string(), expr.to_string())
                 } else {
-                    format!("{} {}", op.to_string(), expr.to_string())
+                    write!(f, "{} {}", op.to_string(), expr.to_string())
                 }
             }
-            Self::BiOp(op, expr1, expr2) => format!(
+            Self::BiOp(op, expr1, expr2) => write!(
+                f,
                 "{} {} {}",
                 if expr1.nested() {
                     format!("({})", expr1.to_string())
@@ -117,7 +118,8 @@ impl ToString for Expression {
                     expr2.to_string()
                 },
             ),
-            Self::IfElse(cond, expr1, expr2) => format!(
+            Self::IfElse(cond, expr1, expr2) => write!(
+                f,
                 "if ({}) {{{}}} else {{{}}}",
                 cond.to_string(),
                 expr1.to_string(),
@@ -514,13 +516,12 @@ impl UniOperator {
         }
     }
 }
-impl ToString for UniOperator {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for UniOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Self::Not => "!",
-            Self::Negative => "-",
+            Self::Not => write!(f, "!"),
+            Self::Negative => write!(f, "-"),
         }
-        .to_string()
     }
 }
 
@@ -565,9 +566,9 @@ impl BiOperator {
     }
 }
 
-impl ToString for BiOperator {
-    fn to_string(&self) -> String {
-        match self {
+impl std::fmt::Display for BiOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let op = match self {
             Self::Add => "+",
             Self::Substract => "-",
             Self::Multiply => "*",
@@ -583,8 +584,8 @@ impl ToString for BiOperator {
             Self::Match => "match",
             Self::And => "&",
             Self::Or => "|",
-        }
-        .to_string()
+        };
+        write!(f, "{op}")
     }
 }
 
@@ -596,9 +597,10 @@ pub struct InputVar {
     pub check: bool,
 }
 
-impl ToString for InputVar {
-    fn to_string(&self) -> String {
-        format!(
+impl std::fmt::Display for InputVar {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
             "{}{}{}{}",
             self.ty
                 .as_ref()
@@ -650,17 +652,17 @@ impl VarType {
     }
 }
 
-impl ToString for VarType {
-    fn to_string(&self) -> String {
-        match self {
+impl std::fmt::Display for VarType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let ty = match self {
             VarType::Node => "node",
             VarType::Network => "network",
             VarType::Env => "env",
             VarType::Inputs => "inputs",
             VarType::Output => "output",
             VarType::Nodes => "nodes",
-        }
-        .to_string()
+        };
+        write!(f, "{ty}")
     }
 }
 
@@ -671,8 +673,8 @@ pub struct FunctionCall {
     pub kwargs: HashMap<String, Expression>,
 }
 
-impl ToString for FunctionCall {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for FunctionCall {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let args = self
             .args
             .iter()
@@ -690,7 +692,7 @@ impl ToString for FunctionCall {
         } else {
             ", "
         };
-        format!("{}({}{}{})", self.name, args, middle, kwargs)
+        write!(f, "{}({}{}{})", self.name, args, middle, kwargs)
     }
 }
 

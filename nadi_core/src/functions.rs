@@ -138,14 +138,14 @@ pub struct FuncArg {
     pub category: FuncArgType,
 }
 
-impl ToString for FuncArg {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for FuncArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match &self.category {
-            FuncArgType::Arg => format!("{}: '{}'", self.name, self.ty),
-            FuncArgType::OptArg => format!("{}: '{}'", self.name, self.ty),
-            FuncArgType::DefArg(val) => format!("{}: '{}' = {}", self.name, self.ty, val),
-            FuncArgType::Args => format!("*{}", self.name),
-            FuncArgType::KwArgs => format!("**{}", self.name),
+            FuncArgType::Arg => write!(f, "{}: '{}'", self.name, self.ty),
+            FuncArgType::OptArg => write!(f, "{}: '{}'", self.name, self.ty),
+            FuncArgType::DefArg(val) => write!(f, "{}: '{}' = {}", self.name, self.ty, val),
+            FuncArgType::Args => write!(f, "*{}", self.name),
+            FuncArgType::KwArgs => write!(f, "**{}", self.name),
         }
     }
 }

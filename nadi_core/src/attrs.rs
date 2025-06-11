@@ -213,18 +213,19 @@ impl Default for Attribute {
     }
 }
 
-impl ToString for Attribute {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for Attribute {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Self::Bool(v) => format!("{v:?}"),
-            Self::String(v) => format!("{v:?}"),
-            Self::Integer(v) => format!("{v:?}"),
-            Self::Float(v) => format!("{v:?}"),
-            Self::Date(v) => v.to_string(),
-            Self::Time(v) => v.to_string(),
-            Self::DateTime(v) => v.to_string(),
+            Self::Bool(v) => write!(f, "{v:?}"),
+            Self::String(v) => write!(f, "{v:?}"),
+            Self::Integer(v) => write!(f, "{v:?}"),
+            Self::Float(v) => write!(f, "{v:?}"),
+            Self::Date(v) => write!(f, "{v:?}"),
+            Self::Time(v) => write!(f, "{v:?}"),
+            Self::DateTime(v) => write!(f, "{v:?}"),
             Self::Array(v) => {
-                format!(
+                write!(
+                    f,
                     "[{}]",
                     v.iter()
                         .map(|a| a.to_string())
@@ -233,15 +234,40 @@ impl ToString for Attribute {
                 )
             }
             Self::Table(v) => {
-                format!(
+                write!(
+                    f,
                     "{{{}}}",
                     v.iter()
-                        .map(|a| format!("{} = {}", a.0, a.1.to_string()))
+                        .map(|a| {
+                            if valid_var(a.0) {
+                                format!("{} = {}", a.0, a.1.to_string())
+                            } else {
+                                format!("\"{}\" = {}", a.0, a.1.to_string())
+                            }
+                        })
                         .collect::<Vec<String>>()
                         .join(", ")
                 )
             }
         }
+    }
+}
+
+pub fn valid_var(n: &str) -> bool {
+    if cfg!(feature = "parser") {
+        crate::parser::tokenizer::valid_variable_name(n)
+    } else {
+        let mut chars = n.chars();
+        match chars.next() {
+            Some('_') => (),
+            Some(c) => {
+                if !c.is_alphabetic() {
+                    return false;
+                }
+            }
+            None => return true,
+        }
+        chars.all(|c| c == '_' || c.is_alphanumeric())
     }
 }
 
