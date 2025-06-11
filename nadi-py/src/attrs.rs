@@ -222,18 +222,18 @@ impl From<Attribute> for PyAttribute {
     }
 }
 
-impl ToString for PyAttribute {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for PyAttribute {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Self::Bool(v) => format!("{v:?}"),
-            Self::String(v) => format!("{v:?}"),
-            Self::Integer(v) => format!("{v:?}"),
-            Self::Float(v) => format!("{v:?}"),
-            Self::Date(v) => format!("{:?}", v),
-            Self::Time(v) => format!("{:?}", v),
-            Self::DateTime(v) => format!("{:?}", v),
-            Self::Array(v) => format!("{v:?}"),
-            Self::Table(v) => format!("{v:?}"),
+            Self::Bool(v) => write!(f, "{v:?}"),
+            Self::String(v) => write!(f, "{v:?}"),
+            Self::Integer(v) => write!(f, "{v:?}"),
+            Self::Float(v) => write!(f, "{v:?}"),
+            Self::Date(v) => write!(f, "{:?}", v),
+            Self::Time(v) => write!(f, "{:?}", v),
+            Self::DateTime(v) => write!(f, "{:?}", v),
+            Self::Array(v) => write!(f, "{v:?}"),
+            Self::Table(v) => write!(f, "{v:?}"),
         }
     }
 }

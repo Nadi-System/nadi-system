@@ -230,7 +230,7 @@ fn invalid(i: &str) -> TokenRes<'_> {
             // char is invalid we don't care about the actual char
             match i.char_indices().nth(1) {
                 Some((ind, _)) => &i[..ind],
-                None => &i,
+                None => i,
             }
         })
     })(i)

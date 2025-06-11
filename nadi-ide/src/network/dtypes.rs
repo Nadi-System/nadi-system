@@ -62,7 +62,7 @@ impl NodeData {
                 let y = pos.1 - sizey;
                 Path::rectangle((x, y).into(), (2.0 * sizex, 2.0 * sizey).into())
             }
-            NodeShape::Circle => Path::circle(pos.into(), size.into()),
+            NodeShape::Circle => Path::circle(pos.into(), size),
             NodeShape::Ellipse(r) => {
                 let r = r.abs() as f32;
                 let (sizex, sizey) = if r > 1.0 {
@@ -76,7 +76,7 @@ impl NodeData {
                         radii: [sizex, sizey].into(),
                         rotation: 0.into(),
                         start_angle: 0.into(),
-                        end_angle: 6.28.into(),
+                        end_angle: std::f32::consts::TAU.into(),
                     });
                     b.close();
                 })

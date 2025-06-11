@@ -153,7 +153,7 @@ fn repl(mut ctx: TaskContext) {
                     match ctx.execute(task) {
                         Ok(Some(p)) => println!("{p}"),
                         Err(p) => {
-                            println!("{}", p.to_string());
+                            println!("{}", p);
                             continue;
                         }
                         _ => (),

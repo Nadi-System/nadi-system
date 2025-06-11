@@ -31,7 +31,7 @@ fn new_ctx() -> TaskContext {
     // loading the plugins over and over again for each code block,
     // significantly improving the runtime speed
     #[allow(static_mut_refs)]
-    let functions = unsafe { NADI_FUNCS.get_or_init(|| NadiFunctions::new()) }.clone();
+    let functions = unsafe { NADI_FUNCS.get_or_init(NadiFunctions::new) }.clone();
     TaskContext {
         functions,
         ..Default::default()
@@ -41,7 +41,7 @@ fn new_ctx() -> TaskContext {
 pub fn run_task(task: &str, args: &str, pwd: &Path) -> anyhow::Result<Vec<Event<'static>>> {
     let mut tasks = String::with_capacity(task.len());
     for line in task.split('\n') {
-        tasks.push_str(&line.trim_start_matches('!'));
+        tasks.push_str(line.trim_start_matches('!'));
         tasks.push('\n');
     }
     tasks.push('\n');
@@ -155,7 +155,7 @@ pub fn run_table(table: &str, args: &str, pwd: &Path) -> anyhow::Result<Vec<Even
     tasks.push_str(&table_contents);
     tasks.push('"');
     tasks.push_str(&targs);
-    tasks.push_str(&")\n");
+    tasks.push_str(")\n");
 
     let tokens = get_tokens(&tasks);
     let tasks = tasks::parse(tokens)?;

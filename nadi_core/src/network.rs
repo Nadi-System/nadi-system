@@ -233,7 +233,6 @@ impl Network {
                     .nodes_order(order)
                     .into_iter()
                     .filter(|n| sel_lst.remove(n.lock().name()))
-                    .map(|n| n.clone())
                     .collect();
                 if sel_lst.is_empty() {
                     Ok(res)

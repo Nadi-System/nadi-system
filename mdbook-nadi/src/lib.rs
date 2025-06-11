@@ -94,7 +94,7 @@ fn run_chapter(chap: &str, pwd: &Path) -> anyhow::Result<String> {
         match (e, &mut state) {
             (Start(Tag::CodeBlock(Fenced(Borrowed(mark)))), None) => {
                 acc.push(Start(Tag::CodeBlock(Fenced(Borrowed(
-                    mark.split(' ').next().unwrap_or_default().into(),
+                    mark.split(' ').next().unwrap_or_default(),
                 )))));
                 if let Some((h, a)) = nadi_code_args(mark) {
                     state = Open;
