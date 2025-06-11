@@ -40,6 +40,12 @@ pub struct Color {
     pub b: u64,
 }
 
+impl Color {
+    pub fn hex(&self) -> String {
+        format!("#{:02X}{:02X}{:02X}", self.r, self.g, self.b)
+    }
+}
+
 // copied from named_colors crate
 fn color_by_name(name: &str) -> Option<(u64, u64, u64)> {
     let (r, g, b) = match name {

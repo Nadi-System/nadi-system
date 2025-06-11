@@ -1,6 +1,8 @@
 use iced::Color;
 use iced_graphics::geometry::Cache;
-use nadi_core::graphics::node::{LINE_COLOR, NODE_COLOR, NODE_SIZE, TEXT_COLOR};
+use iced_graphics::geometry::Path;
+use nadi_core::graphics::color::Color as NadiColor;
+use nadi_core::graphics::node::NodeShape;
 use nadi_core::prelude::*;
 use nadi_core::string_template::Template;
 
@@ -8,21 +10,23 @@ pub struct NodeData {
     pub index: usize,
     pub name: String,
     pub size: f32,
+    pub shape: NodeShape,
     pub pos: (u64, usize),
     pub color: Option<Color>,
-    pub linecolor: Option<Color>,
     pub textcolor: Option<Color>,
     pub label: String,
 }
 
+fn iced_color(c: NadiColor) -> Color {
+    Color::new(c.r as f32, c.g as f32, c.b as f32, 1.0)
+}
+
 impl NodeData {
     fn new(node: &NodeInner, label: &Option<Template>) -> Self {
-        let size = node
-            .try_attr_relaxed(nadi_core::graphics::node::NODE_SIZE.0)
-            .unwrap_or(NODE_SIZE.1) as f32;
-        let color = node_color(node, NODE_COLOR.0);
-        let linecolor = node_color(node, LINE_COLOR.0);
-        let textcolor = node_color(node, TEXT_COLOR.0);
+        let size = node.node_size() as f32;
+        let shape = node.node_shape();
+        let color = node.node_color().map(iced_color);
+        let textcolor = node.text_color().map(iced_color);
         let label = label
             .as_ref()
             .map(|t| node.render(t).unwrap_or(t.original().to_string()))
@@ -31,26 +35,91 @@ impl NodeData {
             index: node.index(),
             name: node.name().to_string(),
             size,
+            shape,
             pos: (node.level(), node.index()),
             color,
-            linecolor,
             textcolor,
             label,
         }
     }
-}
 
-fn node_color(node: &NodeInner, attr: &str) -> Option<Color> {
-    node.try_attr::<nadi_core::graphics::color::AttrColor>(attr)
-        .unwrap_or_default()
-        .color()
-        .ok()
-        .map(|c| Color::new(c.r as f32, c.g as f32, c.b as f32, 1.0))
+    pub fn path(&self, pos: (f32, f32)) -> Path {
+        let size = self.size;
+        match self.shape {
+            NodeShape::Square => {
+                let x = pos.0 - size;
+                let y = pos.1 - size;
+                Path::rectangle((x, y).into(), (2.0 * size, 2.0 * size).into())
+            }
+            NodeShape::Rectangle(r) => {
+                let r = r.abs() as f32;
+                let (sizex, sizey) = if r > 1.0 {
+                    (size / r, size)
+                } else {
+                    (size, size * r)
+                };
+                let x = pos.0 - sizex;
+                let y = pos.1 - sizey;
+                Path::rectangle((x, y).into(), (2.0 * sizex, 2.0 * sizey).into())
+            }
+            NodeShape::Circle => Path::circle(pos.into(), size.into()),
+            NodeShape::Ellipse(r) => {
+                let r = r.abs() as f32;
+                let (sizex, sizey) = if r > 1.0 {
+                    (size / r, size)
+                } else {
+                    (size, size * r)
+                };
+                Path::new(|b| {
+                    b.ellipse(iced::widget::canvas::path::arc::Elliptical {
+                        center: pos.into(),
+                        radii: [sizex, sizey].into(),
+                        rotation: 0.into(),
+                        start_angle: 0.into(),
+                        end_angle: 6.28.into(),
+                    });
+                    b.close();
+                })
+            }
+            NodeShape::Triangle => {
+                let ht = 2.0 * 0.8660 * size;
+                let dx = size;
+                let points = [
+                    (pos.0 - dx, pos.1 + ht / 3.0),
+                    (pos.0, pos.1 - 2.0 * ht / 3.0),
+                    (pos.0 + dx, pos.1 + ht / 3.0),
+                ];
+                Path::new(|b| {
+                    b.move_to(points[0].into());
+                    b.line_to(points[1].into());
+                    b.line_to(points[2].into());
+                    b.close();
+                })
+            }
+            NodeShape::IsoTriangle(r) => {
+                let ht = 2.0 * 0.8660 * size;
+                let dx = size;
+                let r = r.abs() as f32;
+                let (ht, dx) = if r > 1.0 { (ht / r, dx) } else { (ht, dx * r) };
+                let points = [
+                    (pos.0 - dx, pos.1 + ht / 3.0),
+                    (pos.0, pos.1 - 2.0 * ht / 3.0),
+                    (pos.0 + dx, pos.1 + ht / 3.0),
+                ];
+                Path::new(|b| {
+                    b.move_to(points[0].into());
+                    b.line_to(points[1].into());
+                    b.line_to(points[2].into());
+                    b.close();
+                })
+            }
+        }
+    }
 }
 
 pub struct NetworkData {
     pub nodes: Vec<NodeData>,
-    pub edges: Vec<(usize, usize)>,
+    pub edges: Vec<(usize, usize, Option<Color>, f32)>,
     pub label: Option<Template>,
     pub maxlevel: u64,
     pub deltax: f32,
@@ -93,7 +162,16 @@ impl NetworkData {
             .nodes()
             .filter_map(|n| {
                 let n = n.lock();
-                n.output().map(|o| (n.index(), o.lock().index())).into()
+                n.output()
+                    .map(|o| {
+                        (
+                            n.index(),
+                            o.lock().index(),
+                            n.line_color().map(iced_color),
+                            n.line_width() as f32,
+                        )
+                    })
+                    .into()
             })
             .collect();
 
@@ -116,7 +194,16 @@ impl NetworkData {
             .nodes()
             .filter_map(|n| {
                 let n = n.lock();
-                n.output().map(|o| (n.index(), o.lock().index())).into()
+                n.output()
+                    .map(|o| {
+                        (
+                            n.index(),
+                            o.lock().index(),
+                            n.line_color().map(iced_color),
+                            n.line_width() as f32,
+                        )
+                    })
+                    .into()
             })
             .collect();
         self.label = label;

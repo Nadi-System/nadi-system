@@ -55,16 +55,15 @@ impl FromStr for NodeShape {
                 .parse()
                 .map_err(|e| format!("Invalid Node Size Ratio: {e}"))?;
             match t {
-                "rectangle" => Ok(Self::Rectangle(size)),
+                "rect" | "rectangle" => Ok(Self::Rectangle(size)),
                 "triangle" => Ok(Self::IsoTriangle(size)),
                 "ellipse" => Ok(Self::Ellipse(size)),
                 _ => Err(format!("Unknown shape {t} with size ratio {r}")),
             }
         } else {
             match s {
-                "box" => Ok(Self::Square),
-                "square" => Ok(Self::Square),
-                "rectangle" => Ok(Self::Rectangle(DEFAULT_RATIO)),
+                "box" | "square" => Ok(Self::Square),
+                "rect" | "rectangle" => Ok(Self::Rectangle(DEFAULT_RATIO)),
                 "triangle" => Ok(Self::Triangle),
                 "circle" => Ok(Self::Circle),
                 "ellipse" => Ok(Self::Ellipse(DEFAULT_RATIO)),
@@ -178,35 +177,27 @@ impl NodeInner {
         _ = self.set_attr_dot(NODE_SIZE.0, val.into());
     }
 
-    pub fn node_color(&self) -> String {
-        let c = self
-            .try_attr::<nadi_core::graphics::color::AttrColor>(NODE_COLOR.0)
+    pub fn node_color(&self) -> Option<Color> {
+        self.try_attr::<nadi_core::graphics::color::AttrColor>(NODE_COLOR.0)
             .ok()
             .unwrap_or_default()
             .color()
             .ok()
-            .unwrap_or_default();
-        format!("#{:02X}{:02X}{:02X}", c.r, c.g, c.b,)
     }
 
-    pub fn text_color(&self) -> Option<String> {
-        let c = self
-            .try_attr::<nadi_core::graphics::color::AttrColor>(TEXT_COLOR.0)
+    pub fn text_color(&self) -> Option<Color> {
+        self.try_attr::<nadi_core::graphics::color::AttrColor>(TEXT_COLOR.0)
             .ok()?
             .color()
-            .ok()?;
-        Some(format!("#{:02X}{:02X}{:02X}", c.r, c.g, c.b,))
+            .ok()
     }
 
-    pub fn line_color(&self) -> String {
-        let c = self
-            .try_attr::<nadi_core::graphics::color::AttrColor>(LINE_COLOR.0)
+    pub fn line_color(&self) -> Option<Color> {
+        self.try_attr::<nadi_core::graphics::color::AttrColor>(LINE_COLOR.0)
             .ok()
             .unwrap_or_default()
             .color()
             .ok()
-            .unwrap_or_default();
-        format!("#{:02X}{:02X}{:02X}", c.r, c.g, c.b,)
     }
 
     pub fn node_shape(&self) -> NodeShape {
@@ -214,8 +205,12 @@ impl NodeInner {
     }
 
     pub fn node_point(&self, x: u64, y: u64) -> Element {
-        self.node_shape()
-            .svg(x, y, self.node_size(), self.node_color())
+        self.node_shape().svg(
+            x,
+            y,
+            self.node_size(),
+            self.node_color().unwrap_or_default().hex(),
+        )
     }
 
     pub fn node_label(&self, x: u64, y: u64, text: String) -> Text {
@@ -226,8 +221,8 @@ impl NodeInner {
             .set("font-size", "large");
         match self.text_color() {
             Some(c) => lab
-                .set("fill", c.clone())
-                .set("stroke", c)
+                .set("fill", c.hex())
+                .set("stroke", c.hex())
                 .set("stroke-width", 0.5),
             None => lab,
         }
@@ -240,7 +235,7 @@ impl NodeInner {
             .set("x2", x2)
             .set("y2", y2)
             .set("stroke-width", self.line_width())
-            .set("stroke", self.line_color())
+            .set("stroke", self.line_color().unwrap_or_default().hex())
     }
 }
 

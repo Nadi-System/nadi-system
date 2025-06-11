@@ -186,19 +186,19 @@ where
                 }
             }
             // Draw network lines
-            for ((from, to), node) in self.data.edges.iter().zip(&self.data.nodes) {
+            for (from, to, color, width) in &self.data.edges {
                 let line = Path::line(coords[*from].into(), coords[*to].into());
                 frame.stroke(
                     &line,
                     Stroke::default()
-                        .with_width(1.5)
-                        .with_color(node.linecolor.unwrap_or(style.line)),
+                        .with_width(*width)
+                        .with_color(color.unwrap_or(style.line)),
                 );
             }
 
             for (node, pos) in self.data.nodes.iter().zip(coords) {
-                let circle = Path::circle(pos.into(), node.size);
-                frame.fill(&circle, node.color.unwrap_or(style.node));
+                let npath = node.path(pos);
+                frame.fill(&npath, node.color.unwrap_or(style.node));
                 let mut txt = iced_graphics::geometry::Text::from(node.label.as_str());
                 txt.position = (
                     self.data.offsetx + self.data.deltax * (self.data.maxlevel + 2) as f32,

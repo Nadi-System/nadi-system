@@ -125,7 +125,7 @@ impl MainWindow {
                     editor::Message::HelpTask => {
                         self.spawn_pane_maybe(Some(PaneType::FunctionHelp));
                         if let Some(func) = &self.editor.curr_func {
-                            let func = (func.ty.clone(), func.name.clone());
+                            let func = (func.ity.clone(), func.name.clone());
                             Task::perform(async { func }, |(t, f)| help::Message::Function(t, f))
                                 .map(Message::FuncHelp)
                         } else {

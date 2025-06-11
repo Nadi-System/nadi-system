@@ -99,6 +99,35 @@ pub struct Editor {
     embedded: bool,
 }
 
+static EDITOR_DEFAULT: &str = r#"# example nadi script
+# you can load network with a string
+network load_str("a -> b\n b -> d\n c -> d");
+
+# if you have a file with network information uncomment
+# and use the code below, for windows, careful to use \\
+# instead of \ as it has special meaning inside strings
+
+# network load_file("path/to/file.network");
+
+# you can change visual properties of the nodes
+node.visual.textcolor = "red"
+# as node functions are run at each node you can set them individually
+node[a,c].visual.nodecolor = "green";
+node(INDEX < 2).visual.nodesize = 8;
+node[b].visual.linewidth = 4;
+node[d].visual.linecolor = "red";
+# try different shapes
+node.visual.nodeshape = "ellipse:0.5";
+node.visual.nodeshape = "circle";
+node.visual.nodeshape = "rectangle:0.5";
+node.visual.nodeshape = "box";
+node.visual.nodeshape = "triangle";
+node.visual.nodeshape = "triangle:2";
+
+# Use the bottons on the top to open file and start coding;
+# Hope Nadi is useful for your research/learning experience :)
+"#;
+
 impl Default for Editor {
     fn default() -> Self {
         Self {
@@ -108,7 +137,7 @@ impl Default for Editor {
             file: None,
             is_dirty: false,
             is_loading: false,
-            content: text_editor::Content::default(),
+            content: text_editor::Content::with_text(EDITOR_DEFAULT),
             embedded: false,
         }
     }
