@@ -17,13 +17,9 @@ pub fn action<'a, Message: Clone + 'a>(
     let action = button(center(content).width(20).height(20));
 
     if let Some(on_press) = on_press {
-        tooltip(
-            action.on_press(on_press),
-            label,
-            tooltip::Position::FollowCursor,
-        )
-        .style(container::rounded_box)
-        .into()
+        tooltip(action.on_press(on_press), label, tooltip::Position::Top)
+            .style(container::rounded_box)
+            .into()
     } else {
         action.style(button::secondary).into()
     }
@@ -37,13 +33,9 @@ pub fn danger_action<'a, Message: Clone + 'a>(
     let action = button(center(content).width(20).height(20)).style(button::danger);
 
     if let Some(on_press) = on_press {
-        tooltip(
-            action.on_press(on_press),
-            label,
-            tooltip::Position::FollowCursor,
-        )
-        .style(container::rounded_box)
-        .into()
+        tooltip(action.on_press(on_press), label, tooltip::Position::Top)
+            .style(container::rounded_box)
+            .into()
     } else {
         action.into()
     }

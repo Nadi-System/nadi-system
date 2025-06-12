@@ -1,6 +1,7 @@
 use iced::widget::pane_grid::{self, PaneGrid};
 use iced::widget::{
-    button, center, column, container, horizontal_space, pick_list, row, text, text_editor, toggler,
+    Row, button, center, column, container, horizontal_space, pick_list, row, text, text_editor,
+    toggler, tooltip,
 };
 use iced::{Element, Fill, Length, Subscription, Task, Theme};
 use nadi_core::attrs::HasAttributes;
@@ -228,8 +229,32 @@ impl MainWindow {
         .on_click(|p| Message::PaneAction(PaneMessage::Clicked(p)))
         .on_drag(|p| Message::PaneAction(PaneMessage::Dragged(p)))
         .on_resize(10, |p| Message::PaneAction(PaneMessage::Resized(p)));
+        let panes = Row::from_iter(workspace_options().into_iter().map(|(name, tip, conf)| {
+            tooltip(
+                button(center(text(name)))
+                    .on_press(Message::Workspace(conf))
+                    .height(30.0)
+                    .width(60.0),
+                tip,
+                tooltip::Position::Top,
+            )
+            .style(container::rounded_box)
+            .into()
+        }))
+        .spacing(10.0);
         let controls = row![
+            panes,
             horizontal_space(),
+            icons::action(
+                icons::help_icon(),
+                "Browse Nadi Book",
+                Some(Message::FuncHelp(help::Message::Book))
+            ),
+            icons::action(
+                icons::github_icon(),
+                "Visit Github Repository",
+                Some(Message::FuncHelp(help::Message::Github))
+            ),
             toggler(self.light_theme).on_toggle(Message::ThemeChange),
         ]
         .spacing(20)
@@ -422,109 +447,22 @@ fn initial_view(win: &MainWindow, id: pane_grid::Pane) -> Element<Message> {
         );
     }
     if win.panes.panes.len() == 1 {
-        center(
-            row![
-                col,
-                column![
-                    center(text("Workspace Layout"))
-                        .width(Length::Fill)
-                        .height(30.0),
-                    button(center("Editor + Terminal"))
-                        .on_press_with(|| {
-                            Message::Workspace(pane_grid::Configuration::Split {
-                                axis: pane_grid::Axis::Vertical,
-                                ratio: 0.5,
-                                a: Box::new(pane_grid::Configuration::Pane(&PaneType::TextEditor)),
-                                b: Box::new(pane_grid::Configuration::Pane(&PaneType::Terminal)),
-                            })
-                        })
-                        .width(Length::Fill)
-                        .height(30.0),
-                    button(center("Editor + Help / Terminal"))
-                        .on_press_with(|| {
-                            Message::Workspace(pane_grid::Configuration::Split {
-                                axis: pane_grid::Axis::Vertical,
-                                ratio: 0.5,
-                                a: Box::new(pane_grid::Configuration::Pane(&PaneType::TextEditor)),
-                                b: Box::new(pane_grid::Configuration::Split {
-                                    axis: pane_grid::Axis::Horizontal,
-                                    ratio: 0.5,
-                                    a: Box::new(pane_grid::Configuration::Pane(
-                                        &PaneType::FunctionHelp,
-                                    )),
-                                    b: Box::new(pane_grid::Configuration::Pane(
-                                        &PaneType::Terminal,
-                                    )),
-                                }),
-                            })
-                        })
-                        .width(Length::Fill)
-                        .height(30.0),
-                    button(center("Editor + Svg / Terminal"))
-                        .on_press_with(|| {
-                            Message::Workspace(pane_grid::Configuration::Split {
-                                axis: pane_grid::Axis::Vertical,
-                                ratio: 0.5,
-                                a: Box::new(pane_grid::Configuration::Pane(&PaneType::TextEditor)),
-                                b: Box::new(pane_grid::Configuration::Split {
-                                    axis: pane_grid::Axis::Horizontal,
-                                    ratio: 0.5,
-                                    a: Box::new(pane_grid::Configuration::Pane(&PaneType::SvgView)),
-                                    b: Box::new(pane_grid::Configuration::Pane(
-                                        &PaneType::Terminal,
-                                    )),
-                                }),
-                            })
-                        })
-                        .width(Length::Fill)
-                        .height(30.0),
-                    button(center("Editor + Network / Terminal"))
-                        .on_press_with(|| {
-                            Message::Workspace(pane_grid::Configuration::Split {
-                                axis: pane_grid::Axis::Vertical,
-                                ratio: 0.5,
-                                a: Box::new(pane_grid::Configuration::Pane(&PaneType::TextEditor)),
-                                b: Box::new(pane_grid::Configuration::Split {
-                                    axis: pane_grid::Axis::Horizontal,
-                                    ratio: 0.5,
-                                    a: Box::new(pane_grid::Configuration::Pane(
-                                        &PaneType::NetworkView,
-                                    )),
-                                    b: Box::new(pane_grid::Configuration::Pane(
-                                        &PaneType::Terminal,
-                                    )),
-                                }),
-                            })
-                        })
-                        .width(Length::Fill)
-                        .height(30.0),
-                    button(center("Editor + Attributes / Terminal"))
-                        .on_press_with(|| {
-                            Message::Workspace(pane_grid::Configuration::Split {
-                                axis: pane_grid::Axis::Vertical,
-                                ratio: 0.5,
-                                a: Box::new(pane_grid::Configuration::Pane(&PaneType::TextEditor)),
-                                b: Box::new(pane_grid::Configuration::Split {
-                                    axis: pane_grid::Axis::Horizontal,
-                                    ratio: 0.5,
-                                    a: Box::new(pane_grid::Configuration::Pane(
-                                        &PaneType::AttrView,
-                                    )),
-                                    b: Box::new(pane_grid::Configuration::Pane(
-                                        &PaneType::Terminal,
-                                    )),
-                                }),
-                            })
-                        })
-                        .width(Length::Fill)
-                        .height(30.0)
-                ]
-                .spacing(10.0)
-                .width(300.0)
-            ]
-            .spacing(30.0),
-        )
-        .into()
+        let mut col2 = column![
+            center(text("Workspace Layout"))
+                .width(Length::Fill)
+                .height(30.0),
+        ]
+        .spacing(10.0)
+        .width(300.0);
+        for (_, name, conf) in workspace_options() {
+            col2 = col2.push(
+                button(center(text(name)))
+                    .width(Length::Fill)
+                    .height(30.0)
+                    .on_press(Message::Workspace(conf)),
+            );
+        }
+        center(row![col, col2].spacing(30.0)).into()
     } else {
         center(col).into()
     }
@@ -544,4 +482,83 @@ fn panety_2_pane(conf: &pane_grid::Configuration<&PaneType>) -> pane_grid::Confi
             b: Box::new(panety_2_pane(b)),
         },
     }
+}
+
+fn workspace_options() -> Vec<(
+    &'static str,
+    &'static str,
+    pane_grid::Configuration<&'static PaneType>,
+)> {
+    vec![
+        (
+            "ET",
+            "Editor + Terminal",
+            pane_grid::Configuration::Split {
+                axis: pane_grid::Axis::Vertical,
+                ratio: 0.5,
+                a: Box::new(pane_grid::Configuration::Pane(&PaneType::TextEditor)),
+                b: Box::new(pane_grid::Configuration::Pane(&PaneType::Terminal)),
+            },
+        ),
+        (
+            "ENT",
+            "Editor + Network / Terminal",
+            pane_grid::Configuration::Split {
+                axis: pane_grid::Axis::Vertical,
+                ratio: 0.5,
+                a: Box::new(pane_grid::Configuration::Pane(&PaneType::TextEditor)),
+                b: Box::new(pane_grid::Configuration::Split {
+                    axis: pane_grid::Axis::Horizontal,
+                    ratio: 0.5,
+                    a: Box::new(pane_grid::Configuration::Pane(&PaneType::NetworkView)),
+                    b: Box::new(pane_grid::Configuration::Pane(&PaneType::Terminal)),
+                }),
+            },
+        ),
+        (
+            "EHT",
+            "Editor + Help / Terminal",
+            pane_grid::Configuration::Split {
+                axis: pane_grid::Axis::Vertical,
+                ratio: 0.5,
+                a: Box::new(pane_grid::Configuration::Pane(&PaneType::TextEditor)),
+                b: Box::new(pane_grid::Configuration::Split {
+                    axis: pane_grid::Axis::Horizontal,
+                    ratio: 0.5,
+                    a: Box::new(pane_grid::Configuration::Pane(&PaneType::FunctionHelp)),
+                    b: Box::new(pane_grid::Configuration::Pane(&PaneType::Terminal)),
+                }),
+            },
+        ),
+        (
+            "EST",
+            "Editor + Svg / Terminal",
+            pane_grid::Configuration::Split {
+                axis: pane_grid::Axis::Vertical,
+                ratio: 0.5,
+                a: Box::new(pane_grid::Configuration::Pane(&PaneType::TextEditor)),
+                b: Box::new(pane_grid::Configuration::Split {
+                    axis: pane_grid::Axis::Horizontal,
+                    ratio: 0.5,
+                    a: Box::new(pane_grid::Configuration::Pane(&PaneType::SvgView)),
+                    b: Box::new(pane_grid::Configuration::Pane(&PaneType::Terminal)),
+                }),
+            },
+        ),
+        (
+            "EAT",
+            "Editor + Attributes / Terminal",
+            pane_grid::Configuration::Split {
+                axis: pane_grid::Axis::Vertical,
+                ratio: 0.5,
+                a: Box::new(pane_grid::Configuration::Pane(&PaneType::TextEditor)),
+                b: Box::new(pane_grid::Configuration::Split {
+                    axis: pane_grid::Axis::Horizontal,
+                    ratio: 0.5,
+                    a: Box::new(pane_grid::Configuration::Pane(&PaneType::AttrView)),
+                    b: Box::new(pane_grid::Configuration::Pane(&PaneType::Terminal)),
+                }),
+            },
+        ),
+    ]
 }
