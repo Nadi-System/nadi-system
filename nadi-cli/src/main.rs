@@ -145,7 +145,7 @@ fn repl(mut ctx: TaskContext) {
                 let tasks = match nadi_core::parser::tasks::parse(tokens) {
                     Ok(t) => t,
                     Err(e) => {
-                        println!("{}", e.user_msg(None));
+                        println!("{}", e.user_msg_color(None));
                         continue;
                     }
                 };
@@ -281,7 +281,7 @@ fn show_tasks(filename: &Path) {
                 println!();
             }
         }
-        Err(e) => println!("{}", e.user_msg(Some(&filename.to_string_lossy()))),
+        Err(e) => println!("{}", e.user_msg_color(Some(&filename.to_string_lossy()))),
     };
 }
 
@@ -289,7 +289,7 @@ fn execute_tasks(txt: &str, print_tasks: bool, tasks_ctx: &mut TaskContext) -> a
     let tokens = nadi_core::parser::tokenizer::get_tokens(txt);
     let tasks = match nadi_core::parser::tasks::parse(tokens) {
         Ok(t) => t,
-        Err(e) => return Err(anyhow::Error::msg(e.user_msg(None))),
+        Err(e) => return Err(anyhow::Error::msg(e.user_msg_color(None))),
     };
 
     for fc in tasks {

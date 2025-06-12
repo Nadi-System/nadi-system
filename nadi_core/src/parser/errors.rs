@@ -68,6 +68,27 @@ impl ParseError {
         if let ParseErrorType::Custom(m) = &self.ty {
             msg.push_str(m);
             if let Some(fname) = filename {
+                msg.push_str(&format!("  -> {fname}\n"));
+            }
+        } else {
+            msg.push_str(&format!(
+                "Error: Parse Error at Line {} Column {}\n",
+                self.line, self.col
+            ));
+            if let Some(fname) = filename {
+                msg.push_str(&format!("  -> {}:{}:{}\n", fname, self.line, self.col));
+            }
+            msg.push_str(&format!("  {}\n", self.linestr));
+            msg.push_str(&format!("  {: >2$} {}", "^", self.ty.message(), self.col));
+        }
+        msg
+    }
+
+    pub fn user_msg_color(&self, filename: Option<&str>) -> String {
+        let mut msg = String::new();
+        if let ParseErrorType::Custom(m) = &self.ty {
+            msg.push_str(m);
+            if let Some(fname) = filename {
                 msg.push_str(&format!("  {} {}\n", "->".blue(), fname.blue()));
             }
         } else {
@@ -131,7 +152,7 @@ impl ParseErrorType {
             Self::InvalidLineStart => "Lines should start with a keyword",
             Self::Unclosed(s) => return format!("Missing closing token {s:?}"),
             Self::Incomplete => "Incomplete Input",
-            Self::IncompletePath => "Incomplete Path",
+            Self::IncompletePath => "Incomplete Path; expected node here",
             Self::IncompleteExpression => "Incomplete Expression",
             Self::InvalidPropagation => "Invalid propagation value",
             Self::InvalidKeyword => "Invalid keyword at this location",
@@ -141,7 +162,7 @@ impl ParseErrorType {
             Self::SyntaxError => "Invalid Syntax",
             Self::InvalidFunctionParameters => "Invalid function parameters",
             Self::MissingValue => "Missing Value",
-            Self::ExpectedPath => "Path symbol not found",
+            Self::ExpectedPath => "Expected Path symbol here",
             Self::InvalidToken => "Unsupported Token",
             Self::TokenMismatch => "Unexpected Token",
             Self::MultipleOutput(msg) => return format!("Multiple output not supported: {msg}"),

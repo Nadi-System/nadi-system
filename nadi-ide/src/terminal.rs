@@ -275,7 +275,7 @@ impl Terminal {
                             _ => {
                                 self.residue.clear();
                                 self.status = e.to_string();
-                                self.append_term(&e.to_string(), false, true);
+                                self.append_term(&e.user_msg(None), false, true);
                             }
                         }
                         self.running_msg = None;

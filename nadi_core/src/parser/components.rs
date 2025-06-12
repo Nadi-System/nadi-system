@@ -149,7 +149,7 @@ pub fn maybe_newline<'a, 'b: 'a, O, F>(f: F) -> impl FnMut(&'a [Token<'b>]) -> M
 where
     F: nom::Parser<&'a [Token<'b>], O, MatchErr<'a, 'b>>,
 {
-    preceded(many0(alt((space, newline, comment))), f)
+    preceded(many0_newlines, f)
 }
 
 /// Matches the next one that might have spaces, newlines or comments before it
@@ -159,10 +159,7 @@ pub fn newline_separated<'a, 'b: 'a, O, F>(
 where
     F: nom::Parser<&'a [Token<'b>], O, MatchErr<'a, 'b>>,
 {
-    maybe_newline(separated_list0(
-        many1(maybe_space(alt((newline, comment)))),
-        maybe_space(f),
-    ))
+    maybe_newline(separated_list0(many1_newlines, maybe_space(f)))
 }
 
 /// Matches the next one that might have spaces, newlines or comments before it
@@ -172,7 +169,15 @@ pub fn trailing_newlines<'a, 'b: 'a, O, F>(
 where
     F: nom::Parser<&'a [Token<'b>], O, MatchErr<'a, 'b>>,
 {
-    terminated(f, many0(alt((space, newline, comment))))
+    terminated(f, many0_newlines)
+}
+
+pub fn many0_newlines<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ()> {
+    value((), many0(alt((space, newline, comment))))(inp)
+}
+
+pub fn many1_newlines<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ()> {
+    value((), many1(maybe_space(alt((newline, comment)))))(inp)
 }
 
 pub fn dash_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, String> {
