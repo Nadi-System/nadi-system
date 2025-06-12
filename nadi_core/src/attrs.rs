@@ -330,6 +330,12 @@ impl std::ops::Not for Attribute {
     fn not(self) -> Self::Output {
         match self {
             Self::Bool(b) => Ok(Self::Bool(!b)),
+            Self::Array(ar) => Ok(Self::Array(
+                ar.into_iter()
+                    .map(|a| std::ops::Not::not(a))
+                    .collect::<Result<Vec<Self>, EvalError>>()?
+                    .into(),
+            )),
             _ => Err(EvalError::NotABool),
         }
     }
@@ -342,9 +348,41 @@ impl std::ops::Neg for Attribute {
         match self {
             Self::Integer(v) => Ok(Self::Integer(-v)),
             Self::Float(v) => Ok(Self::Float(-v)),
+            Self::Array(ar) => Ok(Self::Array(
+                ar.into_iter()
+                    .map(|a| std::ops::Neg::neg(a))
+                    .collect::<Result<Vec<Self>, EvalError>>()?
+                    .into(),
+            )),
             _ => Err(EvalError::NotANumber),
         }
     }
+}
+
+macro_rules! array_impl {
+    ($a:ident, $oth:ident, $imp:path) => {
+        match $oth {
+            Self::Array(ar2) => {
+                if $a.len() != ar2.len() {
+                    Err(EvalError::DifferentLength($a.len(), ar2.len()))
+                } else {
+                    Ok(Self::Array(
+                        $a.into_iter()
+                            .zip(ar2)
+                            .map(|(a, b)| $imp(a, b))
+                            .collect::<Result<Vec<Self>, EvalError>>()?
+                            .into(),
+                    ))
+                }
+            }
+            o => Ok(Self::Array(
+                $a.into_iter()
+                    .map(|a| $imp(a, o.clone()))
+                    .collect::<Result<Vec<Self>, EvalError>>()?
+                    .into(),
+            )),
+        }
+    };
 }
 
 impl std::ops::BitAnd for Attribute {
@@ -354,8 +392,15 @@ impl std::ops::BitAnd for Attribute {
         match self {
             Self::Bool(a) => match other {
                 Self::Bool(b) => Ok(Self::Bool(a & b)),
+                Self::Array(ar) => Ok(Self::Array(
+                    ar.into_iter()
+                        .map(|b| std::ops::BitAnd::bitand(Self::Bool(a), b))
+                        .collect::<Result<Vec<Self>, EvalError>>()?
+                        .into(),
+                )),
                 _ => Err(EvalError::NotABool),
             },
+            Self::Array(ar) => array_impl!(ar, other, std::ops::BitAnd::bitand),
             _ => Err(EvalError::NotABool),
         }
     }
@@ -368,8 +413,15 @@ impl std::ops::BitOr for Attribute {
         match self {
             Self::Bool(a) => match other {
                 Self::Bool(b) => Ok(Self::Bool(a | b)),
+                Self::Array(ar) => Ok(Self::Array(
+                    ar.into_iter()
+                        .map(|b| std::ops::BitOr::bitor(Self::Bool(a), b))
+                        .collect::<Result<Vec<Self>, EvalError>>()?
+                        .into(),
+                )),
                 _ => Err(EvalError::NotABool),
             },
+            Self::Array(ar) => array_impl!(ar, other, std::ops::BitOr::bitor),
             _ => Err(EvalError::NotABool),
         }
     }
@@ -385,13 +437,16 @@ impl std::ops::Add for Attribute {
             Self::Integer(a) => match other {
                 Self::Integer(b) => Ok(Self::Integer(a + b)),
                 Self::Float(b) => Ok(Self::Float(a as f64 + b)),
+                Self::Array(ar) => std::ops::Add::add(Self::Array(ar), Self::Integer(a)),
                 _ => Err(EvalError::InvalidOperation),
             },
             Self::Float(a) => match other {
                 Self::Integer(b) => Ok(Self::Float(a + b as f64)),
                 Self::Float(b) => Ok(Self::Float(a + b)),
+                Self::Array(ar) => std::ops::Add::add(Self::Array(ar), Self::Float(a)),
                 _ => Err(EvalError::InvalidOperation),
             },
+            Self::Array(ar) => array_impl!(ar, other, std::ops::Add::add),
             _ => Err(EvalError::InvalidOperation),
         }
     }
@@ -406,13 +461,26 @@ impl std::ops::Sub for Attribute {
             Self::Integer(a) => match other {
                 Self::Integer(b) => Ok(Self::Integer(a - b)),
                 Self::Float(b) => Ok(Self::Float(a as f64 - b)),
+                Self::Array(ar) => Ok(Self::Array(
+                    ar.into_iter()
+                        .map(|b| std::ops::Sub::sub(Self::Integer(a), b))
+                        .collect::<Result<Vec<Self>, EvalError>>()?
+                        .into(),
+                )),
                 _ => Err(EvalError::InvalidOperation),
             },
             Self::Float(a) => match other {
                 Self::Integer(b) => Ok(Self::Float(a - b as f64)),
                 Self::Float(b) => Ok(Self::Float(a - b)),
+                Self::Array(ar) => Ok(Self::Array(
+                    ar.into_iter()
+                        .map(|b| std::ops::Sub::sub(Self::Float(a), b))
+                        .collect::<Result<Vec<Self>, EvalError>>()?
+                        .into(),
+                )),
                 _ => Err(EvalError::InvalidOperation),
             },
+            Self::Array(ar) => array_impl!(ar, other, std::ops::Sub::sub),
             _ => Err(EvalError::InvalidOperation),
         }
     }
@@ -426,13 +494,16 @@ impl std::ops::Mul for Attribute {
             Self::Integer(a) => match other {
                 Self::Integer(b) => Ok(Self::Integer(a * b)),
                 Self::Float(b) => Ok(Self::Float(a as f64 * b)),
+                Self::Array(ar) => std::ops::Mul::mul(Self::Array(ar), Self::Integer(a)),
                 _ => Err(EvalError::InvalidOperation),
             },
             Self::Float(a) => match other {
                 Self::Integer(b) => Ok(Self::Float(a * b as f64)),
                 Self::Float(b) => Ok(Self::Float(a * b)),
+                Self::Array(ar) => std::ops::Mul::mul(Self::Array(ar), Self::Float(a)),
                 _ => Err(EvalError::InvalidOperation),
             },
+            Self::Array(ar) => array_impl!(ar, other, std::ops::Mul::mul),
             _ => Err(EvalError::InvalidOperation),
         }
     }
@@ -447,13 +518,26 @@ impl std::ops::Div for Attribute {
                 // doing integer div by default might be confusing to people
                 Self::Integer(b) => Ok(Self::Float(a as f64 / b as f64)),
                 Self::Float(b) => Ok(Self::Float(a as f64 / b)),
+                Self::Array(ar) => Ok(Self::Array(
+                    ar.into_iter()
+                        .map(|b| std::ops::Div::div(Self::Integer(a), b))
+                        .collect::<Result<Vec<Self>, EvalError>>()?
+                        .into(),
+                )),
                 _ => Err(EvalError::InvalidOperation),
             },
             Self::Float(a) => match other {
                 Self::Integer(b) => Ok(Self::Float(a / b as f64)),
                 Self::Float(b) => Ok(Self::Float(a / b)),
+                Self::Array(ar) => Ok(Self::Array(
+                    ar.into_iter()
+                        .map(|b| std::ops::Div::div(Self::Float(a), b))
+                        .collect::<Result<Vec<Self>, EvalError>>()?
+                        .into(),
+                )),
                 _ => Err(EvalError::InvalidOperation),
             },
+            Self::Array(ar) => array_impl!(ar, other, std::ops::Div::div),
             _ => Err(EvalError::InvalidOperation),
         }
     }
@@ -466,8 +550,15 @@ impl std::ops::Rem for Attribute {
         match self {
             Self::Integer(a) => match other {
                 Self::Integer(b) => Ok(Self::Integer(a % b)),
+                Self::Array(ar) => Ok(Self::Array(
+                    ar.into_iter()
+                        .map(|b| std::ops::Rem::rem(Self::Integer(a), b))
+                        .collect::<Result<Vec<Self>, EvalError>>()?
+                        .into(),
+                )),
                 _ => Err(EvalError::InvalidOperation),
             },
+            Self::Array(ar) => array_impl!(ar, other, std::ops::Rem::rem),
             _ => Err(EvalError::InvalidOperation),
         }
     }

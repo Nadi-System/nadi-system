@@ -21,6 +21,7 @@ pub enum EvalError {
     InvalidVariableType,
     NotANumber,
     NotABool,
+    DifferentLength(usize, usize),
     DivideByZero,
     RegexError(regex::Error),
     LogicalError(&'static str),
@@ -56,6 +57,9 @@ impl EvalError {
             Self::InvalidVariableType => "Variable type invalid in this context",
             Self::NotANumber => "Numerical Operation on Non Number",
             Self::NotABool => "Boolean Operation on Non Boolean",
+            Self::DifferentLength(a, b) => {
+                return format!("Different number of members in an array: {a} and {b}")
+            }
             Self::DivideByZero => "Division by Zero",
             Self::RegexError(e) => return format!("Error in regex: {e}"),
             Self::LogicalError(s) => return format!("Logical Error: {s}, contact developer"),

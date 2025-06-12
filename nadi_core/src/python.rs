@@ -36,6 +36,7 @@ impl From<EvalError> for PyErr {
             EvalError::NotABool => PyTypeError::new_err(err),
 
             EvalError::RegexError(_) => PyValueError::new_err(err),
+            EvalError::DifferentLength(_, _) => PyAssertionError::new_err(err),
             EvalError::DivideByZero => PyZeroDivisionError::new_err(err),
             EvalError::LogicalError(_) => PyAssertionError::new_err(err),
             EvalError::MutexError(_, _) => PyPermissionError::new_err(err),

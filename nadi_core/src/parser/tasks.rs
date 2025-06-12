@@ -95,11 +95,8 @@ pub fn function_type<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionT
 }
 
 pub fn attr_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, AttrTask> {
-    let (rest, (ty, propagation, mut attr_pre)) = tuple((
-        function_type,
-        maybe_space(propagation),
-        preceded(opt(dot), dot_variable),
-    ))(inp)?;
+    let (rest, (ty, propagation, mut attr_pre)) =
+        tuple((function_type, propagation, preceded(opt(dot), dot_variable)))(inp)?;
 
     match (&ty, propagation.is_some()) {
         (FunctionType::Node, true) => (),
@@ -125,7 +122,7 @@ pub fn attr_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, AttrTask> {
 pub fn eval_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, EvalTask> {
     let (rest, (ty, propagation, attr, input, sc)) = tuple((
         function_type,
-        maybe_space(propagation),
+        propagation,
         opt(delimited(opt(dot), dot_variable, maybe_space(assignment))),
         maybe_newline(complete_expression),
         opt(semicolon),
