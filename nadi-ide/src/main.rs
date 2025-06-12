@@ -2,7 +2,7 @@ use iced::widget::pane_grid::{self, PaneGrid};
 use iced::widget::{
     button, center, column, container, horizontal_space, pick_list, row, text, text_editor, toggler,
 };
-use iced::{Element, Fill, Length, Task, Theme};
+use iced::{Element, Fill, Length, Subscription, Task, Theme};
 use nadi_core::attrs::HasAttributes;
 use nadi_ide::attributes::AttrView;
 use nadi_ide::editor::{self, Editor};
@@ -16,6 +16,7 @@ pub fn main() -> iced::Result {
     iced::application("NADI", MainWindow::update, MainWindow::view)
         .font(icons::FONT)
         .theme(MainWindow::theme)
+        .subscription(MainWindow::subscription)
         .run()
 }
 
@@ -246,6 +247,10 @@ impl MainWindow {
         } else {
             Theme::Dark
         }
+    }
+
+    pub fn subscription(&self) -> Subscription<Message> {
+        self.editor.subscription().map(Message::Editor)
     }
 
     fn spawn_pane_maybe(&mut self, ty: Option<PaneType>) {

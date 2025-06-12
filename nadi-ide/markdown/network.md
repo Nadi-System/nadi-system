@@ -5,6 +5,8 @@ The network visualization shows the network with the nodes. Edit the template ab
 You can click on the nodes to see the node's (or outside the node to see network's) attributes. the visualization is done using some special attributes that you can assign
 
 ## Node attributes for Visuals
+These attributes inside the `visual` attribute on each node decide how they are drawn.
+For example `node.visual.nodecolor = "red"` will make all nodes red.
 
 - nodecolor: Color of the node shape fill
 - linecolor: Color of the line to output

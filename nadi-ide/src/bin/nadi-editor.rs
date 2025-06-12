@@ -5,5 +5,6 @@ fn main() -> iced::Result {
     iced::application("NADI Editor", Editor::update, Editor::view)
         .font(icons::FONT)
         .theme(Editor::theme)
+        .subscription(Editor::subscription)
         .run()
 }

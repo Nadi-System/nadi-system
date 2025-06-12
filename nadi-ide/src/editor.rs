@@ -1,11 +1,12 @@
 use crate::icons;
 use iced::highlighter;
+use iced::time::{self, Duration, Instant};
 use iced::widget::{
     column, container, horizontal_space, pick_list, row, scrollable, text,
     text::{Rich, Span},
     text_editor, vertical_rule,
 };
-use iced::{Element, Fill, Font, Task, Theme};
+use iced::{Element, Fill, Font, Subscription, Task, Theme};
 use nadi_core::{
     functions::{FuncArg, FuncArgType},
     parser::{
@@ -96,6 +97,10 @@ pub struct Editor {
     is_dirty: bool,
     is_loading: bool,
     pub content: text_editor::Content,
+    content_hist: Vec<String>,
+    content_index: usize,
+    is_hist_dirty: bool,
+    last_edit: Instant,
     embedded: bool,
 }
 
@@ -130,6 +135,11 @@ node.visual.nodeshape = "triangle:2";
 
 impl Default for Editor {
     fn default() -> Self {
+        // since the content default text is "\n"
+        let mut content = text_editor::Content::new();
+        let content_hist = vec![content.text()];
+        let content_index = content_hist.len();
+        content = text_editor::Content::with_text(EDITOR_DEFAULT);
         Self {
             theme: highlighter::Theme::SolarizedDark,
             curr_func: None,
@@ -137,7 +147,11 @@ impl Default for Editor {
             file: None,
             is_dirty: false,
             is_loading: false,
-            content: text_editor::Content::with_text(EDITOR_DEFAULT),
+            content,
+            content_hist,
+            content_index,
+            is_hist_dirty: false,
+            last_edit: Instant::now(),
             embedded: false,
         }
     }
@@ -153,6 +167,11 @@ pub enum Message {
     SaveFile,
     FileSaved(Result<PathBuf, Error>),
     ToggleComment,
+    UndoEdit,
+    RedoEdit,
+    MaybeSaveEditHist,
+    SaveEditHist,
+    ResetEditHist,
     FunctionAtMark(Option<(FunctionType, String)>),
     FuncFound(EditorFunction),
     // these messages are only sent when embedded; and are handled in
@@ -201,7 +220,11 @@ impl Editor {
                 }
             }
             Message::EditorAction(action) => {
-                self.is_dirty = self.is_dirty || action.is_edit();
+                if action.is_edit() {
+                    self.is_dirty = true;
+                    self.is_hist_dirty = true;
+                    self.last_edit = Instant::now();
+                }
                 self.content.perform(action);
                 Task::perform(
                     func_at_mark(self.content.text(), self.content.cursor_position()),
@@ -213,7 +236,7 @@ impl Editor {
                     self.file = None;
                     self.content = text_editor::Content::new();
                 }
-                Task::none()
+                Task::done(Message::ResetEditHist)
             }
             Message::OpenFile => {
                 if self.is_loading {
@@ -238,7 +261,7 @@ impl Editor {
                         println!("{e:?}")
                     }
                 };
-                Task::none()
+                Task::done(Message::ResetEditHist)
             }
             Message::SaveFile => {
                 if self.is_loading {
@@ -273,7 +296,7 @@ impl Editor {
                         println!("{e:?}")
                     }
                 }
-                Task::none()
+                Task::done(Message::SaveEditHist)
             }
             Message::ToggleComment => {
                 if let Some(sel) = self.content.selection() {
@@ -291,6 +314,59 @@ impl Editor {
                     self.content
                         .perform(text_editor::Action::Edit(text_editor::Edit::Insert(' ')));
                 }
+                Task::done(Message::SaveEditHist)
+            }
+            Message::UndoEdit => {
+                let cont = self.content.text();
+                if self.content_index == self.content_hist.len() {
+                    // if this is the first undo and last hist is
+                    // something else, save it
+                    if cont != self.content_hist[self.content_index - 1] {
+                        self.content_hist.push(cont);
+                        self.content_index += 1;
+                    }
+                }
+                if let Some(c) = self.content_hist.get(self.content_index - 2) {
+                    self.content = text_editor::Content::with_text(c);
+                    self.content_index -= 1;
+                }
+                self.is_hist_dirty = false;
+                Task::none()
+            }
+            Message::RedoEdit => {
+                if let Some(c) = self.content_hist.get(self.content_index) {
+                    self.content = text_editor::Content::with_text(c);
+                    self.content_index += 1;
+                }
+                self.is_hist_dirty = false;
+                Task::none()
+            }
+            Message::MaybeSaveEditHist => {
+                if self.is_hist_dirty {
+                    let lag = Instant::now().duration_since(self.last_edit).as_secs();
+                    // saving after 2 seconds of last edit action
+                    if lag > 2 {
+                        let cont = self.content.text();
+                        if Some(&cont) != self.content_hist.get(self.content_index - 1) {
+                            return Task::done(Message::SaveEditHist);
+                        }
+                    }
+                }
+                Task::none()
+            }
+            Message::SaveEditHist => {
+                let cont = self.content.text();
+                self.content_hist.truncate(self.content_index);
+                self.content_hist.push(cont);
+                self.content_index = self.content_hist.len();
+                self.is_hist_dirty = false;
+                Task::none()
+            }
+            Message::ResetEditHist => {
+                let cont = self.content.text();
+                self.content_hist = vec![cont];
+                self.content_index = 1;
+                self.is_hist_dirty = false;
                 Task::none()
             }
             // remaining ones should be handled in main window, and
@@ -321,6 +397,16 @@ impl Editor {
                 icons::comment_icon(),
                 "Toggle Comment (Alt + ;)",
                 Some(Message::ToggleComment)
+            ),
+            icons::action(
+                icons::left_icon(),
+                "Undo (Ctrl + z)",
+                (self.content_index > 0).then(|| Message::UndoEdit)
+            ),
+            icons::action(
+                icons::right_icon(),
+                "Redo (Ctrl + y)",
+                (self.content_index < self.content_hist.len()).then(|| Message::RedoEdit)
             ),
         ];
         if self.embedded {
@@ -409,6 +495,10 @@ impl Editor {
             Theme::Light
         }
     }
+
+    pub fn subscription(&self) -> Subscription<Message> {
+        time::every(Duration::from_secs(1)).map(|_| Message::MaybeSaveEditHist)
+    }
 }
 
 fn key_binding(kp: text_editor::KeyPress) -> Option<text_editor::Binding<Message>> {
@@ -435,6 +525,12 @@ fn key_binding(kp: text_editor::KeyPress) -> Option<text_editor::Binding<Message
         }
         Key::Character("n") if kp.modifiers.control() => {
             return Some(text_editor::Binding::Custom(Message::NewFile));
+        }
+        Key::Character("z") if kp.modifiers.control() => {
+            return Some(text_editor::Binding::Custom(Message::UndoEdit));
+        }
+        Key::Character("y") if kp.modifiers.control() => {
+            return Some(text_editor::Binding::Custom(Message::RedoEdit));
         }
         _ => (),
     }
@@ -482,6 +578,12 @@ pub enum Error {
 async fn open_file() -> Result<(PathBuf, Arc<String>), Error> {
     let picked_file = rfd::AsyncFileDialog::new()
         .set_title("Open a text file...")
+        .add_filter(
+            "Recommended Files",
+            &[
+                "net", "network", "tasks", "toml", "txt", "md", "py", "rs", "r",
+            ],
+        )
         .add_filter("Nadi Files", &["net", "network", "tasks", "toml"])
         .add_filter("Text", &["txt", "md", "org", "tex", "html"])
         .add_filter("Code", &["rs", "py"])
