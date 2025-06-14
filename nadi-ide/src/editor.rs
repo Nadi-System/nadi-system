@@ -2,7 +2,7 @@ use crate::icons;
 use iced::highlighter;
 use iced::time::{self, Duration, Instant};
 use iced::widget::{
-    column, container, horizontal_space, pick_list, row, scrollable, text,
+    column, container, horizontal_space, pick_list, row, scrollable, stack, text,
     text::{Rich, Span},
     text_editor, vertical_rule,
 };
@@ -10,6 +10,7 @@ use iced::{Element, Fill, Font, Subscription, Task, Theme};
 use nadi_core::{
     functions::{FuncArg, FuncArgType},
     parser::{
+        ParseError,
         highlight::NadiFileType,
         tokenizer::{self, TaskToken},
     },
@@ -101,6 +102,7 @@ pub struct Editor {
     content_index: usize,
     is_hist_dirty: bool,
     last_edit: Instant,
+    error: Option<ParseError>,
     embedded: bool,
 }
 
@@ -152,6 +154,7 @@ impl Default for Editor {
             content_index,
             is_hist_dirty: false,
             last_edit: Instant::now(),
+            error: None,
             embedded: false,
         }
     }
@@ -172,6 +175,7 @@ pub enum Message {
     MaybeSaveEditHist,
     SaveEditHist,
     ResetEditHist,
+    MaybeParseTasks,
     FunctionAtMark(Option<(FunctionType, String)>),
     FuncFound(EditorFunction),
     // these messages are only sent when embedded; and are handled in
@@ -224,6 +228,7 @@ impl Editor {
                     self.is_dirty = true;
                     self.is_hist_dirty = true;
                     self.last_edit = Instant::now();
+                    self.error = None;
                 }
                 self.content.perform(action);
                 Task::perform(
@@ -369,6 +374,17 @@ impl Editor {
                 self.is_hist_dirty = false;
                 Task::none()
             }
+            Message::MaybeParseTasks => {
+                let lag = Instant::now().duration_since(self.last_edit).as_secs();
+                if lag > 4 {
+                    let cont = self.content.text();
+                    self.error = nadi_core::parser::tasks::parse(
+                        nadi_core::parser::tokenizer::get_tokens(&cont),
+                    )
+                    .err();
+                }
+                Task::none()
+            }
             // remaining ones should be handled in main window, and
             // should be absent during non embed status; type system
             // can't help here, so be careful
@@ -469,13 +485,30 @@ impl Editor {
             .and_then(Path::extension)
             .and_then(std::ffi::OsStr::to_str)
             .unwrap_or("tasks");
-        let editor: Element<_> = match NadiFileType::from_str(ext) {
+        let mut editor: Element<_> = match NadiFileType::from_str(ext) {
             // use custom highlights for nadi files
             Ok(nft) => editor
                 .highlight_with::<my_hl::NadiHighlighter>((nft, 0), my_hl::hlto_format)
                 .into(),
             _ => editor.highlight(ext, self.theme).into(),
         };
+        if let Some(e) = &self.error {
+            editor = stack([
+                editor,
+                container(
+                    text(e.user_msg(None))
+                        .style(text::danger)
+                        .font(Font::MONOSPACE)
+                        .width(Fill)
+                        .align_x(iced::alignment::Horizontal::Right),
+                )
+                .align_x(iced::alignment::Horizontal::Right)
+                .style(parse_error_overlay)
+                .padding(10)
+                .into(),
+            ])
+            .into();
+        }
         column![
             controls.spacing(10).height(30.0),
             scrollable(container(status).padding(5.0))
@@ -497,7 +530,10 @@ impl Editor {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        time::every(Duration::from_secs(1)).map(|_| Message::MaybeSaveEditHist)
+        Subscription::batch([
+            time::every(Duration::from_secs(1)).map(|_| Message::MaybeSaveEditHist),
+            time::every(Duration::from_secs(2)).map(|_| Message::MaybeParseTasks),
+        ])
     }
 }
 
@@ -687,4 +723,14 @@ fn toggle_comment(selection: &str) -> String {
         newlines.pop();
     }
     newlines
+}
+
+fn parse_error_overlay(theme: &Theme) -> container::Style {
+    let palette = theme.extended_palette();
+    let bg: iced::Background = palette.background.weak.color.into();
+    container::Style {
+        background: Some(bg.scale_alpha(0.25)),
+        border: iced::border::rounded(2),
+        ..container::Style::default()
+    }
 }
