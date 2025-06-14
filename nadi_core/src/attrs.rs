@@ -1,4 +1,5 @@
 use crate::expressions::EvalError;
+use crate::valid_var;
 use abi_stable::{
     std_types::{
         RHashMap,
@@ -253,22 +254,18 @@ impl std::fmt::Display for Attribute {
     }
 }
 
-pub fn valid_var(n: &str) -> bool {
-    if cfg!(feature = "parser") {
-        crate::parser::tokenizer::valid_variable_name(n)
-    } else {
-        let mut chars = n.chars();
-        match chars.next() {
-            Some('_') => (),
-            Some(c) => {
-                if !c.is_alphabetic() {
-                    return false;
-                }
+pub fn valid_var_manual(n: &str) -> bool {
+    let mut chars = n.chars();
+    match chars.next() {
+        Some('_') => (),
+        Some(c) => {
+            if !c.is_alphabetic() {
+                return false;
             }
-            None => return true,
         }
-        chars.all(|c| c == '_' || c.is_alphanumeric())
+        None => return true,
     }
+    chars.all(|c| c == '_' || c.is_alphanumeric())
 }
 
 impl PartialOrd for Attribute {
@@ -565,6 +562,28 @@ impl std::ops::Rem for Attribute {
 }
 
 impl Attribute {
+    pub fn to_json(&self) -> String {
+        match self {
+            Self::Date(v) => format!("\"{v}\""),
+            Self::Time(v) => format!("\"{v}\""),
+            Self::DateTime(v) => format!("\"{v}\""),
+            Self::Array(v) => format!(
+                "[{}]",
+                v.iter()
+                    .map(|a| a.to_json())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            Self::Table(v) => format!(
+                "{{{}}}",
+                v.iter()
+                    .map(|Tuple2(k, v)| format!("\"{}\": {}", k, v.to_json()))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            v => v.to_string(),
+        }
+    }
     // TODO remove: is prob the same as to_string()
     pub fn to_toml_string(&self) -> String {
         match self {

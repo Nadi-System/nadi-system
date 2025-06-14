@@ -96,6 +96,7 @@ bi_op_pred!(bi_op_or, alt((bi_op_and, bi_op_in_match, bi_op_compare, expression)
 );
 bi_op_pred!(bi_op_compare, expression,,
             pair(assignment, assignment) => BiOperator::Equal,
+            pair(not, assignment) => BiOperator::NotEqual,
             pair(angle_start, assignment) => BiOperator::LessThanEqual,
             pair(angle_end, assignment) => BiOperator::GreaterThanEqual,
             angle_start => BiOperator::LessThan,
@@ -140,28 +141,17 @@ pub fn variable_type<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, VarType> 
 }
 
 pub fn input_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, InputVar> {
-    alt((
-        map(
-            pair(
-                separated_pair(
-                    variable_type,
-                    // example showing how to make it return error on
-                    // partial matches
-                    cut(err_ctx(&ParseErrorType::Incomplete, dot)),
-                    cut(err_ctx(&ParseErrorType::Incomplete, dot_variable)),
-                ),
-                opt(question),
-            ),
-            |((vt, mut v), q)| {
-                let name = v.pop().expect("There should be at least one var");
-                InputVar::new(Some(vt), v, name, q.is_some())
-            },
-        ),
-        map(pair(dot_variable, opt(question)), |(mut v, q)| {
+    map(
+        tuple((
+            opt(terminated(variable_type, dot)),
+            dot_variable,
+            opt(question),
+        )),
+        |(vt, mut v, q)| {
             let name = v.pop().expect("There should be at least one var");
-            InputVar::new(None, v, name, q.is_some())
-        }),
-    ))(inp)
+            InputVar::new(vt, v, name, q.is_some())
+        },
+    )(inp)
 }
 
 pub fn kw_arg<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, (String, Expression)> {
@@ -185,7 +175,8 @@ pub fn pos_args<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<Expression
 }
 
 pub fn function_call<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionCall> {
-    let (rest, (name, (args, kwargs))) = tuple((
+    let (rest, (ty, name, (args, kwargs))) = tuple((
+        opt(terminated(variable_type, dot)),
         function,
         cut(err_ctx(
             &ParseErrorType::InvalidFunctionParameters,
@@ -220,7 +211,13 @@ pub fn function_call<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionC
     ))(inp)?;
     Ok((
         rest,
-        FunctionCall::new(name.content.to_string(), args, kwargs.into_iter().collect()),
+        FunctionCall::new(
+            ty,
+            None,
+            name.content.to_string(),
+            args,
+            kwargs.into_iter().collect(),
+        ),
     ))
 }
 

@@ -20,6 +20,12 @@ pub mod parser;
 #[cfg(feature = "python")]
 pub mod python;
 
+#[cfg(feature = "parser")]
+pub use crate::parser::tokenizer::valid_variable_name as valid_var;
+
+#[cfg(not(feature = "parser"))]
+pub use crate::attrs::valid_var_manual as valid_var;
+
 /// Prelude for the most basic NADI types: node, network and attributes
 pub mod prelude {
     pub use crate::attrs::{

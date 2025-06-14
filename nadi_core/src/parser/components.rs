@@ -183,7 +183,7 @@ pub fn many1_newlines<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ()> {
 pub fn dash_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, String> {
     map(
         separated_list1(dash, map(variable, |v| v.content.to_string())),
-        |v| v.join(""),
+        |v| v.join("-"),
     )(inp)
 }
 

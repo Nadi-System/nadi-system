@@ -88,6 +88,7 @@ pub enum Expression {
     // during eval step
     ResolveError(EvalError),
     Function(FunctionCall),
+    MultiFunction(Vec<FunctionCall>),
     UniOp(UniOperator, Box<Expression>),
     BiOp(BiOperator, Box<Expression>, Box<Expression>),
     IfElse(Box<Expression>, Box<Expression>, Box<Expression>),
@@ -100,6 +101,20 @@ impl std::fmt::Display for Expression {
             Self::Variable(v) => std::fmt::Display::fmt(v, f),
             Self::ResolveError(e) => write!(f, "ResolveError: {}", e),
             Self::Function(fc) => std::fmt::Display::fmt(fc, f),
+            // multifunction is only generated after resolving
+            // function; so this shouldn't be used much, but I'm
+            // representing it as array of function, even though it
+            // cann't be loaded with this syntax from tasks file
+            Self::MultiFunction(fcs) => {
+                write!(f, "[")?;
+                for (i, fc) in fcs.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    std::fmt::Display::fmt(fc, f)?;
+                }
+                write!(f, "[")
+            }
             Self::UniOp(op, expr) => {
                 if expr.nested() {
                     write!(f, "{} ({})", op.to_string(), expr.to_string())
@@ -140,6 +155,7 @@ impl Expression {
             Self::ResolveError(_) => false,
             Self::Variable(_) => false,
             Self::Function(_) => false,
+            Self::MultiFunction(_) => false,
             Self::UniOp(_, _) => true,
             Self::BiOp(_, _, _) => true,
             Self::IfElse(_, _, _) => true,
@@ -155,6 +171,10 @@ impl Expression {
                 fc.args.iter().any(|e| e.has_variables())
                     || fc.kwargs.iter().any(|e| e.1.has_variables())
             }
+            Self::MultiFunction(fcs) => fcs.iter().any(|fc| {
+                fc.args.iter().any(|e| e.has_variables())
+                    || fc.kwargs.iter().any(|e| e.1.has_variables())
+            }),
             Self::UniOp(_, e) => e.has_variables(),
             Self::BiOp(_, e1, e2) => e1.has_variables() || e2.has_variables(),
             Self::IfElse(c, e1, e2) => {
@@ -182,18 +202,17 @@ impl Expression {
             // this should also be handled on has_variables()
             Self::ResolveError(e) => Err(e),
             Self::Function(mut fc) => {
-                let mut args = Vec::with_capacity(fc.args.len());
-                for a in fc.args {
-                    args.push(a.simplify(ft, ctx)?);
-                }
-                let mut kwargs = HashMap::with_capacity(fc.kwargs.len());
-                for (k, a) in fc.kwargs {
-                    kwargs.insert(k.clone(), a.simplify(ft, ctx)?);
-                }
-                fc.args = args;
-                fc.kwargs = kwargs;
+                fc.simplify(ft, ctx)?;
                 Ok(Self::Function(fc))
             }
+            Self::MultiFunction(fcs) => fcs
+                .into_iter()
+                .map(|mut fc| {
+                    fc.simplify(ft, ctx)?;
+                    Ok(fc)
+                })
+                .collect::<Result<Vec<FunctionCall>, EvalError>>()
+                .map(|fcs| Self::MultiFunction(fcs)),
             Self::UniOp(op, expr) => Ok(Self::UniOp(op, Box::new(expr.simplify(ft, ctx)?))),
             Self::BiOp(op, expr1, expr2) => Ok(Self::BiOp(
                 op,
@@ -411,21 +430,52 @@ impl Expression {
                     }
                 }
             }
-            Self::Function(fc) => {
-                let mut args = Vec::with_capacity(fc.args.len());
-                for a in &fc.args {
-                    args.push(a.resolve(ft, ctx, node)?);
+            Self::Function(fc) => match fc.ty {
+                Some(VarType::Nodes) => {
+                    let fcs = ctx
+                        .network
+                        .nodes()
+                        .map(|n| fc.resolve(ft, ctx, Some(n)))
+                        .collect::<Result<Vec<FunctionCall>, EvalError>>()?;
+                    Ok(Self::MultiFunction(fcs))
                 }
-                let mut kwargs = HashMap::with_capacity(fc.kwargs.len());
-                for (k, a) in &fc.kwargs {
-                    kwargs.insert(k.clone(), a.resolve(ft, ctx, node)?);
+                Some(VarType::Inputs) => {
+                    let fcs = node
+                        .ok_or(EvalError::LogicalError(
+                            "Inputs Function tried without Node value",
+                        ))?
+                        .try_lock()
+                        .into_option()
+                        .ok_or(EvalError::MutexError(file!(), line!()))?
+                        .inputs()
+                        .into_iter()
+                        .map(|n| fc.resolve(ft, ctx, Some(n)))
+                        .collect::<Result<Vec<FunctionCall>, EvalError>>()?;
+                    Ok(Self::MultiFunction(fcs))
                 }
-                Ok(Self::Function(FunctionCall {
-                    name: fc.name.clone(),
-                    args,
-                    kwargs,
-                }))
-            }
+                Some(VarType::Output) => {
+                    let v = match node
+                        .ok_or(EvalError::LogicalError(
+                            "Output Function tried without Node value",
+                        ))?
+                        .try_lock()
+                        .into_option()
+                        .ok_or(EvalError::MutexError(file!(), line!()))?
+                        .output()
+                        .into_option()
+                    {
+                        Some(o) => Self::Function(fc.resolve(ft, ctx, Some(o))?),
+                        None => Expression::ResolveError(EvalError::NoOutputNode),
+                    };
+                    Ok(v)
+                }
+                _ => fc.resolve(ft, ctx, node).map(Self::Function),
+            },
+            Self::MultiFunction(fcs) => fcs
+                .into_iter()
+                .map(|fc| fc.resolve(ft, ctx, node))
+                .collect::<Result<Vec<FunctionCall>, EvalError>>()
+                .map(|fcs| Self::MultiFunction(fcs)),
             Self::UniOp(op, expr) => Ok(Self::UniOp(
                 op.clone(),
                 Box::new(expr.resolve(ft, ctx, node)?),
@@ -482,6 +532,15 @@ impl Expression {
                 Ok(Some(v)) => Ok(v),
                 Err(e) => Err(e),
             },
+            Self::MultiFunction(fcs) => fcs
+                .into_iter()
+                .map(|fc| match fc.eval(ft, ctx, node) {
+                    Ok(None) => Err(EvalError::NoReturnValue(fc.name.to_string())),
+                    Ok(Some(v)) => Ok(v),
+                    Err(e) => Err(e),
+                })
+                .collect::<Result<Vec<Attribute>, EvalError>>()
+                .map(|ar| Attribute::Array(ar.into())),
             Self::UniOp(op, expr) => op.eval(expr.eval_value(ft, ctx, node)?),
             Self::BiOp(op, expr1, expr2) => {
                 let first = expr1.eval_value(ft, ctx, node)?;
@@ -538,6 +597,7 @@ pub enum BiOperator {
     IntDivide,
     Modulus,
     Equal,
+    NotEqual,
     LessThan,
     GreaterThan,
     LessThanEqual,
@@ -558,6 +618,7 @@ impl BiOperator {
             Self::IntDivide => val1.int_div(&val2),
             Self::Modulus => val1 % val2,
             Self::Equal => Ok(Attribute::Bool(val1 == val2)),
+            Self::NotEqual => Ok(Attribute::Bool(val1 != val2)),
             Self::LessThan => Ok(Attribute::Bool(val1 < val2)),
             Self::GreaterThan => Ok(Attribute::Bool(val1 > val2)),
             Self::LessThanEqual => Ok(Attribute::Bool(val1 <= val2)),
@@ -580,6 +641,7 @@ impl std::fmt::Display for BiOperator {
             Self::IntDivide => "//",
             Self::Modulus => "%",
             Self::Equal => "==",
+            Self::NotEqual => "!=",
             Self::LessThan => "<",
             Self::GreaterThan => ">",
             Self::LessThanEqual => "<=",
@@ -654,6 +716,17 @@ impl VarType {
             _ => None,
         }
     }
+
+    pub fn to_functiontype(&self) -> &'static FunctionType {
+        match self {
+            VarType::Node => &FunctionType::Node,
+            VarType::Network => &FunctionType::Network,
+            VarType::Env => &FunctionType::Env,
+            VarType::Inputs => &FunctionType::Node,
+            VarType::Output => &FunctionType::Node,
+            VarType::Nodes => &FunctionType::Node,
+        }
+    }
 }
 
 impl std::fmt::Display for VarType {
@@ -670,11 +743,34 @@ impl std::fmt::Display for VarType {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone)]
 pub struct FunctionCall {
+    pub ty: Option<VarType>,
+    // useful to store node to act on, for output/inputs/nodes variety
+    pub node: Option<Node>,
     pub name: String,
     pub args: Vec<Expression>,
     pub kwargs: HashMap<String, Expression>,
+}
+
+impl PartialEq for FunctionCall {
+    fn eq(&self, other: &Self) -> bool {
+        self.ty == other.ty
+            && self.name == other.name
+            && self.args == other.args
+            && self.kwargs == other.kwargs
+    }
+}
+
+impl std::fmt::Debug for FunctionCall {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.debug_struct("FunctionCall")
+            .field("ty", &self.ty)
+            .field("name", &self.name)
+            .field("args", &self.args)
+            .field("kwargs", &self.kwargs)
+            .finish()
+    }
 }
 
 impl std::fmt::Display for FunctionCall {
@@ -696,20 +792,79 @@ impl std::fmt::Display for FunctionCall {
         } else {
             ", "
         };
-        write!(f, "{}({}{}{})", self.name, args, middle, kwargs)
+        if let Some(t) = &self.ty {
+            write!(f, "{}.{}({}{}{})", t, self.name, args, middle, kwargs)
+        } else {
+            write!(f, "{}({}{}{})", self.name, args, middle, kwargs)
+        }
     }
 }
 
 impl FunctionCall {
-    pub fn new(name: String, args: Vec<Expression>, kwargs: HashMap<String, Expression>) -> Self {
-        Self { name, args, kwargs }
+    pub fn new(
+        ty: Option<VarType>,
+        node: Option<Node>,
+        name: String,
+        args: Vec<Expression>,
+        kwargs: HashMap<String, Expression>,
+    ) -> Self {
+        Self {
+            ty,
+            node,
+            name,
+            args,
+            kwargs,
+        }
     }
+
+    pub fn simplify(&mut self, ft: &FunctionType, ctx: &TaskContext) -> Result<(), EvalError> {
+        let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
+        let mut args = Vec::with_capacity(self.args.len());
+        for a in &self.args {
+            args.push(a.clone().simplify(ft, ctx)?);
+        }
+        let mut kwargs = HashMap::with_capacity(self.kwargs.len());
+        for (k, a) in &self.kwargs {
+            kwargs.insert(k.clone(), a.clone().simplify(ft, ctx)?);
+        }
+        self.args = args;
+        self.kwargs = kwargs;
+        Ok(())
+    }
+
+    pub fn resolve(
+        &self,
+        ft: &FunctionType,
+        ctx: &TaskContext,
+        node: Option<&Node>,
+    ) -> Result<Self, EvalError> {
+        let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
+        let node = self.node.as_ref().or(node);
+        let mut args = Vec::with_capacity(self.args.len());
+        for a in &self.args {
+            args.push(a.resolve(ft, ctx, node)?);
+        }
+        let mut kwargs = HashMap::with_capacity(self.kwargs.len());
+        for (k, a) in &self.kwargs {
+            kwargs.insert(k.clone(), a.resolve(ft, ctx, node)?);
+        }
+        Ok(FunctionCall {
+            ty: self.ty.clone(),
+            node: node.cloned(),
+            name: self.name.clone(),
+            args,
+            kwargs,
+        })
+    }
+
     pub fn eval_mut(
         &self,
         ft: &FunctionType,
         ctx: &mut TaskContext,
         node: Option<&Node>,
     ) -> Result<Option<Attribute>, EvalError> {
+        let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
+        let node = self.node.as_ref().or(node);
         let mut args = Vec::with_capacity(self.args.len());
         for a in &self.args {
             args.push(a.eval_value(ft, ctx, node)?);
@@ -719,7 +874,7 @@ impl FunctionCall {
             kwargs.insert(k.clone(), a.eval_value(ft, ctx, node)?);
         }
         let fctx = FunctionCtx::from_arg_kwarg(args, kwargs);
-        self.run_w_ctx_mut(ft, &self.name, ctx, fctx, node, None)
+        self.run_w_ctx_mut(ft, ctx, fctx, node, None)
     }
 
     pub fn eval(
@@ -728,6 +883,8 @@ impl FunctionCall {
         ctx: &TaskContext,
         node: Option<&Node>,
     ) -> Result<Option<Attribute>, EvalError> {
+        let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
+        let node = self.node.as_ref().or(node);
         let mut args = Vec::with_capacity(self.args.len());
         for a in &self.args {
             args.push(a.eval_value(ft, ctx, node)?);
@@ -737,30 +894,31 @@ impl FunctionCall {
             kwargs.insert(k.clone(), a.eval_value(ft, ctx, node)?);
         }
         let fctx = FunctionCtx::from_arg_kwarg(args, kwargs);
-        self.run_w_ctx(ft, &self.name, ctx, fctx, node, None)
+        self.run_w_ctx(ft, ctx, fctx, node, None)
     }
 
     pub fn run_w_ctx(
         &self,
         ft: &FunctionType,
-        name: &str,
         tctx: &TaskContext,
         fctx: FunctionCtx,
         node: Option<&Node>,
         original: Option<FunctionType>,
     ) -> Result<Option<Attribute>, EvalError> {
+        let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
+        let node = self.node.as_ref().or(node);
         match ft {
-            FunctionType::Env => match tctx.functions.env(name) {
+            FunctionType::Env => match tctx.functions.env(&self.name) {
                 Some(f) => f
                     .call(&fctx)
                     .res()
-                    .map_err(|s| EvalError::FunctionError(name.to_string(), s)),
+                    .map_err(|s| EvalError::FunctionError(self.name.to_string(), s)),
                 None => Err(EvalError::FunctionNotFound(
                     original.unwrap_or_else(|| ft.clone()),
                     self.name.to_string(),
                 )),
             },
-            FunctionType::Node => match tctx.functions.node(name) {
+            FunctionType::Node => match tctx.functions.node(&self.name) {
                 Some(f) => {
                     let n = node
                         .ok_or(EvalError::LogicalError("Node function called without node"))?
@@ -769,30 +927,16 @@ impl FunctionCall {
                         .ok_or(EvalError::MutexError(file!(), line!()))?;
                     f.call(&n, &fctx)
                         .res()
-                        .map_err(|s| EvalError::FunctionError(name.to_string(), s))
+                        .map_err(|s| EvalError::FunctionError(self.name.to_string(), s))
                 }
-                None => self.run_w_ctx(
-                    &FunctionType::Env,
-                    &self.name,
-                    tctx,
-                    fctx,
-                    node,
-                    Some(ft.clone()),
-                ),
+                None => self.run_w_ctx(&FunctionType::Env, tctx, fctx, node, Some(ft.clone())),
             },
-            FunctionType::Network => match tctx.functions.network(name) {
+            FunctionType::Network => match tctx.functions.network(&self.name) {
                 Some(f) => f
                     .call(&tctx.network, &fctx)
                     .res()
-                    .map_err(|s| EvalError::FunctionError(name.to_string(), s)),
-                None => self.run_w_ctx(
-                    &FunctionType::Env,
-                    &self.name,
-                    tctx,
-                    fctx,
-                    node,
-                    Some(ft.clone()),
-                ),
+                    .map_err(|s| EvalError::FunctionError(self.name.to_string(), s)),
+                None => self.run_w_ctx(&FunctionType::Env, tctx, fctx, node, Some(ft.clone())),
             },
         }
     }
@@ -800,24 +944,25 @@ impl FunctionCall {
     pub fn run_w_ctx_mut(
         &self,
         ft: &FunctionType,
-        name: &str,
         tctx: &mut TaskContext,
         fctx: FunctionCtx,
         node: Option<&Node>,
         original: Option<FunctionType>,
     ) -> Result<Option<Attribute>, EvalError> {
+        let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
+        let node = self.node.as_ref().or(node);
         match ft {
-            FunctionType::Env => match tctx.functions.env(name) {
+            FunctionType::Env => match tctx.functions.env(&self.name) {
                 Some(f) => f
                     .call(&fctx)
                     .res()
-                    .map_err(|s| EvalError::FunctionError(name.to_string(), s)),
+                    .map_err(|s| EvalError::FunctionError(self.name.to_string(), s)),
                 None => Err(EvalError::FunctionNotFound(
                     original.unwrap_or_else(|| ft.clone()),
                     self.name.to_string(),
                 )),
             },
-            FunctionType::Node => match tctx.functions.node(name) {
+            FunctionType::Node => match tctx.functions.node(&self.name) {
                 Some(f) => {
                     let mut n = node
                         .ok_or(EvalError::LogicalError("Node function called without node"))?
@@ -826,30 +971,16 @@ impl FunctionCall {
                         .ok_or(EvalError::MutexError(file!(), line!()))?;
                     f.call_mut(&mut n, &fctx)
                         .res()
-                        .map_err(|s| EvalError::FunctionError(name.to_string(), s))
+                        .map_err(|s| EvalError::FunctionError(self.name.to_string(), s))
                 }
-                None => self.run_w_ctx(
-                    &FunctionType::Env,
-                    &self.name,
-                    tctx,
-                    fctx,
-                    node,
-                    Some(ft.clone()),
-                ),
+                None => self.run_w_ctx(&FunctionType::Env, tctx, fctx, node, Some(ft.clone())),
             },
-            FunctionType::Network => match tctx.functions.network(name) {
+            FunctionType::Network => match tctx.functions.network(&self.name) {
                 Some(f) => f
                     .call_mut(&mut tctx.network, &fctx)
                     .res()
-                    .map_err(|s| EvalError::FunctionError(name.to_string(), s)),
-                None => self.run_w_ctx(
-                    &FunctionType::Env,
-                    &self.name,
-                    tctx,
-                    fctx,
-                    node,
-                    Some(ft.clone()),
-                ),
+                    .map_err(|s| EvalError::FunctionError(self.name.to_string(), s)),
+                None => self.run_w_ctx(&FunctionType::Env, tctx, fctx, node, Some(ft.clone())),
             },
         }
     }

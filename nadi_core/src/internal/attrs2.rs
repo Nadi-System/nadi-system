@@ -164,6 +164,30 @@ mod attributes {
         Ok(attrs)
     }
 
+    /// get the choosen attribute from Array or AttrMap
+    #[env_func]
+    fn get(parent: Attribute, index: Attribute) -> Result<Attribute, String> {
+        match (parent, index) {
+            (Attribute::Array(ar), Attribute::Integer(ind)) => ar
+                .get(ind as usize)
+                .cloned()
+                .ok_or(format!("Index {ind} not found")),
+            (Attribute::Table(am), Attribute::String(key)) => am
+                .get(&key)
+                .cloned()
+                .ok_or(format!("Index {key} not found")),
+            (Attribute::Array(_), b) => Err(format!(
+                "Array index should be Integer not {}",
+                b.type_name()
+            )),
+            (Attribute::Table(_), b) => Err(format!(
+                "AttrMap index should be String not {}",
+                b.type_name()
+            )),
+            (a, _) => Err(format!("{} cannot be indexed", a.type_name())),
+        }
+    }
+
     /// map values from the attribute based on the given table
     #[env_func]
     fn float_transform(

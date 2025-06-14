@@ -129,6 +129,10 @@ impl Network {
         })
     }
 
+    pub fn outlet(&self) -> Option<&Node> {
+        self.outlet.as_ref().into()
+    }
+
     pub fn append_edges(&mut self, edges: &[(&str, &str)]) -> Result<(), String> {
         for (start, end) in edges {
             if !self.nodes_map.contains_key(*start) {
@@ -318,20 +322,27 @@ impl Network {
 
     pub fn reorder(&mut self) {
         self.calc_order();
-        self.outlet = self
-            .node(0)
-            .cloned()
-            .map(|n| {
-                let mut child = n.clone();
-                loop {
-                    let cc = child.lock().output().cloned();
-                    match cc {
-                        RSome(c) => child = c.clone(),
-                        RNone => break child,
+        self.outlet = {
+            let outlets: Vec<Node> = self
+                .nodes()
+                .filter(|n| n.lock().output().is_none())
+                .map(|o| o.clone())
+                .collect();
+            match &outlets[..] {
+                [] => RNone,
+                [o] => RSome(o.clone()),
+                outs => {
+                    eprintln!("Multiple Outlet Nodes found; adding a *ROOT* node");
+                    self.insert_node_by_name("*ROOT*");
+                    let outlet = self.node_by_name("*ROOT*").expect("Just inserted");
+                    for o in outs {
+                        o.lock().set_output(outlet.clone());
+                        outlet.lock().add_input(o.clone());
                     }
+                    RSome(outlet.clone())
                 }
-            })
-            .into();
+            }
+        };
         let mut new_nodes: Vec<Node> = Vec::with_capacity(self.nodes.len());
         fn insert_node(nv: &mut Vec<Node>, n: Node) {
             nv.push(n.clone());

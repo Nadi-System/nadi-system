@@ -23,6 +23,25 @@ mod core {
         }
     }
 
+    /// Get the name of the outlet node
+    #[network_func]
+    fn outlet(net: &Network) -> Option<String> {
+        net.outlet().map(|o| o.lock().name().to_string())
+    }
+
+    /// Get the attr of the provided node
+    #[network_func(attribute = "_")]
+    fn node_attr(
+        net: &Network,
+        ///  name of the node
+        name: String,
+        /// attribute to get
+        attribute: String,
+    ) -> Option<Attribute> {
+        net.node_by_name(&name)
+            .and_then(|n| n.lock().attr_dot(&attribute).ok().flatten().cloned())
+    }
+
     /// Count the number of input nodes in the node
     #[node_func]
     fn inputs_count(node: &NodeInner) -> usize {
@@ -180,6 +199,15 @@ mod core {
         attributes: &AttrMap,
     ) -> Attribute {
         Attribute::Table(attributes.clone())
+    }
+
+    /// format the attribute as a json string
+    #[env_func]
+    fn json(
+        /// attribute to format
+        value: Attribute,
+    ) -> String {
+        value.to_json()
     }
 
     /// append a value to an array
@@ -372,5 +400,11 @@ mod core {
             })
             .collect();
         reprs.join(join)
+    }
+
+    /// Generate integer array
+    #[env_func]
+    fn range(start: i64, end: i64) -> Vec<i64> {
+        (start..end).collect()
     }
 }
