@@ -1,6 +1,9 @@
+use crate::editor::colors;
 use crate::icons;
 use iced::widget::{
-    button, center, column, horizontal_space, markdown, row, scrollable, text, text_input, toggler,
+    button, center, column, horizontal_space, markdown, row, scrollable, text,
+    text::{Rich, Span},
+    text_input, toggler,
 };
 use iced::{Color, Element, Length, Theme, widget::Column};
 use nadi_core::{
@@ -133,7 +136,13 @@ impl MdHelp {
                 .into_iter()
                 .enumerate()
                 .map(|(i, n)| {
-                    button(text(format!("{}  {}", n.0, n.1)))
+                    let label = format!("{}  {}", n.0, n.1);
+                    let label: Element<_> = if self.search.trim().is_empty() {
+                        text(label).into()
+                    } else {
+                        function_label(label, &self.search).into()
+                    };
+                    button(label)
                         .on_press(Message::Function(n.0.clone(), n.1.to_string()))
                         .width(Length::Fill)
                         .style(if (i % 2) == 0 {
@@ -219,6 +228,45 @@ impl MdHelp {
             Theme::Dark
         }
     }
+}
+
+enum Term<'a> {
+    Search(&'a str),
+    Remainder(&'a str),
+}
+
+impl<'a> Term<'a> {
+    fn split(self, s: &'a str) -> Vec<Term<'a>> {
+        match self {
+            Self::Remainder(a) => {
+                let parts: Vec<_> = a.split(s).map(|v| Self::Remainder(v)).collect();
+                let mut joined = Vec::with_capacity(parts.len() * 2);
+                for p in parts {
+                    joined.push(p);
+                    joined.push(Self::Search(s));
+                }
+                joined.pop();
+                joined
+            }
+            a => vec![a],
+        }
+    }
+}
+
+fn function_label(label: String, search: &str) -> Rich<'_, Message> {
+    let searches: Vec<&str> = search.trim().split(' ').collect();
+    let mut labels = vec![Term::Remainder(&label)];
+    for s in searches {
+        labels = labels.into_iter().map(|t| t.split(s)).flatten().collect();
+    }
+    let texts: Vec<_> = labels
+        .into_iter()
+        .map(|t| match t {
+            Term::Search(x) => Span::new(x.to_string()).color(colors::ARG_COLOR_FUNCTY),
+            Term::Remainder(x) => Span::new(x.to_string()),
+        })
+        .collect();
+    Rich::with_spans(texts)
 }
 
 pub fn list_functions<'a>(

@@ -15,8 +15,7 @@ node(output.INDEX?) output.INDEX == (node.INDEX - 1)
 node command("python area-and-streamflow.py {_NAME}")
 
 env.nodesize = 5
-node.nodesize = env.nodesize
-network.nodesize = nodes.nodesize
+node.visual.nodesize = env.nodesize
 
 network count()
 env count(nodes.area?)
@@ -25,7 +24,7 @@ network subset(nodes.area?)
 
 # visualize size based on area
 network set_nodesize_attrs(nodes.area, maxsize=8)
-node(area > 500).nodecolor = "orange";
+node(area > 500).visual.nodecolor = "orange";
 
 node.nodelabel = "i={INDEX}; xi = {area:f(2)?\"N/A\"}; yi = {streamflow:f(2)}"
 
