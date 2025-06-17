@@ -2,6 +2,10 @@
 name = "nadi-ide"
 version = "0.7.0"
 edition = "2024"
+description = "Integrated Development Environment (IDE) for running nadi task system"
+repository = "https://github.com/Nadi-System/nadi-system"
+license = "GPL-3.0-only"
+readme = "README.md"
 
 [dependencies]
 iced = { git = "https://github.com/atreyagaurav/iced.git", branch="cargo-stable", features = ["highlighter", "markdown", "lazy", "tokio", "svg", "canvas"] }
