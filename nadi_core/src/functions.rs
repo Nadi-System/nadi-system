@@ -631,35 +631,6 @@ impl NadiFunctions {
         )
     }
 
-    // pub fn call_node(
-    //     &self,
-    //     func: &str,
-    //     nodes: RSlice<Node>,
-    //     ctx: &FunctionCtx,
-    // ) -> anyhow::Result<()> {
-    //     match self.node(func) {
-    //         Some(f) => f
-    //             .call(nodes, ctx)
-    //             .map_err(|e| anyhow::Error::msg(e.to_string()))
-    //             .into(),
-    //         None => anyhow::bail!("Node Function {} not found", func),
-    //     }
-    // }
-
-    // pub fn call_network(
-    //     &self,
-    //     func: &str,
-    //     network: &mut Network,
-    //     ctx: &FunctionCtx,
-    // ) -> anyhow::Result<()> {
-    //     match self.network(func) {
-    //         Some(f) => f
-    //             .call(network, ctx)
-    //             .res(),
-    //         None => anyhow::bail!("Node Function {} not found", func),
-    //     }
-    // }
-
     pub fn env(&self, func: &str) -> Option<&EnvFunctionBox> {
         if func.contains('.') {
             self.env.get(func)
@@ -667,6 +638,7 @@ impl NadiFunctions {
             self.env_alias.get(func).and_then(|f| self.env.get(f))
         }
     }
+
     pub fn node(&self, func: &str) -> Option<&NodeFunctionBox> {
         if func.contains('.') {
             self.node.get(func)
@@ -674,6 +646,7 @@ impl NadiFunctions {
             self.node_alias.get(func).and_then(|f| self.node.get(f))
         }
     }
+
     pub fn network(&self, func: &str) -> Option<&NetworkFunctionBox> {
         if func.contains('.') {
             self.network.get(func)
@@ -696,6 +669,11 @@ impl NadiFunctions {
     pub fn help_network(&self, func: &str) -> Option<String> {
         self.network(func).map(|f| f.help().into_string())
     }
+
+    pub fn help_env(&self, func: &str) -> Option<String> {
+        self.env(func).map(|f| f.help().into_string())
+    }
+
     pub fn code(&self, func: &str) -> Option<String> {
         // node and network function might have same name
         self.code_network(func).or_else(|| self.code_node(func))
@@ -707,6 +685,10 @@ impl NadiFunctions {
 
     pub fn code_network(&self, func: &str) -> Option<String> {
         self.network(func).map(|f| f.code().into_string())
+    }
+
+    pub fn code_env(&self, func: &str) -> Option<String> {
+        self.env(func).map(|f| f.code().into_string())
     }
 }
 

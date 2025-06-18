@@ -8,11 +8,13 @@ use std::str::FromStr;
 #[pyclass(module = "nadi", name = "Date")]
 #[repr(transparent)]
 #[derive(Clone, PartialEq, Debug)]
+/// Nadi Date data type, contains year, month and day
 pub struct PyNDate(Date);
 
 #[pymethods]
 impl PyNDate {
     #[new]
+    /// Parse date from a string
     fn parse(date: &str) -> PyResult<Self> {
         Ok(Date::from_str(date)
             .map(PyNDate)
@@ -20,6 +22,7 @@ impl PyNDate {
     }
 
     #[staticmethod]
+    /// Build a date object from year, month and day
     fn from_ymd(year: u16, month: u8, day: u8) -> Self {
         Self(Date { year, month, day })
     }
@@ -37,6 +40,7 @@ impl PyNDate {
         self.0.day
     }
 
+    /// Convert to `datetime.date`
     fn to_date<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyDate>> {
         PyDate::new(py, self.year().into(), self.month(), self.day())
     }
@@ -50,11 +54,13 @@ impl PyNDate {
 #[pyclass(module = "nadi", name = "Time")]
 #[repr(transparent)]
 #[derive(Clone, PartialEq, Debug)]
+/// Python time data type, contains hour, minutes and seconds
 pub struct PyNTime(Time);
 
 #[pymethods]
 impl PyNTime {
     #[new]
+    /// Parse time from a string
     fn parse(time: &str) -> PyResult<Self> {
         Ok(Time::from_str(time)
             .map(PyNTime)
@@ -62,6 +68,7 @@ impl PyNTime {
     }
 
     #[staticmethod]
+    /// Build time from hour, minute and second
     fn from_hms(hour: u8, minute: u8, second: u8) -> Self {
         Self(Time {
             hour,
@@ -89,6 +96,7 @@ impl PyNTime {
         format!("<Time {}>", t)
     }
 
+    /// Convert to `datetime.time`
     fn to_time<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyTime>> {
         PyTime::new(py, self.hour(), self.minute(), self.second(), 0, None)
     }
@@ -97,11 +105,13 @@ impl PyNTime {
 #[pyclass(module = "nadi", name = "DateTime")]
 #[repr(transparent)]
 #[derive(Clone, PartialEq, Debug)]
+/// Nadi DateTime object
 pub struct PyNDateTime(DateTime);
 
 #[pymethods]
 impl PyNDateTime {
     #[new]
+    /// Parse datetime from string
     fn parse(dt: &str) -> PyResult<Self> {
         Ok(DateTime::from_str(dt)
             .map(PyNDateTime)
@@ -109,6 +119,7 @@ impl PyNDateTime {
     }
 
     #[staticmethod]
+    /// build datetime from year, month, day, hour, minute, second
     fn from_ymdhms(year: u16, month: u8, day: u8, hour: u8, minute: u8, second: u8) -> Self {
         Self(DateTime {
             date: Date { year, month, day },
@@ -152,6 +163,7 @@ impl PyNDateTime {
         format!("<DateTime {} {}>", dt.date, dt.time)
     }
 
+    /// Convert to `datetime.datetime`
     fn to_datetime<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyDateTime>> {
         PyDateTime::new(
             py,
@@ -168,6 +180,7 @@ impl PyNDateTime {
 }
 
 #[derive(Clone, Debug, PartialEq, FromPyObject, IntoPyObject)]
+/// Nadi Attribute
 pub enum PyAttribute {
     String(String),
     Bool(bool),

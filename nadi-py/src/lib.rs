@@ -8,7 +8,7 @@ mod node;
 use functions::*;
 use nadi_core::functions::NadiFunctions;
 
-/// A Python module implemented in Rust.
+/// Main nadi module, contains the data types and functions
 #[pymodule]
 fn nadi(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<attrs::PyNDate>()?;
@@ -64,9 +64,7 @@ pub fn register_function_modules(py: Python, parent: &Bound<'_, PyModule>) -> Py
     }
     for f in nadi_funcs.env_alias() {
         let name = f.0.as_str();
-        let f = nadi_funcs
-            .env(f.1)
-            .expect("Function in alias should exist");
+        let f = nadi_funcs.env(f.1).expect("Function in alias should exist");
         env.setattr(name, PyEnvFunction::new(f.clone()))?;
     }
 

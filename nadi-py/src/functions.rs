@@ -16,6 +16,7 @@ use pyo3::{
 };
 
 #[pyclass(unsendable, module = "nadi", name = "NodeFunction")]
+/// Node Function
 pub struct PyNodeFunction {
     pub func: NodeFunctionBox,
     pub sig: RString,
@@ -75,6 +76,7 @@ impl PyNodeFunction {
 }
 
 #[pyclass(unsendable, module = "nadi", name = "NetworkFunction")]
+/// Network Function
 pub struct PyNetworkFunction {
     pub func: NetworkFunctionBox,
     pub sig: RString,
@@ -133,6 +135,7 @@ impl PyNetworkFunction {
 }
 
 #[pyclass(unsendable, module = "nadi", name = "EnvFunction")]
+/// Environment Function
 pub struct PyEnvFunction {
     pub func: EnvFunctionBox,
     pub sig: RString,
@@ -197,16 +200,19 @@ impl PyEnvFunction {
 // function from python look into the submodules and execute it.
 // Maybe we need to store the rust nadi functions in the module somehow
 #[pyclass(unsendable, module = "nadi", name = "NadiFunctions")]
+/// Nadi Functions loaded from plugins
 pub struct PyNadiFunctions(pub NadiFunctions);
 
 #[pymethods]
 impl PyNadiFunctions {
     #[new]
+    /// Construct new `NadiFunctions` loading the plugins
     fn new() -> Self {
         Self(NadiFunctions::new())
     }
 
     #[pyo3(signature = (function, node, *args, **kwargs))]
+    /// call a node function
     fn node(
         &self,
         function: &str,
@@ -231,6 +237,7 @@ impl PyNadiFunctions {
     }
 
     #[pyo3(signature = (function, network, *args, **kwargs))]
+    /// call a network function
     fn network(
         &self,
         function: &str,
@@ -255,6 +262,7 @@ impl PyNadiFunctions {
     }
 
     #[pyo3(signature = (function, *args, **kwargs))]
+    /// call an environment function
     fn env(
         &self,
         function: &str,
@@ -278,7 +286,7 @@ impl PyNadiFunctions {
     }
 
     // todo register python functions into nadi/node function
-
+    /// get a node function as a callable object
     fn node_function(&self, name: &str) -> PyResult<PyNodeFunction> {
         match self.0.node(name) {
             Some(f) => Ok(PyNodeFunction::new(f.clone())),
@@ -288,6 +296,7 @@ impl PyNadiFunctions {
         }
     }
 
+    /// get a network function as a callable object
     fn network_function(&self, name: &str) -> PyResult<PyNetworkFunction> {
         match self.0.network(name) {
             Some(f) => Ok(PyNetworkFunction::new(f.clone())),
@@ -297,6 +306,7 @@ impl PyNadiFunctions {
         }
     }
 
+    /// get a environment function as a callable object
     fn env_function(&self, name: &str) -> PyResult<PyEnvFunction> {
         match self.0.env(name) {
             Some(f) => Ok(PyEnvFunction::new(f.clone())),
@@ -306,6 +316,7 @@ impl PyNadiFunctions {
         }
     }
 
+    /// list all node functions
     fn list_node_functions(&self) -> Vec<String> {
         self.0
             .node_functions()
@@ -314,6 +325,7 @@ impl PyNadiFunctions {
             .collect()
     }
 
+    /// list all network functions
     fn list_network_functions(&self) -> Vec<String> {
         self.0
             .network_functions()
@@ -322,7 +334,17 @@ impl PyNadiFunctions {
             .collect()
     }
 
+    /// list all node functions
+    fn list_env_functions(&self) -> Vec<String> {
+        self.0
+            .env_functions()
+            .keys()
+            .map(|k| k.to_string())
+            .collect()
+    }
+
     #[pyo3(signature = (function, print=true))]
+    /// print the help of the function
     fn help(&self, function: &str, print: bool) -> Option<String> {
         match self.0.help(function) {
             Some(h) if print => {
@@ -354,6 +376,17 @@ impl PyNadiFunctions {
     }
 
     #[pyo3(signature = (function, print=true))]
+    fn help_env(&self, function: &str, print: bool) -> Option<String> {
+        match self.0.help_env(function) {
+            Some(h) if print => {
+                println!("{h}");
+                None
+            }
+            v => v,
+        }
+    }
+
+    #[pyo3(signature = (function, print=true))]
     fn code(&self, function: &str, print: bool) -> Option<String> {
         match self.0.code(function) {
             Some(h) if print => {
@@ -376,6 +409,16 @@ impl PyNadiFunctions {
     #[pyo3(signature = (function, print=true))]
     fn code_network(&self, function: &str, print: bool) -> Option<String> {
         match self.0.code_network(function) {
+            Some(h) if print => {
+                println!("{h}");
+                None
+            }
+            v => v,
+        }
+    }
+    #[pyo3(signature = (function, print=true))]
+    fn code_env(&self, function: &str, print: bool) -> Option<String> {
+        match self.0.code_env(function) {
             Some(h) if print => {
                 println!("{h}");
                 None
