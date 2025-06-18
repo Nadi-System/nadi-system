@@ -167,14 +167,16 @@ fn repl(mut ctx: TaskContext) {
 
 fn init_plugin(name: &str, nadi_core: &Option<PathBuf>) -> std::io::Result<()> {
     let path = PathBuf::from(name);
+    let name = name.replace('-', "_");
     std::fs::create_dir(&path)?;
     let nadi_core = match nadi_core {
-        Some(path) => format!(
-            "{{path = {:?}, version=\"0.7.0\"}}",
+        Some(nc) => format!(
+            "{{path = {:?}, version={:?}}}",
             // One step up since the Cargo.toml will be inside the plugin dir
-            PathBuf::from("..").join(path)
+            PathBuf::from("..").join(nc),
+            nadi_core::NADI_CORE_VERSION,
         ),
-        None => "\"0.7.0\"".to_string(),
+        None => format!("{:?}", nadi_core::NADI_CORE_VERSION),
     };
     std::fs::write(
         path.join("Cargo.toml"),
@@ -182,7 +184,7 @@ fn init_plugin(name: &str, nadi_core: &Option<PathBuf>) -> std::io::Result<()> {
             "
 [package]
 name = \"{name}\"
-version = \"0.4.0\"
+version = \"0.1.0\"
 edition = \"2021\"
 
 

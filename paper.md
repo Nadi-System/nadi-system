@@ -1,5 +1,5 @@
 ---
-title: NADI -- A Free and Open Source Generalized Modeling Platform for Data Integration using River Network Information
+title: NADI -- Network Analysis and Data Integration with a Domain Specific Programming Language
 tags:
   - Rust
   - hydrology
@@ -31,18 +31,14 @@ bibliography: references.bib
 # Summary
 We present Network Analysis and Data Integration (NADI), a developing
 software framework designed to facilitate river data analysis and
-visualization. The initial and final phases of research often consists
-of repetitive and onerous tasks involving data analysis and
-visualization often done through domain specific software packages or
-general purpose programming languages. NADI provides a combination of
-features that compliment those existing tools, it specializes on
-algorithms based on network connectivity, interactive plotting
-capabilities, integration with different modeling tools, and a
-generalized plugin system to run user-defined functions on each node
-or the whole network. Our approach enables users to spend less time on
-data preparation and visualization and more time developing actual
-model algorithms, ultimately enhancing the accuracy and
-comprehensiveness of hydrological models.
+visualization. NADI comes with a Domain Specific Programming Language
+(DSL) that has an intuitive syntax for network metadata analysis as
+well as a generalized plugin system to run user-defined functions on
+each node or the whole network. Our approach enables users to spend
+less time on data preparation and visualization and more time
+developing actual model algorithms, ultimately enhancing the accuracy
+and comprehensiveness of hydrological models compared to using
+specialized software or general purpose programming languages.
 
 # Statement of need
 Hydrologic modeling, which involves integrating diverse data to simulate complex processes [@singhMathematicalModelingWatershed2002; @clarkImprovingRepresentationHydrologic2015; @loucksWaterResourceSystems2017], is hindered by manual and time-consuming data organization tasks, resulting on time drain, disengagement, information overload and human errors [@brunsTediousWorkDeveloping2024, @readStateScienceEvolving2021]
@@ -76,10 +72,12 @@ NADI System consists of:
 | Tool             | Description                                                 |
 |------------------|-------------------------------------------------------------|
 | NADI GIS         | Geographic Information (GIS) Tool for Network Detection     |
-| NADI Task System | Domain Specific Programming Language (DSL)                 |
+| NADI Task System | Domain Specific Programming Language (DSL)                  |
 | NADI library     | Rust and Python library to use in your programs             |
 | NADI CLI         | Command Line Interface to run NADI Tasks                    |
 | NADI IDE         | Integrated Development Environment to write/ run NADI Tasks |
+| mdbook-nadi      | Plugin for mdbook program that helps with documentation     |
+
 
 NADI IDE consists of sub components like NADI help, text editor, network visualizer, terminal, etc. Some of which can also be ran independently of IDE. The figure below shows the GUI of NADI IDE, we can see the editor with tasks on left top, window to browse help on plugin functions on left bottom, terminal on top right, and network viewer and attribute browser on right bottom. These panes can be moves around, resized, turned on/off in a tiling window management style.
 
@@ -118,7 +116,7 @@ $$
 
 Where, \(x_i, y_i\) are values of \(x,y\) on node \(i\) and, \(I_i\) is the set of input nodes for node \(i\).
 
-In pseudocode, it is equivalent to calling the following function on the outlet of the network.
+In pseudocode, it is equivalent to calling the following recursive function on the outlet of the network.
 
 ```
 def calc_y(node):
@@ -130,7 +128,7 @@ def calc_y(node):
 
 Since y is dependent on y of input nodes, we need to call these functions recursively. The nadi syntax with `<inputsfirst>` part makes sure of that by running the expression for input nodes before the output node:
 
-@atreyaEstimatingInfluenceWater2024 demonstrates a complex task like river routing model using the network structure.
+@atreyaEstimatingInfluenceWater2024 demonstrates a complex task like river routing model using the network structure. For more examples of the up to date codes refer to the [Nadi Book](https://nadi-system.github.io/).
 
 ## Extensibility
 Nadi Task system supports two types of plugins for extending the use case to suit the need of its users.
@@ -144,6 +142,15 @@ the NADI system.
 Furthermore, NADI can be used as a library in both Rust and Python, that can allow you to embed this into your own programs. For example, you can use python library, and pass python functions to nadi so that they are run for each node in the correct order.
 
 Since plugins allow arbitrary code to be run in your computer, it is a security vulerability [@mesaUnderstandingVulnerabilitiesPluginbased2018], users should only load/use plugins that they know are from a safe provider, or is developed in house.
+
+# Future Plans
+Although NADI currently can store time-series data on the
+nodes/network, it relies on user-developed plugins to facilitate
+interaction with them. Future enhancements aim to expand its
+capabilities by incorporating internal plugins and intuitive syntax
+for working directly with time series data.  Specifically, we plan to
+develop support for gaps in time-series data and implement methods for
+filling these gaps using the network connectivity.
 
 # Acknowledgements
 

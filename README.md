@@ -9,7 +9,7 @@ Prebuilt binaries are available for windows in the releases page. Use the `nadi-
 
 ![Nadi IDE Screenshot](ide-screenshot.png)
 
-If you want to build it from source, clone this repository. And build it with cargo:
+If you want to build it from source, which works on Linux, Windows, MacOS and Android (Termux, but without the IDE), clone this repository. And build it with cargo as follows:
 
 ```bash
 git clone https://github.com/Nadi-System/nadi-system
