@@ -1,6 +1,6 @@
 [package]
 name = "nadi"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2021"
 description = "CLI tool for running nadi task system"
 repository = "https://github.com/Nadi-System/nadi-system"
@@ -13,4 +13,4 @@ readme = "README.md"
 [dependencies]
 anyhow = "1.0.89"
 clap = { version = "4.5.17", features = ["derive"] }
-nadi_core = {version = "0.7.0", path="../nadi_core", features=["functions", "parser"]}
+nadi_core = {version = "0.7.1", path="../nadi_core", features=["functions", "parser"]}

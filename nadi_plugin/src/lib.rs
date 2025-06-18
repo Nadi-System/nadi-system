@@ -275,8 +275,8 @@ fn check_args_kwargs_order(
         })
         .collect();
     let mut flag = false;
-    for (a, t, _) in args {
-        if type_is_opt(t) || default_args.contains_key(a) {
+    for (a, t, at) in args {
+        if type_is_opt(t) || default_args.contains_key(a) || matches!(at, FuncArgType::KwArgs) {
             flag = true;
         } else if flag {
             warnings.push(quote_spanned! {
