@@ -29,15 +29,17 @@ bibliography: references.bib
 <!--   - Patrick A. Ray -->
 
 # Summary
-We present Network Analysis and Data Integration (NADI), a developing
-software framework designed to facilitate river data analysis and
-visualization. NADI comes with a Domain Specific Programming Language
-(DSL) that has an intuitive syntax for network metadata analysis as
-well as a generalized plugin system to run user-defined functions on
-each node or the whole network. Our approach enables users to spend
-less time on data preparation and visualization and more time
-developing actual model algorithms, ultimately enhancing the accuracy
-and comprehensiveness of hydrological models compared to using
+We present Network Analysis and Data Integration (NADI) System, a
+developing software framework designed to facilitate river data
+analysis and visualization. NADI comes with a Domain Specific
+Programming Language (DSL) that has an intuitive syntax for network
+metadata analysis as well as a generalized plugin system to run
+user-defined functions on each node or the whole network. Plugins
+provide seamless integration with GIS softwares and and other
+programming languages. Our approach enables users to easily run
+network based algorithms, check for inconsistencies in data, easily
+visualize network metadata, etc. ultimately enhancing the accuracy and
+comprehensiveness of hydrological models compared to using only
 specialized software or general purpose programming languages.
 
 # Statement of need
@@ -81,18 +83,24 @@ NADI System consists of:
 
 NADI IDE consists of sub components like NADI help, text editor, network visualizer, terminal, etc. Some of which can also be ran independently of IDE. The figure below shows the GUI of NADI IDE, we can see the editor with tasks on left top, window to browse help on plugin functions on left bottom, terminal on top right, and network viewer and attribute browser on right bottom. These panes can be moves around, resized, turned on/off in a tiling window management style.
 
-![Screenshot of the NADI IDE](ide-screenshot.png)
+![Screenshot of the NADI IDE showcasing the editor, network viewer, help and terminal](ide-screenshot.png)
 
 # Data Structures
-Nadi has the following data structures:
+Nadi has the following main data structures:
 
 - **Node** is one point on the network. It can have input nodes, one output node, and attributes associated with it.
 - **Network** consists of several interconnected nodes. It has to be DAG with only one outlet node. It can have attributes associated with it.
 - **Attributes** are values that can be boolean, integer, float, string, array, table, etc.
 - **Functions** are categorized into environment, network and node functions based on what they work on. For example, network function is run on a network, while node function is run at each node.
 - **Expressions** are combination of attributes, variables, function calls, if--else, etc that can result in an attribute value.
-- **Task** in NADI is an execution body consisting of type of the task, optional output attribute name, and expression.
+- **Propagation** is how the node functions are called in a network, you can call them in different order, based on a list, or filtered by expression.
+- **Task** in NADI is an execution body consisting of type of the task, optional output attribute name, and an expression that may or may not return a value. Only the top level function call on the expression can be a mutable call.
 - **String Templates** are strings with variables and transformation functions inside them that can be used to render it into different strings dynamically based on network/node attributes.
+- **Task Context** is the runtime environment for tasks to be run. It consists of a network, environmental variables and functions loaded from plugins.
+
+Figure below shows how the different data types come together to generate a task and the task context. Each task runs in the task context, giving outputs, modifying the context, producing side effects (saving files), etc.
+
+![data Structures and the their relationship in the Tasks System](tasks-dtypes.png)
 
 # Key Features
 
