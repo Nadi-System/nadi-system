@@ -217,13 +217,13 @@ impl Default for Attribute {
 impl std::fmt::Display for Attribute {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Self::Bool(v) => write!(f, "{v:?}"),
+            Self::Bool(v) => write!(f, "{v}"),
             Self::String(v) => write!(f, "{v:?}"),
-            Self::Integer(v) => write!(f, "{v:?}"),
-            Self::Float(v) => write!(f, "{v:?}"),
-            Self::Date(v) => write!(f, "{v:?}"),
-            Self::Time(v) => write!(f, "{v:?}"),
-            Self::DateTime(v) => write!(f, "{v:?}"),
+            Self::Integer(v) => write!(f, "{v}"),
+            Self::Float(v) => write!(f, "{v}"),
+            Self::Date(v) => write!(f, "{v}"),
+            Self::Time(v) => write!(f, "{v}"),
+            Self::DateTime(v) => write!(f, "{v}"),
             Self::Array(v) => {
                 write!(
                     f,
