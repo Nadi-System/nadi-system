@@ -56,14 +56,26 @@ impl PyNetwork {
         }
     }
 
+    fn nodes_order(&self, order: String) -> PyResult<Vec<PyNode>> {
+        let ord = prop_order(&order)?;
+        Ok(self.0.nodes_order(&ord).into_iter().map(PyNode).collect())
+    }
+
     /// Will return empty vec if the path doesn't exist
-    fn nodes_path(&self, start: NodeIndOrName, end: NodeIndOrName) -> PyResult<Vec<PyNode>> {
+    #[pyo3(signature = (start, end, order="auto"))]
+    fn nodes_path(
+        &self,
+        start: NodeIndOrName,
+        end: NodeIndOrName,
+        order: &str,
+    ) -> PyResult<Vec<PyNode>> {
         let start = self.node(start)?.name();
         let end = self.node(end)?.name();
         let path = StrPath::new(start.into(), end.into());
+        let ord = prop_order(order)?;
         let path = self
             .0
-            .nodes_path(&PropOrder::Auto, &path)
+            .nodes_path(&ord, &path)
             .map_err(PyKeyError::new_err)?
             .into_iter()
             .map(PyNode)
@@ -89,4 +101,17 @@ impl PyNetwork {
     }
 
     // fn nodes_propagation(&self, )
+}
+
+fn prop_order(s: &str) -> PyResult<PropOrder> {
+    match s {
+        "auto" => Ok(PropOrder::Auto),
+        "sequential" => Ok(PropOrder::Sequential),
+        "inverse" => Ok(PropOrder::Inverse),
+        "inputsfirst" => Ok(PropOrder::InputsFirst),
+        "outputfirst" => Ok(PropOrder::OutputFirst),
+        _ => Err(PyValueError::new_err(format!(
+            "Unknown propagation order: {s}"
+        ))),
+    }
 }

@@ -4,6 +4,10 @@ build-backend = "maturin"
 
 [project]
 name = "nadi-py"
+description = "Python bindings to the Network Analysis and Data Integration (NADI) System"
+readme = "README.md"
+license = {file = "LICENSE"}
+keywords = ["river", "hydrology", "network analysis", "environmental modeling"]
 requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Rust",
@@ -14,5 +18,12 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Hydrology"
 ]
 dynamic = ["version"]
+
+[project.urls]
+homepage = "https://nadi-system.github.io/"
+documentation = "https://nadi-system.github.io/python.html"
+repository = "https://github.com/Nadi-System/nadi-system"
+
 [tool.maturin]
 features = ["pyo3/extension-module"]
+

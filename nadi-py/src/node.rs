@@ -32,6 +32,7 @@ impl PyNode {
         self.0.lock().order()
     }
 
+    #[getter]
     pub fn inputs(&self) -> Vec<PyNode> {
         self.0
             .lock()
@@ -41,6 +42,7 @@ impl PyNode {
             .collect()
     }
 
+    #[getter]
     fn output(&self) -> Option<PyNode> {
         self.0.lock().output().map(|n| PyNode(n.clone())).into()
     }
@@ -50,6 +52,7 @@ impl PyNode {
         Ok(())
     }
 
+    #[getter]
     fn attrs(&self) -> HashSet<String> {
         self.0
             .lock()
