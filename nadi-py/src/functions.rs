@@ -9,6 +9,7 @@ use nadi_core::functions::{
 };
 use nadi_core::functions::{FunctionCtx, FunctionRet};
 use nadi_core::prelude::*;
+use std::str::FromStr;
 
 use pyo3::{
     exceptions::{PyKeyError, PyRuntimeError},
@@ -65,13 +66,8 @@ impl PyNodeFunction {
     }
 
     #[getter]
-    fn __signature__(&self) -> &str {
-        self.pysig.as_str()
-    }
-
-    #[getter]
     fn __text_signature__(&self) -> &str {
-        self.sig.as_str()
+        self.pysig.as_str()
     }
 }
 
@@ -124,13 +120,8 @@ impl PyNetworkFunction {
     }
 
     #[getter]
-    fn __signature__(&self) -> &str {
-        self.pysig.as_str()
-    }
-
-    #[getter]
     fn __text_signature__(&self) -> &str {
-        self.sig.as_str()
+        self.pysig.as_str()
     }
 }
 
@@ -182,13 +173,8 @@ impl PyEnvFunction {
     }
 
     #[getter]
-    fn __signature__(&self) -> &str {
-        self.pysig.as_str()
-    }
-
-    #[getter]
     fn __text_signature__(&self) -> &str {
-        self.sig.as_str()
+        self.pysig.as_str()
     }
 }
 
@@ -447,17 +433,24 @@ fn sig_to_py(sig: &[FuncArg], arg0: Option<&str>, notype: bool) -> String {
         args.push(if notype {
             match &a.category {
                 FuncArgType::Arg => format!("{}", a.name),
-                FuncArgType::OptArg => format!("{}", a.name),
-                FuncArgType::DefArg(val) => format!("{} = {}", a.name, val),
+                FuncArgType::OptArg => format!("{} = None", a.name),
+                FuncArgType::DefArg(val) => format!("{} = {}", a.name, value_to_py(val)),
                 FuncArgType::Args => format!("*{}", a.name),
                 FuncArgType::KwArgs => format!("**{}", a.name),
             }
         } else {
             match &a.category {
-                FuncArgType::Arg => format!("{}: {}", a.name, type_to_py(a.ty.as_str())),
-                FuncArgType::OptArg => format!("{}: {}", a.name, type_to_py(a.ty.as_str())),
+                FuncArgType::Arg => format!("{}: '{}'", a.name, type_to_py(a.ty.as_str())),
+                FuncArgType::OptArg => {
+                    format!("{}: '{}' = None", a.name, type_to_py(a.ty.as_str()))
+                }
                 FuncArgType::DefArg(val) => {
-                    format!("{}: {} = {}", a.name, type_to_py(a.ty.as_str()), val)
+                    format!(
+                        "{}: '{}' = {}",
+                        a.name,
+                        type_to_py(a.ty.as_str()),
+                        value_to_py(val)
+                    )
                 }
                 FuncArgType::Args => format!("*{}", a.name),
                 FuncArgType::KwArgs => format!("**{}", a.name),
@@ -465,6 +458,17 @@ fn sig_to_py(sig: &[FuncArg], arg0: Option<&str>, notype: bool) -> String {
         });
     }
     format!("({})", args.join(", "))
+}
+
+fn value_to_py(val: &str) -> String {
+    match Attribute::from_str(val) {
+        Ok(Attribute::Bool(true)) => "True".to_string(),
+        Ok(Attribute::Bool(false)) => "False".to_string(),
+        Ok(Attribute::Integer(i)) => i.to_string(),
+        Ok(Attribute::Float(i)) => i.to_string(),
+        Ok(Attribute::String(s)) => format!("{s:?}"),
+        _ => "...".to_string(),
+    }
 }
 
 fn type_to_py(ty: &str) -> String {
@@ -480,6 +484,7 @@ fn type_to_py(ty: &str) -> String {
             "Array" | "Vec" => "List",
             "Table" | "HashMap" => "Dict",
             "Attribute" => "Any",
+            "&" => "",
             "<" => "[",
             ">" => "]",
             _ => "...",

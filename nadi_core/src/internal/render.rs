@@ -15,9 +15,9 @@ mod render {
     fn render(
         /// String template to render
         template: &Template,
-        #[kwargs] keyval: &AttrMap,
         /// if render fails keep it as it is instead of exiting
         safe: bool,
+        #[kwargs] keyval: &AttrMap,
     ) -> Result<String, String> {
         let text = if safe {
             keyval
