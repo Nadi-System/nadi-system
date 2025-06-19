@@ -15,9 +15,9 @@ authors:
   - name: Patrick A. Ray
     affiliation: 1
 affiliations:
-  - name: Department of Chemical and Environmental Engineering, University of Cincinnati, 601, Engineering Research Center, Cincinnati, OH 45221-0012, United States of America
+  - name: Department of Chemical and Environmental Engineering, University of Cincinnati, OH, USA
     index: 1
-  - name: U. S. Army Engineer Research and Development Center (ERDC), 707 Fourth St., Davis, CA 95616, United States of America
+  - name: U. S. Army Engineer Research and Development Center (ERDC), Davis, CA, USA
     index: 2
 date: 20 May 2025
 bibliography: references.bib
@@ -26,58 +26,59 @@ bibliography: references.bib
 # Summary
 We present Network Analysis and Data Integration (NADI) System, a
 developing software framework designed to facilitate river data
-analysis and visualization. NADI comes with a Domain Specific
-Programming Language (DSL) that has an intuitive syntax for network
-metadata analysis as well as a generalized plugin system to run
-user-defined functions on each node or the whole network. Plugins
-provide seamless integration with other softwares and
-programming languages.
+analysis. NADI comes with a Domain Specific Programming Language (DSL)
+that has an intuitive syntax for network metadata analysis as well as
+a generalized plugin system to run user-defined functions on each node
+or the whole network. Plugins provide seamless integration with other
+softwares and programming languages.
+
+NADI can be used from Command Line Interface (CLI), Graphical User
+Interface (GUI) using the NADI Integrated Development Environment
+(IDE), as a Rust library, or as a Python library allowing users to
+write their own plugins or programs.
 
 # Statement of need
-Hydrologic modeling, which involves integrating diverse data to
-simulate complex processes [@singhMathematicalModelingWatershed2002;
-@clarkImprovingRepresentationHydrologic2015;
-@loucksWaterResourceSystems2017], is hindered by manual and
-time-consuming data organization tasks, resulting on time drain,
-disengagement, information overload and human errors
-[@brunsTediousWorkDeveloping2024, @readStateScienceEvolving2021].
+Hydrological analysis sometimes consists of data that are related to
+points in the river, and frequently with higher correlation or other
+relationship between upstream/downstream points. As many analysis
+starts with building and using that relationship for finding
+inconsistencies in the data, filling missing data, visualization of
+metadata, etc. there is a need for intelligent computational
+assistance to reduce the workload and improve the efficiency and
+reproducibility of research in this field
+[@rosenbergNextFrontierMaking2020]. Specific hydrology-focused
+software [@rossmanOpenSourcingEPANET2010;
+@gironasNewApplicationsManual2010] lack general applicability, while
+general purpose programming languages might not have the succinct and
+intuitive syntax. This highlights the need for a balanced approach
+that combines specificity to hydrological research questions with
+general capabilities.
 
-A directed acyclic graph (DAG) also called directed tree
-[@deoGraphTheoryApplications2016] is one of the best way to represent
-the river network [@rinaldoTreesNetworksHydrology2006;
-@kuhnDesigningLanguageSpatial2015;
-@abed-elmdoustEmergentSpectralProperties2017], characterized by
-directed edges and a hierarchical structure, which offers efficient
-storage and retrieval of large databases compared to relational models
-[@demirOptimizationRiverNetwork2017; @knoxOpensourceDataManager2019].
-
-Domain Specific Programming Language (DSL) has several advantages,
+Domain Specific Programming Language (DSL)s have several advantages
 including improved code readability and maintainability due to the
-DSL's tailored syntax and semantics, increased efficiency through
-optimized algorithms and data structures, and enhanced collaboration
-among domain experts and programmers by providing a shared language
-and problem-solving framework [@mernikWhenHowDevelop2005]. Although
-Graphviz has made great progress on the visualization of graph
-[@gansnerOpenGraphVisualization2000;
+DSL's tailored syntax and semantics as well as increased efficiency
+through optimized algorithms and data structures
+[@mernikWhenHowDevelop2005]. Although Graphviz has made great progress
+on the visualization of graph [@gansnerOpenGraphVisualization2000;
 @ellsonGraphvizDynagraphStatic2004], it does not have the analytical
 capabilities. Hydrolang has the capabilities of analysis and
 visualization for hydrological applications, but it is web based
 [@erazoramirezHydroLangOpensourceWebbased2022]. Languages made for
-spatial analysis are either working with grid based system
+spatial analysis are mostly working with grid based system
 [@pullarMapScriptMapAlgebra2001; @kuhnDesigningLanguageSpatial2015].
 
-Rust was chosen as implementation language due to its features like
-like memory safety [@fultonBenefitsDrawbacksAdopting2021;
+We present NADI that can load a river network as a Directed Acyclic
+Graph [@deoGraphTheoryApplications2016] which is known to be one of
+the best way to represent the river network
+[@rinaldoTreesNetworksHydrology2006;
+@kuhnDesigningLanguageSpatial2015;
+@abed-elmdoustEmergentSpectralProperties2017]. Nadi is written in Rust
+due to memory safety [@fultonBenefitsDrawbacksAdopting2021;
 @xuMemorySafetyChallengeConsidered2021;
-@bugdenSafetyPerformanceProminent2022] --- which is a recommended
-practice for new programs [@FinalONCDTechnicalReport], its runtime
-performaces [@zhangUnderstandingRuntimePerformance2023], and its macro
-system which gives us the metaprogramming features to make plugin
-development easier.
-
-
-# Software Components
-NADI can be used from Command Line Interface (CLI), Graphical User Interface (GUI) using the NADI Integrated Development Environment (IDE), as a Rust library, or as a Python library.
+@bugdenSafetyPerformanceProminent2022], runtime performaces
+[@zhangUnderstandingRuntimePerformance2023], and macro system which
+gives us the metaprogramming features to make plugin development
+easier.
 
 The figure below shows the GUI of NADI IDE, with the editor (left top), function help (left bottom), terminal (top right), network viewer, and attribute browser (right bottom). These panes can be managed a tiling window style.
 
@@ -93,16 +94,13 @@ Nadi has the following main data structures:
 - **Expressions** are combination of attributes, variables, function calls, if--else, etc that can result in an attribute value.
 - **Propagation** is how the node functions are called in a network, you can call them in different order, based on a list, or filtered by expression.
 - **Task** in NADI is an execution body consisting of type of the task, optional output attribute name, and an expression that may or may not return a value. Only the top level function call on the expression can be a mutable call.
-- **String Templates** are strings with variables and transformation functions inside them that can be used to render it into different strings dynamically based on network/node attributes.
 - **Task Context** is the runtime environment for tasks to be run. It consists of a network, environmental variables and functions loaded from plugins.
 
 Figure below shows how the different data types come together to generate a task and the task context. Each task runs in the task context, giving outputs, modifying the context, producing side effects (saving files), etc.
 
 ![data Structures and the their relationship in the Tasks System](tasks-dtypes.png)
 
-# Key Features
-
-## Network Analysis
+# Network Analysis
 Once the network information in a text file, and the attributes are loaded into the NADI System, Network Analysis is done through the Task System. For example, the following code represents a task that calculates the variable y as a cumulative sum of all the values of variable x at a node and its upstream points.
 
 ```
@@ -111,23 +109,21 @@ node<inputsfirst>.y = node.x + sum(inputs.y);
 It is equivalent to:
 
 $$
-y_{i} = x_i + \sum_{j=0 \forall j \in I_i}^{n}{y_j}
+y_{i} = x_i + \sum_{j \in I_i}{y_j}
 $$
 
 Where, \(x_i, y_i\) are values of \(x,y\) on node \(i\) and, \(I_i\) is the set of input nodes for node \(i\).
 
 @atreyaEstimatingInfluenceWater2024 demonstrates a complex task like river routing model using the network structure. For more examples of the up to date codes refer to the [Nadi Book](https://nadi-system.github.io/).
 
-## Extensibility
-Nadi Task system supports two types of plugins for extending the use case to suit the need of its users.
+# Extensibility
+Nadi Task system supports two types of plugins for extending the use cases.
 
 - **Compiled Plugins** are shared libraries (`.so` files in Linux, `.dll`
 in Windows, and `.dynlib` in MacOS) containing a list of functions that can be loaded into the main program during runtime.
-- **Executable Plugins** are independent programs/commands that are
-run and their standard output is used to communicate values back to
-the NADI system.
-
-Furthermore, NADI can be used as a library in both Rust and Python, allowing users to write their own plugins or programs.
+- **Executable Plugins** are independent programs that are run and
+their standard output is used to communicate values back to the NADI
+System.
 
 # Acknowledgements
 
