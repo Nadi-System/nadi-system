@@ -187,6 +187,20 @@ impl TimeSeries {
 #[repr(C)]
 #[derive(StableAbi, Clone, PartialEq, Debug)]
 pub enum Series {
+    Masked(MaskedSeries),
+    Values(SeriesValues),
+}
+
+#[repr(C)]
+#[derive(StableAbi, Clone, PartialEq, Debug)]
+pub struct MaskedSeries {
+    values: SeriesValues,
+    mask: RVec<bool>,
+}
+
+#[repr(C)]
+#[derive(StableAbi, Clone, PartialEq, Debug)]
+pub enum SeriesValues {
     Floats(RVec<f64>),
     Integers(RVec<i64>),
     Strings(RVec<RString>),
@@ -197,7 +211,7 @@ pub enum Series {
     Attributes(RVec<Attribute>),
 }
 
-impl Series {
+impl SeriesValues {
     pub fn floats(v: Vec<f64>) -> Self {
         Self::Floats(v.into())
     }
@@ -281,14 +295,14 @@ impl Series {
 
     pub fn to_attributes(self) -> Vec<Attribute> {
         match self {
-            Series::Floats(v) => v.into_iter().map(Attribute::Float).collect(),
-            Series::Integers(v) => v.into_iter().map(Attribute::Integer).collect(),
-            Series::Strings(v) => v.into_iter().map(Attribute::String).collect(),
-            Series::Booleans(v) => v.into_iter().map(Attribute::Bool).collect(),
-            Series::Dates(v) => v.into_iter().map(Attribute::Date).collect(),
-            Series::Times(v) => v.into_iter().map(Attribute::Time).collect(),
-            Series::DateTimes(v) => v.into_iter().map(Attribute::DateTime).collect(),
-            Series::Attributes(v) => v.into(),
+            Self::Floats(v) => v.into_iter().map(Attribute::Float).collect(),
+            Self::Integers(v) => v.into_iter().map(Attribute::Integer).collect(),
+            Self::Strings(v) => v.into_iter().map(Attribute::String).collect(),
+            Self::Booleans(v) => v.into_iter().map(Attribute::Bool).collect(),
+            Self::Dates(v) => v.into_iter().map(Attribute::Date).collect(),
+            Self::Times(v) => v.into_iter().map(Attribute::Time).collect(),
+            Self::DateTimes(v) => v.into_iter().map(Attribute::DateTime).collect(),
+            Self::Attributes(v) => v.into(),
         }
     }
 
@@ -306,37 +320,37 @@ impl Series {
     }
 }
 
-pub trait FromSeries<'a>: Sized {
-    fn from_series(value: &'a Series) -> Option<&'a [Self]>;
-    fn from_series_mut(value: &'a mut Series) -> Option<&'a mut [Self]>;
-    fn try_from_series(value: &'a Series) -> Result<&'a [Self], String> {
+pub trait FromSeriesValues<'a>: Sized {
+    fn from_series(value: &'a SeriesValues) -> Option<&'a [Self]>;
+    fn from_series_mut(value: &'a mut SeriesValues) -> Option<&'a mut [Self]>;
+    fn try_from_series(value: &'a SeriesValues) -> Result<&'a [Self], String> {
         let ermsg = format!(
             "Incorrect Type: series of `{}` cannot be converted to `{}`",
             value.type_name(),
             type_name::<Self>()
         );
-        FromSeries::from_series(value).ok_or(ermsg)
+        FromSeriesValues::from_series(value).ok_or(ermsg)
     }
-    fn try_from_series_mut(value: &'a mut Series) -> Result<&'a mut [Self], String> {
+    fn try_from_series_mut(value: &'a mut SeriesValues) -> Result<&'a mut [Self], String> {
         let ermsg = format!(
             "Incorrect Type: series of `{}` cannot be converted to `{}`",
             value.type_name(),
             type_name::<Self>()
         );
-        FromSeries::from_series_mut(value).ok_or(ermsg)
+        FromSeriesValues::from_series_mut(value).ok_or(ermsg)
     }
 }
 
 macro_rules! impl_from_series {
     ($t: tt, $x: path) => {
-        impl<'a> FromSeries<'a> for $t {
-            fn from_series(value: &Series) -> Option<&[$t]> {
+        impl<'a> FromSeriesValues<'a> for $t {
+            fn from_series(value: &SeriesValues) -> Option<&[$t]> {
                 match value {
                     $x(v) => Some(v.as_slice()),
                     _ => None,
                 }
             }
-            fn from_series_mut(value: &mut Series) -> Option<&mut [$t]> {
+            fn from_series_mut(value: &mut SeriesValues) -> Option<&mut [$t]> {
                 match value {
                     $x(v) => Some(v.as_mut_slice()),
                     _ => None,
@@ -344,7 +358,7 @@ macro_rules! impl_from_series {
             }
         }
 
-        impl From<&[$t]> for Series {
+        impl From<&[$t]> for SeriesValues {
             fn from(item: &[$t]) -> Self {
                 $x(item.into())
             }
@@ -362,11 +376,11 @@ macro_rules! impl_from_series {
     };
 }
 
-impl_from_series!(f64, Series::Floats);
-impl_from_series!(i64, Series::Integers);
-impl_from_series!(RString, Series::Strings);
-impl_from_series!(bool, Series::Booleans);
-impl_from_series!(Date, Series::Dates);
-impl_from_series!(Time, Series::Times);
-impl_from_series!(DateTime, Series::DateTimes);
-impl_from_series!(Attribute, Series::Attributes);
+impl_from_series!(f64, SeriesValues::Floats);
+impl_from_series!(i64, SeriesValues::Integers);
+impl_from_series!(RString, SeriesValues::Strings);
+impl_from_series!(bool, SeriesValues::Booleans);
+impl_from_series!(Date, SeriesValues::Dates);
+impl_from_series!(Time, SeriesValues::Times);
+impl_from_series!(DateTime, SeriesValues::DateTimes);
+impl_from_series!(Attribute, SeriesValues::Attributes);
