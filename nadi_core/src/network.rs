@@ -116,10 +116,12 @@ impl HasTimeSeries for Network {
 }
 
 impl Network {
+    /// Iterator for the nodes in the network
     pub fn nodes(&self) -> impl Iterator<Item = &Node> {
         self.nodes.iter().map(|n| &self.nodes_map[n])
     }
 
+    /// Iterator for the edges of the network
     pub fn edges(&self) -> impl Iterator<Item = (&Node, &Node)> + '_ {
         self.edges_ind().map(|(s, e)| {
             (
@@ -129,10 +131,12 @@ impl Network {
         })
     }
 
+    /// Outlet of the network (node with no output)
     pub fn outlet(&self) -> Option<&Node> {
         self.outlet.as_ref().into()
     }
 
+    /// Append the edges from the list, making new nodes if necessary
     pub fn append_edges(&mut self, edges: &[(&str, &str)]) -> Result<(), String> {
         for (start, end) in edges {
             if !self.nodes_map.contains_key(*start) {
@@ -160,17 +164,20 @@ impl Network {
         Ok(())
     }
 
+    /// Create a network with given edges
     pub fn from_edges(edges: &[(&str, &str)]) -> Result<Self, String> {
         let mut network = Self::default();
         network.append_edges(edges)?;
         Ok(network)
     }
 
+    /// Iterator of the edges with nodes' names
     pub fn edges_str(&self) -> impl Iterator<Item = (&str, &str)> + '_ {
         self.edges_ind()
             .map(|(s, e)| (self.nodes[s].as_str(), self.nodes[e].as_str()))
     }
 
+    /// Iterator of the edges with node index
     pub fn edges_ind(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
         self.nodes().filter_map(|n| {
             let n = n.lock();
@@ -181,39 +188,46 @@ impl Network {
         })
     }
 
+    /// Iterator of node names
     pub fn node_names(&self) -> impl Iterator<Item = &str> {
         self.nodes.iter().map(|n| n.as_str())
     }
 
+    /// Nodes iterator in reverse order
     pub fn nodes_rev(&self) -> impl Iterator<Item = &Node> {
         self.nodes.iter().rev().map(|n| &self.nodes_map[n])
     }
 
+    /// Number of nodes in the network
     pub fn nodes_count(&self) -> usize {
         self.nodes.len()
     }
 
+    /// Insert a new node by its name
     pub fn insert_node_by_name(&mut self, name: &str) {
         let node = new_node(self.nodes_count(), name);
         self.nodes_map.insert(name.into(), node);
         self.nodes.push(name.into());
     }
 
+    /// Get a node by index
     pub fn node(&self, ind: usize) -> Option<&Node> {
         self.nodes.get(ind).map(|n| &self.nodes_map[n])
     }
 
+    /// Get a node by name
     pub fn node_by_name(&self, name: &str) -> Option<&Node> {
         self.nodes_map.get(name)
     }
 
+    /// Get a node by name (with error msg on failure)
     pub fn try_node_by_name(&self, name: &str) -> Result<&Node, EvalError> {
         self.nodes_map
             .get(name)
             .ok_or_else(|| EvalError::NodeNotFound(name.to_string()))
     }
 
-    /// use TaskContext::propagation whenever possible
+    /// Get nodes in the given order
     pub fn nodes_order(&self, prop: &PropOrder) -> Vec<Node> {
         match prop {
             PropOrder::Auto | PropOrder::Sequential | PropOrder::OutputFirst => {
@@ -223,7 +237,7 @@ impl Network {
         }
     }
 
-    /// use TaskContext::propagation whenever possible
+    /// Get nodes in the given order and selection
     pub fn nodes_select(
         &self,
         order: &PropOrder,
@@ -250,6 +264,7 @@ impl Network {
         }
     }
 
+    /// Get a list of nodes in the given path
     pub fn nodes_path(&self, order: &PropOrder, path: &StrPath) -> Result<Vec<Node>, EvalError> {
         let start = self.try_node_by_name(path.start.as_str())?;
         let end = self.try_node_by_name(path.end.as_str())?;
@@ -290,6 +305,10 @@ impl Network {
         }
     }
 
+    /// Calculate the order of all nodes
+    ///
+    /// Value of order signifies the number of all nodes (recursively)
+    /// that are on the input side of the node
     pub fn calc_order(&mut self) {
         let _all_nodes: Vec<RString> = self.nodes.to_vec();
         let _order_queue: Vec<RString> = Vec::with_capacity(self.nodes.len());
@@ -320,6 +339,7 @@ impl Network {
         }
     }
 
+    /// Reorder the nodes in the network
     pub fn reorder(&mut self) {
         self.calc_order();
         self.outlet = {
@@ -374,6 +394,7 @@ impl Network {
         self.ordered = true;
     }
 
+    /// reindex the nodes in the network
     pub fn reindex(&self) {
         for (i, n) in self.nodes().enumerate() {
             n.lock().set_index(i);
@@ -400,6 +421,13 @@ impl Network {
         }
     }
 
+    /// Remove a single node from the network
+    ///
+    /// This will remove the node, while making all the input nodes
+    /// now goto the output node of the removed node. If it doesn't
+    /// have a output node, and there is more than one input nodes,
+    /// then the resulting network is no longer a directed tree, the
+    /// function will print a warning.
     fn remove_node_single(&mut self, node: &Node) {
         let (ind, out) = {
             let n = node.try_lock().expect("mutex problem 1");
@@ -440,12 +468,20 @@ impl Network {
         self.reindex();
     }
 
+    /// Remove a single node from the network
+    ///
+    /// This will remove the node, while making all the input nodes
+    /// now goto the output node of the removed node. If it doesn't
+    /// have a output node, and there is more than one input nodes,
+    /// then the resulting network is no longer a directed tree, the
+    /// function will print a warning.
     pub fn remove_node(&mut self, node: &Node) {
         self.remove_node_single(node);
         self.reorder();
         self.set_levels();
     }
 
+    /// Subset the network into a new network by removing a bunch of nodes
     pub fn subset(&mut self, filter: &[bool], keep: bool) -> Result<(), String> {
         let remove_nodes: Vec<Node> = self
             .nodes()
@@ -461,6 +497,7 @@ impl Network {
         Ok(())
     }
 
+    /// get the connections in utf8 string to print in terminal
     pub fn connections_utf8(&self) -> Vec<String> {
         self.nodes()
             .map(|node| {
@@ -492,6 +529,7 @@ impl Network {
             .collect()
     }
 
+    /// get the connections in ascii string to print in terminal
     pub fn connections_ascii(&self) -> Vec<String> {
         self.nodes()
             .map(|node| {
@@ -518,6 +556,7 @@ impl Network {
     }
 }
 
+/// Path with start and end node
 #[repr(C)]
 #[derive(StableAbi, Debug, Default, Clone, PartialEq)]
 pub struct StrPath {
@@ -532,10 +571,12 @@ impl std::fmt::Display for StrPath {
 }
 
 impl StrPath {
+    /// new path
     pub fn new(start: RString, end: RString) -> Self {
         Self { start, end }
     }
 
+    /// Make a string with colors to print in terminal
     pub fn to_colored_string(&self) -> String {
         format!(
             "{} -> {}",
@@ -545,10 +586,14 @@ impl StrPath {
     }
 }
 
+/// Propagation of the nodes in a network
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Propagation {
+    /// order of the nodes
     pub order: PropOrder,
+    /// List or path of nodes
     pub nodes: PropNodes,
+    /// Condition to evaluate for selection of nodes
     pub condition: PropCondition,
 }
 
@@ -558,13 +603,19 @@ impl std::fmt::Display for Propagation {
     }
 }
 
+/// Propagation order for nodes in a network
 #[derive(Debug, Default, Clone, PartialEq)]
 pub enum PropOrder {
+    /// Automatically based on context
     #[default]
     Auto,
+    /// Sequential order (index: 0,1,2,...)
     Sequential,
+    /// Inverse of the sequential
     Inverse,
+    /// Input nodes before the output node
     InputsFirst,
+    /// output node before the inputs node
     OutputFirst,
 }
 
@@ -580,11 +631,15 @@ impl std::fmt::Display for PropOrder {
     }
 }
 
+/// List of nodes in a network
 #[derive(Debug, Default, Clone, PartialEq)]
 pub enum PropNodes {
+    /// No selection (all nodes)
     #[default]
     All,
+    /// List of nodes by their name
     List(RVec<RString>),
+    /// Path between two nodes by their name
     Path(StrPath),
 }
 
@@ -605,11 +660,15 @@ impl std::fmt::Display for PropNodes {
     }
 }
 
+/// Propagation condition for the nodes
 #[derive(Debug, Default, Clone, PartialEq)]
 pub enum PropCondition {
+    /// No condition (all nodes)
     #[default]
     All,
+    /// Expression to evaluate into a bool to check
     Expr(Expression),
+    // TODO
     // Head(usize),
     // Tail(usize),
 }

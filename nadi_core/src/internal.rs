@@ -18,6 +18,7 @@ mod visuals;
 use crate::functions::NadiFunctions;
 use crate::plugins::NadiPlugin;
 
+/// Register the internal plugins
 pub(crate) fn register_internal(funcs: &mut NadiFunctions) {
     // These things need to be automated if possible, but I don't
     // think that is possible: search all types that implement

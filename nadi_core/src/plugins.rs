@@ -9,6 +9,7 @@ use abi_stable::{
     library::RootModule, sabi_types::version::VersionStrings, std_types::RString, StableAbi,
 };
 
+/// External Nadi Plugin
 #[repr(C)]
 #[derive(StableAbi)]
 #[sabi(kind(Prefix))]
@@ -17,8 +18,11 @@ pub struct NadiExternalPlugin {
     pub plugin_name: extern "C" fn() -> RString,
 }
 
+/// Trait to be satisfied by all nadi plugins
 pub trait NadiPlugin {
+    /// register the functions
     fn register(&self, func: &mut NadiFunctions);
+    /// name of the plugin
     fn name(&self) -> RString;
 }
 
@@ -90,7 +94,7 @@ fn print_library_err(err: LibraryError) {
             version,
 	    ..
 	} => eprintln!("Plugin Error: {module_name:?} {version}"),
-	LibraryError::AbiInstability(_) => eprintln!("ABI not stable"),
+	LibraryError::AbiInstability(_) => eprintln!("ABI not stable; recompile the plugin with correct nadi_core version"),
 	LibraryError::InvalidAbiHeader(_) => eprintln!("Invalid Header"),
 	LibraryError::InvalidCAbi {
             expected,
@@ -124,7 +128,7 @@ fn _print_library_err_full(err: LibraryError) {
             module_name,
             version,
 	} => eprintln!("Plugin Error: {err:?} {module_name:?} {version}"),
-	LibraryError::AbiInstability(e) => eprintln!("Abi Instable {e:?}"),
+	LibraryError::AbiInstability(e) => eprintln!("Abi Unstable {e:?}"),
 	LibraryError::InvalidAbiHeader(h) => eprintln!("Invalid Header {h:?}"),
 	LibraryError::InvalidCAbi {
             expected,

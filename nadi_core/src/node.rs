@@ -12,6 +12,7 @@ use abi_stable::{
     StableAbi,
 };
 
+/// Thread safe Mutex of [`NodeInner`]
 pub type Node = RArc<RMutex<NodeInner>>;
 
 /// Create a new [`Node`]
@@ -100,6 +101,7 @@ impl HasTimeSeries for NodeInner {
 }
 
 impl NodeInner {
+    /// new node data
     pub fn new(index: usize, name: &str) -> Self {
         let mut node = Self {
             index,
@@ -111,66 +113,81 @@ impl NodeInner {
         node
     }
 
+    /// name of the node
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// index of the node
     pub fn index(&self) -> usize {
         self.index
     }
 
+    /// set index of the node
     pub fn set_index(&mut self, index: usize) {
         self.index = index;
         self.set_attr("INDEX", Attribute::Integer(index as i64));
     }
 
+    /// level of the node
     pub fn level(&self) -> u64 {
         self.level
     }
 
+    /// order of the node
     pub fn order(&self) -> u64 {
         self.order
     }
 
+    /// set level of the node
     pub fn set_level(&mut self, level: u64) {
         self.level = level;
         self.set_attr("LEVEL", Attribute::Integer(level as i64));
     }
 
+    /// set order of the node
     pub fn set_order(&mut self, order: u64) {
         self.order = order;
         self.set_attr("ORDER", Attribute::Integer(order as i64));
     }
 
+    /// input nodes of the node
     pub fn inputs(&self) -> &[Node] {
         &self.inputs
     }
 
+    /// input nodes as a mutable reference
     pub(crate) fn inputs_mut(&mut self) -> &mut RVec<Node> {
         &mut self.inputs
     }
 
+    /// add a input node to the node
     pub fn add_input(&mut self, input: Node) {
         self.inputs.push(input);
     }
 
+    /// remove the input nodes of the node
     pub fn unset_inputs(&mut self) {
         self.inputs = RVec::new();
     }
 
+    /// order the input nodes in the network
     pub fn order_inputs(&mut self) {
         self.inputs
             .sort_by(|a, b| b.lock().order.partial_cmp(&a.lock().order).unwrap());
     }
 
+    /// output of the node
     pub fn output(&self) -> ROption<&Node> {
         self.output.as_ref()
     }
 
+    /// set the output of the node
     pub fn set_output(&mut self, output: Node) -> ROption<Node> {
         self.output.replace(output)
     }
 
+    /// unset the output of the node
     pub fn unset_output(&mut self) -> ROption<Node> {
         self.output.take()
     }

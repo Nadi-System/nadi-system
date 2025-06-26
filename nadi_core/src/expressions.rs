@@ -4,27 +4,47 @@ use crate::node::Node;
 use crate::tasks::{FunctionType, TaskContext, TaskKeyword};
 use std::collections::HashMap;
 
+/// Collection of Errors that can happen during expression evaluation
 #[derive(Debug, PartialEq, Clone)]
 pub enum EvalError {
+    /// Varible doesn't exist in given context
     UnresolvedVariable,
+    /// Function doesn't exist in given context
     FunctionNotFound(FunctionType, String),
+    /// Error in Function Evaluation
     FunctionError(String, String),
+    /// Function didn't return a value to be used in expression
     NoReturnValue(String),
+    /// Node with the name doesn't exit
     NodeNotFound(String),
+    /// Given Nodes are not connected with a path
     PathNotFound(String, String, String),
+    /// Attribute with name doesn't exist
     AttributeNotFound,
     // AttributeNotFound(Option<String>, String),
+    /// The node doesn't have output node
     NoOutputNode,
+    /// The node, doesn't have attribute with the given name
     NodeAttributeError(String, String),
+    /// Generic error while accessing attribute (type, nesting, etc)
     AttributeError(String),
+    /// Operation not valid (like true + 23)
     InvalidOperation,
+    /// Variable is not of correct type (e.g. node variable in network function)
     InvalidVariableType,
+    /// Number required for operation
     NotANumber,
+    /// Boolean required for operation
     NotABool,
+    /// Arrays are of different length
     DifferentLength(usize, usize),
+    /// Division by zero
     DivideByZero,
+    /// Regex compilation failed (invalid pattern)
     RegexError(regex::Error),
+    /// Logical error by the developer
     LogicalError(&'static str),
+    /// Lock on mutex failed
     MutexError(&'static str, u32),
 }
 
@@ -35,6 +55,7 @@ impl From<EvalError> for String {
 }
 
 impl EvalError {
+    /// Format the error into a message using the values
     pub fn message(&self) -> String {
         match self {
             Self::UnresolvedVariable => "Unresolved variable in expression",
@@ -79,18 +100,29 @@ impl std::fmt::Display for EvalError {
     }
 }
 
+/// Expression for the task system
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
+    /// Literal attribute values like `2`, `true`, etc
     Literal(Attribute),
+    /// Variable (dot separated, optionally with context)
     Variable(InputVar),
-    // for cases where the evaluation might short circuit, ifelse etc,
-    // this lets the error be ignored during resolve step and raised
-    // during eval step
+    /// Error in variable resolve process. Will propagation if evaluation is tried.
+    ///
+    /// This is for cases where the evaluation might short circuit,
+    /// ifelse etc, this lets the error be ignored during resolve step
+    /// but raised during eval step. That way the error can be ignored
+    /// if the evaluation doesn't hit it,
     ResolveError(EvalError),
+    /// Function call
     Function(FunctionCall),
+    /// Multiple function calls after resolving `nodes` and `inputs` type context
     MultiFunction(Vec<FunctionCall>),
+    /// With Unary operators e.g. `-``, `!true`
     UniOp(UniOperator, Box<Expression>),
+    /// With Binary operator e.g. `1 + 3`
     BiOp(BiOperator, Box<Expression>, Box<Expression>),
+    /// if-else statement
     IfElse(Box<Expression>, Box<Expression>, Box<Expression>),
 }
 
@@ -149,6 +181,7 @@ impl std::fmt::Display for Expression {
 }
 
 impl Expression {
+    /// check if the expression is nested (needs parenthesis)
     pub fn nested(&self) -> bool {
         match self {
             Self::Literal(_) => false,
@@ -162,6 +195,7 @@ impl Expression {
         }
     }
 
+    /// check if the expression contains variables or not
     pub fn has_variables(&self) -> bool {
         match self {
             Self::Literal(_) => false,
@@ -227,6 +261,7 @@ impl Expression {
         }
     }
 
+    /// Call [`Self::resolve`] then [`Self::eval`]
     pub fn resolve_eval(
         &self,
         ft: &FunctionType,
@@ -237,6 +272,7 @@ impl Expression {
             .and_then(|e| e.eval(ft, ctx, node))
     }
 
+    /// Call [`Self::resolve`] then [`Self::eval_mut`]
     pub fn resolve_eval_mut(
         &self,
         ft: &FunctionType,
@@ -247,6 +283,13 @@ impl Expression {
             .and_then(|e| e.eval_mut(ft, ctx, node))
     }
 
+    /// Resolve the variables in the expression for the given context
+    ///
+    /// This is an important process where the variables are extracted
+    /// and a literal expression is made to be evaluated. This takes
+    /// the function type (env/node/network) and possibly current node
+    /// and resolves the variables. Unresolved error is kept as a
+    /// Valid [`Expression`] on this step for lazy evaluation.
     pub fn resolve(
         &self,
         ft: &FunctionType,
@@ -493,6 +536,7 @@ impl Expression {
         }
     }
 
+    /// Evaluate the expression
     pub fn eval(
         &self,
         ft: &FunctionType,
@@ -505,6 +549,7 @@ impl Expression {
         }
     }
 
+    /// Evaluate the expression with mutable context
     pub fn eval_mut(
         &self,
         ft: &FunctionType,
@@ -517,6 +562,12 @@ impl Expression {
         }
     }
 
+    /// Evaluate the expression and return a value
+    ///
+    /// All expressions except functions return values by default,
+    /// functions may or may not return value based on the evaluation
+    /// results. Refer to [`functions::FunctionRet`] for possible
+    /// return values from a function.
     pub fn eval_value(
         &self,
         ft: &FunctionType,
@@ -565,13 +616,17 @@ impl Expression {
     }
 }
 
+/// Unary operator
 #[derive(Debug, Clone, PartialEq)]
 pub enum UniOperator {
+    /// Logical Not operator
     Not,
+    /// Numerical negative operator
     Negative,
 }
 
 impl UniOperator {
+    /// Evaluate the expression
     pub fn eval(&self, value: Attribute) -> Result<Attribute, EvalError> {
         match self {
             Self::Not => !value,
@@ -588,27 +643,45 @@ impl std::fmt::Display for UniOperator {
     }
 }
 
+/// Binary operator
 #[derive(Debug, Clone, PartialEq)]
 pub enum BiOperator {
+    /// Numerical addition
     Add,
+    /// Numerical substraction
     Substract,
+    /// Numerical multiplication
     Multiply,
+    /// Numerical division
     Divide,
+    /// Integer division
     IntDivide,
+    /// Modulus (remainder) operation
     Modulus,
+    /// Check equality
     Equal,
+    /// Check inequality
     NotEqual,
+    /// Check lesser than
     LessThan,
+    /// Check greater than
     GreaterThan,
+    /// Check lesser than or equal
     LessThanEqual,
+    /// Check greater than or equal
     GreaterThanEqual,
+    /// Check if the value is in other
     In,
+    /// Check for string match with regex pattern
     Match,
+    /// Logical and operation
     And,
+    /// logical or operation
     Or,
 }
 
 impl BiOperator {
+    /// Evaluate the expression
     pub fn eval(&self, val1: Attribute, val2: Attribute) -> Result<Attribute, EvalError> {
         match self {
             Self::Add => val1 + val2,
@@ -655,11 +728,16 @@ impl std::fmt::Display for BiOperator {
     }
 }
 
+/// Variable in task system that can be used as an input
 #[derive(Clone, PartialEq, Debug)]
 pub struct InputVar {
+    /// Type of the variable
     pub ty: Option<VarType>,
+    /// prefix of the variable name (nested names)
     pub prefix: Vec<String>,
+    /// variable name
     pub name: String,
+    /// Only check the presence of a value
     pub check: bool,
 }
 
@@ -684,6 +762,7 @@ impl std::fmt::Display for InputVar {
 }
 
 impl InputVar {
+    /// new input variable
     pub fn new(ty: Option<VarType>, prefix: Vec<String>, name: String, check: bool) -> Self {
         Self {
             ty,
@@ -694,17 +773,25 @@ impl InputVar {
     }
 }
 
+/// Type of variable
 #[derive(PartialEq, Debug, Clone)]
 pub enum VarType {
+    /// Environmen Variable
     Env,
+    /// Node variable (only valid in a node function)
     Node,
+    /// Network variable
     Network,
+    /// Inputs variable (only valid in a node function)
     Inputs,
+    /// Output variable (only valid in a node function)
     Output,
+    /// Nodes variable (array of variable from each node)
     Nodes,
 }
 
 impl VarType {
+    /// Build a VarType from [`TaskKeyword`] if valid
     pub fn from_keyword(kw: &TaskKeyword) -> Option<Self> {
         match kw {
             TaskKeyword::Node => Some(VarType::Node),
@@ -717,6 +804,7 @@ impl VarType {
         }
     }
 
+    /// Convert to [`FunctionType`]
     pub fn to_functiontype(&self) -> &'static FunctionType {
         match self {
             VarType::Node => &FunctionType::Node,
@@ -743,13 +831,18 @@ impl std::fmt::Display for VarType {
     }
 }
 
+/// A function call in the task system
 #[derive(Clone)]
 pub struct FunctionCall {
+    /// Type of the function (nodes, inputs, and output are node function)
     pub ty: Option<VarType>,
-    // useful to store node to act on, for output/inputs/nodes variety
+    /// Current node: useful to store node to act on, for output/inputs/nodes variety
     pub node: Option<Node>,
+    /// Name of the function
     pub name: String,
+    /// Positional Arguments
     pub args: Vec<Expression>,
+    /// Keyword Arguments
     pub kwargs: HashMap<String, Expression>,
 }
 
@@ -801,6 +894,7 @@ impl std::fmt::Display for FunctionCall {
 }
 
 impl FunctionCall {
+    /// New functioncall
     pub fn new(
         ty: Option<VarType>,
         node: Option<Node>,
@@ -817,6 +911,9 @@ impl FunctionCall {
         }
     }
 
+    /// Simplify the expressions in the functioncall without variables
+    ///
+    /// Recursively simplifies the expressions in the function arguments
     pub fn simplify(&mut self, ft: &FunctionType, ctx: &TaskContext) -> Result<(), EvalError> {
         let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
         let mut args = Vec::with_capacity(self.args.len());
@@ -832,6 +929,9 @@ impl FunctionCall {
         Ok(())
     }
 
+    /// Resolve the variables in the functioncall
+    ///
+    /// Recursively resolves the expressions in the function arguments
     pub fn resolve(
         &self,
         ft: &FunctionType,
@@ -857,6 +957,7 @@ impl FunctionCall {
         })
     }
 
+    /// Eval the function in a mutable context
     pub fn eval_mut(
         &self,
         ft: &FunctionType,
@@ -877,6 +978,7 @@ impl FunctionCall {
         self.run_w_ctx_mut(ft, ctx, fctx, node, None)
     }
 
+    /// Eval the function in immutable context
     pub fn eval(
         &self,
         ft: &FunctionType,
@@ -897,6 +999,7 @@ impl FunctionCall {
         self.run_w_ctx(ft, ctx, fctx, node, None)
     }
 
+    /// Run the function with given context
     pub fn run_w_ctx(
         &self,
         ft: &FunctionType,
@@ -941,6 +1044,7 @@ impl FunctionCall {
         }
     }
 
+    /// Run the function with given immutable context
     pub fn run_w_ctx_mut(
         &self,
         ft: &FunctionType,

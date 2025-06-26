@@ -47,6 +47,7 @@ pub use anyhow;
 pub use nadi_plugin;
 pub use string_template_plus as string_template;
 
+/// Version of the crate, to be used to check plugin compatibility
 pub const NADI_CORE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[macro_export]

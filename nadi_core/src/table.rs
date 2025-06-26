@@ -9,6 +9,7 @@ use abi_stable::{
 use std::str::FromStr;
 use string_template_plus::Template;
 
+/// Alignment of a column
 #[repr(C)]
 #[derive(StableAbi, Debug, Default, Clone, PartialEq)]
 pub enum ColumnAlign {
@@ -45,11 +46,15 @@ impl FromStr for ColumnAlign {
     }
 }
 
+/// Column in the table
 #[repr(C)]
 #[derive(StableAbi, Debug, Default, Clone, PartialEq)]
 pub struct Column {
+    /// alignment of the column
     pub align: ColumnAlign,
+    /// column header
     pub header: RString,
+    /// template to render for each node
     pub template: RString,
 }
 
@@ -179,6 +184,7 @@ impl FromAttribute for Table {
 }
 
 impl Table {
+    /// Render the contents of the table
     pub fn render_contents(
         &self,
         net: &Network,
@@ -217,6 +223,7 @@ impl Table {
         }
     }
 
+    /// Render the table as a markdown
     pub fn render_markdown(&self, net: &Network, conn: Option<String>) -> anyhow::Result<String> {
         let mut headers: Vec<&str> = self.columns.iter().map(|c| c.header.as_str()).collect();
         if let Some(c) = &conn {

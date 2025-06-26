@@ -3,10 +3,18 @@ use crate::functions::{FuncArg, FuncArgType, NadiFunctions};
 use crate::network::PropCondition;
 use crate::prelude::*;
 
+/// Main Context for Task System
+///
+/// Everything is evaluated in the task context while using the task
+/// system. It contains a network, functions loaded from the plugins
+/// and environment variables.
 #[derive(Default, Clone)]
 pub struct TaskContext {
+    /// Network in the context
     pub network: Network,
+    /// Functions loaded from the plugins
     pub functions: NadiFunctions,
+    /// environment variables
     pub env: AttrMap,
 }
 
@@ -19,6 +27,7 @@ impl TaskContext {
         }
     }
 
+    /// execute a task in the task context
     pub fn execute(&mut self, task: Task) -> Result<Option<String>, String> {
         match task {
             Task::Eval(et) => self.eval_task(et),
@@ -76,6 +85,7 @@ impl TaskContext {
         }
     }
 
+    /// evaluate a task and possibly get return value in terms of string.
     pub fn eval_task(&mut self, task: EvalTask) -> Result<Option<String>, String> {
         match task.ty {
             FunctionType::Env => match task.input.resolve_eval(&FunctionType::Env, self, None)? {
@@ -172,6 +182,7 @@ impl TaskContext {
         }
     }
 
+    /// evaluate an attribute task
     pub fn attr_task(&self, task: AttrTask) -> Result<String, String> {
         match task.ty {
             FunctionType::Env => self
@@ -210,6 +221,8 @@ impl TaskContext {
                 .map_err(|e| e.to_string()),
         }
     }
+
+    /// get help
     pub fn help(
         &self,
         kw: Option<TaskKeyword>,
@@ -272,6 +285,7 @@ impl TaskContext {
         }
     }
 
+    /// Get node propagation using the context (network and variables)
     pub fn propagation(&self, prop: Propagation) -> Result<Vec<Node>, EvalError> {
         let nodes = self.network.nodes_select(&prop.order, &prop.nodes)?;
         match prop.condition {
@@ -301,10 +315,14 @@ impl TaskContext {
     }
 }
 
+/// Types of functions
 #[derive(Debug, Clone, PartialEq)]
 pub enum FunctionType {
+    /// environement function
     Env,
+    /// Node function
     Node,
+    /// network function
     Network,
 }
 
@@ -333,13 +351,20 @@ impl FunctionType {
     }
 }
 
+/// Task representing evaluation of expression or functions
 #[derive(Clone, PartialEq, Debug)]
 pub struct EvalTask {
+    /// type of function
     pub ty: FunctionType,
+    /// node propagation for node function
     pub propagation: Option<Propagation>,
+    /// prefix for set attribute
     pub attr_pre: Vec<String>,
+    /// attribute to set the result of the expression
     pub attr: Option<String>,
+    /// input expression
     pub input: Expression,
+    /// do not show the results to stdout/terminal
     pub silent: bool,
 }
 
@@ -373,11 +398,16 @@ impl std::fmt::Display for EvalTask {
     }
 }
 
+/// Task representing getting of attribute value
 #[derive(Clone, PartialEq, Debug)]
 pub struct AttrTask {
+    /// type of function
     pub ty: FunctionType,
+    /// node propagation for node function
     pub propagation: Option<Propagation>,
+    /// prefix for set attribute
     pub attr_pre: Vec<String>,
+    /// attribute to get
     pub attr: String,
 }
 
@@ -405,10 +435,14 @@ impl std::fmt::Display for AttrTask {
     }
 }
 
+/// Task representing conditional task
 #[derive(Clone, PartialEq, Debug)]
 pub struct CondTask {
+    /// condition to evaluate and test
     pub cond: Expression,
+    /// tasks to run if condition is true
     pub iftrue: Vec<Task>,
+    /// tasks to run if condition is false
     pub iffalse: Vec<Task>,
 }
 
@@ -438,9 +472,12 @@ impl std::fmt::Display for CondTask {
     }
 }
 
+/// Task representing a while loop
 #[derive(Clone, PartialEq, Debug)]
 pub struct WhileTask {
+    /// condition to evaluate and test before each evaluation
     pub cond: Expression,
+    /// tasks to execute each time
     pub tasks: Vec<Task>,
 }
 
@@ -459,13 +496,20 @@ impl std::fmt::Display for WhileTask {
     }
 }
 
+/// Execution body of the Task System
 #[derive(Clone, PartialEq, Debug)]
 pub enum Task {
+    /// Evaluate the expression (possible set values)
     Eval(EvalTask),
+    /// get an attribute
     Attr(AttrTask),
+    /// conditionally execute tasks
     Conditional(CondTask),
+    /// execute tasks in a loop
     WhileLoop(WhileTask),
+    /// get function help information
     Help(Option<TaskKeyword>, Option<String>),
+    /// exit the task system/process
     Exit,
 }
 
@@ -485,6 +529,7 @@ impl std::fmt::Display for Task {
     }
 }
 
+/// Keywords in the task system
 #[derive(Clone, PartialEq, Debug)]
 pub enum TaskKeyword {
     Node,

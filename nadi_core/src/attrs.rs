@@ -22,12 +22,22 @@ use chrono::{Datelike, Timelike};
 
 static DEFAULT_ATTR: Attribute = Attribute::Bool(true);
 
+/// For anything that can store attributes in a map
 pub trait HasAttributes {
+    /// If a node, return its name
     fn node_name(&self) -> Option<&str> {
         None
     }
+
+    /// Reference to the [`HashMap`] of the attributes
     fn attr_map(&self) -> &AttrMap;
+
+    /// Mutable reference to the [`HashMap`] of the attributes
     fn attr_map_mut(&mut self) -> &mut AttrMap;
+
+    /// Get the reference to the attribute by name
+    ///
+    /// `_` is a dummy attribute that is always returned as `true`
     fn attr(&self, name: &str) -> Option<&Attribute> {
         if name == "_" {
             // always available
@@ -36,9 +46,16 @@ pub trait HasAttributes {
             self.attr_map().get(name)
         }
     }
+
+    /// Get mutable reference to the attribute by name
     fn attr_mut(&mut self, name: &str) -> Option<&mut Attribute> {
         self.attr_map_mut().get_mut(name)
     }
+
+    /// Delete the attribute by name
+    ///
+    /// You can not delete the dummy attribute `_`, it'll be silently
+    /// ignored
     fn del_attr(&mut self, name: &str) -> Option<Attribute> {
         if name == "_" {
             // ignore delete
@@ -46,6 +63,8 @@ pub trait HasAttributes {
         }
         self.attr_map_mut().remove(name).into()
     }
+
+    /// Set attribute to a value
     fn set_attr(&mut self, name: &str, val: Attribute) -> Option<Attribute> {
         if name == "_" {
             // cannot be set, it's also for discarding results
@@ -59,6 +78,7 @@ pub trait HasAttributes {
         self.attr_map_mut().insert(name.into(), val).into()
     }
 
+    /// Get nested attribute to a value by `.` joined name
     fn attr_dot(&self, names: &str) -> Result<Option<&Attribute>, String> {
         match names.rsplit_once(".") {
             Some((pre, name)) => self.attr_nested(
@@ -69,6 +89,7 @@ pub trait HasAttributes {
         }
     }
 
+    /// Get nested attribute by name and nested map names
     fn attr_nested(&self, prefix: &[String], name: &str) -> Result<Option<&Attribute>, String> {
         let mut map = self.attr_map();
         for m in prefix {
@@ -81,6 +102,7 @@ pub trait HasAttributes {
         Ok(map.attr(name))
     }
 
+    /// Set nested attributes by `.` joined name
     fn set_attr_dot(&mut self, names: &str, val: Attribute) -> Result<Option<Attribute>, String> {
         match names.rsplit_once(".") {
             Some((pre, name)) => self.set_attr_nested(
@@ -92,6 +114,7 @@ pub trait HasAttributes {
         }
     }
 
+    /// Set nested attribute by name and nested map names
     fn set_attr_nested(
         &mut self,
         prefix: &[String],
@@ -111,6 +134,7 @@ pub trait HasAttributes {
         Ok(map.set_attr(name, val))
     }
 
+    /// Delete nested attribute by `.` joined name
     fn del_attr_dot(&mut self, names: &str) -> Result<Option<Attribute>, String> {
         match names.rsplit_once(".") {
             Some((pre, name)) => self.del_attr_nested(
@@ -121,6 +145,7 @@ pub trait HasAttributes {
         }
     }
 
+    /// Delete nested attribute by name and nested map names
     fn del_attr_nested(
         &mut self,
         prefix: &[String],
@@ -139,6 +164,7 @@ pub trait HasAttributes {
         Ok(map.del_attr(name))
     }
 
+    /// Get attribute into any generic type that implements [`FromAttribute`]
     fn try_attr<T: FromAttribute>(&self, name: &str) -> Result<T, String> {
         match self.attr_dot(name)? {
             Some(v) => FromAttribute::try_from_attr(v),
@@ -147,6 +173,8 @@ pub trait HasAttributes {
             )),
         }
     }
+
+    /// Get attribute into any generic type that implements [`FromAttributeRelaxed`]
     fn try_attr_relaxed<T: FromAttributeRelaxed>(&self, name: &str) -> Result<T, String> {
         match self.attr_dot(name)? {
             Some(v) => FromAttributeRelaxed::try_from_attr_relaxed(v),
@@ -156,6 +184,15 @@ pub trait HasAttributes {
         }
     }
 
+    /// Render the given template using the attribute values
+    ///
+    /// The attributes will be available to be used in the template
+    /// based on the following rules:
+    /// - String attributes will be quoted, extra variable with `_`
+    ///   prefix will be available to use unquoted string variables,
+    /// - nested variables will be available using the `.` separator
+    /// - all other variables will be available with their name,
+    ///   their value will be their string representation.
     fn render(&self, template: &Template) -> anyhow::Result<String> {
         let mut op = RenderOptions::default();
         let used_vars = template.parts().iter().flat_map(|p| p.variables());
@@ -194,17 +231,27 @@ impl HasAttributes for AttrMap {
     }
 }
 
+/// Generic attribute value for nadi system
 #[repr(C)]
 #[derive(StableAbi, Clone, PartialEq, Debug)]
 pub enum Attribute {
+    /// Boolean value (`true` or `false`)
     Bool(bool),
+    /// String value (Double quoted `"`)
     String(RString),
+    /// Integer value
     Integer(i64),
+    /// Float value (supports `nan`, `inf`, `-inf`)
     Float(f64),
+    /// Date value with year, month, day
     Date(Date),
+    /// Time value with hour, minute, second
     Time(Time),
+    /// Date and Time value
     DateTime(DateTime),
+    /// Array/List of [`Attribute`]s
     Array(RVec<Attribute>),
+    /// HashMap of [`Attribute`]s by name
     Table(AttrMap),
 }
 
@@ -254,6 +301,12 @@ impl std::fmt::Display for Attribute {
     }
 }
 
+/// Check if the given string is a valid variable name
+///
+/// The `manual` in name means we are checking it manually with a
+/// logic here, instead of using the parser to verify it is
+/// successful. Use the [`parser::tokenizer::valid_variable_name`] if
+/// `parser` feature is activated.
 pub fn valid_var_manual(n: &str) -> bool {
     let mut chars = n.chars();
     match chars.next() {
@@ -356,6 +409,7 @@ impl std::ops::Neg for Attribute {
     }
 }
 
+/// Implement the operations for array of values
 macro_rules! array_impl {
     ($a:ident, $oth:ident, $imp:path) => {
         match $oth {
@@ -562,6 +616,7 @@ impl std::ops::Rem for Attribute {
 }
 
 impl Attribute {
+    /// Convert the attribute into a valid JSON [`String`]
     pub fn to_json(&self) -> String {
         match self {
             Self::Date(v) => format!("\"{v}\""),
@@ -584,34 +639,13 @@ impl Attribute {
             v => v.to_string(),
         }
     }
-    // TODO remove: is prob the same as to_string()
+
+    #[deprecated(since = "0.7.1", note = "please use `self.to_string()` instead")]
     pub fn to_toml_string(&self) -> String {
-        match self {
-            Self::Bool(v) => format!("{v:?}"),
-            Self::String(v) => format!("{v:?}"),
-            Self::Integer(v) => format!("{v:?}"),
-            Self::Float(v) => format!("{v:?}"),
-            Self::Date(v) => v.to_string(),
-            Self::Time(v) => v.to_string(),
-            Self::DateTime(v) => v.to_string(),
-            Self::Array(v) => format!(
-                "[{}]",
-                v.iter()
-                    .map(|a| a.to_toml_string())
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            ),
-            Self::Table(v) => format!(
-                "{{{}}}",
-                v.iter()
-                    .map(|Tuple2(k, v)| format!("{}={}", k.to_string(), v.to_toml_string()))
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            )
-            .to_string(),
-        }
+        self.to_string()
     }
 
+    /// Get a string with terminal coloring inside it
     pub fn to_colored_string(&self) -> String {
         match self {
             Self::Bool(v) => format!("{v:?}").magenta().to_string(),
@@ -643,6 +677,7 @@ impl Attribute {
         }
     }
 
+    /// Get the name of the type
     pub fn type_name(&self) -> &str {
         match self {
             Self::Bool(_) => "Bool",
@@ -657,6 +692,7 @@ impl Attribute {
         }
     }
 
+    /// If it is a string get the reference
     pub fn get_string(&self) -> Option<RStr> {
         match self {
             Self::String(s) => Some(s.as_rstr()),
@@ -664,6 +700,7 @@ impl Attribute {
         }
     }
 
+    /// If it is a table get the reference
     pub fn get_table(&self) -> Option<&AttrMap> {
         match self {
             Self::Table(t) => Some(t),
@@ -671,6 +708,7 @@ impl Attribute {
         }
     }
 
+    /// If it is a table get the mutable reference
     pub fn get_mut_table(&mut self) -> Option<&mut AttrMap> {
         match self {
             Self::Table(ref mut t) => Some(t),
@@ -678,6 +716,7 @@ impl Attribute {
         }
     }
 
+    /// Integer division (both has to be integers)
     pub fn int_div(&self, other: &Self) -> Result<Self, EvalError> {
         match self {
             Self::Integer(a) => match other {
@@ -690,6 +729,12 @@ impl Attribute {
         }
     }
 
+    /// Check if the value contains other
+    ///
+    /// Only valid for String, Array and Table,
+    /// - It checks for substring for String (other cannot be Array/Table),
+    /// - It checks for attribute value for Array (other can be any Attribute),
+    /// - It checks for Key of HashMap for Table (other should be String),
     pub fn contains(&self, other: &Self) -> Result<bool, EvalError> {
         match self {
             Self::String(st) => match other {
@@ -707,6 +752,9 @@ impl Attribute {
         }
     }
 
+    /// Checks if it matches a Regex pattern
+    ///
+    /// the self and other value should both be strings
     pub fn str_match(&self, other: &Self) -> Result<bool, EvalError> {
         match self {
             Self::String(st) => match other {
@@ -720,6 +768,7 @@ impl Attribute {
     }
 }
 
+/// Trait to convert values from [`Attribute`] into target type
 pub trait FromAttribute: Sized {
     fn from_attr(value: &Attribute) -> Option<Self>;
     fn try_from_attr(value: &Attribute) -> Result<Self, String> {
@@ -733,7 +782,12 @@ pub trait FromAttribute: Sized {
     }
 }
 
-/// Trait to loosely convert attributes from one into another
+/// Trait to loosely convert [`Attribute`] into target type
+///
+/// Loosely or Related here means that if it makes sense for the type
+/// to be converted to another even if it's not represented internally
+/// as such. For example, integer attribute can be read as string, or
+/// float.
 pub trait FromAttributeRelaxed: Sized {
     fn from_attr_relaxed(value: &Attribute) -> Option<Self> {
         FromAttributeRelaxed::try_from_attr_relaxed(value).ok()
@@ -781,6 +835,9 @@ macro_rules! impl_from_attr {
 }
 
 /// Get String representation of different types
+///
+/// It uses [`std::any::type_name`] internally and only uses the type
+/// name instead of the whole path.
 pub fn type_name<P>() -> String {
     // function returns the full path, but we'll only use the last
     let org = std::any::type_name::<P>();
@@ -825,7 +882,7 @@ impl_from_attr!(DateTime, Attribute::DateTime,
 		Attribute::Date(v) => DateTime::new(v.clone(), Time::default(), None));
 impl_from_attr!(AttrMap, Attribute::Table,);
 
-// impl for tuples of different types
+/// impl for tuples of different types
 macro_rules! tuple_impls {
     ( $($name:ident $gen:ident $ind:expr),+ ) => {
         impl<$($gen: FromAttribute),+> FromAttribute for ($($gen,)+)
@@ -888,6 +945,7 @@ tuple_impls!(a A 0, b B 1, c C 2, d D 3);
 tuple_impls!(a A 0, b B 1, c C 2, d D 3, e E 4);
 tuple_impls!(a A 0, b B 1, c C 2, d D 3, e E 4, f F 5);
 
+/// Macro to create a Array from list of values
 #[macro_export]
 macro_rules! attr_array {
     ( $($val:expr),+ ) => {
@@ -935,9 +993,9 @@ impl FromAttribute for Attribute {
     }
 }
 
-// impl for different types that can be converted from ones that has
-// FromAttribute. Can't do this automatically because there will be
-// duplicate implementation
+/// impl for different types that can be converted from ones that has
+/// FromAttribute. Can't do this automatically because there will be
+/// duplicate implementation
 #[macro_export]
 macro_rules! convert_impls {
     ($src: tt => $dest: tt) => {
@@ -1091,14 +1149,20 @@ where
     }
 }
 
+/// Slice of Attributes
 pub type AttrSlice<'a> = RSlice<'a, Attribute>;
+/// Map of [`Attribute`]s by their name
 pub type AttrMap = RHashMap<RString, Attribute>;
 
+/// Datetime with [`Date`], [`Time`] and [`Offset`]
 #[repr(C)]
 #[derive(StableAbi, Default, Clone, PartialEq, Debug)]
 pub struct DateTime {
+    /// date part of datetime
     pub date: Date,
+    /// time part of datetime
     pub time: Time,
+    /// offset from GMT (currently not used)
     pub offset: ROption<Offset>,
 }
 
@@ -1174,6 +1238,7 @@ impl From<DateTime> for chrono::DateTime<chrono::FixedOffset> {
 }
 
 impl DateTime {
+    /// new datetime with given date, time and offset
     pub fn new(date: Date, time: Time, offset: Option<Offset>) -> Self {
         Self {
             date,
@@ -1183,6 +1248,7 @@ impl DateTime {
     }
 }
 
+/// Date with year, month and day
 #[repr(C)]
 #[derive(StableAbi, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Date {
@@ -1242,11 +1308,13 @@ impl From<Date> for chrono::NaiveDate {
 }
 
 impl Date {
+    /// new unchecked date with year, month and day
     pub fn new(year: u16, month: u8, day: u8) -> Self {
         // TODO check valid dates
         Self { year, month, day }
     }
 
+    /// Add time to the date and make [`DateTime`]
     pub fn with_time(self, time: Time) -> DateTime {
         DateTime {
             date: self,
@@ -1255,6 +1323,7 @@ impl Date {
         }
     }
 
+    /// get day of the year
     pub fn doy(&self) -> u8 {
         let ly = Date::leap_year(self.year);
         let mut doy = 0;
@@ -1264,10 +1333,12 @@ impl Date {
         doy + self.day
     }
 
+    /// get if the year is leap year or not
     pub fn leap_year(year: u16) -> bool {
         (year % 4 == 0) && ((year % 100 != 0) || (year % 400 == 0))
     }
 
+    /// Get days in the month
     pub fn days_in_month(month: u8, leap_year: bool) -> u8 {
         match month {
             2 if leap_year => 29,
@@ -1278,12 +1349,14 @@ impl Date {
     }
 }
 
+/// Time with hour, minute, and second
 #[repr(C)]
 #[derive(StableAbi, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Time {
     pub hour: u8,
     pub min: u8,
     pub sec: u8,
+    /// Nanosecond is not used internally
     pub nanosecond: u32,
 }
 
@@ -1319,6 +1392,7 @@ impl From<Time> for chrono::NaiveTime {
 }
 
 impl Time {
+    /// New unchecked time from hour, minute, second, and nanosecond
     pub fn new(hour: u8, min: u8, sec: u8, nanosecond: u32) -> Self {
         // TODO check valid time here instead of from_str
         Self {
@@ -1329,10 +1403,12 @@ impl Time {
         }
     }
 
+    /// Count of seconds since the midnight
     pub fn seconds_since_midnight(&self) -> u32 {
         (self.hour as u32 * 60 + self.min as u32) * 60 + self.sec as u32
     }
 
+    /// Build time from seconds since midnight
     pub fn from_seconds_since_midnight(secs: u32) -> Self {
         let sec = secs % 60;
         let mins = (secs - sec) / 60;
@@ -1347,11 +1423,13 @@ impl Time {
     }
 }
 
+/// Offset for the datetime for timezone implementation
 #[repr(C)]
 #[derive(StableAbi, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Offset {
     pub hour: u8,
     pub min: u8,
+    /// whether it is east or west timezone
     pub east: bool,
 }
 

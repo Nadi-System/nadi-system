@@ -292,6 +292,10 @@ fn symbols(i: &str) -> TokenRes<'_> {
     ))(i)
 }
 
+/// Check if the given string is a valid variable name
+///
+/// This checks the name with the variable parser. Use the
+/// [`attrs::valid_var_manual`] if `parser` feature is not activated.
 pub fn valid_variable_name(txt: &str) -> bool {
     match variable(txt) {
         Ok((res, _)) => res.trim().is_empty(),
