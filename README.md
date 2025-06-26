@@ -24,6 +24,14 @@ Or you can directly do the following:
 cargo run --release --bin nadi-ide
 ```
 
+# Tests
+You can run tests using the cargo command, this will run the tests in all the components as well as their documentation.
+
+```bash
+cargo test
+```
+
+## Components
 Nadi System consists of the following components:
 ## Nadi Core
 Core library in Rust, it has the basic data structures and the logic for the plugin system.
