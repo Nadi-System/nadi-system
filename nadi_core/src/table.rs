@@ -185,6 +185,9 @@ impl FromAttribute for Table {
 
 impl Table {
     /// Render the contents of the table
+    ///
+    /// Each cell will be rendered using the template on the
+    /// [`NodeInner`] with the [`HasAttribute::render`] function.
     pub fn render_contents(
         &self,
         net: &Network,
