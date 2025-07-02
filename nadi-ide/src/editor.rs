@@ -348,9 +348,9 @@ impl Editor {
             }
             Message::MaybeSaveEditHist => {
                 if self.is_hist_dirty {
-                    let lag = Instant::now().duration_since(self.last_edit).as_secs();
+                    let lag = Instant::now().duration_since(self.last_edit).as_millis();
                     // saving after 2 seconds of last edit action
-                    if lag > 2 {
+                    if lag > 100 {
                         let cont = self.content.text();
                         if Some(&cont) != self.content_hist.get(self.content_index - 1) {
                             return Task::done(Message::SaveEditHist);
@@ -376,7 +376,7 @@ impl Editor {
             }
             Message::MaybeParseTasks => {
                 let lag = Instant::now().duration_since(self.last_edit).as_secs();
-                if lag > 4 {
+                if lag > 2 {
                     let cont = self.content.text();
                     self.error = nadi_core::parser::tasks::parse(
                         nadi_core::parser::tokenizer::get_tokens(&cont),
