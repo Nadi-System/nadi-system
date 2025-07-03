@@ -27,6 +27,11 @@ impl TaskContext {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.network = Network::default();
+        self.env = AttrMap::new();
+    }
+
     /// execute a task in the task context
     pub fn execute(&mut self, task: Task) -> Result<Option<String>, String> {
         match task {

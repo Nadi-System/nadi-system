@@ -82,7 +82,7 @@ mod debug {
     ///
     /// # Example
     /// Given the following tasks file:
-    /// ```task
+    /// ```task,ignore
     /// net load_file("...")
     /// net load_attrs("...")
     /// net clip()

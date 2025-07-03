@@ -43,6 +43,11 @@ mod connections {
     ///
     /// This replaces the current network with the one loaded from the
     /// file.
+    ///
+    /// ```task
+    /// network load_str("a -> b");
+    /// env assert_eq(nodes.NAME, ["b", "a"])
+    /// ```
     #[network_func(append = false)]
     fn load_str(
         net: &mut Network,
@@ -69,6 +74,11 @@ mod connections {
     ///
     /// This replaces the current network with the one loaded from the
     /// file.
+    ///
+    /// ```task
+    /// network load_edges([["a", "b"], ["b", "c"]]);
+    /// env assert_eq(nodes.NAME, ["c", "b", "a"])
+    /// ```
     #[network_func(append = false)]
     fn load_edges(
         net: &mut Network,
@@ -87,6 +97,13 @@ mod connections {
     }
 
     /// Take a subset of network by only including the selected nodes
+    /// ```task
+    /// network load_str("a -> b\n b->c");
+    /// node[a->b].sth = true;
+    /// node[c].sth = false;
+    /// network subset(nodes.sth);
+    /// env assert_eq(nodes.NAME, ["b", "a"])
+    /// ```
     #[network_func(keep = true)]
     fn subset(
         net: &mut Network,
@@ -99,7 +116,7 @@ mod connections {
 
     /// Save the network into the given file
     ///
-    /// For more control on graphviz file writing use
+    /// For more control on graphviz file writing, use
     /// `save_graphviz` from `graphviz` plugin instead.
     #[network_func(quote_all = true, graphviz = false)]
     fn save_file(

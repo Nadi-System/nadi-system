@@ -11,6 +11,20 @@ mod render {
     ///
     /// For more details on the template system. Refer to the String
     /// Template section of the NADI book.
+    ///
+    /// ```task
+    /// env assert_eq(render("abc {_x}", x="ab"), "abc ab")
+    /// env assert_eq(render("abc {x}", x=23), "abc 23")
+    /// ```
+    ///
+    /// If safe parameter is true, then it doesn't error out even if
+    /// the variable is not present, and will just return the original
+    /// template. By default it errors out if there are any variables
+    /// in the template without a value.
+    ///
+    /// ```task
+    /// env assert_eq(render("abc {x}", safe=true), "abc {x}")
+    /// ```
     #[env_func(safe = false)]
     fn render(
         /// String template to render
@@ -33,6 +47,12 @@ mod render {
     ///
     /// For more details on the template system. Refer to the String
     /// Template section of the NADI book.
+    ///
+    /// ```task
+    /// network load_str("a -> b")
+    /// node.x = 13
+    /// node assert_eq(render("abc {x}"), "abc 13")
+    /// ```
     #[node_func(safe = false)]
     fn render(
         node: &NodeInner,
@@ -51,6 +71,11 @@ mod render {
     }
 
     /// Render from network attributes
+    ///
+    /// ```task
+    /// network.x = 13
+    /// network assert_eq(render("abc {x}"), "abc 13")
+    /// ```
     #[network_func(safe = false)]
     fn render(
         network: &Network,
@@ -70,6 +95,12 @@ mod render {
     }
 
     /// Render each node of the network and combine to same variable
+    ///
+    /// ```task
+    /// network load_str("a -> b")
+    /// node.x = INDEX + 1
+    /// network assert_eq(render_nodes("abc {x}"), "abc 1\nabc 2")
+    /// ```
     #[network_func(safe = false, join = "\n")]
     fn render_nodes(
         network: &Network,

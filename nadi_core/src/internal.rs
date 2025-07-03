@@ -38,3 +38,90 @@ pub(crate) fn register_internal(funcs: &mut NadiFunctions) {
     timeseries::TimeseriesMod {}.register(funcs);
     visuals::VisualsMod {}.register(funcs);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::register_internal;
+    use crate::functions::NadiFunctions;
+    use crate::prelude::*;
+    use crate::tasks::TaskContext;
+    use abi_stable::std_types::Tuple2;
+    use pulldown_cmark::{CodeBlockKind, CowStr, Event, Options, Parser, Tag, TagEnd};
+
+    fn test_plugin_function(txt: &str, ctx: &mut TaskContext) -> Result<(), String> {
+        let tokens = nadi_core::parser::tokenizer::get_tokens(txt);
+        let tasks = match nadi_core::parser::tasks::parse(tokens) {
+            Ok(t) => t,
+            Err(e) => return Err(e.user_msg_color(None)),
+        };
+        for tsk in tasks {
+            match ctx.execute(tsk.clone()) {
+                Err(p) => return Err(format!("Error in:\n{tsk}\n {p}")),
+                _ => (),
+            }
+        }
+        Ok(())
+    }
+
+    fn extract_tasks(txt: &str) -> String {
+        let parser = Parser::new_ext(txt, Options::empty());
+        let mut active = false;
+        let mut result: Vec<String> = vec![];
+
+        for el in parser {
+            match el {
+                Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(CowStr::Borrowed("task")))) => {
+                    active = true
+                }
+                Event::End(TagEnd::CodeBlock) => active = false,
+                Event::Text(code) if active => result.push(code.to_string()),
+                _ => (),
+            }
+        }
+
+        result.join("\n")
+    }
+
+    #[test]
+    fn test_all_functions() {
+        let mut functions = NadiFunctions::default();
+        register_internal(&mut functions);
+        let mut ctx = TaskContext {
+            network: Network::default(),
+            functions: functions.clone(),
+            env: AttrMap::new(),
+        };
+        let mut tests = 0;
+        let mut errors = Vec::new();
+        for Tuple2(name, func) in functions.env_functions() {
+            let tasks = extract_tasks(func.help().as_str());
+            if let Err(e) = test_plugin_function(&tasks, &mut ctx) {
+                errors.push(("env", name, e));
+            }
+            ctx.clear();
+        }
+        for Tuple2(name, func) in functions.network_functions() {
+            let tasks = extract_tasks(func.help().as_str());
+            if let Err(e) = test_plugin_function(&tasks, &mut ctx) {
+                errors.push(("net", name, e));
+            }
+            tests += 1;
+            ctx.clear();
+        }
+        for Tuple2(name, func) in functions.node_functions() {
+            let tasks = extract_tasks(func.help().as_str());
+            if let Err(e) = test_plugin_function(&tasks, &mut ctx) {
+                errors.push(("node", name, e));
+            }
+            tests += 1;
+            ctx.clear();
+        }
+        if !errors.is_empty() {
+            let total = errors.len();
+            for (ty, name, er) in errors {
+                eprintln!("* {ty} {name}: \n{er}");
+            }
+            panic!("{total} Error(s) (out of {tests}) in Internal Function Help");
+        }
+    }
+}

@@ -45,6 +45,13 @@ mod command {
     - The command template cannot be rendered,
     - The command cannot be executed,
     - The attributes from command's stdout cannot be parsed properly
+
+    ```task
+    network load_str("a -> b");
+    node command("echo 'nadi:var:sth={NAME}'");
+    node assert_eq(sth, NAME)
+    ```
+
         */
     #[node_func(verbose = true, echo = false)]
     fn command(
@@ -148,6 +155,14 @@ mod command {
     }
 
     /** Run the given template as a shell command for each nodes in the network in parallel.
+
+    Other than parallel execution this is same as the `node` function `command`
+
+    ```task
+    network load_str("a -> b");
+    network parallel("echo 'nadi:var:sth={NAME}'");
+    node assert_eq(sth, NAME)
+    ```
 
     */
     #[network_func(workers = 16, verbose = true, echo = false)]
@@ -253,10 +268,23 @@ mod command {
     Run any command in the shell. The standard output of the command
     will be consumed and if there are lines starting with `nadi:var:`
     and followed by `key=val` pairs, it'll be read as new attributes
-    to that node.
+    to the network. If you want to pass node attributes add node name
+    with `nadi:var:name:` as the prefix for `key=val`.
 
     See `node command.command` for more details as they have
     the same implementation
+
+    The examples below run `echo` command to set the variables, you
+    can use any command that are scripting languages (python, R,
+    Julia, etc) or individual programs.
+
+    ```task
+    network load_str("a -> b");
+    network command("echo 'nadi:var:sth=123'");
+    network assert_eq(sth, 123)
+    network command("echo 'nadi:var:a:sth=123'");
+    node[a] assert_eq(sth, 123)
+    ```
      */
     #[network_func(verbose = true, echo = false)]
     fn command(

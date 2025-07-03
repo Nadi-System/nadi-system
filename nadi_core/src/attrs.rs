@@ -267,7 +267,8 @@ impl std::fmt::Display for Attribute {
             Self::Bool(v) => write!(f, "{v}"),
             Self::String(v) => write!(f, "{v:?}"),
             Self::Integer(v) => write!(f, "{v}"),
-            Self::Float(v) => write!(f, "{v}"),
+            // lower for nan and inf
+            Self::Float(v) => write!(f, "{}", v.to_string().to_lowercase()),
             Self::Date(v) => write!(f, "{v}"),
             Self::Time(v) => write!(f, "{v}"),
             Self::DateTime(v) => write!(f, "{v}"),
@@ -867,7 +868,7 @@ impl_from_attr!(bool, Attribute::Bool,
 impl_from_attr!(RString, Attribute::String,
         Attribute::Bool(s) => s.to_string().into(),
         Attribute::Integer(s) => s.to_string().into(),
-        Attribute::Float(s) => s.to_string().into(),
+        Attribute::Float(s) => s.to_string().to_lowercase().into(),
         Attribute::Date(s) => s.to_string().into(),
         Attribute::Time(s) => s.to_string().into(),
         Attribute::DateTime(s) => s.to_string().into());

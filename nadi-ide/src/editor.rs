@@ -349,8 +349,8 @@ impl Editor {
             Message::MaybeSaveEditHist => {
                 if self.is_hist_dirty {
                     let lag = Instant::now().duration_since(self.last_edit).as_millis();
-                    // saving after 2 seconds of last edit action
-                    if lag > 100 {
+                    // saving after 0.3 second of last edit action
+                    if lag > 300 {
                         let cont = self.content.text();
                         if Some(&cont) != self.content_hist.get(self.content_index - 1) {
                             return Task::done(Message::SaveEditHist);

@@ -507,7 +507,7 @@ mod tests {
     pub fn toml_test(#[case] txt: &str) {
         let tokens = get_tokens(txt);
         let (_, tk) = attribute(&tokens).unwrap();
-        let val = tk.to_toml_string();
+        let val = tk.to_string();
         assert_eq!(txt, val)
     }
 }

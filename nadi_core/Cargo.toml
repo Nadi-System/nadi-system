@@ -29,6 +29,7 @@ pyo3 = {version = "0.25.0", features = ["anyhow"], optional=true}
 
 [dev-dependencies]
 rstest = "0.25.0"
+pulldown-cmark = "0.13.0"
 
 [features]
 all = ["chrono", "functions", "parser", "graphics"]
