@@ -15,6 +15,8 @@ use colored::Colorize;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 
+pub const ROOT_NODE_NAME: &str = "*ROOT*";
+
 /// Network is a collection of Nodes, with Connection information. The
 /// connection information is saved in the nodes itself (`inputs` and
 /// `output` variables), but they are assigned from the network.
@@ -205,6 +207,9 @@ impl Network {
 
     /// Insert a new node by its name
     pub fn insert_node_by_name(&mut self, name: &str) {
+        if self.nodes_map.contains_key(name) {
+            return;
+        }
         let node = new_node(self.nodes_count(), name);
         self.nodes_map.insert(name.into(), node);
         self.nodes.push(name.into());
@@ -353,8 +358,8 @@ impl Network {
                 [o] => RSome(o.clone()),
                 outs => {
                     eprintln!("Multiple Outlet Nodes found; adding a *ROOT* node");
-                    self.insert_node_by_name("*ROOT*");
-                    let outlet = self.node_by_name("*ROOT*").expect("Just inserted");
+                    self.insert_node_by_name(ROOT_NODE_NAME);
+                    let outlet = self.node_by_name(ROOT_NODE_NAME).expect("Just inserted");
                     for o in outs {
                         o.lock().set_output(outlet.clone());
                         outlet.lock().add_input(o.clone());
@@ -495,6 +500,25 @@ impl Network {
         self.reorder();
         self.set_levels();
         Ok(())
+    }
+
+    pub fn new_outlet(&mut self, node: Node) {
+        let mut nodes = Vec::with_capacity(self.nodes.len());
+        let mut nodes_map = HashMap::with_capacity(self.nodes.len());
+        fn register(n: &Node, nds: &mut Vec<RString>, nmp: &mut HashMap<RString, Node>) {
+            let nm: RString = n.lock().name().to_string().into();
+            nds.push(nm.clone());
+            nmp.insert(nm, n.clone());
+            for i in n.lock().inputs() {
+                register(i, nds, nmp)
+            }
+        }
+        register(&node, &mut nodes, &mut nodes_map);
+        self.nodes = nodes.into();
+        self.nodes_map = nodes_map.into();
+        self.outlet = RSome(node);
+        self.reorder();
+        self.set_levels();
     }
 
     /// get the connections in utf8 string to print in terminal

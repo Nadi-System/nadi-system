@@ -2,10 +2,11 @@ use nadi_plugin::nadi_internal_plugin;
 
 #[nadi_internal_plugin]
 mod connections {
+    use crate::network::ROOT_NODE_NAME;
     use crate::parser::tokenizer::valid_variable_name;
     use crate::prelude::*;
     use anyhow::Context;
-    use nadi_plugin::network_func;
+    use nadi_plugin::{env_func, network_func};
     use std::fs::File;
     use std::io::{BufWriter, Write};
     use std::path::PathBuf;
@@ -154,5 +155,67 @@ mod connections {
             writeln!(writer, "}}")?;
         }
         Ok(())
+    }
+
+    /// Take a subset of network by taking the given node as new outlet
+    ///
+    /// ```task
+    /// network load_str("a -> b\n b->c\n x -> y");
+    /// network subset_from("b")
+    /// env assert_eq(nodes.NAME, ["b", "a"])
+    /// ```
+    #[network_func]
+    fn subset_from(net: &mut Network, node: &str) -> Result<(), String> {
+        let node = net
+            .node_by_name(node)
+            .ok_or(format!("Node {node} not found in the network"))?
+            .clone();
+        net.new_outlet(node);
+        Ok(())
+    }
+
+    /// Take a subset of network by only including the largest blob of connected nodes
+    ///
+    /// When you load a network that have disconnected nodes, nadi
+    /// includes a ROOT note by default and collects all the outlets
+    /// as inputs to that node. This function allows you to filter out
+    /// all the nodes except the one belonging to the largest
+    /// connected network (number of nodes). Alternatively, you can
+    /// also use ORDER and other logic in the task system to do that.
+    ///
+    /// If your network doesn't have a root node, then it'll just keep
+    /// the network as it is.
+    ///
+    /// ```task
+    /// network load_str("a -> b\n b->c\n x -> y");
+    /// network subset_largest()
+    /// env assert_eq(nodes.NAME, ["c", "b", "a"])
+    /// ```
+    #[network_func(node = ROOT_NODE_NAME)]
+    fn subset_largest(net: &mut Network, node: &str) -> Result<(), String> {
+        let node = net
+            .node_by_name(node)
+            .ok_or(format!("Node {node} not found in the network"))?
+            .clone();
+        let mut outlet: Option<Node> = None;
+        for i in node.lock().inputs() {
+            let mut replace = outlet.is_none();
+            if let Some(ref o) = outlet {
+                if o.lock().order() < i.lock().order() {
+                    replace = true;
+                }
+            }
+            if replace {
+                outlet = Some(i.clone());
+            }
+        }
+        net.new_outlet(outlet.unwrap_or(node));
+        Ok(())
+    }
+
+    /// default name used for ROOT node of the network
+    #[env_func]
+    fn root_node() -> String {
+        ROOT_NODE_NAME.to_string()
     }
 }
