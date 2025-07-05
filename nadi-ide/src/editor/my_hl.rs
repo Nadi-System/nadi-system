@@ -8,11 +8,13 @@ use nadi_core::parser::{
 };
 use std::collections::HashMap;
 
+/// Collection of highlight tokens
 struct HlTokens {
     offset: usize,
     tokens: Vec<(Highlight, usize)>,
 }
 
+/// convert hightlight into iced format
 pub fn hlto_format(hl: &Highlight, _theme: &iced::Theme) -> Format<Font> {
     let color = match hl {
         Highlight::Comment => Some(Color::new(0.5, 0.5, 0.5, 0.7)),
@@ -38,6 +40,7 @@ pub fn hlto_format(hl: &Highlight, _theme: &iced::Theme) -> Format<Font> {
 // }
 
 impl HlTokens {
+    /// convert the given lines into highlight token based on the filetype
     fn new(line: &str, nft: &NadiFileType) -> (Option<MultiLineStr>, Self) {
         let mut mls = None;
         let tk = get_tokens(line);
@@ -63,6 +66,7 @@ impl HlTokens {
         (mls, Self { offset: 0, tokens })
     }
 
+    /// create highlights from string assuming they are inside a multiline string
     fn in_quote(line: &str, nft: &NadiFileType) -> (Option<MultiLineStr>, Self) {
         let mut mls = Some(MultiLineStr::In);
         if !line.contains('"') {
@@ -130,17 +134,26 @@ impl Iterator for HlTokens {
     }
 }
 
+/// State of multiline string
 #[derive(Clone)]
 enum MultiLineStr {
+    /// This line starts a multiline string
     Open,
+    /// This line is inside a multiline string
     In,
+    /// This line closes a multiline string
     Close,
+    /// This line closes a multiline string, then starts another one
     CloseOpen,
 }
 
+/// Highlighter for Nadi Systax
 pub struct NadiHighlighter {
+    /// current line that needs highlight
     curr_line: usize,
+    /// lines involving multiline strings
     ml_str: HashMap<usize, MultiLineStr>,
+    /// highlighter setting
     settings: NadiFileType,
 }
 

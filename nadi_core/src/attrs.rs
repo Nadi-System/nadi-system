@@ -23,8 +23,17 @@ use chrono::{Datelike, Timelike};
 static DEFAULT_ATTR: Attribute = Attribute::Bool(true);
 
 /// For anything that can store attributes in a map
+///
+/// This trait helps us implement same things for attribute storage by
+/// simply pointing to the variable that stores the attribute
+/// map. Components like node and network can implement this.  This
+/// means we don't have to manually implement functionality like
+/// rendering the string template on each one of them.
 pub trait HasAttributes {
     /// If a node, return its name
+    ///
+    /// Network and attrmaps can ignore this. Useful to generate error
+    /// messages.
     fn node_name(&self) -> Option<&str> {
         None
     }
@@ -65,6 +74,8 @@ pub trait HasAttributes {
     }
 
     /// Set attribute to a value
+    ///
+    /// Will return the old value if that attribute is already present.
     fn set_attr(&mut self, name: &str, val: Attribute) -> Option<Attribute> {
         if name == "_" {
             // cannot be set, it's also for discarding results
@@ -222,6 +233,7 @@ pub trait HasAttributes {
     }
 }
 
+/// This Blanket Implementation helps us use the functions recursively
 impl HasAttributes for AttrMap {
     fn attr_map(&self) -> &AttrMap {
         self
@@ -232,6 +244,16 @@ impl HasAttributes for AttrMap {
 }
 
 /// Generic attribute value for nadi system
+///
+/// Attribute implements various operation traits that can provide
+/// functions like logical bitand/bitor, or arithmetic add/multiply
+/// etc depending on what variable attribute contains.
+///
+/// It also implements type conversions from/to various rust native
+/// and external crate formats. You can also use [`convert_impls`]
+/// macro to generate implementation from [`Attribute`] if you know
+/// your type has `From<T>` for a type that implements
+/// [`FromAttribute`].
 #[repr(C)]
 #[derive(StableAbi, Clone, PartialEq, Debug)]
 pub enum Attribute {
@@ -717,7 +739,7 @@ impl Attribute {
         }
     }
 
-    /// Integer division (both has to be integers)
+    /// Integer division (both have to be integers)
     pub fn int_div(&self, other: &Self) -> Result<Self, EvalError> {
         match self {
             Self::Integer(a) => match other {
@@ -1019,6 +1041,8 @@ macro_rules! convert_impls {
     };
 }
 
+convert_impls!(i64 => i32);
+convert_impls!(i64 => u32);
 convert_impls!(i64 => u64);
 convert_impls!(i64 => usize);
 convert_impls!(RString => String);

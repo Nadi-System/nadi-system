@@ -6,7 +6,7 @@ pub static FONT: &[u8] = include_bytes!("../fonts/icons.ttf");
 fn icon<'a, Message>(codepoint: char) -> Element<'a, Message> {
     const ICON_FONT: Font = Font::with_name("nadi-icons");
 
-    text(codepoint).font(ICON_FONT).into()
+    text(codepoint).font(ICON_FONT).size(8).into()
 }
 
 pub fn action<'a, Message: Clone + 'a>(
@@ -14,7 +14,7 @@ pub fn action<'a, Message: Clone + 'a>(
     label: &'a str,
     on_press: Option<Message>,
 ) -> Element<'a, Message> {
-    let action = button(center(content).width(20).height(20));
+    let action = button(center(content).width(12).height(12));
 
     if let Some(on_press) = on_press {
         tooltip(action.on_press(on_press), label, tooltip::Position::Top)
@@ -30,7 +30,7 @@ pub fn danger_action<'a, Message: Clone + 'a>(
     label: &'a str,
     on_press: Option<Message>,
 ) -> Element<'a, Message> {
-    let action = button(center(content).width(20).height(20)).style(button::danger);
+    let action = button(center(content).width(12).height(12)).style(button::danger);
 
     if let Some(on_press) = on_press {
         tooltip(action.on_press(on_press), label, tooltip::Position::Top)

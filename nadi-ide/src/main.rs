@@ -79,7 +79,7 @@ impl MainWindow {
                 _ => return self.terminal.update(m).map(Message::Terminal),
             },
             Message::SvgView(m) => return self.svg.update(m).map(Message::SvgView),
-            Message::Attributes => (),
+            Message::Attributes(m) => self.attrs.update(m),
             Message::Editor(m) => {
                 return match m {
                     editor::Message::FuncSignature((ty, name)) => {
@@ -296,7 +296,7 @@ impl MainWindow {
 
 #[derive(Debug, Clone)]
 enum Message {
-    Attributes,
+    Attributes(nadi_ide::attributes::Message),
     Workspace(pane_grid::Configuration<&'static PaneType>),
     PaneAction(PaneMessage),
     PaneTypeChanged(pane_grid::Pane, PaneType),
@@ -430,7 +430,7 @@ fn pane_content<'a>(
         Some(PaneType::SvgView) => win.svg.view().map(Message::SvgView),
         Some(PaneType::NetworkView) => win.terminal.view_network().map(Message::Terminal),
         Some(PaneType::Terminal) => win.terminal.view().map(Message::Terminal),
-        Some(PaneType::AttrView) => win.attrs.view().map(|_| Message::Attributes),
+        Some(PaneType::AttrView) => win.attrs.view().map(Message::Attributes),
     }
 }
 

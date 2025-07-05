@@ -11,7 +11,10 @@ use nadi_core::{
     tasks::FunctionType,
 };
 
+/// Main help to show in the help window
 pub static MAIN_HELP: &str = include_str!("../markdown/main.md");
+
+/// Width of the function list sidepane
 static FUNC_WIDTH: f32 = 300.0;
 
 pub struct MdHelp {

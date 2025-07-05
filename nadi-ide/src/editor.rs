@@ -22,12 +22,23 @@ use std::sync::Arc;
 pub mod colors;
 pub mod my_hl;
 
+/// Representation of the function with information from task system
+///
+/// Instead of function call in the task, this represents the
+/// definition of the function in the plugins, along with which actual
+/// internal function it is calling. For example, even if the function
+/// is trying to call a node function, but due to it not being
+/// present, it falls back to calling an environment function, then it
+/// will have the iternaal type `ity` as the environment function.
 #[derive(Clone, Debug)]
 pub struct EditorFunction {
+    /// Function type in the function call (from task)
     pub ty: FunctionType,
-    /// actual Function Type (could be environment function)
+    /// actual Function Type that'll be called (could be environment function)
     pub ity: FunctionType,
+    /// Name of the function
     pub name: String,
+    /// Function arguments with their signature information
     pub args: Vec<FuncArg>,
 }
 
@@ -91,21 +102,35 @@ impl EditorFunction {
 }
 
 pub struct Editor {
+    /// Theme of the editor, doesn't work for nadi based filetypes
     theme: highlighter::Theme,
+    /// Status string
     status: String,
+    /// Function currently under the cursor, or the first function before the cursor
     pub curr_func: Option<EditorFunction>,
+    /// Current file editor has opened
     file: Option<PathBuf>,
+    /// There has been edits since the last save
     is_dirty: bool,
+    /// The file is being loaded right now
     is_loading: bool,
+    /// contents of the editor
     pub content: text_editor::Content,
+    /// edit history
     content_hist: Vec<String>,
+    /// current index in the edit history
     content_index: usize,
+    /// has the content been changed since last history save
     is_hist_dirty: bool,
+    /// instance of last edit performed by the user
     last_edit: Instant,
+    /// If there is any parse errors
     error: Option<ParseError>,
+    /// The editor is embedded in IDE (false means standalone)
     embedded: bool,
 }
 
+/// Default task script to show in the editor pane
 static EDITOR_DEFAULT: &str = r#"# example nadi script
 # you can load network with a string
 network load_str("a -> b\n b -> d\n c -> d");
@@ -188,6 +213,7 @@ pub enum Message {
 }
 
 impl Editor {
+    /// Flag that the editor is embedded in IDE
     pub fn embed(mut self) -> Self {
         self.embedded = true;
         self
@@ -670,6 +696,7 @@ async fn func_at_mark(text: String, mark: (usize, usize)) -> Option<(FunctionTyp
     let mut ty = None;
     let mut name = None;
     let mut col = 0;
+    let mut ind = 0;
     while col < mark.1 {
         let tk = match tokens.next() {
             Some(t) => t,
@@ -677,15 +704,37 @@ async fn func_at_mark(text: String, mark: (usize, usize)) -> Option<(FunctionTyp
         };
         col += tk.content.len();
 
+        // it doesn't work right now when a function call in another
+        // function argument is present, even when the functioncall is
+        // over, it keeps showing the last function instead of the
+        // original function.
+
+        // suggestions - write parser that can give you function for
+        // current context - write a more complicated algorithm that
+        // also keeps tracks of expression.
         match &tk.ty {
             TaskToken::Function => {
                 name = Some(tk.content.to_string());
             }
+            // TaskToken::Function if name.is_some() => {
+            //     // if there is a complete expression, then this
+            //     // function is not within our scope
+            //     if let Ok((rest, _)) = complete_expression(&tokens_v[ind..]) {
+            //         let col_tmp = col;
+            //         let skip = tokens_v.len() - rest.len();
+            //         for t in tokens_v[ind..skip] {
+            // 		col_tmp += t.content.len();
+            // 	    }
+            //         tokens = tokens_v[skip..].iter().peekable();
+            //     }
+            //     name = Some(tk.content.to_string());
+            // }
             TaskToken::Keyword(kw) if ty.is_none() => {
                 ty = FunctionType::from_keyword(kw);
             }
             _ => (),
         }
+        ind += 1;
     }
     ty.and_then(|t| name.map(|n| (t, n)))
 }

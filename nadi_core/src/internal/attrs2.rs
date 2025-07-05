@@ -242,7 +242,7 @@ mod attributes {
         Attribute::from_str(toml).map_err(|e| e.to_string())
     }
 
-    /// Parse attribute from string
+    /// Parse attribute map from string
     ///
     /// ```task
     /// env assert_eq(parse_attrmap("y = true"), {y = true})
