@@ -4,6 +4,13 @@ Collection of Utilities to do Network Analysis and Data Integration.
 
 For more details, refer to the [NADI Book](https://nadi-system.github.io/)
 
+# Usage Instructions
+
+Video Demo: https://www.youtube.com/watch?v=qKsrigRrPKo
+Web User Manual: https://nadi-system.github.io
+PDF User Manual: https://nadi-system.github.io/data/nadi-book.pdf
+Dev Reference: https://docs.rs/nadi_core/latest/nadi_core/
+
 # Installation
 Prebuilt binaries are available for windows in the releases page. Use the `nadi-ide` binary for the GUI, refer to Nadi Book for details on other binaries.
 
@@ -55,3 +62,17 @@ There are some plugins that are given by default called internal plugins. And so
 Geographic Information System (GIS) tool for nadi. It can help download stream lines (NHDPlus), USGS streamgages, basins, etc as well as run network detection algorithm for detecting network that is the backbone of nadi system.
 
 Nadi GIS is available as a command line utility as well as a QGIS plugin.
+
+# Future Work
+- Implement timeseries data types with gaps
+- Add syntax to access timeseries data directly,
+  + `$` for series, and `$$` for timeseries might work, with `$` also
+    falling back to get series data without time from timeseries, if
+    there is no series with that name.
+  + Also means we have to add a generic data type for task system, enum of (Attribute, Series, Timeseries, etc)
+- Only internal plugins can be run without dot syntax. All external plugins need the plugin name to access the functions.
+- Add user defined functions. Maybe only environmental function for now? See if node/network function can be done easily.
+- Add for loop, for looping through Array and Table Keys.
+- Implement `.0` type syntax for array member access like with attrmap member access.
+- Write a `nadi-server` CLI tool, that opens a server. It opens up an API where users can send tasks to run, and it can return the output from that. It should have `mutable` and `immutable` option. In the immutable option users can only run immutable functions.
+
