@@ -1,19 +1,18 @@
 #![allow(clippy::module_inception)]
 #![allow(non_local_definitions)] // warning from sabi_trait macro
 use crate::attrs::{AttrMap, AttrSlice};
-use crate::plugins::{load_library_safe, NadiPlugin};
+use crate::plugins::{NadiPlugin, load_library_safe};
 use crate::prelude::*;
-use crate::table::{contents_2_md, ColumnAlign};
+use crate::table::{ColumnAlign, contents_2_md};
 use abi_stable::std_types::Tuple2;
 use abi_stable::{
-    sabi_trait,
+    StableAbi, sabi_trait,
     std_types::{
-        map::REntry,
         RBox, RErr, RHashMap, ROk,
         ROption::{self, RNone, RSome},
         RResult, RString, RVec,
+        map::REntry,
     },
-    StableAbi,
 };
 use colored::Colorize;
 use std::collections::HashMap;
@@ -361,6 +360,28 @@ impl NadiFunctions {
 
         funcs.load_plugins().unwrap();
         funcs
+    }
+
+    /// Remove functions from a plugin completely
+    /// TODO: add blacklist field, and do not load them at all
+    pub fn remove_plugin(&mut self, plugin: &str) {
+        if let Some(p) = self.plugins.get(plugin) {
+            for func in &p.env {
+                let n = format!("{plugin}.{func}");
+                self.env.remove(n.as_str());
+                self.env_alias.remove(func.as_str());
+            }
+            for func in &p.node {
+                let n = format!("{plugin}.{func}");
+                self.node.remove(n.as_str());
+                self.node_alias.remove(func.as_str());
+            }
+            for func in &p.network {
+                let n = format!("{plugin}.{func}");
+                self.network.remove(n.as_str());
+                self.network_alias.remove(func.as_str());
+            }
+        }
     }
 
     pub fn register_network_function(&mut self, prefix: &str, func: NetworkFunctionBox) {

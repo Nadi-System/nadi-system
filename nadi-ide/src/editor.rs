@@ -560,7 +560,7 @@ impl Editor {
 }
 
 fn key_binding(kp: text_editor::KeyPress) -> Option<text_editor::Binding<Message>> {
-    if kp.status != text_editor::Status::Focused {
+    if !matches!(kp.status, text_editor::Status::Focused) {
         return text_editor::Binding::<Message>::from_key_press(kp);
     }
 
