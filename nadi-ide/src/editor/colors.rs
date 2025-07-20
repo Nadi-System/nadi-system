@@ -14,6 +14,13 @@ pub static ARG_COLOR_FUNCTY: Color = Color {
     a: 1.0,
 };
 
+pub static ARG_COLOR_FUNC: Color = Color {
+    r: 0.5,
+    g: 0.2,
+    b: 0.2,
+    a: 1.0,
+};
+
 pub static ARG_COLOR_VAL: Color = Color {
     r: 0.1,
     g: 0.6,
@@ -25,6 +32,13 @@ pub static ARG_COLOR_REQ: Color = Color {
     r: 0.0,
     g: 0.0,
     b: 0.7,
+    a: 1.0,
+};
+
+pub static ARG_COLOR_OPT: Color = Color {
+    r: 0.0,
+    g: 0.3,
+    b: 0.0,
     a: 1.0,
 };
 

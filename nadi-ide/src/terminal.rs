@@ -90,30 +90,31 @@ impl Terminal {
     }
 
     pub fn search_function(&self, ty: FunctionType, name: String) -> Option<EditorFunction> {
-        let (args, ity) = match ty {
+        let (args, help, ity) = match ty {
             FunctionType::Network => self
                 .task_ctx
                 .functions
                 .network(&name)
-                .map(|f| (f.args(), FunctionType::Network)),
+                .map(|f| (f.args(), f.short_help(), FunctionType::Network)),
             FunctionType::Node => self
                 .task_ctx
                 .functions
                 .node(&name)
-                .map(|f| (f.args(), FunctionType::Node)),
+                .map(|f| (f.args(), f.short_help(), FunctionType::Node)),
             _ => None,
         }
         .or_else(|| {
             self.task_ctx
                 .functions
                 .env(&name)
-                .map(|f| (f.args(), FunctionType::Env))
+                .map(|f| (f.args(), f.short_help(), FunctionType::Env))
         })?;
         Some(EditorFunction {
             ty,
             ity,
             name,
             args: args.to_vec(),
+            short_help: help.to_string(),
         })
     }
 

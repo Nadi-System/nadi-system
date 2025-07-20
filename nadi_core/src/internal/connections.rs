@@ -40,10 +40,10 @@ mod connections {
         Ok(())
     }
 
-    /// Load the given file into the network
+    /// Load network from the given string
     ///
     /// This replaces the current network with the one loaded from the
-    /// file.
+    /// string.
     ///
     /// ```task
     /// network load_str("a -> b");
@@ -71,7 +71,7 @@ mod connections {
         Ok(())
     }
 
-    /// Load the given edges into the network
+    /// Load the given edges as a network
     ///
     /// This replaces the current network with the one loaded from the
     /// file.

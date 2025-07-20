@@ -2,7 +2,7 @@ use crate::icons;
 use iced::highlighter;
 use iced::time::{self, Duration, Instant};
 use iced::widget::{
-    column, container, horizontal_space, pick_list, row, scrollable, stack, text,
+    column, container, horizontal_space, pick_list, row, scrollable, text,
     text::{Rich, Span},
     text_editor, vertical_rule,
 };
@@ -40,6 +40,8 @@ pub struct EditorFunction {
     pub name: String,
     /// Function arguments with their signature information
     pub args: Vec<FuncArg>,
+    /// Short help string describing the function
+    pub short_help: String,
 }
 
 impl EditorFunction {
@@ -57,13 +59,13 @@ impl EditorFunction {
                 }
                 FuncArgType::OptArg => {
                     vec![
-                        Span::new(a.name.as_str()),
+                        Span::new(a.name.as_str()).color(colors::ARG_COLOR_OPT),
                         Span::new(": ").color(colors::ARG_COLOR_TYPE),
                         Span::new(a.ty.to_string()).color(colors::ARG_COLOR_TYPE),
                     ]
                 }
                 FuncArgType::DefArg(val) => vec![
-                    Span::new(a.name.as_str()),
+                    Span::new(a.name.as_str()).color(colors::ARG_COLOR_OPT),
                     Span::new(": ").color(colors::ARG_COLOR_TYPE),
                     Span::new(a.ty.to_string()).color(colors::ARG_COLOR_TYPE),
                     Span::new(" = "),
@@ -86,7 +88,7 @@ impl EditorFunction {
         let mut texts: Vec<Span<_>> = vec![
             Span::new(self.ity.name()).color(colors::ARG_COLOR_FUNCTY),
             Span::new(" "),
-            Span::new(&self.name),
+            Span::new(&self.name).color(colors::ARG_COLOR_FUNC),
             Span::new("(").color(colors::ARG_COLOR_SYM),
         ];
         if let Some(last) = args.pop() {
@@ -97,6 +99,8 @@ impl EditorFunction {
             texts.extend(last);
         }
         texts.push(Span::new(")").color(colors::ARG_COLOR_SYM));
+        texts.push(Span::new("\n"));
+        texts.push(Span::new(&self.short_help));
         Rich::with_spans(texts).font(iced::font::Font::MONOSPACE)
     }
 }
@@ -482,7 +486,16 @@ impl Editor {
             Message::ThemeChange,
         ));
 
-        let status: Element<_> = if let Some(f) = &self.curr_func {
+        let status: Element<_> = if let Some(e) = &self.error {
+            container(
+                text(e.user_msg(None))
+                    .style(text::danger)
+                    .font(Font::MONOSPACE)
+                    .width(Fill),
+            )
+            .style(parse_error_overlay)
+            .into()
+        } else if let Some(f) = &self.curr_func {
             f.view().into()
         } else {
             text(self.status.clone()).into()
@@ -511,34 +524,17 @@ impl Editor {
             .and_then(Path::extension)
             .and_then(std::ffi::OsStr::to_str)
             .unwrap_or("tasks");
-        let mut editor: Element<_> = match NadiFileType::from_str(ext) {
+        let editor: Element<_> = match NadiFileType::from_str(ext) {
             // use custom highlights for nadi files
             Ok(nft) => editor
                 .highlight_with::<my_hl::NadiHighlighter>((nft, 0), my_hl::hlto_format)
                 .into(),
             _ => editor.highlight(ext, self.theme).into(),
         };
-        if let Some(e) = &self.error {
-            editor = stack([
-                editor,
-                container(
-                    text(e.user_msg(None))
-                        .style(text::danger)
-                        .font(Font::MONOSPACE)
-                        .width(Fill)
-                        .align_x(iced::alignment::Horizontal::Right),
-                )
-                .align_x(iced::alignment::Horizontal::Right)
-                .style(parse_error_overlay)
-                .padding(10)
-                .into(),
-            ])
-            .into();
-        }
         column![
-            controls.spacing(10).height(30.0),
-            scrollable(container(status).padding(5.0))
-                .height(30.0)
+            controls.spacing(10).height(25.0),
+            scrollable(container(status).padding(1.0))
+                .height(45.0)
                 .width(Fill),
             editor,
             fileinfo
@@ -696,7 +692,7 @@ async fn func_at_mark(text: String, mark: (usize, usize)) -> Option<(FunctionTyp
     let mut ty = None;
     let mut name = None;
     let mut col = 0;
-    let mut ind = 0;
+    // let mut ind = 0;
     while col < mark.1 {
         let tk = match tokens.next() {
             Some(t) => t,
@@ -734,7 +730,7 @@ async fn func_at_mark(text: String, mark: (usize, usize)) -> Option<(FunctionTyp
             }
             _ => (),
         }
-        ind += 1;
+        // ind += 1;
     }
     ty.and_then(|t| name.map(|n| (t, n)))
 }
