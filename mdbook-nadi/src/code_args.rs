@@ -1,15 +1,14 @@
 use crate::output::{clipped_from_stdout, output_handler, output_verbose};
 use anyhow::Context;
 use nadi_core::{
-    functions::NadiFunctions,
     parser::{tasks, tokenizer::get_tokens},
     string_template::{Render, RenderOptions, Template},
-    tasks::TaskContext,
+    tasks::{Task, TaskContext},
 };
 use pulldown_cmark::Event;
-use std::cell::OnceCell;
 use std::io::Read;
 use std::path::Path;
+use std::sync::{LazyLock, Mutex};
 
 pub type CodeHandler = fn(&str, &str, &Path) -> Result<Vec<Event<'static>>, anyhow::Error>;
 
@@ -23,19 +22,23 @@ pub fn nadi_code_args(mark: &str) -> Option<(CodeHandler, String)> {
     })
 }
 
-static mut NADI_FUNCS: OnceCell<NadiFunctions> = OnceCell::new();
+static mut NADI_CTX: LazyLock<Mutex<TaskContext>> =
+    LazyLock::new(|| Mutex::new(TaskContext::new(None)));
 
-fn new_ctx() -> TaskContext {
-    // The static mut ref is for OnceCell, and it is immediately
-    // cloned to be used, so it is safe. This just saves us from
-    // loading the plugins over and over again for each code block,
-    // significantly improving the runtime speed
+fn clear_context() {
     #[allow(static_mut_refs)]
-    let functions = unsafe { NADI_FUNCS.get_or_init(NadiFunctions::new) }.clone();
-    TaskContext {
-        functions,
-        ..Default::default()
-    }
+    let ctx: &mut TaskContext =
+        unsafe { &mut NADI_CTX.lock().expect("Couldn't lock the task context") };
+    ctx.clear();
+}
+
+fn execute_task(task: Task) -> Result<Option<String>, String> {
+    // This saves us from loading the plugins over and over again for
+    // each code block, significantly improving the runtime speed
+    #[allow(static_mut_refs)]
+    let ctx: &mut TaskContext =
+        unsafe { &mut NADI_CTX.lock().expect("Couldn't lock the task context") };
+    ctx.execute(task)
 }
 
 pub fn run_task(task: &str, args: &str, pwd: &Path) -> anyhow::Result<Vec<Event<'static>>> {
@@ -55,17 +58,19 @@ pub fn run_task(task: &str, args: &str, pwd: &Path) -> anyhow::Result<Vec<Event<
                 e.user_msg(None),
                 "error",
                 pwd,
-            ))
+            ));
         }
     };
 
-    let mut ctx = new_ctx();
+    if !args.contains("continue") {
+        clear_context();
+    }
 
     let mut response = String::new();
     std::env::set_current_dir(pwd)?;
     for task in tasks {
         let mut buf = gag::BufferRedirect::stdout().unwrap();
-        let res = ctx.execute(task);
+        let res = execute_task(task);
         let r = buf.read_to_string(&mut response).unwrap();
         if r > 0 {
             response.push('\n');
@@ -82,7 +87,7 @@ pub fn run_task(task: &str, args: &str, pwd: &Path) -> anyhow::Result<Vec<Event<
                     format!("{response}{e}"),
                     "error",
                     pwd,
-                ))
+                ));
             }
         }
     }
@@ -160,13 +165,13 @@ pub fn run_table(table: &str, args: &str, pwd: &Path) -> anyhow::Result<Vec<Even
     let tokens = get_tokens(&tasks);
     let tasks = tasks::parse(tokens)?;
 
-    let mut ctx = new_ctx();
+    clear_context();
 
     let mut response = String::new();
     for task in tasks {
         // since we can't have anything else print on mdbook
         let mut buf = gag::BufferRedirect::stdout().unwrap();
-        let res = ctx.execute(task);
+        let res = execute_task(task);
         response.clear();
         buf.read_to_string(&mut response).unwrap();
         response.push('\n');
@@ -181,7 +186,7 @@ pub fn run_table(table: &str, args: &str, pwd: &Path) -> anyhow::Result<Vec<Even
                     e,
                     "error",
                     pwd,
-                ))
+                ));
             }
         }
     }

@@ -64,7 +64,7 @@ impl EvalError {
             Self::NoReturnValue(n) => return format!("Function {n} did not return a value"),
             Self::NodeNotFound(n) => return format!("Node: {n:?} not found"),
             Self::PathNotFound(s, e, t) => {
-                return format!("No path found between Nodes {s:?} and {t:?}, path ends at {e:?}")
+                return format!("No path found between Nodes {s:?} and {t:?}, path ends at {e:?}");
             }
             Self::AttributeNotFound => "Attribute not found",
             // Self::AttributeNotFound(Some(n), var) => {
@@ -79,13 +79,13 @@ impl EvalError {
             Self::NotANumber => "Numerical Operation on Non Number",
             Self::NotABool => "Boolean Operation on Non Boolean",
             Self::DifferentLength(a, b) => {
-                return format!("Different number of members in an array: {a} and {b}")
+                return format!("Different number of members in an array: {a} and {b}");
             }
             Self::DivideByZero => "Division by Zero",
             Self::RegexError(e) => return format!("Error in regex: {e}"),
             Self::LogicalError(s) => return format!("Logical Error: {s}, contact developer"),
             Self::MutexError(f, l) => {
-                return format!("Mutex Error on file: {f}::{l}, contact developer")
+                return format!("Mutex Error on file: {f}::{l}, contact developer");
             }
         }
         .to_string()
@@ -323,7 +323,7 @@ impl Expression {
                                         "Node variable tried without Node value",
                                     ),
                                     _ => EvalError::InvalidVariableType,
-                                })
+                                });
                             }
                         },
                         VarType::Inputs => match node {
@@ -367,12 +367,12 @@ impl Expression {
                                             Ok(None) => {
                                                 return Ok(Self::ResolveError(
                                                     EvalError::AttributeNotFound,
-                                                ))
+                                                ));
                                             }
                                             Err(e) => {
                                                 return Ok(Self::ResolveError(
                                                     EvalError::AttributeError(e),
-                                                ))
+                                                ));
                                             }
                                         }
                                     }
@@ -385,7 +385,7 @@ impl Expression {
                                         "Inputs variable tried without Node value",
                                     ),
                                     _ => EvalError::InvalidVariableType,
-                                })
+                                });
                             }
                         },
                         VarType::Output => match node {
@@ -398,7 +398,7 @@ impl Expression {
                             {
                                 Some(o) => o,
                                 None if vt.check => {
-                                    return Ok(Self::Literal(Attribute::Bool(false)))
+                                    return Ok(Self::Literal(Attribute::Bool(false)));
                                 }
                                 None => return Ok(Self::ResolveError(EvalError::NoOutputNode)),
                             }
@@ -413,7 +413,7 @@ impl Expression {
                                         "Output variable tried without Node value",
                                     ),
                                     _ => EvalError::InvalidVariableType,
-                                })
+                                });
                             }
                         },
                         VarType::Nodes => {
@@ -454,7 +454,7 @@ impl Expression {
                             None => {
                                 return Err(EvalError::LogicalError(
                                     "Node function ran without Node value",
-                                ))
+                                ));
                             }
                         },
                     },
