@@ -554,7 +554,8 @@ impl Editor {
     pub fn subscription(&self) -> Subscription<Message> {
         Subscription::batch([
             time::every(Duration::from_millis(100)).map(|_| Message::MaybeSaveEditHist),
-            time::every(Duration::from_secs(1)).map(|_| Message::MaybeParseTasks),
+            // Takes too much processing power, and makes everything slow
+            // time::every(Duration::from_secs(1)).map(|_| Message::MaybeParseTasks),
         ])
     }
 }

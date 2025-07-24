@@ -6,6 +6,7 @@ description = "Integrated Development Environment (IDE) for running nadi task sy
 repository = "https://github.com/Nadi-System/nadi-system"
 license = "GPL-3.0-only"
 readme = "README.md"
+default-run = "nadi-ide"
 
 [dependencies]
 iced = { git = "https://github.com/atreyagaurav/iced.git", branch="cargo-stable", features = ["highlighter", "markdown", "lazy", "tokio", "svg", "canvas"] }
