@@ -1,22 +1,23 @@
 use crate::parser::{
+    ParseError, ParseErrorType,
     components::*,
     errors::MatchErr,
     expressions::{complete_expression, expression_group},
     network::{node_name, str_path},
-    tokenizer::{check_tokens, Token},
-    ParseError, ParseErrorType,
+    tokenizer::{RawToken, Token},
 };
 use crate::{
+    expressions::TaskPosition,
     network::{PropCondition, PropNodes, PropOrder, Propagation},
     tasks::{AttrTask, CondTask, EvalTask, FunctionType, Task, WhileTask},
 };
 use abi_stable::std_types::{RString, RVec};
 use nom::{
+    Finish,
     branch::alt,
     combinator::{cut, map, opt, value},
     multi::separated_list1,
     sequence::{delimited, preceded, tuple},
-    Finish,
 };
 
 pub fn prop_order<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, PropOrder> {
@@ -33,7 +34,7 @@ pub fn prop_order<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, PropOrder> {
         _ => {
             return Err(nom::Err::Failure(
                 MatchErr::new(inp).ty(&ParseErrorType::InvalidPropagation),
-            ))
+            ));
         }
     };
     Ok((rest, prop))
@@ -79,6 +80,7 @@ pub fn propagation<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Option<Prop
                 order: order.unwrap_or_default(),
                 nodes: nodes.unwrap_or_default(),
                 condition: cond.unwrap_or_default(),
+                start: inp.position(),
             }),
         ))
     }
@@ -103,7 +105,7 @@ pub fn attr_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, AttrTask> {
         (_, true) => {
             return Err(nom::Err::Error(
                 MatchErr::new(function_type(inp)?.0).ty(&ParseErrorType::PropagationNotSupported),
-            ))
+            ));
         }
         _ => (),
     }
@@ -115,6 +117,7 @@ pub fn attr_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, AttrTask> {
             attr_pre,
             attr,
             propagation,
+            start: inp.position(),
         },
     ))
 }
@@ -132,7 +135,7 @@ pub fn eval_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, EvalTask> {
         (_, true) => {
             return Err(nom::Err::Error(
                 MatchErr::new(function_type(inp)?.0).ty(&ParseErrorType::PropagationNotSupported),
-            ))
+            ));
         }
         _ => (),
     }
@@ -152,6 +155,7 @@ pub fn eval_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, EvalTask> {
             propagation,
             input,
             silent: sc.is_some(),
+            start: inp.position(),
         },
     ))
 }
@@ -182,6 +186,7 @@ pub fn cond_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, CondTask> {
             cond,
             iftrue,
             iffalse: iffalse.unwrap_or_default(),
+            start: inp.position(),
         },
     ))
 }
@@ -191,7 +196,14 @@ pub fn while_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, WhileTask> {
         preceded(kw_while, maybe_space(expression_group)),
         maybe_newline(tasks_block),
     ))(inp)?;
-    Ok((rest, WhileTask { cond, tasks }))
+    Ok((
+        rest,
+        WhileTask {
+            cond,
+            tasks,
+            start: inp.position(),
+        },
+    ))
 }
 
 pub fn task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
@@ -213,8 +225,8 @@ pub fn tasks_block<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<Task>> 
     delimited(brace_start, maybe_newline(tasks), maybe_newline(brace_end))(inp)
 }
 
-pub fn parse(tokens: Vec<Token>) -> Result<Vec<Task>, ParseError> {
-    check_tokens(&tokens)?;
+pub fn parse(tokens: Vec<RawToken>) -> Result<Vec<Task>, ParseError> {
+    let tokens = Token::validate(tokens)?;
     match tasks(&tokens).finish() {
         Ok((rest, tasks)) => {
             if rest.is_empty() {
@@ -244,7 +256,7 @@ mod tests {
     #[case("help network var")]
     #[case("env x")]
     pub fn task_valid_test(#[case] txt: &str) {
-        let tokens = get_tokens(txt);
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
         let (rest, _) = task(&tokens).unwrap();
         assert_eq!(rest, vec![]);
     }
@@ -263,7 +275,9 @@ mod tests {
 
     /// Testing the codes in mdbook
     #[rstest]
-    #[case("network load_file(\"./data/mississippi.net\")\nnode[ohio] render(\"{_NAME:case(title)} River\")")]
+    #[case(
+        "network load_file(\"./data/mississippi.net\")\nnode[ohio] render(\"{_NAME:case(title)} River\")"
+    )]
     pub fn parse_valid_mdbook_test(#[case] txt: &str) {
         let tokens = get_tokens(txt);
         parse(tokens).unwrap();

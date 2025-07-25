@@ -1,12 +1,105 @@
 use crate::attrs::{Attribute, FromAttribute, HasAttributes};
 use crate::functions::FunctionCtx;
+use crate::network::Propagation;
 use crate::node::Node;
-use crate::tasks::{FunctionType, TaskContext, TaskKeyword};
+use crate::tasks::{
+    AttrTask, CondTask, EvalTask, FunctionType, TaskContext, TaskKeyword, WhileTask,
+};
 use std::collections::HashMap;
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct EvalError {
+    /// Type of Eval Error
+    pub ty: EvalErrorType,
+    /// Position of Eval Error
+    pub position: Vec<(usize, usize)>,
+}
+
+impl EvalError {
+    pub fn pos(mut self, position: (usize, usize)) -> EvalError {
+        self.position.push(position);
+        self
+    }
+}
+
+impl From<EvalError> for String {
+    fn from(val: EvalError) -> String {
+        val.to_string()
+    }
+}
+
+impl std::error::Error for EvalError {}
+
+impl std::fmt::Display for EvalError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        if let Some(pos) = self.position.iter().last() {
+            write!(
+                f,
+                "EvalError at Line {} Column {}: {}",
+                pos.0,
+                pos.1,
+                self.ty.message()
+            )
+        } else {
+            write!(f, "EvalError: {}", self.ty.message())
+        }
+    }
+}
+
+impl From<EvalErrorType> for EvalError {
+    fn from(val: EvalErrorType) -> EvalError {
+        val.no_pos()
+    }
+}
+
+pub trait TaskPosition {
+    fn position(&self) -> (usize, usize);
+}
+
+macro_rules! impl_position {
+    ($ty:ty) => {
+        impl TaskPosition for $ty {
+            fn position(&self) -> (usize, usize) {
+                self.start
+            }
+        }
+    };
+}
+
+impl_position!(EvalTask);
+impl_position!(AttrTask);
+impl_position!(CondTask);
+impl_position!(WhileTask);
+impl_position!(InputVar);
+impl_position!(FunctionCall);
+impl_position!(Propagation);
+
+impl EvalErrorType {
+    pub fn at<T: TaskPosition>(self, pos: &T) -> EvalError {
+        EvalError {
+            ty: self,
+            position: vec![pos.position()],
+        }
+    }
+
+    pub fn pos(self, position: (usize, usize)) -> EvalError {
+        EvalError {
+            ty: self,
+            position: vec![position],
+        }
+    }
+
+    pub fn no_pos(self) -> EvalError {
+        EvalError {
+            ty: self,
+            position: Vec::new(),
+        }
+    }
+}
 
 /// Collection of Errors that can happen during expression evaluation
 #[derive(Debug, PartialEq, Clone)]
-pub enum EvalError {
+pub enum EvalErrorType {
     /// Varible doesn't exist in given context
     UnresolvedVariable,
     /// Function doesn't exist in given context
@@ -48,13 +141,21 @@ pub enum EvalError {
     MutexError(&'static str, u32),
 }
 
-impl From<EvalError> for String {
-    fn from(val: EvalError) -> String {
+impl From<EvalErrorType> for String {
+    fn from(val: EvalErrorType) -> String {
         val.message()
     }
 }
 
-impl EvalError {
+impl std::error::Error for EvalErrorType {}
+
+impl std::fmt::Display for EvalErrorType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "EvalError: {}", self.message())
+    }
+}
+
+impl EvalErrorType {
     /// Format the error into a message using the values
     pub fn message(&self) -> String {
         match self {
@@ -89,14 +190,6 @@ impl EvalError {
             }
         }
         .to_string()
-    }
-}
-
-impl std::error::Error for EvalError {}
-
-impl std::fmt::Display for EvalError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "EvalError: {}", self.message())
     }
 }
 
@@ -314,15 +407,18 @@ impl Expression {
                             Some(n) => n
                                 .try_lock()
                                 .into_option()
-                                .ok_or(EvalError::MutexError(file!(), line!()))?
+                                .ok_or(
+                                    EvalErrorType::MutexError(file!(), line!()).pos(vt.position()),
+                                )?
                                 .attr_nested(&vt.prefix, &vt.name)
                                 .map(|a| a.cloned()),
                             None => {
                                 return Err(match ft {
-                                    FunctionType::Node => EvalError::LogicalError(
+                                    FunctionType::Node => EvalErrorType::LogicalError(
                                         "Node variable tried without Node value",
-                                    ),
-                                    _ => EvalError::InvalidVariableType,
+                                    )
+                                    .pos(vt.position()),
+                                    _ => EvalErrorType::InvalidVariableType.pos(vt.position()),
                                 });
                             }
                         },
@@ -332,14 +428,20 @@ impl Expression {
                                     let res: Vec<Attribute> = n
                                         .try_lock()
                                         .into_option()
-                                        .ok_or(EvalError::MutexError(file!(), line!()))?
+                                        .ok_or(
+                                            EvalErrorType::MutexError(file!(), line!())
+                                                .pos(vt.position()),
+                                        )?
                                         .inputs()
                                         .iter()
                                         .map(|i| {
                                             match i
                                                 .try_lock()
                                                 .into_option()
-                                                .ok_or(EvalError::MutexError(file!(), line!()))?
+                                                .ok_or(
+                                                    EvalErrorType::MutexError(file!(), line!())
+                                                        .pos(vt.position()),
+                                                )?
                                                 .attr_nested(&vt.prefix, &vt.name)
                                             {
                                                 Ok(Some(_)) => Ok(Attribute::Bool(true)),
@@ -353,25 +455,33 @@ impl Expression {
                                     for i in n
                                         .try_lock()
                                         .into_option()
-                                        .ok_or(EvalError::MutexError(file!(), line!()))?
+                                        .ok_or(
+                                            EvalErrorType::MutexError(file!(), line!())
+                                                .pos(vt.position()),
+                                        )?
                                         .inputs()
                                     {
                                         let a = i
                                             .try_lock()
                                             .into_option()
-                                            .ok_or(EvalError::MutexError(file!(), line!()))?
+                                            .ok_or(
+                                                EvalErrorType::MutexError(file!(), line!())
+                                                    .pos(vt.position()),
+                                            )?
                                             .attr_nested(&vt.prefix, &vt.name)
                                             .map(|a| a.cloned());
                                         match a {
                                             Ok(Some(v)) => vars.push(v),
                                             Ok(None) => {
                                                 return Ok(Self::ResolveError(
-                                                    EvalError::AttributeNotFound,
+                                                    EvalErrorType::AttributeNotFound
+                                                        .pos(vt.position()),
                                                 ));
                                             }
                                             Err(e) => {
                                                 return Ok(Self::ResolveError(
-                                                    EvalError::AttributeError(e),
+                                                    EvalErrorType::AttributeError(e)
+                                                        .pos(vt.position()),
                                                 ));
                                             }
                                         }
@@ -381,10 +491,11 @@ impl Expression {
                             }
                             None => {
                                 return Err(match ft {
-                                    FunctionType::Node => EvalError::LogicalError(
+                                    FunctionType::Node => EvalErrorType::LogicalError(
                                         "Inputs variable tried without Node value",
-                                    ),
-                                    _ => EvalError::InvalidVariableType,
+                                    )
+                                    .pos(vt.position()),
+                                    _ => EvalErrorType::InvalidVariableType.pos(vt.position()),
                                 });
                             }
                         },
@@ -392,7 +503,9 @@ impl Expression {
                             Some(n) => match n
                                 .try_lock()
                                 .into_option()
-                                .ok_or(EvalError::MutexError(file!(), line!()))?
+                                .ok_or(
+                                    EvalErrorType::MutexError(file!(), line!()).pos(vt.position()),
+                                )?
                                 .output()
                                 .into_option()
                             {
@@ -400,19 +513,24 @@ impl Expression {
                                 None if vt.check => {
                                     return Ok(Self::Literal(Attribute::Bool(false)));
                                 }
-                                None => return Ok(Self::ResolveError(EvalError::NoOutputNode)),
+                                None => {
+                                    return Ok(Self::ResolveError(
+                                        EvalErrorType::NoOutputNode.pos(vt.position()),
+                                    ));
+                                }
                             }
                             .try_lock()
                             .into_option()
-                            .ok_or(EvalError::MutexError(file!(), line!()))?
+                            .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(vt.position()))?
                             .attr_nested(&vt.prefix, &vt.name)
                             .map(|a| a.cloned()),
                             None => {
                                 return Err(match ft {
-                                    FunctionType::Node => EvalError::LogicalError(
+                                    FunctionType::Node => EvalErrorType::LogicalError(
                                         "Output variable tried without Node value",
-                                    ),
-                                    _ => EvalError::InvalidVariableType,
+                                    )
+                                    .pos(vt.position()),
+                                    _ => EvalErrorType::InvalidVariableType.pos(vt.position()),
                                 });
                             }
                         },
@@ -422,14 +540,21 @@ impl Expression {
                                 let a = n
                                     .try_lock()
                                     .into_option()
-                                    .ok_or(EvalError::MutexError(file!(), line!()))?
+                                    .ok_or(
+                                        EvalErrorType::MutexError(file!(), line!())
+                                            .pos(vt.position()),
+                                    )?
                                     .attr_nested(&vt.prefix, &vt.name)
                                     .map(|a| a.cloned());
-                                let val = a.map_err(EvalError::AttributeError)?;
+                                let val = a.map_err(|e| {
+                                    EvalErrorType::AttributeError(e).pos(vt.position())
+                                })?;
                                 if vt.check {
                                     vars.push(val.is_some().into());
                                 } else {
-                                    vars.push(val.ok_or(EvalError::AttributeNotFound)?);
+                                    vars.push(val.ok_or(
+                                        EvalErrorType::AttributeNotFound.pos(vt.position()),
+                                    )?);
                                 }
                             }
                             return Ok(Self::Literal(Attribute::Array(vars.into())));
@@ -448,13 +573,16 @@ impl Expression {
                             Some(n) => n
                                 .try_lock()
                                 .into_option()
-                                .ok_or(EvalError::MutexError(file!(), line!()))?
+                                .ok_or(
+                                    EvalErrorType::MutexError(file!(), line!()).pos(vt.position()),
+                                )?
                                 .attr_nested(&vt.prefix, &vt.name)
                                 .map(|a| a.cloned()),
                             None => {
-                                return Err(EvalError::LogicalError(
+                                return Err(EvalErrorType::LogicalError(
                                     "Node function ran without Node value",
-                                ));
+                                )
+                                .pos(vt.position()));
                             }
                         },
                     },
@@ -468,8 +596,12 @@ impl Expression {
                 } else {
                     match attr {
                         Ok(Some(v)) => Ok(Self::Literal(v)),
-                        Ok(None) => Ok(Self::ResolveError(EvalError::AttributeNotFound)),
-                        Err(e) => Ok(Self::ResolveError(EvalError::AttributeError(e))),
+                        Ok(None) => Ok(Self::ResolveError(
+                            EvalErrorType::AttributeNotFound.pos(vt.position()),
+                        )),
+                        Err(e) => Ok(Self::ResolveError(
+                            EvalErrorType::AttributeError(e).pos(vt.position()),
+                        )),
                     }
                 }
             }
@@ -484,12 +616,13 @@ impl Expression {
                 }
                 Some(VarType::Inputs) => {
                     let fcs = node
-                        .ok_or(EvalError::LogicalError(
-                            "Inputs Function tried without Node value",
-                        ))?
+                        .ok_or(
+                            EvalErrorType::LogicalError("Inputs Function tried without Node value")
+                                .pos(fc.position()),
+                        )?
                         .try_lock()
                         .into_option()
-                        .ok_or(EvalError::MutexError(file!(), line!()))?
+                        .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(fc.position()))?
                         .inputs()
                         .into_iter()
                         .map(|n| fc.resolve(ft, ctx, Some(n)))
@@ -498,17 +631,20 @@ impl Expression {
                 }
                 Some(VarType::Output) => {
                     let v = match node
-                        .ok_or(EvalError::LogicalError(
-                            "Output Function tried without Node value",
-                        ))?
+                        .ok_or(
+                            EvalErrorType::LogicalError("Output Function tried without Node value")
+                                .pos(fc.position()),
+                        )?
                         .try_lock()
                         .into_option()
-                        .ok_or(EvalError::MutexError(file!(), line!()))?
+                        .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(fc.position()))?
                         .output()
                         .into_option()
                     {
                         Some(o) => Self::Function(fc.resolve(ft, ctx, Some(o))?),
-                        None => Expression::ResolveError(EvalError::NoOutputNode),
+                        None => {
+                            Expression::ResolveError(EvalErrorType::NoOutputNode.pos(fc.position()))
+                        }
                     };
                     Ok(v)
                 }
@@ -576,17 +712,21 @@ impl Expression {
     ) -> Result<Attribute, EvalError> {
         match self {
             Self::Literal(v) => Ok(v.clone()),
-            Self::Variable(_) => Err(EvalError::UnresolvedVariable),
+            Self::Variable(vt) => Err(EvalErrorType::UnresolvedVariable.pos(vt.position())),
             Self::ResolveError(e) => Err(e.clone()),
             Self::Function(fc) => match fc.eval(ft, ctx, node) {
-                Ok(None) => Err(EvalError::NoReturnValue(fc.name.to_string())),
+                Ok(None) => {
+                    Err(EvalErrorType::NoReturnValue(fc.name.to_string()).pos(fc.position()))
+                }
                 Ok(Some(v)) => Ok(v),
                 Err(e) => Err(e),
             },
             Self::MultiFunction(fcs) => fcs
                 .into_iter()
                 .map(|fc| match fc.eval(ft, ctx, node) {
-                    Ok(None) => Err(EvalError::NoReturnValue(fc.name.to_string())),
+                    Ok(None) => {
+                        Err(EvalErrorType::NoReturnValue(fc.name.to_string()).pos(fc.position()))
+                    }
                     Ok(Some(v)) => Ok(v),
                     Err(e) => Err(e),
                 })
@@ -605,7 +745,7 @@ impl Expression {
             }
             Self::IfElse(cond, expr1, expr2) => {
                 let cond = cond.eval_value(ft, ctx, node)?;
-                let cond = bool::from_attr(&cond).ok_or(EvalError::NotABool)?;
+                let cond = bool::from_attr(&cond).ok_or(EvalErrorType::NotABool.no_pos())?;
                 if cond {
                     expr1.eval_value(ft, ctx, node)
                 } else {
@@ -632,6 +772,7 @@ impl UniOperator {
             Self::Not => !value,
             Self::Negative => -value,
         }
+        .map_err(|e| e.no_pos())
     }
 }
 impl std::fmt::Display for UniOperator {
@@ -701,6 +842,7 @@ impl BiOperator {
             Self::And => val1 & val2,
             Self::Or => val1 | val2,
         }
+        .map_err(|e| e.no_pos())
     }
 }
 
@@ -739,6 +881,8 @@ pub struct InputVar {
     pub name: String,
     /// Only check the presence of a value
     pub check: bool,
+    /// start position of the variable
+    pub start: (usize, usize),
 }
 
 impl std::fmt::Display for InputVar {
@@ -763,12 +907,19 @@ impl std::fmt::Display for InputVar {
 
 impl InputVar {
     /// new input variable
-    pub fn new(ty: Option<VarType>, prefix: Vec<String>, name: String, check: bool) -> Self {
+    pub fn new(
+        ty: Option<VarType>,
+        prefix: Vec<String>,
+        name: String,
+        check: bool,
+        start: (usize, usize),
+    ) -> Self {
         Self {
             ty,
             prefix,
             name,
             check,
+            start,
         }
     }
 }
@@ -844,6 +995,8 @@ pub struct FunctionCall {
     pub args: Vec<Expression>,
     /// Keyword Arguments
     pub kwargs: HashMap<String, Expression>,
+    /// start position of the function call
+    pub start: (usize, usize),
 }
 
 impl PartialEq for FunctionCall {
@@ -901,6 +1054,7 @@ impl FunctionCall {
         name: String,
         args: Vec<Expression>,
         kwargs: HashMap<String, Expression>,
+        start: (usize, usize),
     ) -> Self {
         Self {
             ty,
@@ -908,6 +1062,7 @@ impl FunctionCall {
             name,
             args,
             kwargs,
+            start,
         }
     }
 
@@ -918,11 +1073,20 @@ impl FunctionCall {
         let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
         let mut args = Vec::with_capacity(self.args.len());
         for a in &self.args {
-            args.push(a.clone().simplify(ft, ctx)?);
+            args.push(
+                a.clone()
+                    .simplify(ft, ctx)
+                    .map_err(|e| e.pos(self.position()))?,
+            );
         }
         let mut kwargs = HashMap::with_capacity(self.kwargs.len());
         for (k, a) in &self.kwargs {
-            kwargs.insert(k.clone(), a.clone().simplify(ft, ctx)?);
+            kwargs.insert(
+                k.clone(),
+                a.clone()
+                    .simplify(ft, ctx)
+                    .map_err(|e| e.pos(self.position()))?,
+            );
         }
         self.args = args;
         self.kwargs = kwargs;
@@ -942,11 +1106,18 @@ impl FunctionCall {
         let node = self.node.as_ref().or(node);
         let mut args = Vec::with_capacity(self.args.len());
         for a in &self.args {
-            args.push(a.resolve(ft, ctx, node)?);
+            args.push(
+                a.resolve(ft, ctx, node)
+                    .map_err(|e| e.pos(self.position()))?,
+            );
         }
         let mut kwargs = HashMap::with_capacity(self.kwargs.len());
         for (k, a) in &self.kwargs {
-            kwargs.insert(k.clone(), a.resolve(ft, ctx, node)?);
+            kwargs.insert(
+                k.clone(),
+                a.resolve(ft, ctx, node)
+                    .map_err(|e| e.pos(self.position()))?,
+            );
         }
         Ok(FunctionCall {
             ty: self.ty.clone(),
@@ -954,6 +1125,7 @@ impl FunctionCall {
             name: self.name.clone(),
             args,
             kwargs,
+            start: self.start,
         })
     }
 
@@ -968,11 +1140,18 @@ impl FunctionCall {
         let node = self.node.as_ref().or(node);
         let mut args = Vec::with_capacity(self.args.len());
         for a in &self.args {
-            args.push(a.eval_value(ft, ctx, node)?);
+            args.push(
+                a.eval_value(ft, ctx, node)
+                    .map_err(|e| e.pos(self.position()))?,
+            );
         }
         let mut kwargs = HashMap::with_capacity(self.kwargs.len());
         for (k, a) in &self.kwargs {
-            kwargs.insert(k.clone(), a.eval_value(ft, ctx, node)?);
+            kwargs.insert(
+                k.clone(),
+                a.eval_value(ft, ctx, node)
+                    .map_err(|e| e.pos(self.position()))?,
+            );
         }
         let fctx = FunctionCtx::from_arg_kwarg(args, kwargs);
         self.run_w_ctx_mut(ft, ctx, fctx, node, None)
@@ -989,11 +1168,18 @@ impl FunctionCall {
         let node = self.node.as_ref().or(node);
         let mut args = Vec::with_capacity(self.args.len());
         for a in &self.args {
-            args.push(a.eval_value(ft, ctx, node)?);
+            args.push(
+                a.eval_value(ft, ctx, node)
+                    .map_err(|e| e.pos(self.position()))?,
+            );
         }
         let mut kwargs = HashMap::with_capacity(self.kwargs.len());
         for (k, a) in &self.kwargs {
-            kwargs.insert(k.clone(), a.eval_value(ft, ctx, node)?);
+            kwargs.insert(
+                k.clone(),
+                a.eval_value(ft, ctx, node)
+                    .map_err(|e| e.pos(self.position()))?,
+            );
         }
         let fctx = FunctionCtx::from_arg_kwarg(args, kwargs);
         self.run_w_ctx(ft, ctx, fctx, node, None)
@@ -1012,33 +1198,35 @@ impl FunctionCall {
         let node = self.node.as_ref().or(node);
         match ft {
             FunctionType::Env => match tctx.functions.env(&self.name) {
-                Some(f) => f
-                    .call(&fctx)
-                    .res()
-                    .map_err(|s| EvalError::FunctionError(self.name.to_string(), s)),
-                None => Err(EvalError::FunctionNotFound(
+                Some(f) => f.call(&fctx).res().map_err(|s| {
+                    EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
+                }),
+                None => Err(EvalErrorType::FunctionNotFound(
                     original.unwrap_or_else(|| ft.clone()),
                     self.name.to_string(),
-                )),
+                )
+                .pos(self.position())),
             },
             FunctionType::Node => match tctx.functions.node(&self.name) {
                 Some(f) => {
                     let n = node
-                        .ok_or(EvalError::LogicalError("Node function called without node"))?
+                        .ok_or(
+                            EvalErrorType::LogicalError("Node function called without node")
+                                .pos(self.position()),
+                        )?
                         .try_lock()
                         .into_option()
-                        .ok_or(EvalError::MutexError(file!(), line!()))?;
-                    f.call(&n, &fctx)
-                        .res()
-                        .map_err(|s| EvalError::FunctionError(self.name.to_string(), s))
+                        .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(self.position()))?;
+                    f.call(&n, &fctx).res().map_err(|s| {
+                        EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
+                    })
                 }
                 None => self.run_w_ctx(&FunctionType::Env, tctx, fctx, node, Some(ft.clone())),
             },
             FunctionType::Network => match tctx.functions.network(&self.name) {
-                Some(f) => f
-                    .call(&tctx.network, &fctx)
-                    .res()
-                    .map_err(|s| EvalError::FunctionError(self.name.to_string(), s)),
+                Some(f) => f.call(&tctx.network, &fctx).res().map_err(|s| {
+                    EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
+                }),
                 None => self.run_w_ctx(&FunctionType::Env, tctx, fctx, node, Some(ft.clone())),
             },
         }
@@ -1057,33 +1245,35 @@ impl FunctionCall {
         let node = self.node.as_ref().or(node);
         match ft {
             FunctionType::Env => match tctx.functions.env(&self.name) {
-                Some(f) => f
-                    .call(&fctx)
-                    .res()
-                    .map_err(|s| EvalError::FunctionError(self.name.to_string(), s)),
-                None => Err(EvalError::FunctionNotFound(
+                Some(f) => f.call(&fctx).res().map_err(|s| {
+                    EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
+                }),
+                None => Err(EvalErrorType::FunctionNotFound(
                     original.unwrap_or_else(|| ft.clone()),
                     self.name.to_string(),
-                )),
+                )
+                .pos(self.position())),
             },
             FunctionType::Node => match tctx.functions.node(&self.name) {
                 Some(f) => {
                     let mut n = node
-                        .ok_or(EvalError::LogicalError("Node function called without node"))?
+                        .ok_or(
+                            EvalErrorType::LogicalError("Node function called without node")
+                                .pos(self.position()),
+                        )?
                         .try_lock()
                         .into_option()
-                        .ok_or(EvalError::MutexError(file!(), line!()))?;
-                    f.call_mut(&mut n, &fctx)
-                        .res()
-                        .map_err(|s| EvalError::FunctionError(self.name.to_string(), s))
+                        .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(self.position()))?;
+                    f.call_mut(&mut n, &fctx).res().map_err(|s| {
+                        EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
+                    })
                 }
                 None => self.run_w_ctx(&FunctionType::Env, tctx, fctx, node, Some(ft.clone())),
             },
             FunctionType::Network => match tctx.functions.network(&self.name) {
-                Some(f) => f
-                    .call_mut(&mut tctx.network, &fctx)
-                    .res()
-                    .map_err(|s| EvalError::FunctionError(self.name.to_string(), s)),
+                Some(f) => f.call_mut(&mut tctx.network, &fctx).res().map_err(|s| {
+                    EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
+                }),
                 None => self.run_w_ctx(&FunctionType::Env, tctx, fctx, node, Some(ft.clone())),
             },
         }

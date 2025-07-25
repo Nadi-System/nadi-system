@@ -28,7 +28,7 @@ mod connections {
             let contents =
                 std::fs::read_to_string(&file).context("Error while accessing the network file")?;
             let tokens = crate::parser::tokenizer::get_tokens(&contents);
-            let paths = crate::parser::network::parse(&tokens)?;
+            let paths = crate::parser::network::parse(tokens)?;
             let edges: Vec<(&str, &str)> = paths
                 .iter()
                 .map(|p| (p.start.as_str(), p.end.as_str()))
@@ -59,7 +59,7 @@ mod connections {
     ) -> Result<(), String> {
         if append {
             let tokens = crate::parser::tokenizer::get_tokens(contents);
-            let paths = crate::parser::network::parse(&tokens).map_err(|e| e.to_string())?;
+            let paths = crate::parser::network::parse(tokens).map_err(|e| e.to_string())?;
             let edges: Vec<(&str, &str)> = paths
                 .iter()
                 .map(|p| (p.start.as_str(), p.end.as_str()))

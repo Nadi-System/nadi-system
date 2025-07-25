@@ -1,15 +1,15 @@
 use crate::attrs::{AttrMap, HasAttributes};
-use crate::expressions::{EvalError, Expression};
-use crate::node::{new_node, Node, NodeInner};
+use crate::expressions::{EvalErrorType, Expression};
+use crate::node::{Node, NodeInner, new_node};
 use crate::timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap};
 use abi_stable::std_types::RDuration;
 use abi_stable::{
+    StableAbi,
     std_types::{
         RHashMap,
         ROption::{self, RNone, RSome},
         RString, RVec,
     },
-    StableAbi,
 };
 use colored::Colorize;
 use std::collections::{HashMap, HashSet};
@@ -226,10 +226,10 @@ impl Network {
     }
 
     /// Get a node by name (with error msg on failure)
-    pub fn try_node_by_name(&self, name: &str) -> Result<&Node, EvalError> {
+    pub fn try_node_by_name(&self, name: &str) -> Result<&Node, EvalErrorType> {
         self.nodes_map
             .get(name)
-            .ok_or_else(|| EvalError::NodeNotFound(name.to_string()))
+            .ok_or_else(|| EvalErrorType::NodeNotFound(name.to_string()))
     }
 
     /// Get nodes in the given order
@@ -247,7 +247,7 @@ impl Network {
         &self,
         order: &PropOrder,
         prop: &PropNodes,
-    ) -> Result<Vec<Node>, EvalError> {
+    ) -> Result<Vec<Node>, EvalErrorType> {
         match prop {
             PropNodes::All => Ok(self.nodes_order(order)),
             PropNodes::List(lst) => {
@@ -260,7 +260,7 @@ impl Network {
                 if sel_lst.is_empty() {
                     Ok(res)
                 } else {
-                    Err(EvalError::NodeNotFound(
+                    Err(EvalErrorType::NodeNotFound(
                         sel_lst.into_iter().collect::<Vec<&str>>().join(", "),
                     ))
                 }
@@ -270,7 +270,11 @@ impl Network {
     }
 
     /// Get a list of nodes in the given path
-    pub fn nodes_path(&self, order: &PropOrder, path: &StrPath) -> Result<Vec<Node>, EvalError> {
+    pub fn nodes_path(
+        &self,
+        order: &PropOrder,
+        path: &StrPath,
+    ) -> Result<Vec<Node>, EvalErrorType> {
         let start = self.try_node_by_name(path.start.as_str())?;
         let end = self.try_node_by_name(path.end.as_str())?;
         // we'll assume the network is indexed based on order, small
@@ -292,7 +296,7 @@ impl Network {
             let tmp = if let RSome(o) = curr.lock().output() {
                 o.clone()
             } else {
-                return Err(EvalError::PathNotFound(
+                return Err(EvalErrorType::PathNotFound(
                     start_name.to_string(),
                     curr.lock().name().to_string(),
                     end_name.to_string(),
@@ -619,6 +623,8 @@ pub struct Propagation {
     pub nodes: PropNodes,
     /// Condition to evaluate for selection of nodes
     pub condition: PropCondition,
+    /// start position of the propagation
+    pub start: (usize, usize),
 }
 
 impl std::fmt::Display for Propagation {

@@ -1,12 +1,12 @@
-use crate::expressions::EvalError;
+use crate::expressions::{EvalError, EvalErrorType};
 #[cfg(feature = "parser")]
 use crate::parser::ParseError;
 pub use pyo3;
-use pyo3::{exceptions::*, IntoPyObject, PyErr, PyErrArguments, PyObject, Python};
+use pyo3::{IntoPyObject, PyErr, PyErrArguments, PyObject, Python, exceptions::*};
 
 impl PyErrArguments for EvalError {
     fn arguments(self, py: Python<'_>) -> PyObject {
-        self.message()
+        self.to_string()
             .into_pyobject(py)
             .unwrap()
             .into_any()
@@ -16,30 +16,30 @@ impl PyErrArguments for EvalError {
 
 impl From<EvalError> for PyErr {
     fn from(err: EvalError) -> PyErr {
-        match &err {
-            EvalError::UnresolvedVariable => PyAttributeError::new_err(err),
-            EvalError::AttributeNotFound => PyAttributeError::new_err(err),
-            EvalError::NoOutputNode => PyAttributeError::new_err(err),
+        match &err.ty {
+            EvalErrorType::UnresolvedVariable => PyAttributeError::new_err(err),
+            EvalErrorType::AttributeNotFound => PyAttributeError::new_err(err),
+            EvalErrorType::NoOutputNode => PyAttributeError::new_err(err),
 
-            EvalError::FunctionNotFound(_, _) => PyKeyError::new_err(err),
-            EvalError::NodeNotFound(_) => PyKeyError::new_err(err),
+            EvalErrorType::FunctionNotFound(_, _) => PyKeyError::new_err(err),
+            EvalErrorType::NodeNotFound(_) => PyKeyError::new_err(err),
 
-            EvalError::FunctionError(_, _) => PyRuntimeError::new_err(err),
-            EvalError::NoReturnValue(_) => PyRuntimeError::new_err(err),
-            EvalError::PathNotFound(_, _, _) => PyRuntimeError::new_err(err),
-            EvalError::AttributeError(_) => PyRuntimeError::new_err(err),
-            EvalError::NodeAttributeError(_, _) => PyRuntimeError::new_err(err),
+            EvalErrorType::FunctionError(_, _) => PyRuntimeError::new_err(err),
+            EvalErrorType::NoReturnValue(_) => PyRuntimeError::new_err(err),
+            EvalErrorType::PathNotFound(_, _, _) => PyRuntimeError::new_err(err),
+            EvalErrorType::AttributeError(_) => PyRuntimeError::new_err(err),
+            EvalErrorType::NodeAttributeError(_, _) => PyRuntimeError::new_err(err),
 
-            EvalError::InvalidOperation => PyValueError::new_err(err),
-            EvalError::InvalidVariableType => PyTypeError::new_err(err),
-            EvalError::NotANumber => PyTypeError::new_err(err),
-            EvalError::NotABool => PyTypeError::new_err(err),
+            EvalErrorType::InvalidOperation => PyValueError::new_err(err),
+            EvalErrorType::InvalidVariableType => PyTypeError::new_err(err),
+            EvalErrorType::NotANumber => PyTypeError::new_err(err),
+            EvalErrorType::NotABool => PyTypeError::new_err(err),
 
-            EvalError::RegexError(_) => PyValueError::new_err(err),
-            EvalError::DifferentLength(_, _) => PyAssertionError::new_err(err),
-            EvalError::DivideByZero => PyZeroDivisionError::new_err(err),
-            EvalError::LogicalError(_) => PyAssertionError::new_err(err),
-            EvalError::MutexError(_, _) => PyPermissionError::new_err(err),
+            EvalErrorType::RegexError(_) => PyValueError::new_err(err),
+            EvalErrorType::DifferentLength(_, _) => PyAssertionError::new_err(err),
+            EvalErrorType::DivideByZero => PyZeroDivisionError::new_err(err),
+            EvalErrorType::LogicalError(_) => PyAssertionError::new_err(err),
+            EvalErrorType::MutexError(_, _) => PyPermissionError::new_err(err),
         }
     }
 }

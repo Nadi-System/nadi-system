@@ -2,9 +2,9 @@ use crate::attrs::{AttrMap, Attribute, HasAttributes};
 use crate::parser::{
     components::*,
     errors::ParseError,
-    tokenizer::{check_tokens, Token},
+    tokenizer::{RawToken, Token},
 };
-use nom::{branch::alt, combinator::map, sequence::delimited, Finish};
+use nom::{Finish, branch::alt, combinator::map, sequence::delimited};
 
 pub fn attr_group<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<String>> {
     delimited(
@@ -27,8 +27,8 @@ pub fn attr_file<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<Line>> {
     trailing_newlines(newline_separated(attr_file_line))(inp)
 }
 
-pub fn parse(tokens: Vec<Token>) -> Result<AttrMap, ParseError> {
-    check_tokens(&tokens)?;
+pub fn parse(tokens: Vec<RawToken>) -> Result<AttrMap, ParseError> {
+    let tokens = Token::validate(tokens)?;
     let lines = match attr_file(&tokens).finish() {
         Ok((rest, lines)) => {
             if rest.is_empty() {
@@ -88,7 +88,7 @@ fn move_in<'a>(keys: &[String], table: &'a mut AttrMap) -> Result<&'a mut AttrMa
                     "Key {k} in {} is not a table (value: {})",
                     keys.join("."),
                     val.to_string(),
-                )))
+                )));
             }
         };
     }

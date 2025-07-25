@@ -1,42 +1,95 @@
+use crate::expressions::TaskPosition;
 use crate::parser::string::parse_string;
 use crate::parser::{ParseError as TaskParseError, ParseErrorType};
 use crate::tasks::TaskKeyword;
 use colored::Colorize;
 use nadi_core::attrs::{Attribute, Date, DateTime, Time};
 use nom::{
+    IResult,
     branch::alt,
     bytes::complete::{is_not, tag},
     character::complete::{alpha1, alphanumeric1, anychar, char, digit1, one_of},
     combinator::{map, opt, recognize},
-    error::{context, VerboseError},
+    error::{VerboseError, context},
     multi::{many0, many1},
     sequence::{pair, preceded, terminated, tuple},
-    IResult,
 };
 use std::str::FromStr;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Token<'a> {
+    /// Token Type
     pub ty: TaskToken,
+    /// Contents of the token
     pub content: &'a str,
+    /// start position of token (line, col)
+    pub start: (usize, usize),
 }
 
-impl<'a> Token<'a> {
-    fn new(ty: TaskToken, content: &'a str) -> Self {
-        Self { ty, content }
+impl<'a> TaskPosition for Token<'a> {
+    fn position(&self) -> (usize, usize) {
+        self.start
     }
 }
 
-pub fn check_tokens(tokens: &[Token]) -> Result<(), TaskParseError> {
-    let mut data = tokens.split(|t| !t.ty.is_valid());
-    let valid = data.next().unwrap();
-    match data.next() {
-        Some(_) => Err(TaskParseError::new(
-            tokens,
-            &tokens[valid.len()..],
-            ParseErrorType::InvalidToken,
-        )),
-        None => Ok(()),
+impl<'a, 'b> TaskPosition for &'b [Token<'a>] {
+    fn position(&self) -> (usize, usize) {
+        if let Some(t) = self.get(0) {
+            t.position()
+        } else {
+            (0, 0)
+        }
+    }
+}
+
+impl<'a> Token<'a> {
+    fn new(raw: RawToken<'a>, start: (usize, usize)) -> Self {
+        Self {
+            ty: raw.ty,
+            content: raw.content,
+            start,
+        }
+    }
+    pub fn validate(tokens: Vec<RawToken<'a>>) -> Result<Vec<Self>, TaskParseError> {
+        let mut data = tokens.split(|t| !t.ty.is_valid());
+        let valid = data.next().unwrap();
+        if data.next().is_some() {
+            return Err(TaskParseError::raw(
+                &tokens,
+                &tokens[valid.len()..],
+                ParseErrorType::InvalidToken,
+            ));
+        }
+        let mut line = 1;
+        let mut col = 1;
+        let tokens = tokens
+            .into_iter()
+            .map(|t| {
+                let start = (line, col);
+                if t.ty == TaskToken::NewLine {
+                    line += 1;
+                    col = 1;
+                } else {
+                    col += t.content.len();
+                }
+                Token::new(t, start)
+            })
+            .collect();
+        Ok(tokens)
+    }
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct RawToken<'a> {
+    /// Token Type
+    pub ty: TaskToken,
+    /// Contents of the token
+    pub content: &'a str,
+}
+
+impl<'a> RawToken<'a> {
+    fn new(ty: TaskToken, content: &'a str) -> Self {
+        Self { ty, content }
     }
 }
 
@@ -137,6 +190,50 @@ impl TaskToken {
             TaskToken::Invalid(_) => "red",
         }
     }
+
+    pub fn colored(&self, content: &str) -> String {
+        match self {
+            TaskToken::NewLine | TaskToken::WhiteSpace => content.to_string(),
+            TaskToken::Comment => format!("{}", content.truecolor(100, 100, 100)),
+            TaskToken::Keyword(_) => format!("{}", content.red()),
+            TaskToken::AngleStart => format!("{}", content.blue()),
+            TaskToken::ParenStart => format!("{}", content.blue()),
+            TaskToken::BraceStart => format!("{}", content.blue()),
+            TaskToken::BracketStart => format!("{}", content.blue()),
+            TaskToken::PathSep => format!("{}", content.blue()),
+            TaskToken::Comma => format!("{}", content.blue()),
+            TaskToken::Caret => format!("{}", content.blue()),
+            TaskToken::Dot => format!("{}", content.blue()),
+            TaskToken::Dash => format!("{}", content.blue()),
+            TaskToken::Plus => content.to_string(),
+            TaskToken::Star => content.to_string(),
+            TaskToken::Slash => content.to_string(),
+            TaskToken::Percentage => content.to_string(),
+            TaskToken::Question => format!("{}", content.yellow()),
+            TaskToken::Semicolon => format!("{}", content.yellow()),
+            TaskToken::And => format!("{}", content.yellow()),
+            TaskToken::Or => format!("{}", content.yellow()),
+            TaskToken::Not => format!("{}", content.yellow()),
+            TaskToken::AngleEnd => format!("{}", content.blue()),
+            TaskToken::ParenEnd => format!("{}", content.blue()),
+            TaskToken::BraceEnd => format!("{}", content.blue()),
+            TaskToken::BracketEnd => format!("{}", content.blue()),
+            TaskToken::Variable => format!("{}", content.green()),
+            TaskToken::Function => format!("{}", content.magenta()),
+            TaskToken::Assignment => format!("{}", content.blue()),
+            TaskToken::None => format!("{}", content.truecolor(100, 100, 100)),
+            TaskToken::Bool => format!("{}", content.yellow()),
+            TaskToken::String(_) => format!("{}", content.yellow()),
+            TaskToken::Integer => format!("{}", content.yellow()),
+            TaskToken::Float => format!("{}", content.yellow()),
+            TaskToken::Date => format!("{}", content.cyan()),
+            TaskToken::Time => format!("{}", content.cyan()),
+            TaskToken::DateTime => format!("{}", content.cyan()),
+            TaskToken::NaN => format!("{}", content.yellow()),
+            TaskToken::Infinity => format!("{}", content.yellow()),
+            TaskToken::Invalid(_) => format!("{}", content.red()),
+        }
+    }
 }
 
 impl Token<'_> {
@@ -145,47 +242,7 @@ impl Token<'_> {
     }
 
     pub fn colored(&self) -> String {
-        match self.ty {
-            TaskToken::NewLine | TaskToken::WhiteSpace => self.content.to_string(),
-            TaskToken::Comment => format!("{}", self.content.truecolor(100, 100, 100)),
-            TaskToken::Keyword(_) => format!("{}", self.content.red()),
-            TaskToken::AngleStart => format!("{}", self.content.blue()),
-            TaskToken::ParenStart => format!("{}", self.content.blue()),
-            TaskToken::BraceStart => format!("{}", self.content.blue()),
-            TaskToken::BracketStart => format!("{}", self.content.blue()),
-            TaskToken::PathSep => format!("{}", self.content.blue()),
-            TaskToken::Comma => format!("{}", self.content.blue()),
-            TaskToken::Caret => format!("{}", self.content.blue()),
-            TaskToken::Dot => format!("{}", self.content.blue()),
-            TaskToken::Dash => format!("{}", self.content.blue()),
-            TaskToken::Plus => self.content.to_string(),
-            TaskToken::Star => self.content.to_string(),
-            TaskToken::Slash => self.content.to_string(),
-            TaskToken::Percentage => self.content.to_string(),
-            TaskToken::Question => format!("{}", self.content.yellow()),
-            TaskToken::Semicolon => format!("{}", self.content.yellow()),
-            TaskToken::And => format!("{}", self.content.yellow()),
-            TaskToken::Or => format!("{}", self.content.yellow()),
-            TaskToken::Not => format!("{}", self.content.yellow()),
-            TaskToken::AngleEnd => format!("{}", self.content.blue()),
-            TaskToken::ParenEnd => format!("{}", self.content.blue()),
-            TaskToken::BraceEnd => format!("{}", self.content.blue()),
-            TaskToken::BracketEnd => format!("{}", self.content.blue()),
-            TaskToken::Variable => format!("{}", self.content.green()),
-            TaskToken::Function => format!("{}", self.content.magenta()),
-            TaskToken::Assignment => format!("{}", self.content.blue()),
-            TaskToken::None => format!("{}", self.content.truecolor(100, 100, 100)),
-            TaskToken::Bool => format!("{}", self.content.yellow()),
-            TaskToken::String(_) => format!("{}", self.content.yellow()),
-            TaskToken::Integer => format!("{}", self.content.yellow()),
-            TaskToken::Float => format!("{}", self.content.yellow()),
-            TaskToken::Date => format!("{}", self.content.cyan()),
-            TaskToken::Time => format!("{}", self.content.cyan()),
-            TaskToken::DateTime => format!("{}", self.content.cyan()),
-            TaskToken::NaN => format!("{}", self.content.yellow()),
-            TaskToken::Infinity => format!("{}", self.content.yellow()),
-            TaskToken::Invalid(_) => format!("{}", self.content.red()),
-        }
+        self.ty.colored(self.content)
     }
 
     pub fn attribute(&self) -> Result<Option<Attribute>, &'static str> {
@@ -218,14 +275,14 @@ impl Token<'_> {
     }
 }
 
-pub(crate) type TokenRes<'a> = IResult<&'a str, Token<'a>, VerboseError<&'a str>>;
+pub(crate) type TokenRes<'a> = IResult<&'a str, RawToken<'a>, VerboseError<&'a str>>;
 
-pub(crate) type VecTokenRes<'a> = IResult<&'a str, Vec<Token<'a>>, VerboseError<&'a str>>;
+pub(crate) type VecTokenRes<'a> = IResult<&'a str, Vec<RawToken<'a>>, VerboseError<&'a str>>;
 
 // catch all one char token
 fn invalid(i: &str) -> TokenRes<'_> {
     map(anychar, |c| {
-        Token::new(TaskToken::Invalid(c), {
+        RawToken::new(TaskToken::Invalid(c), {
             // so that we split at utf-8 boundary, since the utf-8
             // char is invalid we don't care about the actual char
             match i.char_indices().nth(1) {
@@ -238,57 +295,57 @@ fn invalid(i: &str) -> TokenRes<'_> {
 
 fn whitespace(i: &str) -> TokenRes<'_> {
     map(recognize(many1(alt((tag("\t"), tag(" "))))), |s| {
-        Token::new(TaskToken::WhiteSpace, s)
+        RawToken::new(TaskToken::WhiteSpace, s)
     })(i)
 }
 
 fn newline(i: &str) -> TokenRes<'_> {
     // only unix, mac and windows line end supported for now
     map(alt((tag("\n\r"), tag("\r\n"), tag("\n"))), |s| {
-        Token::new(TaskToken::NewLine, s)
+        RawToken::new(TaskToken::NewLine, s)
     })(i)
 }
 
 fn comment(i: &str) -> TokenRes<'_> {
     map(recognize(pair(tag("#"), many0(is_not("\n\r")))), |s| {
-        Token::new(TaskToken::Comment, s)
+        RawToken::new(TaskToken::Comment, s)
     })(i)
 }
 
 fn none(i: &str) -> TokenRes<'_> {
-    map(tag("<None>"), |s| Token::new(TaskToken::Caret, s))(i)
+    map(tag("<None>"), |s| RawToken::new(TaskToken::Caret, s))(i)
 }
 
 fn operators(i: &str) -> TokenRes<'_> {
     alt((
-        map(tag("^"), |s| Token::new(TaskToken::Caret, s)),
-        map(tag("-"), |s| Token::new(TaskToken::Dash, s)),
-        map(tag("+"), |s| Token::new(TaskToken::Plus, s)),
-        map(tag("*"), |s| Token::new(TaskToken::Star, s)),
-        map(tag("/"), |s| Token::new(TaskToken::Slash, s)),
-        map(tag("%"), |s| Token::new(TaskToken::Percentage, s)),
-        map(tag("="), |s| Token::new(TaskToken::Assignment, s)),
-        map(tag("&"), |s| Token::new(TaskToken::And, s)),
-        map(tag("|"), |s| Token::new(TaskToken::Or, s)),
-        map(tag("!"), |s| Token::new(TaskToken::Not, s)),
+        map(tag("^"), |s| RawToken::new(TaskToken::Caret, s)),
+        map(tag("-"), |s| RawToken::new(TaskToken::Dash, s)),
+        map(tag("+"), |s| RawToken::new(TaskToken::Plus, s)),
+        map(tag("*"), |s| RawToken::new(TaskToken::Star, s)),
+        map(tag("/"), |s| RawToken::new(TaskToken::Slash, s)),
+        map(tag("%"), |s| RawToken::new(TaskToken::Percentage, s)),
+        map(tag("="), |s| RawToken::new(TaskToken::Assignment, s)),
+        map(tag("&"), |s| RawToken::new(TaskToken::And, s)),
+        map(tag("|"), |s| RawToken::new(TaskToken::Or, s)),
+        map(tag("!"), |s| RawToken::new(TaskToken::Not, s)),
     ))(i)
 }
 
 fn symbols(i: &str) -> TokenRes<'_> {
     alt((
-        map(tag("->"), |s| Token::new(TaskToken::PathSep, s)),
-        map(tag("<"), |s| Token::new(TaskToken::AngleStart, s)),
-        map(tag(">"), |s| Token::new(TaskToken::AngleEnd, s)),
-        map(tag("("), |s| Token::new(TaskToken::ParenStart, s)),
-        map(tag(")"), |s| Token::new(TaskToken::ParenEnd, s)),
-        map(tag("["), |s| Token::new(TaskToken::BracketStart, s)),
-        map(tag("]"), |s| Token::new(TaskToken::BracketEnd, s)),
-        map(tag("{"), |s| Token::new(TaskToken::BraceStart, s)),
-        map(tag("}"), |s| Token::new(TaskToken::BraceEnd, s)),
-        map(tag("."), |s| Token::new(TaskToken::Dot, s)),
-        map(tag(","), |s| Token::new(TaskToken::Comma, s)),
-        map(tag("?"), |s| Token::new(TaskToken::Question, s)),
-        map(tag(";"), |s| Token::new(TaskToken::Semicolon, s)),
+        map(tag("->"), |s| RawToken::new(TaskToken::PathSep, s)),
+        map(tag("<"), |s| RawToken::new(TaskToken::AngleStart, s)),
+        map(tag(">"), |s| RawToken::new(TaskToken::AngleEnd, s)),
+        map(tag("("), |s| RawToken::new(TaskToken::ParenStart, s)),
+        map(tag(")"), |s| RawToken::new(TaskToken::ParenEnd, s)),
+        map(tag("["), |s| RawToken::new(TaskToken::BracketStart, s)),
+        map(tag("]"), |s| RawToken::new(TaskToken::BracketEnd, s)),
+        map(tag("{"), |s| RawToken::new(TaskToken::BraceStart, s)),
+        map(tag("}"), |s| RawToken::new(TaskToken::BraceEnd, s)),
+        map(tag("."), |s| RawToken::new(TaskToken::Dot, s)),
+        map(tag(","), |s| RawToken::new(TaskToken::Comma, s)),
+        map(tag("?"), |s| RawToken::new(TaskToken::Question, s)),
+        map(tag(";"), |s| RawToken::new(TaskToken::Semicolon, s)),
     ))(i)
 }
 
@@ -337,20 +394,20 @@ fn variable(i: &str) -> TokenRes<'_> {
             }
         }
     };
-    Ok((rest, Token::new(ty, var)))
+    Ok((rest, RawToken::new(ty, var)))
 }
 
 fn string(i: &str) -> TokenRes<'_> {
     let (rest, s) = context("string", parse_string)(i)?;
     Ok((
         rest,
-        Token::new(TaskToken::String(s), &i[..(i.len() - rest.len())]),
+        RawToken::new(TaskToken::String(s), &i[..(i.len() - rest.len())]),
     ))
 }
 
 fn boolean(i: &str) -> TokenRes<'_> {
     map(alt((tag("true"), tag("false"))), |s| {
-        Token::new(TaskToken::Bool, s)
+        RawToken::new(TaskToken::Bool, s)
     })(i)
 }
 
@@ -363,7 +420,7 @@ fn integer(i: &str) -> TokenRes<'_> {
             ))),
             recognize(many1(terminated(digit1, many0(char('_'))))),
         )),
-        |s| Token::new(TaskToken::Integer, s),
+        |s| RawToken::new(TaskToken::Integer, s),
     )(i)
 }
 
@@ -382,27 +439,27 @@ fn float(i: &str) -> TokenRes<'_> {
                 tuple((one_of("eE"), integer)),
             ))),
         )),
-        |s| Token::new(TaskToken::Float, s),
+        |s| RawToken::new(TaskToken::Float, s),
     )(i)
 }
 
 fn date(i: &str) -> TokenRes<'_> {
     map(
         recognize(tuple((many1(terminated(digit1, many1(char('-')))), digit1))),
-        |s| Token::new(TaskToken::Date, s),
+        |s| RawToken::new(TaskToken::Date, s),
     )(i)
 }
 
 fn time(i: &str) -> TokenRes<'_> {
     map(
         recognize(tuple((many1(terminated(digit1, many1(char(':')))), digit1))),
-        |s| Token::new(TaskToken::Time, s),
+        |s| RawToken::new(TaskToken::Time, s),
     )(i)
 }
 
 fn datetime(i: &str) -> TokenRes<'_> {
     map(recognize(tuple((date, one_of(" T"), time))), |s| {
-        Token::new(TaskToken::DateTime, s)
+        RawToken::new(TaskToken::DateTime, s)
     })(i)
 }
 
@@ -417,7 +474,7 @@ fn task_script(i: &str) -> VecTokenRes<'_> {
     context("task script", many0(task_token))(i)
 }
 
-pub fn get_tokens(txt: &str) -> Vec<Token> {
+pub fn get_tokens(txt: &str) -> Vec<RawToken> {
     let (res, tokens) = task_script(txt).expect("Parser shouldn't error out");
     if !res.is_empty() {
         panic!("Logic Error on Parser, there shouldn't be anything left")

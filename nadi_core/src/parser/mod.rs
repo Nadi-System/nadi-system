@@ -23,9 +23,9 @@ pub use errors::{ParseError, ParseErrorType};
 impl std::str::FromStr for Attribute {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let tokens = crate::parser::tokenizer::get_tokens(s);
-        let (rest, val) =
-            crate::parser::components::attribute(&tokens).map_err(|e| e.to_string())?;
+        let tokens =
+            tokenizer::Token::validate(tokenizer::get_tokens(s)).map_err(|e| e.to_string())?;
+        let (rest, val) = components::attribute(&tokens).map_err(|e| e.to_string())?;
         if !rest.is_empty() {
             Err(ParseError::new(&tokens, rest, ParseErrorType::InvalidToken).to_string())
         } else {
@@ -117,13 +117,13 @@ impl FromStr for Network {
     type Err = ParseError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let tokens = tokenizer::get_tokens(s);
-        let paths = network::parse(&tokens)?;
+        let paths = network::parse(tokens)?;
         let edges: Vec<(&str, &str)> = paths
             .iter()
             .map(|p| (p.start.as_str(), p.end.as_str()))
             .collect();
         Self::from_edges(&edges)
-            .map_err(|e| ParseError::new(&tokens, &tokens, ParseErrorType::MultipleOutput(e)))
+            .map_err(|e| ParseError::pos((0, 0), ParseErrorType::MultipleOutput(e)))
     }
 }
 
@@ -162,7 +162,7 @@ impl NodeInner {
 impl FromStr for Table {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let cols = crate::parser::table::parse_table_complete(s).map_err(anyhow::Error::msg)?;
+        let cols = table::parse_table_complete(s).map_err(anyhow::Error::msg)?;
         Ok(Self {
             columns: cols.into(),
         })

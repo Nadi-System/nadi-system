@@ -269,7 +269,7 @@ fn show_tasks(filename: &Path) {
                 line += 1;
                 print!("\n{line:3}: ");
             }
-            _ => tok.colored_print(),
+            _ => print!("{}", tok.ty.colored(tok.content)),
         }
     }
     println!("\n----Parsing Tasks----");
@@ -278,7 +278,7 @@ fn show_tasks(filename: &Path) {
             for task in tasks {
                 // println!("{task:?}");
                 for tk in nadi_core::parser::tokenizer::get_tokens(&task.to_string()) {
-                    tk.colored_print();
+                    print!("{}", tk.ty.colored(tk.content));
                 }
                 println!();
             }

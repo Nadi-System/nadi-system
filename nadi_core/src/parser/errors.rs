@@ -1,4 +1,4 @@
-use crate::parser::tokenizer::{TaskToken, Token};
+use crate::parser::tokenizer::{RawToken, TaskToken, Token};
 use colored::Colorize;
 use nom::error::ErrorKind;
 
@@ -11,7 +11,43 @@ pub struct ParseError {
 }
 
 impl ParseError {
+    pub fn pos(position: (usize, usize), ty: ParseErrorType) -> Self {
+        Self {
+            ty,
+            line: position.0,
+            col: position.1,
+            linestr: String::new(),
+        }
+    }
     pub fn new(tokens: &[Token<'_>], rest: &[Token<'_>], ty: ParseErrorType) -> Self {
+        let tokens = &tokens[..(tokens.len() - rest.len())];
+        let mut line = 1;
+        let mut lstart = 0;
+        for (i, t) in tokens.iter().enumerate() {
+            if t.ty == TaskToken::NewLine {
+                line += 1;
+                lstart = i + 1;
+            }
+        }
+        let mut curr_line: Vec<_> = tokens[lstart..].iter().collect();
+        let col = curr_line.iter().map(|t| t.content.len()).sum::<usize>() + 1;
+        for t in rest {
+            if t.ty == TaskToken::NewLine {
+                break;
+            } else {
+                curr_line.push(t);
+            }
+        }
+        let mut linestr = String::new();
+        curr_line.iter().for_each(|t| linestr.push_str(t.content));
+        Self {
+            ty,
+            line,
+            col,
+            linestr,
+        }
+    }
+    pub fn raw(tokens: &[RawToken<'_>], rest: &[RawToken<'_>], ty: ParseErrorType) -> Self {
         let tokens = &tokens[..(tokens.len() - rest.len())];
         let mut line = 1;
         let mut lstart = 0;
@@ -146,7 +182,7 @@ impl ParseErrorType {
     pub fn message(&self) -> String {
         match self {
             Self::LogicalError(v) => {
-                return format!("Unexpected Logic problem: {}, please contact dev", v.red())
+                return format!("Unexpected Logic problem: {}, please contact dev", v.red());
             }
             Self::ValueError(v) => return format!("Invalid Value: {v}"),
             Self::InvalidLineStart => "Lines should start with a keyword",

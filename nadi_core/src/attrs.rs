@@ -1,12 +1,12 @@
-use crate::expressions::EvalError;
+use crate::expressions::EvalErrorType;
 use crate::valid_var;
 use abi_stable::{
+    StableAbi,
     std_types::{
         RHashMap,
         ROption::{self, RNone},
         RSlice, RStr, RString, RVec, Tuple2,
     },
-    StableAbi,
 };
 use colored::Colorize;
 use regex::Regex;
@@ -363,21 +363,21 @@ impl PartialOrd for Attribute {
                     Self::Integer(v) => b.partial_cmp(v),
                     Self::Float(v) => (*b as f64).partial_cmp(v),
                     _ => None,
-                }
+                };
             }
             Self::Float(b) => {
                 return match other {
                     Self::Float(v) => b.partial_cmp(v),
                     Self::Integer(v) => b.partial_cmp(&(*v as f64)),
                     _ => None,
-                }
+                };
             }
             Self::Date(b) => {
                 return match other {
                     Self::Date(v) => b.partial_cmp(v),
                     Self::DateTime(v) => b.partial_cmp(v),
                     _ => None,
-                }
+                };
             }
             Self::Time(b) => {
                 if let Self::Time(v) = other {
@@ -389,7 +389,7 @@ impl PartialOrd for Attribute {
                     Self::DateTime(v) => b.partial_cmp(v),
                     Self::Date(v) => b.partial_cmp(v),
                     _ => None,
-                }
+                };
             }
             _ => (),
         };
@@ -398,7 +398,7 @@ impl PartialOrd for Attribute {
 }
 
 impl std::ops::Not for Attribute {
-    type Output = Result<Self, EvalError>;
+    type Output = Result<Self, EvalErrorType>;
 
     fn not(self) -> Self::Output {
         match self {
@@ -406,16 +406,16 @@ impl std::ops::Not for Attribute {
             Self::Array(ar) => Ok(Self::Array(
                 ar.into_iter()
                     .map(|a| std::ops::Not::not(a))
-                    .collect::<Result<Vec<Self>, EvalError>>()?
+                    .collect::<Result<Vec<Self>, EvalErrorType>>()?
                     .into(),
             )),
-            _ => Err(EvalError::NotABool),
+            _ => Err(EvalErrorType::NotABool),
         }
     }
 }
 
 impl std::ops::Neg for Attribute {
-    type Output = Result<Self, EvalError>;
+    type Output = Result<Self, EvalErrorType>;
 
     fn neg(self) -> Self::Output {
         match self {
@@ -424,10 +424,10 @@ impl std::ops::Neg for Attribute {
             Self::Array(ar) => Ok(Self::Array(
                 ar.into_iter()
                     .map(|a| std::ops::Neg::neg(a))
-                    .collect::<Result<Vec<Self>, EvalError>>()?
+                    .collect::<Result<Vec<Self>, EvalErrorType>>()?
                     .into(),
             )),
-            _ => Err(EvalError::NotANumber),
+            _ => Err(EvalErrorType::NotANumber),
         }
     }
 }
@@ -438,13 +438,13 @@ macro_rules! array_impl {
         match $oth {
             Self::Array(ar2) => {
                 if $a.len() != ar2.len() {
-                    Err(EvalError::DifferentLength($a.len(), ar2.len()))
+                    Err(EvalErrorType::DifferentLength($a.len(), ar2.len()))
                 } else {
                     Ok(Self::Array(
                         $a.into_iter()
                             .zip(ar2)
                             .map(|(a, b)| $imp(a, b))
-                            .collect::<Result<Vec<Self>, EvalError>>()?
+                            .collect::<Result<Vec<Self>, EvalErrorType>>()?
                             .into(),
                     ))
                 }
@@ -452,7 +452,7 @@ macro_rules! array_impl {
             o => Ok(Self::Array(
                 $a.into_iter()
                     .map(|a| $imp(a, o.clone()))
-                    .collect::<Result<Vec<Self>, EvalError>>()?
+                    .collect::<Result<Vec<Self>, EvalErrorType>>()?
                     .into(),
             )),
         }
@@ -460,7 +460,7 @@ macro_rules! array_impl {
 }
 
 impl std::ops::BitAnd for Attribute {
-    type Output = Result<Self, EvalError>;
+    type Output = Result<Self, EvalErrorType>;
 
     fn bitand(self, other: Self) -> Self::Output {
         match self {
@@ -469,19 +469,19 @@ impl std::ops::BitAnd for Attribute {
                 Self::Array(ar) => Ok(Self::Array(
                     ar.into_iter()
                         .map(|b| std::ops::BitAnd::bitand(Self::Bool(a), b))
-                        .collect::<Result<Vec<Self>, EvalError>>()?
+                        .collect::<Result<Vec<Self>, EvalErrorType>>()?
                         .into(),
                 )),
-                _ => Err(EvalError::NotABool),
+                _ => Err(EvalErrorType::NotABool),
             },
             Self::Array(ar) => array_impl!(ar, other, std::ops::BitAnd::bitand),
-            _ => Err(EvalError::NotABool),
+            _ => Err(EvalErrorType::NotABool),
         }
     }
 }
 
 impl std::ops::BitOr for Attribute {
-    type Output = Result<Self, EvalError>;
+    type Output = Result<Self, EvalErrorType>;
 
     fn bitor(self, other: Self) -> Self::Output {
         match self {
@@ -490,20 +490,20 @@ impl std::ops::BitOr for Attribute {
                 Self::Array(ar) => Ok(Self::Array(
                     ar.into_iter()
                         .map(|b| std::ops::BitOr::bitor(Self::Bool(a), b))
-                        .collect::<Result<Vec<Self>, EvalError>>()?
+                        .collect::<Result<Vec<Self>, EvalErrorType>>()?
                         .into(),
                 )),
-                _ => Err(EvalError::NotABool),
+                _ => Err(EvalErrorType::NotABool),
             },
             Self::Array(ar) => array_impl!(ar, other, std::ops::BitOr::bitor),
-            _ => Err(EvalError::NotABool),
+            _ => Err(EvalErrorType::NotABool),
         }
     }
 }
 
 // find a way to write macro for this?
 impl std::ops::Add for Attribute {
-    type Output = Result<Self, EvalError>;
+    type Output = Result<Self, EvalErrorType>;
 
     fn add(self, other: Self) -> Self::Output {
         // todo date/time + integer
@@ -512,22 +512,22 @@ impl std::ops::Add for Attribute {
                 Self::Integer(b) => Ok(Self::Integer(a + b)),
                 Self::Float(b) => Ok(Self::Float(a as f64 + b)),
                 Self::Array(ar) => std::ops::Add::add(Self::Array(ar), Self::Integer(a)),
-                _ => Err(EvalError::InvalidOperation),
+                _ => Err(EvalErrorType::InvalidOperation),
             },
             Self::Float(a) => match other {
                 Self::Integer(b) => Ok(Self::Float(a + b as f64)),
                 Self::Float(b) => Ok(Self::Float(a + b)),
                 Self::Array(ar) => std::ops::Add::add(Self::Array(ar), Self::Float(a)),
-                _ => Err(EvalError::InvalidOperation),
+                _ => Err(EvalErrorType::InvalidOperation),
             },
             Self::Array(ar) => array_impl!(ar, other, std::ops::Add::add),
-            _ => Err(EvalError::InvalidOperation),
+            _ => Err(EvalErrorType::InvalidOperation),
         }
     }
 }
 
 impl std::ops::Sub for Attribute {
-    type Output = Result<Self, EvalError>;
+    type Output = Result<Self, EvalErrorType>;
 
     fn sub(self, other: Self) -> Self::Output {
         // todo date/time - integer
@@ -538,10 +538,10 @@ impl std::ops::Sub for Attribute {
                 Self::Array(ar) => Ok(Self::Array(
                     ar.into_iter()
                         .map(|b| std::ops::Sub::sub(Self::Integer(a), b))
-                        .collect::<Result<Vec<Self>, EvalError>>()?
+                        .collect::<Result<Vec<Self>, EvalErrorType>>()?
                         .into(),
                 )),
-                _ => Err(EvalError::InvalidOperation),
+                _ => Err(EvalErrorType::InvalidOperation),
             },
             Self::Float(a) => match other {
                 Self::Integer(b) => Ok(Self::Float(a - b as f64)),
@@ -549,19 +549,19 @@ impl std::ops::Sub for Attribute {
                 Self::Array(ar) => Ok(Self::Array(
                     ar.into_iter()
                         .map(|b| std::ops::Sub::sub(Self::Float(a), b))
-                        .collect::<Result<Vec<Self>, EvalError>>()?
+                        .collect::<Result<Vec<Self>, EvalErrorType>>()?
                         .into(),
                 )),
-                _ => Err(EvalError::InvalidOperation),
+                _ => Err(EvalErrorType::InvalidOperation),
             },
             Self::Array(ar) => array_impl!(ar, other, std::ops::Sub::sub),
-            _ => Err(EvalError::InvalidOperation),
+            _ => Err(EvalErrorType::InvalidOperation),
         }
     }
 }
 
 impl std::ops::Mul for Attribute {
-    type Output = Result<Self, EvalError>;
+    type Output = Result<Self, EvalErrorType>;
 
     fn mul(self, other: Self) -> Self::Output {
         match self {
@@ -569,22 +569,22 @@ impl std::ops::Mul for Attribute {
                 Self::Integer(b) => Ok(Self::Integer(a * b)),
                 Self::Float(b) => Ok(Self::Float(a as f64 * b)),
                 Self::Array(ar) => std::ops::Mul::mul(Self::Array(ar), Self::Integer(a)),
-                _ => Err(EvalError::InvalidOperation),
+                _ => Err(EvalErrorType::InvalidOperation),
             },
             Self::Float(a) => match other {
                 Self::Integer(b) => Ok(Self::Float(a * b as f64)),
                 Self::Float(b) => Ok(Self::Float(a * b)),
                 Self::Array(ar) => std::ops::Mul::mul(Self::Array(ar), Self::Float(a)),
-                _ => Err(EvalError::InvalidOperation),
+                _ => Err(EvalErrorType::InvalidOperation),
             },
             Self::Array(ar) => array_impl!(ar, other, std::ops::Mul::mul),
-            _ => Err(EvalError::InvalidOperation),
+            _ => Err(EvalErrorType::InvalidOperation),
         }
     }
 }
 
 impl std::ops::Div for Attribute {
-    type Output = Result<Self, EvalError>;
+    type Output = Result<Self, EvalErrorType>;
 
     fn div(self, other: Self) -> Self::Output {
         match self {
@@ -595,10 +595,10 @@ impl std::ops::Div for Attribute {
                 Self::Array(ar) => Ok(Self::Array(
                     ar.into_iter()
                         .map(|b| std::ops::Div::div(Self::Integer(a), b))
-                        .collect::<Result<Vec<Self>, EvalError>>()?
+                        .collect::<Result<Vec<Self>, EvalErrorType>>()?
                         .into(),
                 )),
-                _ => Err(EvalError::InvalidOperation),
+                _ => Err(EvalErrorType::InvalidOperation),
             },
             Self::Float(a) => match other {
                 Self::Integer(b) => Ok(Self::Float(a / b as f64)),
@@ -606,19 +606,19 @@ impl std::ops::Div for Attribute {
                 Self::Array(ar) => Ok(Self::Array(
                     ar.into_iter()
                         .map(|b| std::ops::Div::div(Self::Float(a), b))
-                        .collect::<Result<Vec<Self>, EvalError>>()?
+                        .collect::<Result<Vec<Self>, EvalErrorType>>()?
                         .into(),
                 )),
-                _ => Err(EvalError::InvalidOperation),
+                _ => Err(EvalErrorType::InvalidOperation),
             },
             Self::Array(ar) => array_impl!(ar, other, std::ops::Div::div),
-            _ => Err(EvalError::InvalidOperation),
+            _ => Err(EvalErrorType::InvalidOperation),
         }
     }
 }
 
 impl std::ops::Rem for Attribute {
-    type Output = Result<Self, EvalError>;
+    type Output = Result<Self, EvalErrorType>;
 
     fn rem(self, other: Self) -> Self::Output {
         match self {
@@ -627,13 +627,13 @@ impl std::ops::Rem for Attribute {
                 Self::Array(ar) => Ok(Self::Array(
                     ar.into_iter()
                         .map(|b| std::ops::Rem::rem(Self::Integer(a), b))
-                        .collect::<Result<Vec<Self>, EvalError>>()?
+                        .collect::<Result<Vec<Self>, EvalErrorType>>()?
                         .into(),
                 )),
-                _ => Err(EvalError::InvalidOperation),
+                _ => Err(EvalErrorType::InvalidOperation),
             },
             Self::Array(ar) => array_impl!(ar, other, std::ops::Rem::rem),
-            _ => Err(EvalError::InvalidOperation),
+            _ => Err(EvalErrorType::InvalidOperation),
         }
     }
 }
@@ -740,15 +740,15 @@ impl Attribute {
     }
 
     /// Integer division (both have to be integers)
-    pub fn int_div(&self, other: &Self) -> Result<Self, EvalError> {
+    pub fn int_div(&self, other: &Self) -> Result<Self, EvalErrorType> {
         match self {
             Self::Integer(a) => match other {
                 Self::Integer(b) => Ok(Self::Integer(
-                    a.checked_div(*b).ok_or(EvalError::DivideByZero)?,
+                    a.checked_div(*b).ok_or(EvalErrorType::DivideByZero)?,
                 )),
-                _ => Err(EvalError::InvalidOperation),
+                _ => Err(EvalErrorType::InvalidOperation),
             },
-            _ => Err(EvalError::InvalidOperation),
+            _ => Err(EvalErrorType::InvalidOperation),
         }
     }
 
@@ -758,35 +758,35 @@ impl Attribute {
     /// - It checks for substring for String (other cannot be Array/Table),
     /// - It checks for attribute value for Array (other can be any Attribute),
     /// - It checks for Key of HashMap for Table (other should be String),
-    pub fn contains(&self, other: &Self) -> Result<bool, EvalError> {
+    pub fn contains(&self, other: &Self) -> Result<bool, EvalErrorType> {
         match self {
             Self::String(st) => match other {
                 Self::String(s) => Ok(st.contains(s.as_str())),
-                Self::Array(_) => Err(EvalError::InvalidOperation),
-                Self::Table(_) => Err(EvalError::InvalidOperation),
+                Self::Array(_) => Err(EvalErrorType::InvalidOperation),
+                Self::Table(_) => Err(EvalErrorType::InvalidOperation),
                 a => Ok(st.contains(a.to_string().as_str())),
             },
             Self::Array(ar) => Ok(ar.iter().any(|v| v == other)),
             Self::Table(am) => match other {
                 Self::String(s) => Ok(am.contains_key(s)),
-                _ => Err(EvalError::InvalidOperation),
+                _ => Err(EvalErrorType::InvalidOperation),
             },
-            _ => Err(EvalError::InvalidOperation),
+            _ => Err(EvalErrorType::InvalidOperation),
         }
     }
 
     /// Checks if it matches a Regex pattern
     ///
     /// the self and other value should both be strings
-    pub fn str_match(&self, other: &Self) -> Result<bool, EvalError> {
+    pub fn str_match(&self, other: &Self) -> Result<bool, EvalErrorType> {
         match self {
             Self::String(st) => match other {
                 Self::String(s) => regex::Regex::new(s.as_str())
                     .map(|p| p.is_match(st.as_str()))
-                    .map_err(EvalError::RegexError),
-                _ => Err(EvalError::InvalidOperation),
+                    .map_err(EvalErrorType::RegexError),
+                _ => Err(EvalErrorType::InvalidOperation),
             },
-            _ => Err(EvalError::InvalidOperation),
+            _ => Err(EvalErrorType::InvalidOperation),
         }
     }
 }
@@ -1463,11 +1463,7 @@ impl From<chrono::FixedOffset> for Offset {
     fn from(value: chrono::FixedOffset) -> Self {
         let (secs, east) = {
             let s = value.local_minus_utc();
-            if s > 0 {
-                (s, false)
-            } else {
-                (s.abs(), true)
-            }
+            if s > 0 { (s, false) } else { (s.abs(), true) }
         };
         let m = secs / 60;
         let h = m / 60;

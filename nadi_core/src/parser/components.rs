@@ -5,11 +5,11 @@ use crate::parser::{
 use crate::tasks::TaskKeyword;
 use nadi_core::attrs::{Attribute, Date, DateTime, Time};
 use nom::{
+    IResult,
     branch::alt,
     combinator::{map, value},
     multi::{many0, many1, separated_list0, separated_list1},
     sequence::{delimited, preceded, separated_pair, terminated},
-    IResult,
 };
 use std::str::FromStr;
 
@@ -214,7 +214,7 @@ pub fn attr_bool<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
         _ => {
             return Err(nom::Err::Error(MatchErr::new(inp).ty(
                 &ParseErrorType::ValueError("Boolean should be true or false"),
-            )))
+            )));
         }
     }
     .into();
@@ -228,7 +228,7 @@ pub fn attr_integer<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute>
         _ => {
             return Err(nom::Err::Error(
                 MatchErr::new(inp).ty(&ParseErrorType::ValueError("Error while parsing Integer")),
-            ))
+            ));
         }
     }
     .into();
@@ -250,7 +250,7 @@ pub fn attr_float_number<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attri
         _ => {
             return Err(nom::Err::Error(
                 MatchErr::new(inp).ty(&ParseErrorType::ValueError("Error while parsing Float")),
-            ))
+            ));
         }
     }
     .into();
@@ -363,7 +363,7 @@ mod tests {
     #[case("  12.23", "12.23")]
     #[case("         12.23", "12.23")]
     pub fn maybe_space_test(#[case] txt: &str, #[case] val: &str) {
-        let tokens = get_tokens(txt);
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
         let (rest, tk) = maybe_space(float)(&tokens).unwrap();
         assert_eq!(rest, vec![]);
         assert_eq!(tk.content, val);
@@ -376,7 +376,7 @@ mod tests {
     #[case("  12.23", "12.23")]
     #[case("         12.23", "12.23")]
     pub fn after_space_test(#[case] txt: &str, #[case] val: &str) {
-        let tokens = get_tokens(txt);
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
         let (rest, tk) = after_space(float)(&tokens).unwrap();
         assert_eq!(rest, vec![]);
         assert_eq!(tk.content, val);
@@ -389,7 +389,7 @@ mod tests {
     #[case("  \n  \n  12.23", "12.23")]
     #[case("  \n #comment \n  12.23", "12.23")]
     pub fn maybe_newline_test(#[case] txt: &str, #[case] val: &str) {
-        let tokens = get_tokens(txt);
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
         let (rest, tk) = maybe_newline(float)(&tokens).unwrap();
         assert_eq!(rest, vec![]);
         assert_eq!(tk.content, val);
@@ -400,7 +400,7 @@ mod tests {
     #[case("\n12.23\n1.12\n1.23", 3)]
     #[case("\n#comment \n12.23\n 1.12\n1.23", 3)]
     pub fn newline_separated_test(#[case] txt: &str, #[case] count: usize) {
-        let tokens = get_tokens(txt);
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
         let (_, tk) = newline_separated(float)(&tokens).unwrap();
         assert_eq!(tk.len(), count)
     }
@@ -408,7 +408,7 @@ mod tests {
     #[rstest]
     #[case("12.23", TaskToken::Float)]
     pub fn float_test(#[case] txt: &str, #[case] ty: TaskToken) {
-        let tokens = get_tokens(txt);
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
         let (_, tk) = float(&tokens).unwrap();
         assert!(tk.ty == ty)
     }
@@ -416,7 +416,7 @@ mod tests {
     #[rstest]
     #[case("12,23", TaskToken::Integer)]
     pub fn integer_test(#[case] txt: &str, #[case] ty: TaskToken) {
-        let tokens = get_tokens(txt);
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
         let (_, tk) = integer(&tokens).unwrap();
         assert!(tk.ty == ty)
     }
@@ -425,7 +425,7 @@ mod tests {
     #[case("val")]
     #[case("val2")]
     pub fn variable_test(#[case] txt: &str) {
-        let tokens = get_tokens(txt);
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
         let (_, tk) = variable(&tokens).unwrap();
         assert_eq!(tk.content, txt)
     }
@@ -438,7 +438,7 @@ mod tests {
     #[should_panic]
     #[case("1232", vec!["1232"])]
     pub fn dot_variable_test(#[case] txt: &str, #[case] vals: Vec<&str>) {
-        let tokens = get_tokens(txt);
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
         let (_, tk) = dot_variable(&tokens).unwrap();
         let vals: Vec<String> = vals.into_iter().map(String::from).collect();
         assert_eq!(tk, vals)
@@ -454,7 +454,7 @@ mod tests {
     #[should_panic]
     #[case("var =\n 1232", vec!["var"], Attribute::Integer(1232))]
     pub fn key_val_dot_test(#[case] txt: &str, #[case] key: Vec<&str>, #[case] val: Attribute) {
-        let tokens = get_tokens(txt);
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
         let (_, tk) = key_val_dot(&tokens).unwrap();
         let key: Vec<String> = key.into_iter().map(String::from).collect();
         assert_eq!(key, tk.0);
@@ -477,7 +477,7 @@ mod tests {
     #[should_panic] // invalid month
     #[case("1223-24-23", Attribute::Date(Date::new(1223, 24, 23)))]
     pub fn attribute_test(#[case] txt: &str, #[case] value: Attribute) {
-        let tokens = get_tokens(txt);
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
         let (_, tk) = attribute(&tokens).unwrap();
         assert!(tk == value)
     }
@@ -487,7 +487,7 @@ mod tests {
     #[should_panic]
     #[case("help")]
     pub fn kw_exit_test(#[case] txt: &str) {
-        let tokens = get_tokens(txt);
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
         kw_exit(&tokens).unwrap();
     }
 
@@ -505,7 +505,7 @@ mod tests {
     #[should_panic] // invalid month
     #[case("1223-24-23")]
     pub fn toml_test(#[case] txt: &str) {
-        let tokens = get_tokens(txt);
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
         let (_, tk) = attribute(&tokens).unwrap();
         let val = tk.to_string();
         assert_eq!(txt, val)

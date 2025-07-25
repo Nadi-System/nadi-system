@@ -1,4 +1,4 @@
-use crate::parser::tokenizer::{get_tokens, TaskToken};
+use crate::parser::tokenizer::{TaskToken, get_tokens};
 use core::ops::Range;
 
 pub fn get_highlight(txt: &str, nft: &NadiFileType) -> Vec<(Range<usize>, Highlight)> {

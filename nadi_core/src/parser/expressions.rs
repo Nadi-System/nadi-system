@@ -1,4 +1,6 @@
-use crate::expressions::{BiOperator, Expression, FunctionCall, InputVar, UniOperator, VarType};
+use crate::expressions::{
+    BiOperator, Expression, FunctionCall, InputVar, TaskPosition, UniOperator, VarType,
+};
 use crate::parser::{
     components::*,
     errors::{MatchErr, ParseErrorType},
@@ -159,14 +161,16 @@ pub fn input_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expressi
                         v.clone(),
                         name.clone(),
                         true,
+                        inp.position(),
                     ));
-                    let var = Expression::Variable(InputVar::new(vt, v, name, false));
+                    let var =
+                        Expression::Variable(InputVar::new(vt, v, name, false, inp.position()));
                     Expression::IfElse(Box::new(cond), Box::new(var), Box::new(val))
                 } else {
-                    Expression::Variable(InputVar::new(vt, v, name, true))
+                    Expression::Variable(InputVar::new(vt, v, name, true, inp.position()))
                 }
             } else {
-                Expression::Variable(InputVar::new(vt, v, name, false))
+                Expression::Variable(InputVar::new(vt, v, name, false, inp.position()))
             }
         },
     )(inp)
@@ -235,6 +239,7 @@ pub fn function_call<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionC
             name.content.to_string(),
             args,
             kwargs.into_iter().collect(),
+            inp.position(),
         ),
     ))
 }
@@ -243,7 +248,7 @@ pub fn function_call<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionC
 mod tests {
     use super::*;
     use crate::attrs::{Attribute, HasAttributes};
-    use crate::expressions::EvalError;
+    use crate::expressions::EvalErrorType;
     use crate::functions::NadiFunctions;
     use crate::parser::tokenizer::get_tokens;
     use crate::tasks::FunctionType;
@@ -278,7 +283,7 @@ mod tests {
     #[case("!(xyz)")]
     #[case("!(-xyz)")]
     pub fn expression_valid_test(#[case] txt: &str) {
-        let tokens = get_tokens(txt);
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
         let (rest, _) = expression(&tokens).unwrap();
         assert_eq!(rest, vec![]);
     }
@@ -297,7 +302,7 @@ mod tests {
     #[should_panic]
     #[case("(xyz |* yzx) * (12 + true)")]
     pub fn compl_expr_valid_test(#[case] txt: &str) {
-        let tokens = get_tokens(txt);
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
         let (rest, _) = complete_expression(&tokens).unwrap();
         assert_eq!(rest, vec![]);
     }
@@ -313,7 +318,7 @@ mod tests {
     #[should_panic]
     #[case("sth.sth(2.12, y=12, 43)")]
     pub fn function_call_valid_test(#[case] txt: &str) {
-        let tokens = get_tokens(txt);
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
         let (rest, _) = function_call(&tokens).unwrap();
         assert_eq!(rest, vec![]);
     }
@@ -343,7 +348,7 @@ mod tests {
     #[case("(2 - 1)  + 1", 2.into())]
     #[case("10 // 5 + 2", 4.into())]
     pub fn compl_expr_eval_test(context: TaskContext, #[case] txt: &str, #[case] val: Attribute) {
-        let tokens = get_tokens(txt);
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
         let (rest, expr) = complete_expression(&tokens).unwrap();
         assert_eq!(rest, vec![]);
         let res = expr
@@ -419,7 +424,7 @@ mod tests {
     #[case("!(true & false)", true.into())]
     #[case("!!(false & true)", false.into())]
     pub fn compl_expr_eval_test_2(context: TaskContext, #[case] txt: &str, #[case] val: Attribute) {
-        let tokens = get_tokens(txt);
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
         let (rest, expr) = complete_expression(&tokens).unwrap();
         assert_eq!(rest, vec![]);
         let res = expr
@@ -447,12 +452,12 @@ mod tests {
     pub fn compl_expr_simplify_test(context: TaskContext, #[case] txt: &str, #[case] simpl: &str) {
         // let context = task_context();
 
-        let tokens = get_tokens(txt);
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
         let (rest, expr) = complete_expression(&tokens).unwrap();
         assert_eq!(rest, vec![]);
         let res = expr.simplify(&FunctionType::Env, &context).unwrap();
 
-        let tokens2 = get_tokens(simpl);
+        let tokens2 = Token::validate(get_tokens(simpl)).unwrap();
         let (rest2, expr2) = complete_expression(&tokens2).unwrap();
         assert_eq!(rest2, vec![]);
 
@@ -461,16 +466,20 @@ mod tests {
 
     // testing the simplify process
     #[rstest]
-    #[case("- true", EvalError::NotANumber)]
-    #[case("12 | true", EvalError::NotABool)]
-    #[case("(xyz - 1) * (12 + true)", EvalError::InvalidOperation)]
-    #[case("(xyz - 1) * (true + true)", EvalError::InvalidOperation)]
-    #[case("(xyz * \"1\") * (12 + true)", EvalError::InvalidOperation)]
-    pub fn compl_expr_error_test(context: TaskContext, #[case] txt: &str, #[case] err: EvalError) {
-        let tokens = get_tokens(txt);
+    #[case("- true", EvalErrorType::NotANumber)]
+    #[case("12 | true", EvalErrorType::NotABool)]
+    #[case("(xyz - 1) * (12 + true)", EvalErrorType::InvalidOperation)]
+    #[case("(xyz - 1) * (true + true)", EvalErrorType::InvalidOperation)]
+    #[case("(xyz * \"1\") * (12 + true)", EvalErrorType::InvalidOperation)]
+    pub fn compl_expr_error_test(
+        context: TaskContext,
+        #[case] txt: &str,
+        #[case] err: EvalErrorType,
+    ) {
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
         let (rest, expr) = complete_expression(&tokens).unwrap();
         assert_eq!(rest, vec![]);
         let res = expr.simplify(&FunctionType::Env, &context);
-        assert_eq!(res, Err(err));
+        assert_eq!(res, Err(err.no_pos()));
     }
 }

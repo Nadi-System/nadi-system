@@ -1,4 +1,4 @@
-use crate::expressions::{EvalError, Expression};
+use crate::expressions::{EvalError, EvalErrorType, Expression, TaskPosition};
 use crate::functions::{FuncArg, FuncArgType, NadiFunctions};
 use crate::network::PropCondition;
 use crate::prelude::*;
@@ -41,7 +41,9 @@ impl TaskContext {
                 let mut outputs = vec![];
                 let cond = ct.cond.resolve(&FunctionType::Env, self, None)?;
                 let res = cond.eval_value(&FunctionType::Env, self, None)?;
-                match bool::try_from_attr(&res).map_err(EvalError::AttributeError)? {
+                match bool::try_from_attr(&res)
+                    .map_err(|e| EvalErrorType::AttributeError(e).pos(ct.position()))?
+                {
                     true => {
                         for task in ct.iftrue {
                             outputs.push(self.execute(task)?)
@@ -66,7 +68,9 @@ impl TaskContext {
                 for _ in 0..max_iter {
                     let cond = lt.cond.resolve(&FunctionType::Env, self, None)?;
                     let res = cond.eval_value(&FunctionType::Env, self, None)?;
-                    match bool::try_from_attr(&res).map_err(EvalError::AttributeError)? {
+                    match bool::try_from_attr(&res)
+                        .map_err(|e| EvalErrorType::AttributeError(e).pos(lt.position()))?
+                    {
                         true => {
                             for task in &lt.tasks {
                                 // TODO really need to work on a way
@@ -93,7 +97,11 @@ impl TaskContext {
     /// evaluate a task and possibly get return value in terms of string.
     pub fn eval_task(&mut self, task: EvalTask) -> Result<Option<String>, String> {
         match task.ty {
-            FunctionType::Env => match task.input.resolve_eval(&FunctionType::Env, self, None)? {
+            FunctionType::Env => match task
+                .input
+                .resolve_eval(&FunctionType::Env, self, None)
+                .map_err(|e| e.pos(task.position()))?
+            {
                 Some(a) => {
                     if let Some(attr) = &task.attr {
                         if let Some(old) =
@@ -116,15 +124,14 @@ impl TaskContext {
                 None => Ok(None),
             },
             FunctionType::Node => {
-                let nodes = self
-                    .propagation(task.propagation.unwrap_or_default())
-                    .map_err(|e| e.message())?;
+                let nodes = self.propagation(task.propagation.unwrap_or_default())?;
                 let mut attrs = Vec::with_capacity(nodes.len());
                 for n in nodes {
                     let res = match task
                         .input
                         // add node name to this error
-                        .resolve_eval_mut(&FunctionType::Node, self, Some(&n))?
+                        .resolve_eval_mut(&FunctionType::Node, self, Some(&n))
+                        .map_err(|e| e.pos(task.start))?
                     {
                         Some(r) => r,
                         None => continue,
@@ -132,7 +139,7 @@ impl TaskContext {
                     let mut n = n
                         .try_lock()
                         .into_option()
-                        .ok_or(EvalError::MutexError(file!(), line!()))?;
+                        .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(task.start))?;
                     if let Some(attr) = &task.attr {
                         let old = n.set_attr_nested(&task.attr_pre, attr, res.clone())?;
                         if !task.silent {
@@ -159,8 +166,9 @@ impl TaskContext {
                 match task
                     .input
                     .resolve_eval_mut(&FunctionType::Network, self, None)
+                    .map_err(|e| e.pos(task.position()))?
                 {
-                    Ok(Some(a)) => {
+                    Some(a) => {
                         if let Some(attr) = &task.attr {
                             if let Some(old) =
                                 self.network
@@ -180,8 +188,7 @@ impl TaskContext {
                             Ok(Some(a.to_string()))
                         }
                     }
-                    Ok(None) => Ok(None),
-                    Err(e) => Err(e.message()),
+                    None => Ok(None),
                 }
             }
         }
@@ -194,7 +201,7 @@ impl TaskContext {
                 .env
                 .attr_nested(&task.attr_pre, &task.attr)?
                 .map(|a| a.to_string())
-                .ok_or(EvalError::AttributeNotFound)
+                .ok_or(EvalErrorType::AttributeNotFound.pos(task.position()))
                 .map_err(|e| e.to_string()),
             FunctionType::Node => {
                 let nodes = self.propagation(task.propagation.unwrap_or_default())?;
@@ -222,7 +229,7 @@ impl TaskContext {
                 .network
                 .attr_nested(&task.attr_pre, &task.attr)?
                 .map(|a| a.to_string())
-                .ok_or(EvalError::AttributeNotFound)
+                .ok_or(EvalErrorType::AttributeNotFound.pos(task.position()))
                 .map_err(|e| e.to_string()),
         }
     }
@@ -307,10 +314,11 @@ impl TaskContext {
                         Ok(true) => sel_nodes.push(n),
                         Ok(false) => (),
                         Err(e) => {
-                            return Err(EvalError::NodeAttributeError(
+                            return Err(EvalErrorType::NodeAttributeError(
                                 n.lock().name().to_string(),
                                 e,
-                            ))
+                            )
+                            .pos(prop.start));
                         }
                     }
                 }
@@ -371,6 +379,8 @@ pub struct EvalTask {
     pub input: Expression,
     /// do not show the results to stdout/terminal
     pub silent: bool,
+    /// start position of the task
+    pub start: (usize, usize),
 }
 
 impl std::fmt::Display for EvalTask {
@@ -414,6 +424,8 @@ pub struct AttrTask {
     pub attr_pre: Vec<String>,
     /// attribute to get
     pub attr: String,
+    /// start position of the task
+    pub start: (usize, usize),
 }
 
 impl std::fmt::Display for AttrTask {
@@ -449,6 +461,8 @@ pub struct CondTask {
     pub iftrue: Vec<Task>,
     /// tasks to run if condition is false
     pub iffalse: Vec<Task>,
+    /// start position of the task
+    pub start: (usize, usize),
 }
 
 impl std::fmt::Display for CondTask {
@@ -484,6 +498,8 @@ pub struct WhileTask {
     pub cond: Expression,
     /// tasks to execute each time
     pub tasks: Vec<Task>,
+    /// start position of the task
+    pub start: (usize, usize),
 }
 
 impl std::fmt::Display for WhileTask {
