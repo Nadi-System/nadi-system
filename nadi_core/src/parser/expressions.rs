@@ -247,9 +247,10 @@ pub fn function_call<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionC
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::attrs::{Attribute, HasAttributes};
+    use crate::attrs::{AttrMap, Attribute, HasAttributes};
     use crate::expressions::EvalErrorType;
     use crate::functions::NadiFunctions;
+    use crate::network::Network;
     use crate::parser::tokenizer::get_tokens;
     use crate::tasks::FunctionType;
     use crate::tasks::TaskContext;
@@ -267,9 +268,12 @@ mod tests {
         #[allow(static_mut_refs)]
         let functions = unsafe { NADI_FUNCS.get_or_init(NadiFunctions::new) }.clone();
 
+        let (sender, _receiver) = std::sync::mpsc::channel();
         let mut ctx = TaskContext {
+            network: Network::default(),
             functions,
-            ..Default::default()
+            env: AttrMap::new(),
+            channel: sender,
         };
         ctx.env.set_attr("xyz", 12.into());
         ctx

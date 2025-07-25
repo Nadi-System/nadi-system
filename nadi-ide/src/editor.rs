@@ -8,7 +8,7 @@ use iced::widget::{
 };
 use iced::{Element, Fill, Font, Subscription, Task, Theme};
 use nadi_core::{
-    functions::{FuncArg, FuncArgType},
+    functions::{FuncArg, FuncArgType, NadiFunctions},
     parser::{
         ParseError,
         highlight::NadiFileType,
@@ -132,6 +132,8 @@ pub struct Editor {
     error: Option<ParseError>,
     /// The editor is embedded in IDE (false means standalone)
     embedded: bool,
+    /// nadi functions
+    functions: NadiFunctions,
 }
 
 /// Default task script to show in the editor pane
@@ -166,26 +168,7 @@ node.visual.nodeshape = "triangle:2";
 
 impl Default for Editor {
     fn default() -> Self {
-        // since the content default text is "\n"
-        let mut content = text_editor::Content::new();
-        let content_hist = vec![content.text()];
-        let content_index = content_hist.len();
-        content = text_editor::Content::with_text(EDITOR_DEFAULT);
-        Self {
-            theme: highlighter::Theme::SolarizedDark,
-            curr_func: None,
-            status: String::new(),
-            file: None,
-            is_dirty: false,
-            is_loading: false,
-            content,
-            content_hist,
-            content_index,
-            is_hist_dirty: false,
-            last_edit: Instant::now(),
-            error: None,
-            embedded: false,
-        }
+        Self::new(None)
     }
 }
 
@@ -207,9 +190,9 @@ pub enum Message {
     MaybeParseTasks,
     FunctionAtMark(Option<(FunctionType, String)>),
     FuncFound(EditorFunction),
+    FuncSignature((FunctionType, String)),
     // these messages are only sent when embedded; and are handled in
     // the main window
-    FuncSignature((FunctionType, String)),
     RunAllTask,
     RunTask,
     SearchHelp,
@@ -217,6 +200,30 @@ pub enum Message {
 }
 
 impl Editor {
+    pub fn new(functions: Option<NadiFunctions>) -> Self {
+        // since the content default text is "\n"
+        let mut content = text_editor::Content::new();
+        let content_hist = vec![content.text()];
+        let content_index = content_hist.len();
+        content = text_editor::Content::with_text(EDITOR_DEFAULT);
+        Self {
+            theme: highlighter::Theme::SolarizedDark,
+            curr_func: None,
+            status: String::new(),
+            file: None,
+            is_dirty: false,
+            is_loading: false,
+            content,
+            content_hist,
+            content_index,
+            is_hist_dirty: false,
+            last_edit: Instant::now(),
+            error: None,
+            embedded: false,
+            functions: functions.unwrap_or_else(|| NadiFunctions::new()),
+        }
+    }
+
     /// Flag that the editor is embedded in IDE
     pub fn embed(mut self) -> Self {
         self.embedded = true;
@@ -242,13 +249,16 @@ impl Editor {
                         return Task::none();
                     }
                 };
-                if self.embedded {
-                    if let Some(curr) = &self.curr_func {
-                        if curr.ty == ty && curr.name == name {
-                            return Task::none();
-                        }
+                if let Some(curr) = &self.curr_func {
+                    if curr.ty == ty && curr.name == name {
+                        return Task::none();
                     }
-                    Task::perform(async { (ty, name) }, Message::FuncSignature)
+                }
+                Task::perform(async { (ty, name) }, Message::FuncSignature)
+            }
+            Message::FuncSignature((ty, name)) => {
+                if let Some(f) = self.search_function(ty, name) {
+                    Task::perform(async { f }, Message::FuncFound)
                 } else {
                     Task::none()
                 }
@@ -552,11 +562,37 @@ impl Editor {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        Subscription::batch([
-            time::every(Duration::from_millis(100)).map(|_| Message::MaybeSaveEditHist),
-            // Takes too much processing power, and makes everything slow
-            // time::every(Duration::from_secs(1)).map(|_| Message::MaybeParseTasks),
-        ])
+        // Subscription::batch([
+        time::every(Duration::from_millis(100)).map(|_| Message::MaybeSaveEditHist)
+        // Takes too much processing power, and makes everything slow
+        // time::every(Duration::from_secs(1)).map(|_| Message::MaybeParseTasks),
+        // ])
+    }
+
+    pub fn search_function(&self, ty: FunctionType, name: String) -> Option<EditorFunction> {
+        let (args, help, ity) = match ty {
+            FunctionType::Network => self
+                .functions
+                .network(&name)
+                .map(|f| (f.args(), f.short_help(), FunctionType::Network)),
+            FunctionType::Node => self
+                .functions
+                .node(&name)
+                .map(|f| (f.args(), f.short_help(), FunctionType::Node)),
+            _ => None,
+        }
+        .or_else(|| {
+            self.functions
+                .env(&name)
+                .map(|f| (f.args(), f.short_help(), FunctionType::Env))
+        })?;
+        Some(EditorFunction {
+            ty,
+            ity,
+            name,
+            args: args.to_vec(),
+            short_help: help.to_string(),
+        })
     }
 }
 

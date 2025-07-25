@@ -27,6 +27,7 @@ impl NodeData {
         let shape = node.node_shape();
         let color = node.node_color().map(iced_color);
         let textcolor = node.text_color().map(iced_color);
+        // TODO load node.visual.nodelabel if not use network label provided
         let label = label
             .as_ref()
             .map(|t| node.render(t).unwrap_or(t.original().to_string()))
@@ -122,6 +123,10 @@ pub struct NetworkData {
     pub edges: Vec<(usize, usize, Option<Color>, f32)>,
     pub label: Option<Template>,
     pub maxlevel: u64,
+}
+
+pub struct NetworkDataView {
+    pub network: NetworkData,
     pub deltax: f32,
     pub deltay: f32,
     pub offsetx: f32,
@@ -139,6 +144,14 @@ impl Default for NetworkData {
             edges: vec![],
             label: None,
             maxlevel: 0,
+        }
+    }
+}
+
+impl Default for NetworkDataView {
+    fn default() -> Self {
+        Self {
+            network: NetworkData::default(),
             deltax: 20.0,
             deltay: 20.0,
             offsetx: 20.0,
@@ -152,7 +165,9 @@ impl Default for NetworkData {
 }
 
 impl NetworkData {
-    pub fn new(net: &Network, label: Option<Template>) -> Self {
+    pub fn new(net: &Network) -> Self {
+        // TODO read network.visual.nodelabel here
+        let label: Option<Template> = None;
         let nodes = net
             .nodes()
             .map(|n| NodeData::new(&n.lock(), &label))
@@ -180,11 +195,11 @@ impl NetworkData {
             edges,
             label,
             maxlevel,
-            ..Default::default()
         }
     }
 
-    pub fn update(&mut self, net: &Network, label: Option<Template>) {
+    pub fn update(&mut self, net: &Network) {
+        let label: Option<Template> = None;
         let nodes = net
             .nodes()
             .map(|n| NodeData::new(&n.lock(), &label))
@@ -210,6 +225,12 @@ impl NetworkData {
         self.nodes = nodes;
         self.edges = edges;
         self.maxlevel = maxlevel;
+    }
+}
+
+impl NetworkDataView {
+    pub fn update(&mut self, netdata: NetworkData) {
+        self.network = netdata;
         self.cache.clear();
     }
 }

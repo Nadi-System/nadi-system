@@ -3,7 +3,7 @@ use anyhow::Context;
 use nadi_core::{
     parser::{tasks, tokenizer::get_tokens},
     string_template::{Render, RenderOptions, Template},
-    tasks::{Task, TaskContext},
+    tasks::{Task, TaskContext, TaskContextWrap, TaskMessage},
 };
 use pulldown_cmark::Event;
 use std::io::Read;
@@ -22,21 +22,21 @@ pub fn nadi_code_args(mark: &str) -> Option<(CodeHandler, String)> {
     })
 }
 
-static mut NADI_CTX: LazyLock<Mutex<TaskContext>> =
-    LazyLock::new(|| Mutex::new(TaskContext::new(None)));
+static mut NADI_CTX: LazyLock<Mutex<TaskContextWrap>> =
+    LazyLock::new(|| Mutex::new(TaskContextWrap::new(None)));
 
 fn clear_context() {
     #[allow(static_mut_refs)]
-    let ctx: &mut TaskContext =
+    let ctx: &mut TaskContextWrap =
         unsafe { &mut NADI_CTX.lock().expect("Couldn't lock the task context") };
-    ctx.clear();
+    ctx.context.clear();
 }
 
 fn execute_task(task: Task) -> Result<Option<String>, String> {
     // This saves us from loading the plugins over and over again for
     // each code block, significantly improving the runtime speed
     #[allow(static_mut_refs)]
-    let ctx: &mut TaskContext =
+    let ctx: &mut TaskContextWrap =
         unsafe { &mut NADI_CTX.lock().expect("Couldn't lock the task context") };
     ctx.execute(task)
 }

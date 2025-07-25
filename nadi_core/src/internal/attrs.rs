@@ -157,10 +157,12 @@ The attributes will be printed in `key=val` format.
 */
 #[node_func(name = false)]
 fn print_attrs(node: &NodeInner, #[args] attrs: AttrSlice, name: bool) -> FunctionRet {
-    let attrs = return_on_err!(attrs
-        .iter()
-        .map(String::try_from_attr)
-        .collect::<Result<Vec<String>, String>>());
+    let attrs = return_on_err!(
+        attrs
+            .iter()
+            .map(String::try_from_attr)
+            .collect::<Result<Vec<String>, String>>()
+    );
 
     for a in attrs {
         if let Some(v) = node.attr(&a) {

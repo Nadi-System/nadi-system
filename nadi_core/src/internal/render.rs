@@ -208,7 +208,7 @@ mod render_utils {
                         "Couldn't open input file: {:?}\n{:?}",
                         filename.to_string_lossy(),
                         e
-                    )))
+                    )));
                 }
             };
             let reader_lines = BufReader::new(file).lines();

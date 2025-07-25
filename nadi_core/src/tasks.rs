@@ -2,13 +2,65 @@ use crate::expressions::{EvalError, EvalErrorType, Expression, TaskPosition};
 use crate::functions::{FuncArg, FuncArgType, NadiFunctions};
 use crate::network::PropCondition;
 use crate::prelude::*;
+use std::sync::mpsc::{Receiver, Sender, channel};
+
+/// Result of a Task when executed
+pub enum TaskResult {
+    None,
+    Value(Attribute),
+    Update(Attribute, Attribute),
+    Help(String),
+    Error(EvalError),
+    OrderedTable(AttrMap, Vec<String>),
+}
+
+/// Message that can be send from the task
+#[derive(Debug, Clone)]
+pub enum TaskMessage {
+    Progress(String, usize, usize),
+    Warning(String),
+    Info(String),
+}
+
+/// Wrapper for TaskContext without any Channel
+pub struct TaskContextWrap {
+    pub receiver: Receiver<TaskMessage>,
+    pub context: TaskContext,
+}
+
+impl TaskContextWrap {
+    pub fn new(net: Option<Network>) -> Self {
+        let (sender, receiver) = channel();
+        let context = TaskContext::new(net, sender);
+        Self { receiver, context }
+    }
+}
+
+impl TaskContextWrap {
+    pub fn execute(&mut self, task: Task) -> Result<Option<String>, String> {
+        let msg: Vec<String> = self
+            .receiver
+            .try_recv()
+            .into_iter()
+            .filter_map(|m| match m {
+                TaskMessage::Info(i) | TaskMessage::Warning(i) => Some(i),
+                _ => None,
+            })
+            .collect();
+        match self.context.execute(task) {
+            Ok(Some(v)) => Ok(Some(format!("{v}\n{}", msg.join("\n")))),
+            Ok(None) => Ok(Some(msg.join("\n"))),
+            Err(e) => Err(e),
+        }
+    }
+}
 
 /// Main Context for Task System
 ///
 /// Everything is evaluated in the task context while using the task
 /// system. It contains a network, functions loaded from the plugins
 /// and environment variables.
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct TaskContext {
     /// Network in the context
     pub network: Network,
@@ -16,14 +68,17 @@ pub struct TaskContext {
     pub functions: NadiFunctions,
     /// environment variables
     pub env: AttrMap,
+    /// channel for sending messages
+    pub channel: Sender<TaskMessage>,
 }
 
 impl TaskContext {
-    pub fn new(net: Option<Network>) -> Self {
+    pub fn new(net: Option<Network>, channel: Sender<TaskMessage>) -> Self {
         Self {
             network: net.unwrap_or_default(),
             functions: NadiFunctions::new(),
             env: AttrMap::new(),
+            channel,
         }
     }
 
@@ -38,34 +93,53 @@ impl TaskContext {
             Task::Eval(et) => self.eval_task(et),
             Task::Attr(at) => self.attr_task(at).map(Some),
             Task::Conditional(ct) => {
-                let mut outputs = vec![];
                 let cond = ct.cond.resolve(&FunctionType::Env, self, None)?;
                 let res = cond.eval_value(&FunctionType::Env, self, None)?;
                 match bool::try_from_attr(&res)
                     .map_err(|e| EvalErrorType::AttributeError(e).pos(ct.position()))?
                 {
                     true => {
+                        let mut progress = 0;
+                        let total = ct.iftrue.len();
                         for task in ct.iftrue {
-                            outputs.push(self.execute(task)?)
+                            let _ = self.channel.send(TaskMessage::Progress(
+                                task.to_string(),
+                                progress,
+                                total,
+                            ));
+                            if let Some(a) = self.execute(task.clone())? {
+                                let _ = self.channel.send(TaskMessage::Info(a));
+                            }
+                            progress += 1;
                         }
                     }
                     false => {
+                        let mut progress = 0;
+                        let total = ct.iffalse.len();
                         for task in ct.iffalse {
-                            outputs.push(self.execute(task)?)
+                            let _ = self.channel.send(TaskMessage::Progress(
+                                task.to_string(),
+                                progress,
+                                total,
+                            ));
+                            if let Some(a) = self.execute(task.clone())? {
+                                let _ = self.channel.send(TaskMessage::Info(a));
+                            }
+                            progress += 1;
                         }
                     }
                 }
-                let outputs: Vec<String> = outputs.into_iter().flatten().collect();
-                if outputs.is_empty() {
-                    Ok(None)
-                } else {
-                    Ok(Some(outputs.join("\n")))
-                }
+                Ok(None)
             }
             Task::WhileLoop(lt) => {
                 let max_iter = 1_000_000; // todo make it a constant (maybe configurable)
-                let mut outputs = vec![];
-                for _ in 0..max_iter {
+                let mut progress = 0;
+                for i in 0..max_iter {
+                    let _ = self.channel.send(TaskMessage::Progress(
+                        format!("Loop: {}", i + 1),
+                        progress,
+                        max_iter,
+                    ));
                     let cond = lt.cond.resolve(&FunctionType::Env, self, None)?;
                     let res = cond.eval_value(&FunctionType::Env, self, None)?;
                     match bool::try_from_attr(&res)
@@ -73,21 +147,16 @@ impl TaskContext {
                     {
                         true => {
                             for task in &lt.tasks {
-                                // TODO really need to work on a way
-                                // to get the output as it runs in
-                                // async manner
-                                outputs.push(self.execute(task.clone())?)
+                                if let Some(a) = self.execute(task.clone())? {
+                                    let _ = self.channel.send(TaskMessage::Info(a));
+                                }
+                                progress += 1;
                             }
                         }
                         false => break,
                     }
                 }
-                let outputs: Vec<String> = outputs.into_iter().flatten().collect();
-                if outputs.is_empty() {
-                    Ok(None)
-                } else {
-                    Ok(Some(outputs.join("\n")))
-                }
+                Ok(None)
             }
             Task::Help(kw, var) => self.help(kw, var),
             Task::Exit => std::process::exit(0),
@@ -125,7 +194,9 @@ impl TaskContext {
             },
             FunctionType::Node => {
                 let nodes = self.propagation(task.propagation.unwrap_or_default())?;
-                let mut attrs = Vec::with_capacity(nodes.len());
+                let total = nodes.len();
+                let mut progress = 0;
+                let mut attrs = Vec::with_capacity(total);
                 for n in nodes {
                     let res = match task
                         .input
@@ -134,12 +205,21 @@ impl TaskContext {
                         .map_err(|e| e.pos(task.start))?
                     {
                         Some(r) => r,
-                        None => continue,
+                        None => {
+                            progress += 1;
+                            continue;
+                        }
                     };
                     let mut n = n
                         .try_lock()
                         .into_option()
                         .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(task.start))?;
+                    progress += 1;
+                    let _ = self.channel.send(TaskMessage::Progress(
+                        n.name().to_string(),
+                        progress,
+                        total,
+                    ));
                     if let Some(attr) = &task.attr {
                         let old = n.set_attr_nested(&task.attr_pre, attr, res.clone())?;
                         if !task.silent {
@@ -532,6 +612,20 @@ pub enum Task {
     Help(Option<TaskKeyword>, Option<String>),
     /// exit the task system/process
     Exit,
+}
+
+impl Task {
+    /// The given task has the capacity to change the task context
+    pub fn can_mutate(&self) -> bool {
+        match self {
+            Task::Eval(_) => true,
+            Task::Attr(_) => false,
+            Task::Conditional(_) => true,
+            Task::WhileLoop(_) => true,
+            Task::Help(_, _) => false,
+            Task::Exit => false,
+        }
+    }
 }
 
 impl std::fmt::Display for Task {

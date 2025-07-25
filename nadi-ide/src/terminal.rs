@@ -2,20 +2,113 @@ use crate::editor::EditorFunction;
 use crate::editor::my_hl;
 use crate::help::md_style;
 use crate::icons;
-use crate::network::{NetworkData, NetworkTable};
+use crate::network::{NetworkData, NetworkDataView, NetworkTable};
+use iced::time::{self, Duration};
 use iced::widget::{
     button, center, column, combo_box, container, horizontal_rule, horizontal_space, markdown,
     progress_bar, row, scrollable, text, text_editor, text_input, toggler,
 };
-use iced::{Element, Fill, Font, Length, Task, Theme};
+use iced::{Element, Fill, Font, Length, Subscription, Task, Theme};
+use nadi_core::attrs::{AttrMap, HasAttributes};
+use nadi_core::functions::NadiFunctions;
+use nadi_core::network::Network;
 use nadi_core::parser::{ParseErrorType, highlight::NadiFileType};
 use nadi_core::string_template::Template;
-use nadi_core::tasks::{FunctionType, Task as NadiTask, TaskContext};
+use nadi_core::tasks::{FunctionType, Task as NadiTask, TaskContext, TaskMessage};
 use std::io::Read;
 use std::ops::Not;
 use std::sync::Arc;
+use std::sync::mpsc::{Receiver, Sender, channel};
+use std::thread;
 
 pub static NETWORK_HELP: &str = include_str!("../markdown/network.md");
+
+/// Message sent by the task context over the channel
+enum TaskCtxMessage {
+    Network(NetworkData),
+    Attribute(String, AttrMap),
+    Result(String, Result<Option<String>, String>), // User TaskResult later
+    Update(TaskMessage),
+    Waiting,
+}
+
+/// Messages that can be sent to the task context over the channel
+enum TaskCtxRequest {
+    Run(NadiTask),
+    NodeAttr(String),
+    NetworkAttr,
+    // no need to send request for NetworkData as it is sent whenever
+    // a task is run successfully
+}
+
+// Before we implement above two, we need to move TaskContext to a
+// separate thread, where it only communicates to the terminal through
+// the above two messages.
+fn spawn_task_context(
+    functions: Option<NadiFunctions>,
+) -> (Sender<TaskCtxRequest>, Receiver<TaskCtxMessage>) {
+    // for receiving the results this function sends
+    let (send, recv_outer) = channel();
+    // for sending Tasks that this function receives
+    let (send_outer, recv) = channel();
+    // for communicating with TaskContext
+    let (send_inner, recv_inner) = channel();
+
+    // this forwards the messages from task context to the receiver
+    let send2 = send.clone();
+    thread::spawn(move || {
+        for msg in recv_inner {
+            let _ = send2.send(TaskCtxMessage::Update(msg));
+        }
+    });
+
+    thread::spawn(move || {
+        let mut task_ctx = TaskContext::new(None, send_inner); //  {
+        //     functions: functions.unwrap_or_else(|| NadiFunctions::new()),
+        //     network: Network::default(),
+        //     env: AttrMap::new(),
+        //     channel: send_inner,
+        // };
+        loop {
+            while let Ok(req) = recv.try_recv() {
+                match req {
+                    TaskCtxRequest::Run(task) => {
+                        let mutates = task.can_mutate();
+                        // temp solution, make NadiFunctions take a
+                        // std::io::Write or other trait object that
+                        // can either print to stdout, or take the
+                        // result to show somewhere else (like here)
+                        let mut buf = gag::BufferRedirect::stdout().unwrap();
+                        let mut output = String::new();
+                        let res = task_ctx.execute(task);
+                        // print the stdout output to the terminal
+                        buf.read_to_string(&mut output).unwrap();
+                        output.push('\n');
+                        let _ = send.send(TaskCtxMessage::Result(output, res));
+                        if mutates {
+                            // only send this if there might have been new values
+                            let _ = send
+                                .send(TaskCtxMessage::Network(NetworkData::new(&task_ctx.network)));
+                        }
+                    }
+                    TaskCtxRequest::NodeAttr(name) => {
+                        if let Some(node) = task_ctx.network.node_by_name(&name) {
+                            let am = node.lock().attr_map().clone();
+                            let _ = send.send(TaskCtxMessage::Attribute(name, am));
+                        }
+                    }
+                    TaskCtxRequest::NetworkAttr => {
+                        let am = task_ctx.network.attr_map().clone();
+                        let _ = send.send(TaskCtxMessage::Attribute("Network".to_string(), am));
+                    }
+                }
+            }
+            let _ = send.send(TaskCtxMessage::Waiting);
+            thread::sleep(Duration::from_millis(100));
+        }
+    });
+    (send_outer, recv_outer)
+}
 
 pub struct Terminal {
     pub light_theme: bool,
@@ -27,35 +120,18 @@ pub struct Terminal {
     status: String,
     content: text_editor::Content,
     last_line: usize,
-    pub task_ctx: TaskContext,
-    progress: f32,
-    network: NetworkData,
+    sender: Sender<TaskCtxRequest>,
+    receiver: Receiver<TaskCtxMessage>,
+    progress: (String, f32),
+    network_view: NetworkDataView,
     network_sidebar: bool,
     network_help: Vec<markdown::Item>,
-    label_template: String,
     embedded: bool,
 }
 
 impl Default for Terminal {
     fn default() -> Self {
-        Self {
-            light_theme: false,
-            running_msg: None,
-            history_str: vec![],
-            history: combo_box::State::<String>::default(),
-            residue: String::new(),
-            command: String::new(),
-            status: String::new(),
-            content: text_editor::Content::default(),
-            last_line: 0,
-            task_ctx: TaskContext::new(None),
-            progress: 0.0,
-            network: NetworkData::default(),
-            network_sidebar: false,
-            network_help: markdown::parse(NETWORK_HELP).collect(),
-            label_template: String::new(),
-            embedded: false,
-        }
+        Self::new(None)
     }
 }
 
@@ -68,8 +144,6 @@ pub enum Message {
     ClearCommand,
     ExecCommand,
     RunTasks(String),
-    TemplChange(String),
-    TemplSubmit,
     TaskChain(usize, Vec<NadiTask>),
     CommandChange(String),
     History(String),
@@ -79,72 +153,42 @@ pub enum Message {
     GoDown,
     ToggleNetSidebar,
     LinkClicked(markdown::Url),
-    // handled in main
+    Tick,
     NodeClicked(Option<String>),
+    // handled in main
+    AttrFound((String, AttrMap)),
 }
 
 impl Terminal {
+    pub fn new(functions: Option<NadiFunctions>) -> Self {
+        let (sender, receiver) = spawn_task_context(functions);
+        Self {
+            light_theme: false,
+            running_msg: None,
+            history_str: vec![],
+            history: combo_box::State::<String>::default(),
+            residue: String::new(),
+            command: String::new(),
+            status: String::new(),
+            content: text_editor::Content::default(),
+            last_line: 0,
+            sender,
+            receiver,
+            progress: (String::new(), 0.0),
+            network_view: NetworkDataView::default(),
+            network_sidebar: false,
+            network_help: markdown::parse(NETWORK_HELP).collect(),
+            embedded: false,
+        }
+    }
     pub fn embed(mut self) -> Self {
         self.embedded = true;
         self
     }
 
-    pub fn search_function(&self, ty: FunctionType, name: String) -> Option<EditorFunction> {
-        let (args, help, ity) = match ty {
-            FunctionType::Network => self
-                .task_ctx
-                .functions
-                .network(&name)
-                .map(|f| (f.args(), f.short_help(), FunctionType::Network)),
-            FunctionType::Node => self
-                .task_ctx
-                .functions
-                .node(&name)
-                .map(|f| (f.args(), f.short_help(), FunctionType::Node)),
-            _ => None,
-        }
-        .or_else(|| {
-            self.task_ctx
-                .functions
-                .env(&name)
-                .map(|f| (f.args(), f.short_help(), FunctionType::Env))
-        })?;
-        Some(EditorFunction {
-            ty,
-            ity,
-            name,
-            args: args.to_vec(),
-            short_help: help.to_string(),
-        })
-    }
-
     pub fn append_history(&mut self, entry: String) {
         self.history_str.push(entry);
         self.history = combo_box::State::new(self.history_str.clone());
-    }
-
-    // Can't do async because the TaskContext is not thread
-    // safe. Might have to find a way to run it using channels
-    fn execute_task(&mut self, task: NadiTask) -> (String, Result<Option<String>, String>) {
-        // temp solution, make NadiFunctions take a std::io::Write or
-        // other trait object that can either print to stdout, or take the
-        // result to show somewhere else (like here)
-        let mut buf = gag::BufferRedirect::stdout().unwrap();
-        let mut output = String::new();
-        let mut results = String::new();
-        let res = self.task_ctx.execute(task);
-        // print the stdout output to the terminal
-        buf.read_to_string(&mut output).unwrap();
-        output.push('\n');
-        match res {
-            Ok(Some(p)) => {
-                results.push_str(&p);
-                results.push('\n');
-            }
-            Err(e) => return (output, Err(e.to_string())),
-            _ => (),
-        }
-        (output, Ok(Some(results)))
     }
 
     fn append_term(&mut self, text: &str, prompt: bool, append: bool) {
@@ -229,32 +273,13 @@ impl Terminal {
                 let task = if let Some(t) = tasks.pop() {
                     t
                 } else {
-                    self.progress = 100.0;
-                    self.running_msg = None;
                     return Task::none();
                 };
-                let (out, res) = self.execute_task(task);
-                self.append_term(out.trim(), false, true);
-                match res {
-                    Ok(Some(s)) => self.append_term(s.trim(), false, true),
-                    Err(s) => self.append_term(s.trim(), false, true),
-                    _ => (),
-                };
-                self.network.update(
-                    &self.task_ctx.network,
-                    if self.label_template.is_empty() {
-                        None
-                    } else {
-                        Template::parse_template(&self.label_template).ok()
-                    },
-                );
-                self.progress = (done + 1) as f32 * 100.0 / (done + 1 + tasks.len()) as f32;
-                self.running_msg = Some(format!("Executing Tasks: {:.2}%", self.progress));
+                let _ = self.sender.send(TaskCtxRequest::Run(task));
                 return Task::perform(async { tasks }, move |t| Message::TaskChain(done + 1, t));
             }
             Message::RunTasks(tasks) => {
                 self.append_term(tasks.trim(), true, false);
-                self.progress = 0.0;
                 let tasks = if self.residue.is_empty() {
                     tasks
                 } else {
@@ -279,16 +304,55 @@ impl Terminal {
                                 self.append_term(&e.user_msg(None), false, true);
                             }
                         }
-                        self.running_msg = None;
                         return Task::none();
                     }
                 };
                 self.residue.clear();
                 self.append_history(tasks);
-                self.running_msg = Some(format!("Executing Tasks: {:.2}%", self.progress));
                 return Task::perform(async { tasks_vec.into_iter().rev().collect() }, move |t| {
                     Message::TaskChain(0, t)
                 });
+            }
+            Message::NodeClicked(None) => {
+                let _ = self.sender.send(TaskCtxRequest::NetworkAttr);
+            }
+            Message::NodeClicked(Some(node)) => {
+                let _ = self.sender.send(TaskCtxRequest::NodeAttr(node));
+            }
+            Message::Tick => {
+                let messages: Vec<TaskCtxMessage> = self.receiver.try_iter().collect();
+                for m in messages {
+                    match m {
+                        TaskCtxMessage::Network(nd) => self.network_view.update(nd),
+                        TaskCtxMessage::Attribute(name, at) => {
+                            return Task::perform(async { (name, at) }, Message::AttrFound);
+                        }
+                        TaskCtxMessage::Result(out, res) => {
+                            self.append_term(out.trim(), false, true);
+                            match res {
+                                Ok(Some(s)) => self.append_term(s.trim(), false, true),
+                                Err(s) => self.append_term(s.trim(), false, true),
+                                _ => (),
+                            };
+                        }
+                        TaskCtxMessage::Update(TaskMessage::Progress(label, a, b)) => {
+                            self.progress = (label, a as f32 / b as f32 * 100.0);
+                            self.running_msg = Some(format!(
+                                "Executing Tasks: {:.2}% ({})",
+                                self.progress.1, self.progress.0
+                            ));
+                        }
+                        // TODO instead of term being an editor, will
+                        // make it rich text and manage these better
+                        TaskCtxMessage::Update(TaskMessage::Info(s) | TaskMessage::Warning(s)) => {
+                            self.append_term(&s, false, true);
+                        }
+                        TaskCtxMessage::Waiting => {
+                            self.progress = (String::new(), 100.0);
+                            self.running_msg = None;
+                        }
+                    }
+                }
             }
             Message::ExecCommand => {
                 let task = self.command.clone();
@@ -306,19 +370,6 @@ impl Terminal {
                 };
                 self.running_msg = Some("Executing Command".to_string());
                 return Task::perform(async { task }, Message::RunTasks);
-            }
-            Message::TemplChange(templ) => {
-                self.label_template = templ;
-            }
-            Message::TemplSubmit => {
-                self.network.update(
-                    &self.task_ctx.network,
-                    if self.label_template.is_empty() {
-                        None
-                    } else {
-                        Template::parse_template(&self.label_template).ok()
-                    },
-                );
             }
             Message::GotoTop => {
                 self.content.perform(text_editor::Action::Move(
@@ -395,7 +446,7 @@ impl Terminal {
                 ),
             text(&self.status).style(text::danger),
             entry,
-            progress_bar(0.0..=100.0, self.progress)
+            progress_bar(0.0..=100.0, self.progress.1)
                 .height(4.0)
                 .style(progress_bar::success)
         ]
@@ -416,28 +467,18 @@ impl Terminal {
             .width(25)
         ];
         if self.network_sidebar {
-            sidebar = sidebar.push(
-                column![
-                    text_input("Label Template", &self.label_template)
-                        .on_input(Message::TemplChange)
-                        .on_submit(Message::TemplSubmit),
-                    horizontal_rule(5.0),
-                    scrollable(
-                        markdown::view(
-                            &self.network_help,
-                            markdown::Settings::default(),
-                            md_style(self.light_theme),
-                        )
-                        .map(Message::LinkClicked)
-                    ),
-                ]
-                .spacing(10.0)
-                .padding(10.0),
-            );
+            sidebar = sidebar.push(scrollable(
+                markdown::view(
+                    &self.network_help,
+                    markdown::Settings::default(),
+                    md_style(self.light_theme),
+                )
+                .map(Message::LinkClicked),
+            ));
         }
         row![
             scrollable(
-                container(NetworkTable::new(&self.network).on_press(Message::NodeClicked))
+                container(NetworkTable::new(&self.network_view).on_press(Message::NodeClicked))
                     .padding(10.0)
             )
             .width(Fill)
@@ -454,5 +495,9 @@ impl Terminal {
         } else {
             Theme::Dark
         }
+    }
+
+    pub fn subscription(&self) -> Subscription<Message> {
+        time::every(Duration::from_millis(100)).map(|_| Message::Tick)
     }
 }

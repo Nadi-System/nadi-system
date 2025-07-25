@@ -86,10 +86,12 @@ mod tests {
     fn test_all_functions() {
         let mut functions = NadiFunctions::default();
         register_internal(&mut functions);
+        let (sender, _receiver) = std::sync::mpsc::channel();
         let mut ctx = TaskContext {
             network: Network::default(),
             functions: functions.clone(),
             env: AttrMap::new(),
+            channel: sender,
         };
         let mut tests = 0;
         let mut errors = Vec::new();

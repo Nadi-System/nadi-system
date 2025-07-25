@@ -5,6 +5,7 @@ use iced::widget::{
 };
 use iced::{Element, Fill, Length, Subscription, Task, Theme};
 use nadi_core::attrs::HasAttributes;
+use nadi_core::functions::NadiFunctions;
 use nadi_ide::attributes::AttrView;
 use nadi_ide::editor::{self, Editor};
 use nadi_ide::help::{self, MdHelp};
@@ -35,14 +36,15 @@ struct MainWindow {
 impl Default for MainWindow {
     fn default() -> Self {
         let (panes, _) = pane_grid::State::new(Pane::new());
+        let funcs = Some(NadiFunctions::new());
         Self {
             light_theme: false,
             panes,
             focus: None,
-            funchelp: MdHelp::default().embed(),
-            editor: Editor::default().embed(),
+            funchelp: MdHelp::new(funcs.clone()).embed(),
+            editor: Editor::new(funcs.clone()).embed(),
             svg: SvgView::default().embed(),
-            terminal: Terminal::default().embed(),
+            terminal: Terminal::new(funcs).embed(),
             attrs: AttrView::default(),
         }
     }
@@ -61,20 +63,9 @@ impl MainWindow {
                 self.panes = pane_grid::State::<Pane>::with_configuration(panety_2_pane(&conf));
             }
             Message::Terminal(m) => match m {
-                nadi_ide::terminal::Message::NodeClicked(None) => {
+                nadi_ide::terminal::Message::AttrFound((name, am)) => {
                     self.spawn_pane_maybe(Some(PaneType::AttrView));
-                    self.attrs.load_attrs(
-                        "Network".to_string(),
-                        self.terminal.task_ctx.network.attr_map(),
-                    );
-                }
-                nadi_ide::terminal::Message::NodeClicked(Some(node)) => {
-                    self.spawn_pane_maybe(Some(PaneType::AttrView));
-                    if let Some(node) = self.terminal.task_ctx.network.node_by_name(&node) {
-                        let n = node.lock();
-                        self.attrs
-                            .load_attrs(format!("Node[{}]: {}", n.index(), n.name()), n.attr_map());
-                    }
+                    self.attrs.load_attrs(name, &am);
                 }
                 _ => return self.terminal.update(m).map(Message::Terminal),
             },
@@ -82,14 +73,6 @@ impl MainWindow {
             Message::Attributes(m) => self.attrs.update(m),
             Message::Editor(m) => {
                 return match m {
-                    editor::Message::FuncSignature((ty, name)) => {
-                        if let Some(f) = self.terminal.search_function(ty, name) {
-                            Task::perform(async { f }, editor::Message::FuncFound)
-                                .map(Message::Editor)
-                        } else {
-                            Task::none()
-                        }
-                    }
                     editor::Message::RunAllTask => {
                         let buf = self.editor.content.text();
                         self.spawn_pane_maybe(Some(PaneType::Terminal));
@@ -275,7 +258,10 @@ impl MainWindow {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        self.editor.subscription().map(Message::Editor)
+        Subscription::batch([
+            self.editor.subscription().map(Message::Editor),
+            self.terminal.subscription().map(Message::Terminal),
+        ])
     }
 
     fn spawn_pane_maybe(&mut self, ty: Option<PaneType>) {

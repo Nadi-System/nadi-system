@@ -2,6 +2,8 @@ use clap::{Parser, ValueEnum};
 use nadi_core::parser::tokenizer::TaskToken;
 use nadi_core::tasks::TaskContext;
 use nadi_core::{functions::NadiFunctions, network::Network};
+use std::sync::mpsc::channel;
+use std::thread;
 use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -112,8 +114,13 @@ fn main() -> anyhow::Result<()> {
         } else {
             None
         };
-        let mut tasks_ctx = nadi_core::tasks::TaskContext::new(net);
-
+        let (sender, receiver) = channel();
+        let mut tasks_ctx = nadi_core::tasks::TaskContext::new(net, sender);
+        thread::spawn(move || {
+            for msg in receiver {
+                println!("{msg:?}");
+            }
+        });
         if let Some(ref txt) = args.task {
             execute_tasks(txt, args.print_tasks, &mut tasks_ctx)?;
         }

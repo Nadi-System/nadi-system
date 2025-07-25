@@ -363,7 +363,7 @@ mod core {
                 return Err(format!(
                     "Got {} instead of date/datetime",
                     value.type_name()
-                ))
+                ));
             }
         };
         Ok(Attribute::Integer(val.into()))
@@ -387,7 +387,7 @@ mod core {
                 return Err(format!(
                     "Got {} instead of date/datetime",
                     value.type_name()
-                ))
+                ));
             }
         };
         Ok(Attribute::Integer(val.into()))
@@ -411,7 +411,7 @@ mod core {
                 return Err(format!(
                     "Got {} instead of date/datetime",
                     value.type_name()
-                ))
+                ));
             }
         };
         Ok(Attribute::Integer(val.into()))

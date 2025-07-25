@@ -10,14 +10,14 @@ use iced_graphics::geometry::{Path, Stroke};
 use std::cell::RefCell;
 
 mod dtypes;
-pub use dtypes::NetworkData;
+pub use dtypes::{NetworkData, NetworkDataView};
 
 #[allow(missing_debug_implementations)]
 pub struct NetworkTable<'a, Message, Theme = iced::Theme>
 where
     Theme: Catalog,
 {
-    data: &'a NetworkData,
+    data: &'a NetworkDataView,
     on_press: Option<Box<dyn Fn(Option<String>) -> Message + 'a>>,
     class: Theme::Class<'a>,
 }
@@ -27,7 +27,7 @@ where
     Theme: Catalog,
 {
     /// Creates a new [`NetworkTable`] with the provided [`Data`].
-    pub fn new(data: &'a NetworkData) -> Self {
+    pub fn new(data: &'a NetworkDataView) -> Self {
         Self {
             data,
             on_press: None,
@@ -80,16 +80,19 @@ where
         _renderer: &Renderer,
         _limits: &layout::Limits,
     ) -> layout::Node {
-        let mut x = (self.data.maxlevel + 2) as f32 * self.data.deltax + self.data.offsetx * 2.0;
+        let mut x =
+            (self.data.network.maxlevel + 2) as f32 * self.data.deltax + self.data.offsetx * 2.0;
         let num_chars = self
             .data
+            .network
             .nodes
             .iter()
             .map(|n| n.label.len())
             .max()
             .unwrap_or_default() as f32;
         x += num_chars * 15.0; // TODO find text length required to draw it
-        let y = (self.data.nodes.len() + 2) as f32 * self.data.deltay + self.data.offsety * 3.0;
+        let y =
+            (self.data.network.nodes.len() + 2) as f32 * self.data.deltay + self.data.offsety * 3.0;
 
         layout::Node::new(Size::new(x * self.data.scale, y * self.data.scale))
     }
@@ -112,7 +115,11 @@ where
             if y < 0.0 {
                 None
             } else {
-                self.data.nodes.get(y as usize).map(|n| n.name.to_string())
+                self.data
+                    .network
+                    .nodes
+                    .get(y as usize)
+                    .map(|n| n.name.to_string())
             }
         });
         if state.over_node != node {
@@ -160,6 +167,7 @@ where
             frame.scale(self.data.scale);
             let coords: Vec<(f32, f32)> = self
                 .data
+                .network
                 .nodes
                 .iter()
                 .map(|n| {
@@ -172,7 +180,7 @@ where
                 .collect();
 
             if let Some(name) = &state.over_node {
-                if let Some(node) = self.data.nodes.iter().find(|n| &n.name == name) {
+                if let Some(node) = self.data.network.nodes.iter().find(|n| &n.name == name) {
                     // highlight the row if it's selected
                     frame.fill_rectangle(
                         (
@@ -186,7 +194,7 @@ where
                 }
             }
             // Draw network lines
-            for (from, to, color, width) in &self.data.edges {
+            for (from, to, color, width) in &self.data.network.edges {
                 let line = Path::line(coords[*from].into(), coords[*to].into());
                 frame.stroke(
                     &line,
@@ -196,12 +204,12 @@ where
                 );
             }
 
-            for (node, pos) in self.data.nodes.iter().zip(coords) {
+            for (node, pos) in self.data.network.nodes.iter().zip(coords) {
                 let npath = node.path(pos);
                 frame.fill(&npath, node.color.unwrap_or(style.node));
                 let mut txt = iced_graphics::geometry::Text::from(node.label.as_str());
                 txt.position = (
-                    self.data.offsetx + self.data.deltax * (self.data.maxlevel + 2) as f32,
+                    self.data.offsetx + self.data.deltax * (self.data.network.maxlevel + 2) as f32,
                     pos.1,
                 )
                     .into();

@@ -42,15 +42,7 @@ pub enum Message {
 
 impl Default for MdHelp {
     fn default() -> Self {
-        Self {
-            light_theme: false,
-            functions: NadiFunctions::new(),
-            state: None,
-            search: String::new(),
-            markdown: markdown::parse(MAIN_HELP).collect(),
-            collapsed: false,
-            embedded: false,
-        }
+        Self::new(None)
     }
 }
 
@@ -70,6 +62,17 @@ macro_rules! help {
 }
 
 impl MdHelp {
+    pub fn new(functions: Option<NadiFunctions>) -> Self {
+        Self {
+            light_theme: false,
+            functions: functions.unwrap_or_else(|| NadiFunctions::new()),
+            state: None,
+            search: String::new(),
+            markdown: markdown::parse(MAIN_HELP).collect(),
+            collapsed: false,
+            embedded: false,
+        }
+    }
     pub fn embed(mut self) -> Self {
         self.embedded = true;
         self.collapsed = true;

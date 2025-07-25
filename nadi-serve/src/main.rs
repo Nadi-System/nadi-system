@@ -45,9 +45,9 @@ impl ReqTasks {
         Ok(Self { network, tasks })
     }
     fn execute(self) -> TaskResult {
-        let mut ctx = nadi_core::tasks::TaskContext::new(self.network);
+        let mut ctx = nadi_core::tasks::TaskContextWrap::new(self.network);
         for p in Self::blacklist() {
-            ctx.functions.remove_plugin(p); // security concerns
+            ctx.context.functions.remove_plugin(p); // security concerns
         }
 
         let mut results = Vec::with_capacity(self.tasks.len());
