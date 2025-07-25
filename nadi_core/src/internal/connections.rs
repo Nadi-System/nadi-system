@@ -165,10 +165,10 @@ mod connections {
     /// env assert_eq(nodes.NAME, ["b", "a"])
     /// ```
     #[network_func]
-    fn subset_from(net: &mut Network, node: &str) -> Result<(), String> {
+    fn subset_from(net: &mut Network, new_outlet: &str) -> Result<(), String> {
         let node = net
-            .node_by_name(node)
-            .ok_or(format!("Node {node} not found in the network"))?
+            .node_by_name(new_outlet)
+            .ok_or(format!("Node {new_outlet} not found in the network"))?
             .clone();
         net.new_outlet(node);
         Ok(())
@@ -191,11 +191,11 @@ mod connections {
     /// network subset_largest()
     /// env assert_eq(nodes.NAME, ["c", "b", "a"])
     /// ```
-    #[network_func(node = ROOT_NODE_NAME)]
-    fn subset_largest(net: &mut Network, node: &str) -> Result<(), String> {
+    #[network_func(parent = ROOT_NODE_NAME)]
+    fn subset_largest(net: &mut Network, parent: &str) -> Result<(), String> {
         let node = net
-            .node_by_name(node)
-            .ok_or(format!("Node {node} not found in the network"))?
+            .node_by_name(parent)
+            .ok_or(format!("Node {parent} not found in the network"))?
             .clone();
         let mut outlet: Option<Node> = None;
         for i in node.lock().inputs() {

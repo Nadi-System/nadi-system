@@ -6,10 +6,10 @@ use convert_case::{Case, Casing};
 use std::collections::HashMap;
 
 use proc_macro::TokenStream;
-use quote::{format_ident, quote, quote_spanned, ToTokens};
+use quote::{ToTokens, format_ident, quote, quote_spanned};
 use syn::{
-    parse_macro_input, punctuated::Punctuated, token::Comma, Attribute, DeriveInput, Expr, FnArg,
-    Ident, ItemFn, ItemMod, Lit, MetaNameValue, Type, TypeReference,
+    Attribute, DeriveInput, Expr, FnArg, Ident, ItemFn, ItemMod, Lit, MetaNameValue, Type,
+    TypeReference, parse_macro_input, punctuated::Punctuated, token::Comma,
 };
 
 #[derive(PartialEq)]
@@ -257,6 +257,29 @@ fn nadi_func_inner(args: TokenStream, item: ItemFn, ft: FuncType) -> TokenStream
     .into()
 }
 
+/// Invalid argument names = task system keywords
+const INVALID_ARG_NAME: [&str; 21] = [
+    "node", // TaskKeyword::Node
+    "network", "net",    // TaskKeyword::Network
+    "env",    // TaskKeyword::Env
+    "exit",   // TaskKeyword::Exit
+    "end",    // TaskKeyword::End
+    "help",   // TaskKeyword::Help
+    "inputs", // TaskKeyword::Inputs
+    "output", // TaskKeyword::Output
+    "nodes",  // TaskKeyword::Nodes
+    "if",     // TaskKeyword::If
+    "else",   // TaskKeyword::Else
+    "while",  // TaskKeyword::While
+    "in",     // TaskKeyword::In
+    "match",  // TaskKeyword::Match
+    "function", "func",  // TaskKeyword::Function
+    "map",   // TaskKeyword::Map
+    "attrs", // TaskKeyword::Attrs
+    "loop",  // TaskKeyword::Loop
+    "for",   // TaskKeyword::For
+];
+
 fn check_args_kwargs_order(
     args: &[(&Ident, &Type, FuncArgType)],
     default_args: &HashMap<Ident, Expr>,
@@ -264,7 +287,12 @@ fn check_args_kwargs_order(
     let mut warnings: Vec<proc_macro2::TokenStream> = default_args
         .keys()
         .filter_map(|id| {
-            if !args.iter().any(|a| a.0 == id) {
+            if INVALID_ARG_NAME.contains(&id.to_string().as_str()) {
+                Some(quote_spanned! {
+                id.span() =>
+                    compile_error!("Invalid name for the argument (keyword)");
+                })
+            } else if !args.iter().any(|a| a.0 == id) {
                 Some(quote_spanned! {
                 id.span() =>
                     compile_error!("Argument not in the inner function");

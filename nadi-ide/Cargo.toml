@@ -1,6 +1,6 @@
 [package]
 name = "nadi-ide"
-version = "0.7.1"
+version = "0.8.0"
 edition = "2024"
 description = "Integrated Development Environment (IDE) for running nadi task system"
 repository = "https://github.com/Nadi-System/nadi-system"
@@ -10,7 +10,7 @@ default-run = "nadi-ide"
 
 [dependencies]
 iced = { git = "https://github.com/atreyagaurav/iced.git", branch="cargo-stable", features = ["highlighter", "markdown", "lazy", "tokio", "svg", "canvas"] }
-nadi_core = { version = "0.7.1", path="../nadi_core", features = ["functions"] }
+nadi_core = { version = "0.8.0", path="../nadi_core", features = ["functions"] }
 
 tokio = {version = "1.44.1", features = ["fs"]}
 rfd = "0.13"

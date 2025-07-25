@@ -61,7 +61,7 @@ mod files {
     }
 
     /// Writes the string to the file
-    #[env_func(append = false, end = "\n")]
+    #[env_func(append = false, terminate = "\n")]
     fn to_file(
         /// Contents to write
         contents: String,
@@ -70,7 +70,7 @@ mod files {
         /// Append to the file
         append: bool,
         /// End the write with this
-        end: String,
+        terminate: String,
     ) -> anyhow::Result<()> {
         let mut file = std::fs::OpenOptions::new()
             .write(true)
@@ -78,7 +78,7 @@ mod files {
             .append(append)
             .truncate(!append)
             .open(path)?;
-        write!(file, "{}{}", contents, end)?;
+        write!(file, "{}{}", contents, terminate)?;
         Ok(())
     }
 }
