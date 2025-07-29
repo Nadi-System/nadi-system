@@ -191,6 +191,11 @@ pub fn cond_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, CondTask> {
     ))
 }
 
+pub fn hook_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<Task>> {
+    let (rest, tasks) = preceded(kw_hook, maybe_space(tasks_block))(inp)?;
+    Ok((rest, tasks))
+}
+
 pub fn while_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, WhileTask> {
     let (rest, (cond, tasks)) = tuple((
         preceded(kw_while, maybe_space(expression_group)),
@@ -208,10 +213,11 @@ pub fn while_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, WhileTask> {
 
 pub fn task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
     alt((
-        map(cond_task, Task::Conditional),
-        map(while_task, Task::WhileLoop),
         map(eval_task, Task::Eval),
         map(attr_task, Task::Attr),
+        map(cond_task, Task::Conditional),
+        map(while_task, Task::WhileLoop),
+        map(hook_task, Task::Hook),
         help_task,
         value(Task::Exit, kw_exit),
     ))(inp)

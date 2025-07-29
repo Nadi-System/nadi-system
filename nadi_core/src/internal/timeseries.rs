@@ -1,7 +1,7 @@
 use nadi_plugin::nadi_internal_plugin;
 
 #[nadi_internal_plugin]
-mod timeseries {
+mod ts {
 
     use crate::prelude::*;
     use abi_stable::std_types::RString;

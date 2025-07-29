@@ -4,6 +4,7 @@ use crate::attrs::{AttrMap, AttrSlice};
 use crate::plugins::{NadiPlugin, load_library_safe};
 use crate::prelude::*;
 use crate::table::{ColumnAlign, contents_2_md};
+use crate::tasks::FunctionType;
 use abi_stable::std_types::Tuple2;
 use abi_stable::{
     StableAbi, sabi_trait,
@@ -384,60 +385,65 @@ impl NadiFunctions {
         }
     }
 
-    pub fn register_network_function(&mut self, prefix: &str, func: NetworkFunctionBox) {
-        let name = func.name();
-        let fullname = RString::from(format!("{}.{}", prefix, name));
-        self.network.insert(fullname.clone(), func);
-        if let RSome(oldname) = self.network_alias.insert(name.clone(), fullname.clone()) {
-            if fullname != oldname {
+    /// Register alias for the functions to you don't need `plugin.name` to call them
+    ///
+    /// This is not a public API, as the plan is to only have internal
+    /// functions able to call like this. While all external functions
+    /// need to be called by the plugin name explicitly for security
+    /// purposes.
+    #[cfg(feature = "functions")]
+    pub(crate) fn register_alias(&mut self, name: String, alias: String, ftype: FunctionType) {
+        let old = match ftype {
+            FunctionType::Env => self
+                .env_alias
+                .insert(alias.to_string().into(), name.to_string().into()),
+            FunctionType::Node => self
+                .node_alias
+                .insert(alias.to_string().into(), name.to_string().into()),
+            FunctionType::Network => self
+                .network_alias
+                .insert(alias.to_string().into(), name.to_string().into()),
+        };
+        if let RSome(oldname) = old {
+            if name != oldname {
                 eprintln!(
-                    "WARN Function {} now uses {} instead of {}, use full name for disambiguity",
-                    name, fullname, oldname
+                    "WARN {} Function {} now refers to {} instead of {}, use full name for disambiguity",
+                    ftype, alias, name, oldname
                 );
             }
         }
-        match self.plugins.entry(prefix.into()) {
+    }
+
+    pub fn register_network_function(&mut self, plugin: &str, func: NetworkFunctionBox) {
+        let name = func.name();
+        let fullname = RString::from(format!("{}.{}", plugin, name));
+        self.network.insert(fullname.clone(), func);
+        match self.plugins.entry(plugin.into()) {
             REntry::Occupied(mut o) => o.get_mut().push_network(name),
             REntry::Vacant(v) => {
                 v.insert(PluginFunctions::default().with_network(name));
             }
         };
     }
-    pub fn register_node_function(&mut self, prefix: &str, func: NodeFunctionBox) {
+    pub fn register_node_function(&mut self, plugin: &str, func: NodeFunctionBox) {
         let name = func.name();
-        let fullname = RString::from(format!("{}.{}", prefix, name));
+        let fullname = RString::from(format!("{}.{}", plugin, name));
         self.node.insert(fullname.clone(), func);
-        if let RSome(oldname) = self.node_alias.insert(name.clone(), fullname.clone()) {
-            if fullname != oldname {
-                eprintln!(
-                    "WARN Function {} now uses {} instead of {}, use full name for disambiguity",
-                    name, fullname, oldname
-                );
-            }
-        }
-        match self.plugins.entry(prefix.into()) {
-            REntry::Occupied(mut o) => o.get_mut().push_node(name),
+        match self.plugins.entry(plugin.into()) {
+            REntry::Occupied(mut o) => o.get_mut().push_network(name),
             REntry::Vacant(v) => {
-                v.insert(PluginFunctions::default().with_node(name));
+                v.insert(PluginFunctions::default().with_network(name));
             }
         };
     }
-    pub fn register_env_function(&mut self, prefix: &str, func: EnvFunctionBox) {
+    pub fn register_env_function(&mut self, plugin: &str, func: EnvFunctionBox) {
         let name = func.name();
-        let fullname = RString::from(format!("{}.{}", prefix, name));
+        let fullname = RString::from(format!("{}.{}", plugin, name));
         self.env.insert(fullname.clone(), func);
-        if let RSome(oldname) = self.env_alias.insert(name.clone(), fullname.clone()) {
-            if fullname != oldname {
-                eprintln!(
-                    "WARN Function {} now uses {} instead of {}, use full name for disambiguity",
-                    name, fullname, oldname
-                );
-            }
-        }
-        match self.plugins.entry(prefix.into()) {
-            REntry::Occupied(mut o) => o.get_mut().push_env(name),
+        match self.plugins.entry(plugin.into()) {
+            REntry::Occupied(mut o) => o.get_mut().push_network(name),
             REntry::Vacant(v) => {
-                v.insert(PluginFunctions::default().with_env(name));
+                v.insert(PluginFunctions::default().with_network(name));
             }
         };
     }

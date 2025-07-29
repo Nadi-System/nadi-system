@@ -18,20 +18,20 @@ pub struct AttrsMod;
 
 impl NadiPlugin for AttrsMod {
     fn name(&self) -> RString {
-        "attributes".into()
+        "ATTRS".into()
     }
     fn register(&self, nf: &mut NadiFunctions) {
         nf.register_node_function(
-            "attributes",
+            "ATTRS",
             NodeFunction_TO::from_value(LoadAttrs, TD_CanDowncast),
         );
         nf.register_node_function(
-            "attributes",
+            "ATTRS",
             NodeFunction_TO::from_value(PrintAllAttrs, TD_CanDowncast),
         );
         // #[node_func] makes struct from function_name to  FunctionNameNode:
         nf.register_node_function(
-            "attributes",
+            "ATTRS",
             NodeFunction_TO::from_value(PrintAttrsNode, TD_CanDowncast),
         );
     }

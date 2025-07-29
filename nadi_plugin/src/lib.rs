@@ -273,6 +273,7 @@ const INVALID_ARG_NAME: [&str; 21] = [
     "while",  // TaskKeyword::While
     "in",     // TaskKeyword::In
     "match",  // TaskKeyword::Match
+    "hook",   // TaskKeyword::Hook
     "function", "func",  // TaskKeyword::Function
     "map",   // TaskKeyword::Map
     "attrs", // TaskKeyword::Attrs
@@ -428,30 +429,49 @@ fn nadi_export_plugin(_args: TokenStream, item: TokenStream, external: bool) -> 
     let item = parse_macro_input!(item as ItemMod);
 
     let name = &item.ident;
-    let name_s = name.to_string();
+    let name_s = if external {
+        name.to_string().to_lowercase()
+    } else {
+        name.to_string().to_uppercase()
+    };
     let name_mod = nadi_struct_name(name, "Mod");
     let env_funcs = get_nadi_functions(&item, "env_func");
     let node_funcs = get_nadi_functions(&item, "node_func");
     let network_funcs = get_nadi_functions(&item, "network_func");
     let regis_env_funcs = env_funcs
         .iter()
-        .map(|n| nadi_struct_name(n, "Env"))
-        .map(|n| {
-            quote! {
-                    nf.register_env_function(
-                #name_s,
-                        ::nadi_core::functions::EnvFunction_TO::from_value(
-                #n,
-                ::nadi_core::abi_stable::sabi_trait::TD_CanDowncast
-                        )
-            );
+        .map(|n| (n.to_string(), nadi_struct_name(n, "Env")))
+        .map(|(alias, n)| {
+            let alias = (!external).then(|| {
+                quote! {
+                    let name = format!("{}.{}", #name_s, #alias);
+                    nf.register_alias(name, #alias .to_string(),  ::nadi_core::tasks::FunctionType::Env);
                 }
+            });
+            quote! {
+            #alias
+
+                        nf.register_env_function(
+                    #name_s,
+                            ::nadi_core::functions::EnvFunction_TO::from_value(
+                    #n,
+                    ::nadi_core::abi_stable::sabi_trait::TD_CanDowncast
+                            )
+                );
+                    }
         });
     let regis_node_funcs = node_funcs
         .iter()
-        .map(|n| nadi_struct_name(n, "Node"))
-        .map(|n| {
+        .map(|n| (n.to_string(), nadi_struct_name(n, "Node")))
+        .map(|(alias, n)| {
+            let alias = (!external).then(|| {
+                quote! {
+                    let name = format!("{}.{}", #name_s, #alias);
+                    nf.register_alias(name, #alias .to_string(),  ::nadi_core::tasks::FunctionType::Node);
+                }
+            });
             quote! {
+            #alias
                     nf.register_node_function(
                 #name_s,
                         ::nadi_core::functions::NodeFunction_TO::from_value(
@@ -463,17 +483,24 @@ fn nadi_export_plugin(_args: TokenStream, item: TokenStream, external: bool) -> 
         });
     let regis_network_funcs = network_funcs
         .iter()
-        .map(|n| nadi_struct_name(n, "Network"))
-        .map(|n| {
+        .map(|n| (n.to_string(), nadi_struct_name(n, "Network")))
+        .map(|(alias, n)| {
+            let alias = (!external).then(|| {
+                quote! {
+                    let name = format!("{}.{}", #name_s, #alias);
+                    nf.register_alias(name, #alias .to_string(),::nadi_core::tasks::FunctionType::Network);
+                }
+            });
             quote! {
-                nf.register_network_function(
-            #name_s,
-                    ::nadi_core::functions::NetworkFunction_TO::from_value(
-                        #n,
-                        ::nadi_core::abi_stable::sabi_trait::TD_CanDowncast
-                    )
-                );
-            }
+            #alias
+                    nf.register_network_function(
+                #name_s,
+                        ::nadi_core::functions::NetworkFunction_TO::from_value(
+                            #n,
+                            ::nadi_core::abi_stable::sabi_trait::TD_CanDowncast
+                        )
+                    );
+                }
         });
 
     if external {

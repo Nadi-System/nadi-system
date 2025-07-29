@@ -4,7 +4,6 @@ use iced::widget::{
     toggler, tooltip,
 };
 use iced::{Element, Fill, Length, Subscription, Task, Theme};
-use nadi_core::attrs::HasAttributes;
 use nadi_core::functions::NadiFunctions;
 use nadi_ide::attributes::AttrView;
 use nadi_ide::editor::{self, Editor};
@@ -42,9 +41,9 @@ impl Default for MainWindow {
             panes,
             focus: None,
             funchelp: MdHelp::new(funcs.clone()).embed(),
-            editor: Editor::new(funcs.clone()).embed(),
+            editor: Editor::new(funcs).embed(),
             svg: SvgView::default().embed(),
-            terminal: Terminal::new(funcs).embed(),
+            terminal: Terminal::new().embed(),
             attrs: AttrView::default(),
         }
     }

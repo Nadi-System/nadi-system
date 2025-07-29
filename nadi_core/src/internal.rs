@@ -24,9 +24,9 @@ pub(crate) fn register_internal(funcs: &mut NadiFunctions) {
     // think that is possible: search all types that implement
     // NadiPlugin trait within functions
     attrs::AttrsMod {}.register(funcs);
-    attrs2::AttributesMod {}.register(funcs);
+    attrs2::AttrsMod {}.register(funcs);
     command::CommandMod {}.register(funcs);
-    connections::ConnectionsMod {}.register(funcs);
+    connections::ConnMod {}.register(funcs);
     core::CoreMod {}.register(funcs);
     debug::DebugMod {}.register(funcs);
     files::FilesMod {}.register(funcs);
@@ -35,7 +35,7 @@ pub(crate) fn register_internal(funcs: &mut NadiFunctions) {
     render::RenderMod {}.register(funcs);
     series::SeriesMod {}.register(funcs);
     table::TableMod {}.register(funcs);
-    timeseries::TimeseriesMod {}.register(funcs);
+    timeseries::TsMod {}.register(funcs);
     visuals::VisualsMod {}.register(funcs);
 }
 

@@ -68,8 +68,11 @@ pub struct TaskContext {
     pub functions: NadiFunctions,
     /// environment variables
     pub env: AttrMap,
+    /// tasks to run after every assign execution
+    pub hook: Vec<Task>,
     /// channel for sending messages
     pub channel: Sender<TaskMessage>,
+    // TODO Channel to tell taskcontext to abort/cancel the current run. When it takes a long time, like while loop/ node functions can end in the middle.
 }
 
 impl TaskContext {
@@ -78,6 +81,7 @@ impl TaskContext {
             network: net.unwrap_or_default(),
             functions: NadiFunctions::new(),
             env: AttrMap::new(),
+            hook: Vec::new(),
             channel,
         }
     }
@@ -87,9 +91,31 @@ impl TaskContext {
         self.env = AttrMap::new();
     }
 
-    /// execute a task in the task context
+    pub fn run_hooks(&mut self) {
+        for t in self.hook.clone() {
+            _ = self.execute_single(t);
+        }
+    }
+
+    /// execute a task in the task context, possible with hook
     pub fn execute(&mut self, task: Task) -> Result<Option<String>, String> {
         match task {
+            Task::Eval(_) => {
+                let val = self.execute_single(task)?;
+                self.run_hooks();
+                Ok(val)
+            }
+            t => self.execute_single(t),
+        }
+    }
+
+    /// execute a task in the task context
+    pub fn execute_single(&mut self, task: Task) -> Result<Option<String>, String> {
+        match task {
+            Task::Hook(tasks) => {
+                self.hook = tasks;
+                Ok(None)
+            }
             Task::Eval(et) => self.eval_task(et),
             Task::Attr(at) => self.attr_task(at).map(Some),
             Task::Conditional(ct) => {
@@ -608,6 +634,8 @@ pub enum Task {
     Conditional(CondTask),
     /// execute tasks in a loop
     WhileLoop(WhileTask),
+    /// Tasks to run after each eval execution
+    Hook(Vec<Task>),
     /// get function help information
     Help(Option<TaskKeyword>, Option<String>),
     /// exit the task system/process
@@ -622,6 +650,7 @@ impl Task {
             Task::Attr(_) => false,
             Task::Conditional(_) => true,
             Task::WhileLoop(_) => true,
+            Task::Hook(_) => true,
             Task::Help(_, _) => false,
             Task::Exit => false,
         }
@@ -635,6 +664,15 @@ impl std::fmt::Display for Task {
             Self::Attr(at) => std::fmt::Display::fmt(at, f),
             Self::Conditional(t) => std::fmt::Display::fmt(t, f),
             Self::WhileLoop(t) => std::fmt::Display::fmt(t, f),
+            Self::Hook(tasks) => write!(
+                f,
+                "hook {{\n{}\n}}",
+                tasks
+                    .iter()
+                    .map(|t| t.to_string())
+                    .collect::<Vec<String>>()
+                    .join("\n")
+            ),
             Self::Help(None, None) => write!(f, "help"),
             Self::Help(Some(kw), None) => write!(f, "help {kw}"),
             Self::Help(None, Some(s)) => write!(f, "help {s}"),
@@ -661,6 +699,7 @@ pub enum TaskKeyword {
     While,
     In,
     Match,
+    Hook,
     // reserved
     Function,
     Map,
@@ -687,6 +726,7 @@ impl std::str::FromStr for TaskKeyword {
             "while" => TaskKeyword::While,
             "in" => TaskKeyword::In,
             "match" => TaskKeyword::Match,
+            "hook" => TaskKeyword::Hook,
             "function" | "func" => TaskKeyword::Function,
             "map" => TaskKeyword::Map,
             "attrs" => TaskKeyword::Attrs,
@@ -717,6 +757,7 @@ impl std::fmt::Display for TaskKeyword {
                 TaskKeyword::While => "while",
                 TaskKeyword::In => "in",
                 TaskKeyword::Match => "match",
+                TaskKeyword::Hook => "hook",
                 TaskKeyword::Function => "function",
                 TaskKeyword::Map => "map",
                 TaskKeyword::Attrs => "attrs",
@@ -744,6 +785,7 @@ impl TaskKeyword {
             TaskKeyword::While => "while loop",
             TaskKeyword::In => "Check if value is in an array/table",
             TaskKeyword::Match => "match regex pattern with strings",
+            TaskKeyword::Hook => "hook tasks to run at each execution",
             TaskKeyword::Function => "function definition",
             TaskKeyword::Map => "map array to a function",
             TaskKeyword::Attrs => "attrs of a node or network",

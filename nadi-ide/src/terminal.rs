@@ -1,20 +1,16 @@
-use crate::editor::EditorFunction;
 use crate::editor::my_hl;
 use crate::help::md_style;
 use crate::icons;
 use crate::network::{NetworkData, NetworkDataView, NetworkTable};
 use iced::time::{self, Duration};
 use iced::widget::{
-    button, center, column, combo_box, container, horizontal_rule, horizontal_space, markdown,
-    progress_bar, row, scrollable, text, text_editor, text_input, toggler,
+    button, center, column, combo_box, container, horizontal_space, markdown, progress_bar, row,
+    scrollable, text, text_editor, text_input, toggler,
 };
 use iced::{Element, Fill, Font, Length, Subscription, Task, Theme};
 use nadi_core::attrs::{AttrMap, HasAttributes};
-use nadi_core::functions::NadiFunctions;
-use nadi_core::network::Network;
 use nadi_core::parser::{ParseErrorType, highlight::NadiFileType};
-use nadi_core::string_template::Template;
-use nadi_core::tasks::{FunctionType, Task as NadiTask, TaskContext, TaskMessage};
+use nadi_core::tasks::{Task as NadiTask, TaskContext, TaskMessage};
 use std::io::Read;
 use std::ops::Not;
 use std::sync::Arc;
@@ -41,12 +37,8 @@ enum TaskCtxRequest {
     // a task is run successfully
 }
 
-// Before we implement above two, we need to move TaskContext to a
-// separate thread, where it only communicates to the terminal through
-// the above two messages.
-fn spawn_task_context(
-    functions: Option<NadiFunctions>,
-) -> (Sender<TaskCtxRequest>, Receiver<TaskCtxMessage>) {
+/// Spawns a thread with task context, it reloads the plugins as it is not thread safe to share them.
+fn spawn_task_context() -> (Sender<TaskCtxRequest>, Receiver<TaskCtxMessage>) {
     // for receiving the results this function sends
     let (send, recv_outer) = channel();
     // for sending Tasks that this function receives
@@ -63,12 +55,7 @@ fn spawn_task_context(
     });
 
     thread::spawn(move || {
-        let mut task_ctx = TaskContext::new(None, send_inner); //  {
-        //     functions: functions.unwrap_or_else(|| NadiFunctions::new()),
-        //     network: Network::default(),
-        //     env: AttrMap::new(),
-        //     channel: send_inner,
-        // };
+        let mut task_ctx = TaskContext::new(None, send_inner);
         loop {
             while let Ok(req) = recv.try_recv() {
                 match req {
@@ -131,7 +118,7 @@ pub struct Terminal {
 
 impl Default for Terminal {
     fn default() -> Self {
-        Self::new(None)
+        Self::new()
     }
 }
 
@@ -160,8 +147,8 @@ pub enum Message {
 }
 
 impl Terminal {
-    pub fn new(functions: Option<NadiFunctions>) -> Self {
-        let (sender, receiver) = spawn_task_context(functions);
+    pub fn new() -> Self {
+        let (sender, receiver) = spawn_task_context();
         Self {
             light_theme: false,
             running_msg: None,

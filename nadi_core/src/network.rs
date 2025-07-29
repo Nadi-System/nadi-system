@@ -151,12 +151,13 @@ impl Network {
             let out = self.node_by_name(end).unwrap();
             {
                 if let RSome(n) = inp.lock().set_output(out.clone()) {
-                    return Err(format!(
-                        "Node {:?} already has {:?} as output (new: {:?})",
-                        start,
-                        n.lock().name(),
-                        end
-                    ));
+                    let old = n.lock().name().to_string();
+                    if &old != end {
+                        return Err(format!(
+                            "Node {:?} already has {:?} as output (new: {:?})",
+                            start, old, end
+                        ));
+                    }
                 }
                 out.lock().add_input(inp.clone());
             }

@@ -1,7 +1,7 @@
 use nadi_plugin::nadi_internal_plugin;
 
 #[nadi_internal_plugin]
-mod attributes {
+mod attrs {
     use crate::prelude::*;
     use abi_stable::std_types::Tuple2;
     use nadi_plugin::{env_func, network_func, node_func};
@@ -259,6 +259,11 @@ mod attributes {
         let tokens = crate::parser::tokenizer::get_tokens(&toml);
         let attrs = crate::parser::attrs::parse(tokens).map_err(|e| e.to_string())?;
         Ok(attrs)
+    }
+
+    #[env_func]
+    fn keys(attrmap: AttrMap) -> Vec<String> {
+        attrmap.keys().map(ToString::to_string).collect()
     }
 
     /// get the choosen attribute from Array or AttrMap

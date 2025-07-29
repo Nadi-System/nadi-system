@@ -1,7 +1,7 @@
 use nadi_plugin::nadi_internal_plugin;
 
 #[nadi_internal_plugin]
-mod connections {
+mod conn {
     use crate::network::ROOT_NODE_NAME;
     use crate::parser::tokenizer::valid_variable_name;
     use crate::prelude::*;
