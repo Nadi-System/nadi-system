@@ -623,11 +623,11 @@ impl NadiFunctions {
         };
         for Tuple2(func, fobj) in &self.node {
             let (plug, name) = func.split_once('.').unwrap_or(("null", func.as_str()));
-            node_functions.push(fname(plug, "network", name, fobj.short_help()));
+            node_functions.push(fname(plug, "node", name, fobj.short_help()));
         }
         for Tuple2(func, fobj) in &self.network {
             let (plug, name) = func.split_once('.').unwrap_or(("null", func.as_str()));
-            net_functions.push(fname(plug, "node", name, fobj.short_help()));
+            net_functions.push(fname(plug, "network", name, fobj.short_help()));
         }
         for Tuple2(func, fobj) in &self.env {
             let (plug, name) = func.split_once('.').unwrap_or(("null", func.as_str()));
