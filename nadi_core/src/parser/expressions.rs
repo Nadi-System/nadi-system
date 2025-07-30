@@ -416,7 +416,8 @@ mod tests {
     #[case("! true", false.into())]
     #[case("! false", true.into())]
     #[case("!(true & true)", false.into())]
-    #[case("!(true & false)", true.into())]
+    #[case("!(true & true & true)", false.into())]
+    #[case("!(true & false & true)", true.into())]
     #[case("!!(false & true)", false.into())]
     pub fn compl_expr_eval_test_2(context: TaskContext, #[case] txt: &str, #[case] val: Attribute) {
         let tokens = get_tokens(txt);
