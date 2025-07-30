@@ -39,15 +39,15 @@ write their own plugins or programs.
 
 # Statement of need
 Hydrological analysis sometimes consists of data that is related to
-points in the river, and frequently with higher correlation or other
-relationship between upstream/downstream points. As many analysis
-starts with building and using that relationship for finding
-inconsistencies in the data, filling missing data, visualization of
-metadata, etc. there is a need for intelligent computational
-assistance to reduce the workload and improve the efficiency and
-reproducibility of research in this field
-[@rosenbergNextFrontierMaking2020]. Specific hydrology-focused
-softwares [@rossmanOpenSourcingEPANET2010;
+points in the river, and frequently with relationships between
+upstream/downstream points (e.g., higher correlation, mass
+balance). Some analyses that benefit from use of such relationships
+are: finding inconsistencies in the data, filling missing data, and
+visualization of metadata. There is a need for intelligent
+computational assistance on network based system to reduce the
+workload that further improves the efficiency and reproducibility of
+research in this field [@rosenbergNextFrontierMaking2020]. Specific
+hydrology-focused softwares [@rossmanOpenSourcingEPANET2010;
 @gironasNewApplicationsManual2010] lack general applicability, while
 general purpose programming languages might not have the succinct and
 intuitive syntax. This highlights the need for a balanced approach
@@ -92,14 +92,14 @@ Nadi has the following main data structures:
 
 - **Node** is one point on the network. It can have input nodes, one output node, and attributes associated with it.
 - **Network** consists of several connected nodes. It can also have attributes associated with it.
-- **Attributes** are values that can be boolean, integer, float, string, array, table, etc.
-- **Functions** are categorized into environment, network, and node functions based on what they work on. For example, network function is run on a network, while node function is run at each node.
-- **Expressions** are combination of attributes, variables, function calls, if--else, etc that can result in an attribute value.
+- **Attributes** are values that can be boolean, integer, float, string, date, time, datetime, array, and table.
+- **Functions** are categorized into environment, network, and node functions based on what they work on. For example, network function is run on a network, while node function is run on each node.
+- **Expressions** are a combination of attributes, variables, function calls, conditionals, etc that can result in an attribute value.
 - **Propagation** is how the node functions are called in a network, you can call them in different order, based on a list, or filtered by expression.
-- **Task** in NADI is an execution body consisting of type of the task, optional output attribute name, and an expression, or a function call. Only the top level function call on the expression can be a mutable call.
-- **Task Context** is the runtime environment for tasks to be run. It consists of a network, environmental variables and functions loaded from plugins.
+- **Task** in NADI is an execution body consisting of type of task, optional output attribute name, and expression or function call. Only the top level function call on the expression can be a mutable call.
+- **Task Context** is the runtime environment for tasks to be run. It consists of a network, environmental variables, and functions loaded from plugins.
 
-Figure below shows how the different data types come together to generate a task and the task context. Each task runs in the task context, giving outputs, modifying the context, producing side effects (saving files), etc.
+Figure below shows how the different data types come together to generate a task and the task context. Each task runs in the task context, giving outputs, modifying the task context, or producing side effects (saving files).
 
 ![data Structures and the their relationship in the Tasks System](tasks-dtypes.png)
 
@@ -117,7 +117,7 @@ $$
 
 Where, $x_i, y_i$ are values of $x,y$ on node $i$ and, $I_i$ is the set of input nodes for node $i$.
 
-@atreyaEstimatingInfluenceWater2024 demonstrates a complex task like river routing model using the network structure. For more examples of the up to date codes refer to the [Nadi Book](https://nadi-system.github.io/).
+@atreyaEstimatingInfluenceWater2024 demonstrates a complex task like river routing model using the network structure. For more concepts and up to date syntax, refer to the Nadi Book [@nadi-book-070].
 
 # Extensibility
 Nadi Task system supports two types of plugins for extending the use cases.
@@ -127,6 +127,8 @@ in Windows, and `.dynlib` in MacOS) containing a list of functions that can be l
 - **Executable Plugins** are independent programs that are run and
 their standard output is used to communicate values back to the NADI
 System.
+
+Instructions on how to use them are available on the plugin developer guide section of Nadi Book [@nadi-book-070].
 
 # Acknowledgements
 
