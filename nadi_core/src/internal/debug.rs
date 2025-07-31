@@ -68,7 +68,7 @@ mod debug {
         }
     }
 
-    /// Echo the ----8<---- line for clipping syntax
+    /// Echo the `----8<----` line for clipping syntax
     ///
     /// This function is a utility function for the generation of nadi
     /// book. This prints out the `----8<----` line when called, so
