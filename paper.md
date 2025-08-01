@@ -27,10 +27,10 @@ bibliography: references.bib
 We present the Network Analysis and Data Integration (NADI) System, a
 developing software framework designed to facilitate river data
 analysis. NADI System comes with a Domain Specific Programming
-Language (DSL) that has an intuitive syntax for network metadata
-analysis as well as a plugin system to run user-defined functions on
-each node or the whole network. Plugins provide seamless integration
-with other softwares and programming languages.
+Language (DSL) that has a succinct and readable syntax for network
+metadata analysis as well as a plugin system to run user-defined
+functions on each node or the whole network. Plugins provide seamless
+integration with other softwares and programming languages.
 
 NADI can be used from the Command Line Interface (CLI), Graphical User
 Interface (GUI) using the NADI Integrated Development Environment
@@ -49,10 +49,10 @@ workload that further improves the efficiency and reproducibility of
 research in this field [@rosenbergNextFrontierMaking2020]. Specific
 hydrology-focused softwares [@rossmanOpenSourcingEPANET2010;
 @gironasNewApplicationsManual2010] lack general applicability, while
-general purpose programming languages might not have the succinct and
-intuitive syntax. This highlights the need for a balanced approach
-that combines specificity to hydrological research questions with
-general capabilities.
+general purpose programming languages might not have a succinct
+syntax. This highlights the need for a balanced approach that combines
+specificity to hydrological research questions with general
+capabilities.
 
 Domain Specific Programming Languages (DSLs) have several advantages
 including improved code readability and maintainability due to the
@@ -75,7 +75,7 @@ of the best ways to represent the river network
 [@rinaldoTreesNetworksHydrology2006;
 @kuhnDesigningLanguageSpatial2015;
 @abed-elmdoustEmergentSpectralProperties2017] --- and provide the DSL
-for network metadata analysis. NADI is written in Rust due to the memory
+for network metadata analysis. NADI is written in Rust [@klabnikRustProgrammingLanguage2023] due to the memory
 safety [@fultonBenefitsDrawbacksAdopting2021;
 @xuMemorySafetyChallengeConsidered2021;
 @bugdenSafetyPerformanceProminent2022], runtime performances
