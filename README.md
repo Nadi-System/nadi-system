@@ -78,6 +78,11 @@ Geographic Information System (GIS) tool for nadi. It can help download stream l
 
 Nadi GIS is available as a command line utility as well as a QGIS plugin.
 
+# Contributing
+You can contribute to NADI System even without coding experience in Rust by reporting bugs, suggesting features, and helping with documentation.
+
+Please refer to [CONTRIBUTING.md](./CONTRIBUTING.md) for further details on specific roles and tasks you can do.
+
 # Future Work
 - Implement timeseries data types with gaps
 - Add syntax to access timeseries data directly,
