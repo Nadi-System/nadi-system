@@ -273,6 +273,7 @@ mod tests {
             network: Network::default(),
             functions,
             env: AttrMap::new(),
+            hook: Vec::new(),
             channel: sender,
         };
         ctx.env.set_attr("xyz", 12.into());

@@ -91,6 +91,7 @@ mod tests {
             network: Network::default(),
             functions: functions.clone(),
             env: AttrMap::new(),
+            hook: Vec::new(),
             channel: sender,
         };
         let mut tests = 0;

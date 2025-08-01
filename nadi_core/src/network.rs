@@ -1,6 +1,6 @@
 use crate::attrs::{AttrMap, HasAttributes};
 use crate::expressions::{EvalErrorType, Expression};
-use crate::node::{Node, NodeInner, new_node};
+use crate::node::{Node, new_node};
 use crate::timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap};
 use abi_stable::std_types::RDuration;
 use abi_stable::{
@@ -315,37 +315,45 @@ impl Network {
         }
     }
 
+    pub fn leaf_nodes(&self) -> impl Iterator<Item = &Node> {
+        self.nodes_map
+            .iter()
+            .map(|n| n.1)
+            .filter(|n| n.lock().inputs().len() == 0)
+    }
+
     /// Calculate the order of all nodes
     ///
     /// Value of order signifies the number of all nodes (recursively)
     /// that are on the input side of the node
     pub fn calc_order(&mut self) {
-        let _all_nodes: Vec<RString> = self.nodes.to_vec();
-        let _order_queue: Vec<RString> = Vec::with_capacity(self.nodes.len());
+        let mut orders = HashMap::<RString, u64>::with_capacity(self.nodes.len());
 
-        let mut orders = HashMap::<String, u64>::with_capacity(self.nodes.len());
-
-        fn get_set_ord(node: &NodeInner, orders: &mut HashMap<String, u64>) -> u64 {
-            orders.get(node.name()).copied().unwrap_or_else(|| {
-                let mut ord = 1;
-                for i in node.inputs() {
-                    ord += get_set_ord(
-                        &i.try_lock_for(RDuration::from_secs(1))
-                            .expect("Lock failed for node, maybe branched network"),
-                        orders,
-                    );
+        // ran into stackoverflow with the recursive pattern of calculation
+        self.nodes_map
+            .iter()
+            .filter(|n| n.1.lock().inputs().len() == 0)
+            .for_each(|n| {
+                orders.insert(n.0.clone(), 1);
+                let mut n =
+                    n.1.try_lock_for(RDuration::from_secs(1))
+                        .expect("Lock failed for node, maybe branched network")
+                        .output()
+                        .cloned();
+                while let RSome(out) = n {
+                    let o = out
+                        .try_lock_for(RDuration::from_secs(1))
+                        .expect("Lock failed for node, maybe branched network");
+                    *orders.entry(o.name().into()).or_insert(0) += 1;
+                    n = o.output().cloned();
                 }
-                orders.insert(node.name().to_string(), ord);
-                ord
-            })
-        }
+            });
 
-        for node in self.nodes() {
-            let mut ni = node
-                .try_lock_for(RDuration::from_secs(1))
-                .expect("Lock failed for node, maybe branched network");
-            let ord = get_set_ord(&ni, &mut orders);
-            ni.set_order(ord);
+        for (node, ord) in orders {
+            // this panic-ed but how? all node are from nodes_map; maybe some output from while loop not in nodes_map
+            // panicked at nadi_core/src/network.rs:353:27:
+            // no entry in RHashMap<_, _> found for key
+            self.nodes_map[&node].lock().set_order(ord);
         }
     }
 
@@ -359,11 +367,38 @@ impl Network {
                 .map(|o| o.clone())
                 .collect();
             match &outlets[..] {
-                [] => RNone,
+                [] => {
+                    if self.nodes.is_empty() {
+                        RNone
+                    } else {
+                        eprintln!("Not a rooted graph");
+                        return;
+                    }
+                }
                 [o] => RSome(o.clone()),
                 outs => {
-                    eprintln!("Multiple Outlet Nodes found; adding a *ROOT* node");
-                    self.insert_node_by_name(ROOT_NODE_NAME);
+                    eprintln!("WARN: Multiple Outlet Nodes found");
+                    let already_root = self.node_by_name(ROOT_NODE_NAME).is_some();
+                    let mut outs = outs.to_vec();
+                    if already_root {
+                        let maybe_root = outs
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, o)| o.lock().name() == ROOT_NODE_NAME)
+                            .next();
+                        if let Some(root) = maybe_root {
+                            eprintln!("WARN: a *ROOT* node found, adding others to it");
+                            outs.remove(root.0);
+                        } else {
+                            eprintln!(
+                                "Graph already has {ROOT_NODE_NAME} node, but it is not the root node of the graph"
+                            );
+                            return;
+                        }
+                    } else {
+                        eprintln!("WARN: adding a *ROOT* node");
+                        self.insert_node_by_name(ROOT_NODE_NAME);
+                    }
                     let outlet = self.node_by_name(ROOT_NODE_NAME).expect("Just inserted");
                     for o in outs {
                         o.lock().set_output(outlet.clone());

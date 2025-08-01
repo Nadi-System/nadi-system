@@ -42,6 +42,27 @@ mod attrs {
         Ok(())
     }
 
+    /// Delete attributes from the given node
+    ///
+    /// ```task
+    /// network load_str("a -> b");
+    /// node set_attrs(val = true);
+    /// node[a] del_attrs(["val"]);
+    /// node[a] assert_eq(val?, false)
+    /// node[b] assert_eq(val?, true)
+    /// ```
+    #[node_func]
+    fn del_attrs(
+        node: &mut NodeInner,
+        /// the attributes to delete
+        delete: Vec<String>,
+    ) -> Result<(), String> {
+        for attr in delete {
+            node.attr_map_mut().remove(attr.as_str());
+        }
+        Ok(())
+    }
+
     /// Retrive attribute
     ///
     /// ```task

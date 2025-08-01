@@ -3,7 +3,7 @@ use anyhow::Context;
 use nadi_core::{
     parser::{tasks, tokenizer::get_tokens},
     string_template::{Render, RenderOptions, Template},
-    tasks::{Task, TaskContext, TaskContextWrap, TaskMessage},
+    tasks::{Task, TaskContextWrap},
 };
 use pulldown_cmark::Event;
 use std::io::Read;

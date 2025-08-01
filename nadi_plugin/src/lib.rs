@@ -258,7 +258,7 @@ fn nadi_func_inner(args: TokenStream, item: ItemFn, ft: FuncType) -> TokenStream
 }
 
 /// Invalid argument names = task system keywords
-const INVALID_ARG_NAME: [&str; 21] = [
+const INVALID_ARG_NAME: [&str; 22] = [
     "node", // TaskKeyword::Node
     "network", "net",    // TaskKeyword::Network
     "env",    // TaskKeyword::Env
