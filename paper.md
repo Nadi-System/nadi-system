@@ -130,7 +130,7 @@ in Windows, and `.dynlib` in MacOS) containing a list of functions that can be l
 their standard output is used to communicate values back to the NADI
 System.
 
-Since DSLs have tradeoffs such as steep learning curves that can hinder adoption [@albuquerqueQuantifyingUsabilityDomainspecific2015], a Python library `nadi-py` is available to use the NADI Task System functions from Python (without the DSL).
+Since DSLs have tradeoffs such as steep learning curves that can hinder adoption [@albuquerqueQuantifyingUsabilityDomainspecific2015], a Python [@rossumPythonLanguageReference2010] library `nadi-py` is available to use the NADI Task System functions from Python (without the DSL).
 
 Instructions on how to use them are available on the plugin developer guide and the Python library sections of the NADI Book [@nadi-book-070].
 
