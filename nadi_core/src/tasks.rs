@@ -310,7 +310,7 @@ impl TaskContext {
                             return Err(EvalError::NodeAttributeError(
                                 n.lock().name().to_string(),
                                 e,
-                            ))
+                            ));
                         }
                     }
                 }
@@ -419,7 +419,7 @@ pub struct AttrTask {
 impl std::fmt::Display for AttrTask {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let outattr = format!(
-            ".{} =",
+            ".{}",
             self.attr_pre
                 .iter()
                 .map(|s| s.as_str())

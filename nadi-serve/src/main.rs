@@ -1,7 +1,6 @@
 use nadi_core::{prelude::*, tasks::Task};
 use rocket::Responder;
 use rocket::fs::NamedFile;
-use rocket::http::{ContentType, Header};
 use rocket::serde::json::Json;
 use rocket::{self, get, launch, post, routes};
 use serde::Deserialize;

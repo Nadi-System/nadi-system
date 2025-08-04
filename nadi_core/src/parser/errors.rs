@@ -146,7 +146,7 @@ impl ParseErrorType {
     pub fn message(&self) -> String {
         match self {
             Self::LogicalError(v) => {
-                return format!("Unexpected Logic problem: {}, please contact dev", v.red())
+                return format!("Unexpected Logic problem: {}, please contact dev", v.red());
             }
             Self::ValueError(v) => return format!("Invalid Value: {v}"),
             Self::InvalidLineStart => "Lines should start with a keyword",

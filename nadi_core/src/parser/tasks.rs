@@ -33,7 +33,7 @@ pub fn prop_order<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, PropOrder> {
         _ => {
             return Err(nom::Err::Failure(
                 MatchErr::new(inp).ty(&ParseErrorType::InvalidPropagation),
-            ))
+            ));
         }
     };
     Ok((rest, prop))
@@ -103,7 +103,7 @@ pub fn attr_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, AttrTask> {
         (_, true) => {
             return Err(nom::Err::Error(
                 MatchErr::new(function_type(inp)?.0).ty(&ParseErrorType::PropagationNotSupported),
-            ))
+            ));
         }
         _ => (),
     }
@@ -132,7 +132,7 @@ pub fn eval_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, EvalTask> {
         (_, true) => {
             return Err(nom::Err::Error(
                 MatchErr::new(function_type(inp)?.0).ty(&ParseErrorType::PropagationNotSupported),
-            ))
+            ));
         }
         _ => (),
     }
@@ -243,10 +243,22 @@ mod tests {
     #[case("help variable")]
     #[case("help network var")]
     #[case("env x")]
+    #[case("env x + 1")]
+    #[case("env call_sth(x + 1);")]
+    #[case("env.x")]
+    #[case("node.x")]
+    #[case("network.x")]
+    #[should_panic]
+    #[case("inputs.x")]
+    #[case("env (x + 1) != 5")]
+    #[case("env \"val\" in selected_vals")]
+    #[case("while (true) {\n\tenv echo(x)\n}")]
     pub fn task_valid_test(#[case] txt: &str) {
         let tokens = get_tokens(txt);
-        let (rest, _) = task(&tokens).unwrap();
+        let (rest, tasks) = task(&tokens).unwrap();
         assert_eq!(rest, vec![]);
+        let tsk = tasks.to_string();
+        assert_eq!(txt, tsk);
     }
 
     #[rstest]
@@ -263,9 +275,21 @@ mod tests {
 
     /// Testing the codes in mdbook
     #[rstest]
-    #[case("network load_file(\"./data/mississippi.net\")\nnode[ohio] render(\"{_NAME:case(title)} River\")")]
+    #[case(
+        "network load_file(\"./data/mississippi.net\")\nnode[ohio] render(\"{_NAME:case(title)} River\")"
+    )]
     pub fn parse_valid_mdbook_test(#[case] txt: &str) {
         let tokens = get_tokens(txt);
         parse(tokens).unwrap();
+    }
+
+    #[rstest]
+    #[case("while (true) {\n\tenv echo(x)\n}")]
+    pub fn tasks_execute_test(#[case] txt: &str) {
+        let tokens = get_tokens(txt);
+        let (rest, tasks) = task(&tokens).unwrap();
+        assert_eq!(rest, vec![]);
+        let tsk = tasks.to_string();
+        assert_eq!(txt, tsk);
     }
 }

@@ -214,7 +214,7 @@ pub fn attr_bool<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
         _ => {
             return Err(nom::Err::Error(MatchErr::new(inp).ty(
                 &ParseErrorType::ValueError("Boolean should be true or false"),
-            )))
+            )));
         }
     }
     .into();
@@ -228,7 +228,7 @@ pub fn attr_integer<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute>
         _ => {
             return Err(nom::Err::Error(
                 MatchErr::new(inp).ty(&ParseErrorType::ValueError("Error while parsing Integer")),
-            ))
+            ));
         }
     }
     .into();
@@ -250,7 +250,7 @@ pub fn attr_float_number<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attri
         _ => {
             return Err(nom::Err::Error(
                 MatchErr::new(inp).ty(&ParseErrorType::ValueError("Error while parsing Float")),
-            ))
+            ));
         }
     }
     .into();

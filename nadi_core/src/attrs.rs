@@ -363,21 +363,21 @@ impl PartialOrd for Attribute {
                     Self::Integer(v) => b.partial_cmp(v),
                     Self::Float(v) => (*b as f64).partial_cmp(v),
                     _ => None,
-                }
+                };
             }
             Self::Float(b) => {
                 return match other {
                     Self::Float(v) => b.partial_cmp(v),
                     Self::Integer(v) => b.partial_cmp(&(*v as f64)),
                     _ => None,
-                }
+                };
             }
             Self::Date(b) => {
                 return match other {
                     Self::Date(v) => b.partial_cmp(v),
                     Self::DateTime(v) => b.partial_cmp(v),
                     _ => None,
-                }
+                };
             }
             Self::Time(b) => {
                 if let Self::Time(v) = other {
@@ -389,7 +389,7 @@ impl PartialOrd for Attribute {
                     Self::DateTime(v) => b.partial_cmp(v),
                     Self::Date(v) => b.partial_cmp(v),
                     _ => None,
-                }
+                };
             }
             _ => (),
         };
@@ -974,8 +974,21 @@ macro_rules! attr_array {
     ( $($val:expr),+ ) => {
 	::nadi_core::attrs::Attribute::Array(
 	    vec![
-		$(Attribute::from($val),)+
+		$(::nadi_core::attrs::Attribute::from($val),)+
 	    ].into()
+	)
+    }
+}
+
+/// Macro to create a AttrMap from key, value pairs
+#[macro_export]
+macro_rules! attr_map {
+    ( $($key:ident => $val:expr),+ ) => {
+	::nadi_core::attrs::AttrMap::from(
+	    std::collections::HashMap::from([$(
+		(::nadi_core::abi_stable::std_types::RString::from(stringify!($key)), ::nadi_core::attrs::Attribute::from($val)),
+	    )+
+	    ])
 	)
     }
 }
