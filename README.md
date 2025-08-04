@@ -95,4 +95,7 @@ Please refer to [CONTRIBUTING.md](./CONTRIBUTING.md) for further details on spec
 - Add for loop, for looping through Array and Table Keys.
 - Implement `.0` type syntax for array member access like with attrmap member access.
 - Write a `nadi-server` CLI tool, that opens a server. It opens up an API where users can send tasks to run, and it can return the output from that. It should have `mutable` and `immutable` option. In the immutable option users can only run immutable functions.
+- Write editor modes for nadi, maybe using `lsp` so users can expand it to their editors with minimal work.
+  - Currently, besides the NADI IDE, there are some syntax highlight available for web (through highlight.js), and sublime syntax files in `extra/syntax-highlight` directory.
+  - There is no intelligent analysis of scripts, you can only run it to get errors. Better error handling while parsing, and then 
 

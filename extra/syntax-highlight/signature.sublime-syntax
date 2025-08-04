@@ -1,0 +1,54 @@
+%YAML 1.2
+---
+name: signature
+file_extensions: [sig]
+scope: source.sig
+
+contexts:
+  main:
+    - match: \b(net|network|node|env)\b
+      scope: keyword.control.tasks
+    - match: \b\[|\]\b
+      scope: keyword.control.tasks
+    - match: "'"
+      push: type
+    - match: '"'
+      push: string
+    - match: \b(true|false)\b
+      scope: constant.bool.tasks
+    - match: \b([\w]+)[.]([\w]+)(?=\()
+      captures:
+        1: variable.function.tasks
+        2: variable.function.tasks
+    - match: \b[0-9]+[.][0-9]+(eE[+-]?[0-9]+)?\b
+      scope: constant.numeric.float.tasks
+    - match: \b[0-9]+\b
+      scope: constant.numeric.integer.tasks
+
+  type:
+    - meta_scope: comment.tasks
+    - match: \b\w+\b
+      scope: entity.name.type.tasks
+    - match: "'"
+      pop: true
+
+  string:
+    - meta_scope: string.quoted.double.tasks
+    - match: \\.
+      scope: constant.character.escape.tasks
+    - match: '\{'
+      push: template
+    - match: '"'
+      pop: true
+
+  template:
+    - match: \\.
+      scope: constant.character.escape.tasks
+    - match: \b:[\w]+(?=\()
+      scope: entity.name.function.tasks
+    - match: \b[\w]+\b
+      scope: constant.character.escape.tasks
+    - match: '\?'
+      scope: keyword.control.tasks
+    - match: '\}'
+      pop: true

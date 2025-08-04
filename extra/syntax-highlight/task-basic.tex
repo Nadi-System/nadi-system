@@ -1,0 +1,32 @@
+%% just a sample showing how it works, you can copy the curresponding code into your own latex file
+\documentclass{article}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{fullpage}
+
+\lstdefinelanguage{task}{
+  comment = [l]{\#},
+  keywords = {network, net, node, nodes, inputs, output, if, else, while, match},
+  string = [b]",
+}
+\lstset{numbers=left, language=task, numberstyle=\tiny, numbersep=5pt, commentstyle=\color{gray}, keywordstyle=\color{red}, basicstyle=\tt, frame=single}
+
+
+\begin{document}
+
+\begin{lstlisting}[float,label=lst:sample-code,caption=Example NADI Code for counting number of Dam/Gages upstream and obtaining first year of dam construction]
+# load the network and attributes
+network load_file("data/ohio-river/ohio.network")
+network gis_load_attrs("data/ohio-river/nid-uniq.gpkg", "nidId")
+# identify dam and gages
+node.is_usgs = NAME match "^[0-9]+";
+node.is_dam = !is_usgs;
+# recursively calculate number of gages and dams: Equation 1
+node<inp>.ngage = int(is_usgs) + sum(inputs.ngage);
+node<inp>.ndam = int(is_dam) + sum(inputs.ndam);
+# recursively get year affected: Equation 2
+node.dam_year = if (is_dam & yearCompleted?) { yearCompleted } else { nan };
+node<inp>.dam_aff_yr = min_num(append(inputs.dam_aff_yr, dam_year));
+\end{lstlisting}
+
+\end{document}

@@ -1,0 +1,37 @@
+%YAML 1.2
+---
+name: string-template
+file_extensions: [stp, template]
+scope: source.stp
+
+contexts:
+  main:
+    - match: \\.
+      scope: constant.character.escape.tasks
+    - match: '"'
+      push: literal
+    - match: '\{'
+      push: template
+
+  literal:
+    - meta_scope: string.quoted.double.tasks
+    - match: \\.
+      scope: constant.character.escape.tasks
+    - match: '"'
+      pop: true
+
+  template:
+    - match: \\.
+      scope: constant.character.escape.tasks
+    - match: \b:[\w]+(?=\()
+      scope: entity.name.function.tasks
+    - match: \b[\w]+\b
+      scope: constant.character.escape.tasks
+    - match: '\?'
+      scope: keyword.control.tasks
+    - match: '%.'
+      scope: keyword.control.tasks
+    - match: '"'
+      push: literal
+    - match: '\}'
+      pop: true
