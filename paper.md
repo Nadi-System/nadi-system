@@ -90,8 +90,7 @@ The figure below shows the GUI of NADI IDE, with the editor (left top), function
 ![Screenshot of the NADI IDE showcasing different components](ide-screenshot.png)
 
 # Data Structures
-NADI System has the following main data structures:
-
+The DSL is inspired by Python [@rossumPythonLanguageReference2010], array programming, and Rust. Important components in the DSL are:
 - **Node** is one point on the network. It can have input nodes, one output node, and attributes associated with it.
 - **Network** consists of several connected nodes. It can also have attributes associated with it.
 - **Attributes** are values that can be boolean, integer, float, string, date, time, datetime, array, and table.
@@ -106,7 +105,7 @@ The figure below shows how the different data types come together to generate a 
 ![data Structures and the their relationship in the Tasks System](tasks-dtypes.png)
 
 # Network Analysis
-Once the network information in a text file, and the attributes are loaded into the NADI System, Network Analysis is done through the Task System. For example, the following code represents a task that calculates the variable y as a cumulative sum of all the values of variable x at a node and its upstream points.
+Network Analysis is done through the Task System by loading Network and Attributes into the Task Context then running Tasks. For example, the following code represents a task that calculates the variable y as a cumulative sum of all the values of variable x at a node and its upstream points.
 
 ```
 node<inputsfirst>.y = node.x + sum(inputs.y);
@@ -130,7 +129,7 @@ in Windows, and `.dynlib` in MacOS) containing a list of functions that can be l
 their standard output is used to communicate values back to the NADI
 System.
 
-Since DSLs have tradeoffs such as steep learning curves that can hinder adoption [@albuquerqueQuantifyingUsabilityDomainspecific2015], a Python [@rossumPythonLanguageReference2010] library `nadi-py` is available to use the NADI Task System functions from Python (without the DSL).
+Since DSLs have tradeoffs such as steep learning curves that can hinder adoption [@albuquerqueQuantifyingUsabilityDomainspecific2015], a Python library `nadi-py` is available to use the NADI Task System functions from Python (without the DSL).
 
 Instructions on how to use them are available on the plugin developer guide and the Python library sections of the NADI Book [@nadi-book-070].
 
