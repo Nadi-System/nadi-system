@@ -1,5 +1,5 @@
 ---
-title: NADI -- Network Analysis and Data Integration with a Domain Specific Programming Language
+title: NADI -- Network Analysis and Data Integration with a Domain Specific Language
 tags:
   - Rust
   - hydrology
@@ -26,11 +26,11 @@ bibliography: references.bib
 # Summary
 We present the Network Analysis and Data Integration (NADI) System, a
 developing software framework designed to facilitate river data
-analysis. NADI System includes a Domain Specific Programming Language
-(DSL) that has a succinct and readable syntax for network metadata
-analysis as well as a plugin system to run user-defined functions on
-each node or the whole network. Plugins provide seamless integration
-with other softwares and programming languages.
+analysis. NADI System includes a Domain Specific Language (DSL) that
+has a succinct and readable syntax for network metadata analysis as
+well as a plugin system to run user-defined functions on each node or
+the whole network. Plugins provide seamless integration with other
+softwares and programming languages.
 
 NADI System can be used from the Command Line Interface (CLI),
 Graphical User Interface (GUI) using the NADI Integrated Development
@@ -55,7 +55,7 @@ syntax. This highlights the need for a balanced approach that combines
 specificity to hydrological research questions with general
 capabilities.
 
-Domain-Specific Programming Languages (DSLs) have several advantages
+Domain Specific Languages (DSLs) have several advantages
 including improved code readability and maintainability due to the
 tailored syntax and semantics [@mernikWhenHowDevelop2005;
 albuquerqueQuantifyingUsabilityDomainspecific2015]. Among DSLs that
@@ -97,7 +97,7 @@ NADI System has the following main data structures:
 - **Attributes** are values that can be boolean, integer, float, string, date, time, datetime, array, and table.
 - **Functions** are categorized into environment, network, and node functions based on what they work on. For example, network function is run on a network, while node function is run on each node.
 - **Expressions** are a combination of attributes, variables, function calls, conditionals, etc, that can result in an attribute value.
-- **Propagation**: As a node function is called on each node. Propagation determines which nodes are called and in which order.
+- **Propagation**: As a node function is called on each node, Propagation determines which nodes are called and in which order.
 - **Task** in NADI System is an execution body consisting of the type of task, optional output attribute name, and expression or function call. Only the top-level function call on the expression can be mutable (changes task context).
 - **Task Context** is the runtime environment for the DSL. It stores network, all the variables, and functions from plugins.
 
