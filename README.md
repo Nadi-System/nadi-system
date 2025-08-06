@@ -46,6 +46,26 @@ Or you can directly do the following:
 cargo run --release --bin nadi-ide
 ```
 
+## OS Specific Instructions
+Some OS might not come with the system dependencies required for the NADI System.
+
+One dependencies of `nadi-ide` ([`rfd`](https://docs.rs/rfd/latest/rfd/)) suggests the following dependencies:
+
+| Distribution    | Installation Command     |
+|-----------------|--------------------------|
+| Fedora          | dnf install gtk3-devel   |
+| Arch            | pacman -S gtk3           |
+| Debian & Ubuntu | apt install libgtk-3-dev |
+
+Besides that you might need the following for Debian:
+- `build-essential`
+- `libatk1.0-0`
+- `libglib2.0-dev`
+
+If you cannot compile the program in your OS, please make an issue, even if you're able to solve it, that will help other people using the same OS.
+
+The developer has only tested compilation on, Arch Linux and Windows OS.
+
 # Tests
 You can run tests using the cargo command, this will run the tests in all the components as well as their documentation.
 
