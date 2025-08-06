@@ -91,6 +91,7 @@ The figure below shows the GUI of NADI IDE, with the editor (left top), function
 
 # Data Structures
 The DSL is inspired by Python [@rossumPythonLanguageReference2010], array programming, and Rust. Important components in the DSL are:
+
 - **Node** is one point on the network. It can have input nodes, one output node, and attributes associated with it.
 - **Network** consists of several connected nodes. It can also have attributes associated with it.
 - **Attributes** are values that can be boolean, integer, float, string, date, time, datetime, array, and table.
@@ -100,9 +101,9 @@ The DSL is inspired by Python [@rossumPythonLanguageReference2010], array progra
 - **Task** in NADI System is an execution body consisting of the type of task, optional output attribute name, and expression or function call. Only the top-level function call on the expression can be mutable (changes task context).
 - **Task Context** is the runtime environment for the DSL. It stores network, all the variables, and functions from plugins.
 
-The figure below shows how the different data types come together to generate a task and the task context. Each task runs in the task context, giving outputs, modifying the task context, or producing side effects (saving files).
+The figure below shows how the DSL is run through different NADI applications and the internal structures of the task context. Each task runs in the task context, giving outputs, modifying the task context, or producing side effects (e.g., saving files).
 
-![data Structures and the their relationship in the Tasks System](tasks-dtypes.png)
+![NADI Components and Internal Structure related to the DSL](task-architecture.png)
 
 # Network Analysis
 Network Analysis is done through the Task System by loading Network and Attributes into the Task Context then running Tasks. For example, the following code represents a task that calculates the variable y as a cumulative sum of all the values of variable x at a node and its upstream points.

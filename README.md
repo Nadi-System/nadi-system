@@ -83,6 +83,8 @@ You can contribute to NADI System even without coding experience in Rust by repo
 
 Please refer to [CONTRIBUTING.md](./CONTRIBUTING.md) for further details on specific roles and tasks you can do.
 
+And please refer to [architecture.md](./architecture.md) file to read how the components of the NADI are arranged in this repository.
+
 # Future Work
 - Implement timeseries data types with gaps
 - Add syntax to access timeseries data directly,
