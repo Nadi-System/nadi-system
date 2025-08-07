@@ -252,6 +252,18 @@ mod tests {
     #[case("inputs.x")]
     #[case("env (x + 1) != 5")]
     #[case("env \"val\" in selected_vals")]
+    #[case("env echo(x)")]
+    #[case("network load_file(test)")]
+    #[case("network gis.load_file(12)")]
+    #[case("node call_sth(x + 1);")]
+    #[case("node some_func()")]
+    #[case("node<inverse> some_func()")]
+    #[case("node<outputfirst>[a] some_func()")]
+    #[case("node<inputsfirst>[a](cond) some_func()")]
+    #[case("node[a](cond) some_func()")]
+    #[case("node(cond) (some_func() + 12) > 12")]
+    #[case("while (true) {\n\tenv echo(x)\n}")]
+    #[case("if (true) {\n\tenv echo(x)\n} else {\n\tenv echo(y)\n}")]
     #[case("while (true) {\n\tenv echo(x)\n}")]
     pub fn task_valid_test(#[case] txt: &str) {
         let tokens = get_tokens(txt);
@@ -281,15 +293,5 @@ mod tests {
     pub fn parse_valid_mdbook_test(#[case] txt: &str) {
         let tokens = get_tokens(txt);
         parse(tokens).unwrap();
-    }
-
-    #[rstest]
-    #[case("while (true) {\n\tenv echo(x)\n}")]
-    pub fn tasks_execute_test(#[case] txt: &str) {
-        let tokens = get_tokens(txt);
-        let (rest, tasks) = task(&tokens).unwrap();
-        assert_eq!(rest, vec![]);
-        let tsk = tasks.to_string();
-        assert_eq!(txt, tsk);
     }
 }

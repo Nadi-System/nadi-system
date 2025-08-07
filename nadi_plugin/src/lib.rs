@@ -165,21 +165,24 @@ fn from_attr_derive(input: TokenStream, relaxed: bool) -> TokenStream {
 #[proc_macro_attribute]
 pub fn env_func(args: TokenStream, item: TokenStream) -> TokenStream {
     let item = parse_macro_input!(item as ItemFn);
-    nadi_func_inner(args, item, FuncType::Env)
+    let args = parse_macro_input!(args with Punctuated<MetaNameValue, Comma>::parse_terminated);
+    nadi_func_inner(args, item, FuncType::Env).into()
 }
 
 /// register this function as a node function on nadi plugin
 #[proc_macro_attribute]
 pub fn node_func(args: TokenStream, item: TokenStream) -> TokenStream {
     let item = parse_macro_input!(item as ItemFn);
-    nadi_func_inner(args, item, FuncType::Node)
+    let args = parse_macro_input!(args with Punctuated<MetaNameValue, Comma>::parse_terminated);
+    nadi_func_inner(args, item, FuncType::Node).into()
 }
 
 /// register this function as a network function on nadi plugin
 #[proc_macro_attribute]
 pub fn network_func(args: TokenStream, item: TokenStream) -> TokenStream {
     let item = parse_macro_input!(item as ItemFn);
-    nadi_func_inner(args, item, FuncType::Network)
+    let args = parse_macro_input!(args with Punctuated<MetaNameValue, Comma>::parse_terminated);
+    nadi_func_inner(args, item, FuncType::Network).into()
 }
 
 #[derive(Clone, Copy, Default, PartialEq)]
@@ -197,8 +200,11 @@ const FUNC_ARG_ATTRS: [(&str, FuncArgType); 3] = [
     ("relaxed", FuncArgType::Relaxed),
 ];
 
-fn nadi_func_inner(args: TokenStream, item: ItemFn, ft: FuncType) -> TokenStream {
-    let args = parse_macro_input!(args with Punctuated<MetaNameValue, Comma>::parse_terminated);
+fn nadi_func_inner(
+    args: Punctuated<MetaNameValue, Comma>,
+    item: ItemFn,
+    ft: FuncType,
+) -> proc_macro2::TokenStream {
     let default_args: HashMap<Ident, Expr> = args
         .into_iter()
         .map(|p| (p.path.segments.first().unwrap().ident.clone(), p.value))
@@ -254,7 +260,6 @@ fn nadi_func_inner(args: TokenStream, item: ItemFn, ft: FuncType) -> TokenStream
             #clean_func
         }
     }
-    .into()
 }
 
 fn check_args_kwargs_order(
@@ -904,5 +909,210 @@ fn format_docstrings(string: String) -> String {
                 lines
             )
         }
+    }
+}
+
+// Error: "procedural macro API is used outside of a procedural macro"
+// this error won't let us do much, might have to do a proper refactor
+// for testing
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use syn::parse_quote;
+
+    #[test]
+    fn count_node_functions() {
+        // can't find a way to save this as static; maybe add them in rstest fixure?
+        let item: syn::ItemMod = parse_quote! {
+        mod plugin {
+        #[node_func]
+        fn func_one(node: &NodeInner) {
+          todo!()
+        }
+
+        #[node_func]
+        fn func_two(node: &NodeInner, val: i64) {
+          todo!()
+        }
+
+        #[node_func(val=12)]
+        fn func_three(node: &NodeInner, val: i64) {
+          todo!()
+        }
+        }
+                };
+
+        let env_funcs = get_nadi_functions(&item, "env_func");
+        let node_funcs = get_nadi_functions(&item, "node_func");
+        let network_funcs = get_nadi_functions(&item, "network_func");
+        assert!(env_funcs.is_empty());
+        assert!(network_funcs.is_empty());
+
+        let node_funcs: Vec<String> = node_funcs.iter().map(|i| i.to_string()).collect();
+        assert_eq!(node_funcs, vec!["func_one", "func_two", "func_three"])
+    }
+
+    #[test]
+    fn count_network_functions() {
+        let item: syn::ItemMod = parse_quote! {
+        mod plugin {
+        #[network_func]
+        fn func_one(net: &Network) {
+          todo!()
+        }
+
+        #[network_func]
+        fn func_two(net: &Network, val: i64) {
+          todo!()
+        }
+
+        #[network_func(val=12)]
+        fn func_three(net: &Network, val: i64) {
+          todo!()
+        }
+        }
+                };
+
+        let env_funcs = get_nadi_functions(&item, "env_func");
+        let node_funcs = get_nadi_functions(&item, "node_func");
+        let network_funcs = get_nadi_functions(&item, "network_func");
+        assert!(env_funcs.is_empty());
+        assert!(node_funcs.is_empty());
+
+        let network_funcs: Vec<String> = network_funcs.iter().map(|i| i.to_string()).collect();
+        assert_eq!(network_funcs, vec!["func_one", "func_two", "func_three"])
+    }
+
+    #[test]
+    fn count_env_functions() {
+        let item: syn::ItemMod = parse_quote! {
+        mod plugin {
+        #[env_func]
+        fn func_one(net: &Network) {
+          todo!()
+        }
+
+        #[env_func]
+        fn func_two(net: &Network, val: i64) {
+          todo!()
+        }
+
+        #[env_func(val=12)]
+        fn func_three(net: &Network, val: i64) {
+          todo!()
+        }
+        }
+                };
+
+        let network_funcs = get_nadi_functions(&item, "network_func");
+        let node_funcs = get_nadi_functions(&item, "node_func");
+        let env_funcs = get_nadi_functions(&item, "env_func");
+        assert!(network_funcs.is_empty());
+        assert!(node_funcs.is_empty());
+
+        let env_funcs: Vec<String> = env_funcs.iter().map(|i| i.to_string()).collect();
+        assert_eq!(env_funcs, vec!["func_one", "func_two", "func_three"])
+    }
+
+    #[test]
+    fn test_docs() {
+        let item: syn::ItemMod = parse_quote! {
+        /// Document for Plugin
+        mod plugin {
+            #[env_func]
+        /// Document for Function
+        fn func_one(net: &Network) {
+          todo!()
+        }
+        }
+                };
+
+        let mod_doc = get_doc(&item.attrs);
+        assert_eq!(mod_doc, "Document for Plugin");
+
+        let item: syn::ItemFn = parse_quote! {
+            /// Document for Function
+                fn func_two(
+            net: &Network,
+            /// Document for val
+            val: i64
+            ) {
+              todo!()
+                }
+        };
+        let func_doc = get_doc(&item.attrs);
+        assert_eq!(func_doc, "Document for Function");
+    }
+
+    #[test]
+    fn test_valid_env_func() {
+        let item: syn::ItemFn = parse_quote! {
+            /// Document for Function
+                fn func_name(
+            /// Document for val
+            val: i64
+            ) {
+              todo!()
+                }
+        };
+        let args = Punctuated::<MetaNameValue, Comma>::new();
+        let output = nadi_func_inner(args, item, FuncType::Env).to_string();
+        assert!(!output.contains("compile_error!"));
+    }
+
+    #[test]
+    fn test_invalid_env_func() {
+        let item: syn::ItemFn = parse_quote! {
+            /// Document for Function
+                fn func_two(
+            /// Document for val
+            val: i64
+            ) {
+              todo!()
+                }
+        };
+        let args: Punctuated<MetaNameValue, Comma> = parse_quote! {
+            value = 12
+        };
+        let output = nadi_func_inner(args, item, FuncType::Env).to_string();
+        // compile_error ! ("Argument not in the inner function") ;
+        assert!(output.contains("compile_error !"));
+    }
+
+    #[test]
+    fn test_valid_node_func() {
+        let item: syn::ItemFn = parse_quote! {
+            /// Document for Function
+            fn func_name(
+        node: &NodeInner,
+            /// Document for val
+            val: i64
+            ) {
+              todo!()
+                }
+        };
+        let args = Punctuated::<MetaNameValue, Comma>::new();
+        let output = nadi_func_inner(args, item, FuncType::Env).to_string();
+        assert!(!output.contains("compile_error!"));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_node_func() {
+        let item: syn::ItemFn = parse_quote! {
+            /// Document for Function
+                fn func_two(
+            /// Document for val
+            val: i64
+            ) {
+              todo!()
+                }
+        };
+        let args: Punctuated<MetaNameValue, Comma> = parse_quote! {
+            val = 12
+        };
+        // panic!("First argument should be a reference")
+        let _ = nadi_func_inner(args, item, FuncType::Node);
     }
 }
