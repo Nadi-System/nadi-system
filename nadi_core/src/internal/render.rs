@@ -9,12 +9,15 @@ mod render {
 
     /// Render the template based on the node attributes
     ///
-    /// For more details on the template system. Refer to the String
-    /// Template section of the NADI book.
+    /// If you have the safe=true, then if the rendering fails, it
+    /// returns the original string template. For more details on the
+    /// template system. Refer to the String Template section of the
+    /// NADI book.
     ///
     /// ```task
     /// env assert_eq(render("abc {_x}", x="ab"), "abc ab")
     /// env assert_eq(render("abc {x}", x=23), "abc 23")
+    /// env assert_eq(render("abc {x} {a}", safe=true), "abc {x} {a}")
     /// ```
     ///
     /// If safe parameter is true, then it doesn't error out even if
@@ -52,6 +55,7 @@ mod render {
     /// network load_str("a -> b")
     /// node.x = 13
     /// node assert_eq(render("abc {x}"), "abc 13")
+    /// node assert_eq(render("abc {x} {a}", safe=true), "abc {x} {a}")
     /// ```
     #[node_func(safe = false)]
     fn render(
@@ -75,6 +79,7 @@ mod render {
     /// ```task
     /// network.x = 13
     /// network assert_eq(render("abc {x}"), "abc 13")
+    /// network assert_eq(render("abc {x} {a}", safe=true), "abc {x} {a}")
     /// ```
     #[network_func(safe = false)]
     fn render(

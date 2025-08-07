@@ -968,14 +968,55 @@ tuple_impls!(a A 0, b B 1, c C 2, d D 3);
 tuple_impls!(a A 0, b B 1, c C 2, d D 3, e E 4);
 tuple_impls!(a A 0, b B 1, c C 2, d D 3, e E 4, f F 5);
 
+/// Macro to generate attribute value with different patterns.
+///
+/// It uses (val) for single attribute, [val,...] for array attribute
+/// and [key => val,...] for attrmap attribute
+#[macro_export]
+macro_rules! attr {
+    ($val:expr) => {
+	::nadi_core::attrs::Attribute::from($val)
+    };
+    [ $($val:expr),* $(,)? ] => {
+	::nadi_core::attrs::Attribute::Array(
+	    vec![
+		$(::nadi_core::attrs::Attribute::from($val),)+
+	    ].into()
+	)
+    };
+    [ $($key:ident => $val:expr),+ $(,)? ] => {
+	::nadi_core::attrs::AttrMap::from(
+	    std::collections::HashMap::from([$(
+		(::nadi_core::abi_stable::std_types::RString::from(stringify!($key)), ::nadi_core::attrs::Attribute::from($val)),
+	    )+
+	    ])
+	)
+    };
+}
+
+// TODO: in the next version, remove the bottom two.
+
 /// Macro to create a Array from list of values
 #[macro_export]
 macro_rules! attr_array {
     ( $($val:expr),+ ) => {
 	::nadi_core::attrs::Attribute::Array(
 	    vec![
-		$(Attribute::from($val),)+
+		$(::nadi_core::attrs::Attribute::from($val),)+
 	    ].into()
+	)
+    }
+}
+
+/// Macro to create a AttrMap from key, value pairs
+#[macro_export]
+macro_rules! attr_map {
+    ( $($key:ident => $val:expr),+ ) => {
+	::nadi_core::attrs::AttrMap::from(
+	    std::collections::HashMap::from([$(
+		(::nadi_core::abi_stable::std_types::RString::from(stringify!($key)), ::nadi_core::attrs::Attribute::from($val)),
+	    )+
+	    ])
 	)
     }
 }
@@ -1070,6 +1111,37 @@ where
             value
                 .into_iter()
                 .map(Attribute::from)
+                .collect::<Vec<Attribute>>()
+                .into(),
+        )
+    }
+}
+
+impl<T, const N: usize> From<[T; N]> for Attribute
+where
+    Attribute: From<T>,
+{
+    fn from(value: [T; N]) -> Self {
+        Self::Array(
+            value
+                .into_iter()
+                .map(Attribute::from)
+                .collect::<Vec<Attribute>>()
+                .into(),
+        )
+    }
+}
+
+impl<T, const N: usize> From<&[T; N]> for Attribute
+where
+    Attribute: From<T>,
+    T: Clone,
+{
+    fn from(value: &[T; N]) -> Self {
+        Self::Array(
+            value
+                .iter()
+                .map(|a| Attribute::from(a.clone()))
                 .collect::<Vec<Attribute>>()
                 .into(),
         )
@@ -1489,6 +1561,29 @@ impl From<Offset> for chrono::FixedOffset {
 mod tests {
     use super::*;
     use rstest::rstest;
+
+    // this tests the conversion using into, as well as the type name
+    #[rstest]
+    #[case(attr![true,], attr!(true), Ok(true))]
+    #[case(attr![true, 1], attr!(12), Ok(false))]
+    #[case(attr!["vals", 1], attr!("vals"), Ok(true))]
+    #[case(attr!["value is this"], attr!("this"), Ok(true))]
+    #[case(attr!["value is this"], attr!("that"), Ok(false))]
+    #[case(attr![true], attr!(12), Err(EvalError::InvalidOperation))]
+    // you can check other attributes in a string
+    #[case(attr!["12 numbers"], attr!(12), Ok(true))]
+    #[case(attr!["12 numbers"], attr!(true), Ok(false))]
+    #[case(attr!["true numbers"], attr!(true), Ok(true))]
+    #[case(attr![2024], attr!(12), Err(EvalError::InvalidOperation))]
+    #[case(attr![1.1232], attr!(12), Err(EvalError::InvalidOperation))]
+    fn test_contains(
+        #[case] a: Attribute,
+        #[case] b: Attribute,
+        #[case] res: Result<bool, EvalError>,
+    ) {
+        println!("{a:?} {b:?}");
+        assert_eq!(a.contains(&b), res)
+    }
 
     // this tests the conversion using into, as well as the type name
     #[rstest]

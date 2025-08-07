@@ -46,6 +46,26 @@ Or you can directly do the following:
 cargo run --release --bin nadi-ide
 ```
 
+## OS Specific Instructions
+Some OS might not come with the system dependencies required for the NADI System.
+
+One dependencies of `nadi-ide` ([`rfd`](https://docs.rs/rfd/latest/rfd/)) suggests the following dependencies:
+
+| Distribution    | Installation Command     |
+|-----------------|--------------------------|
+| Fedora          | dnf install gtk3-devel   |
+| Arch            | pacman -S gtk3           |
+| Debian & Ubuntu | apt install libgtk-3-dev |
+
+Besides that you might need the following for Debian:
+- `build-essential`
+- `libatk1.0-0`
+- `libglib2.0-dev`
+
+If you cannot compile the program in your OS, please make an issue, even if you're able to solve it, that will help other people using the same OS.
+
+The developer has only tested compilation on, Arch Linux and Windows OS.
+
 # Tests
 You can run tests using the cargo command, this will run the tests in all the components as well as their documentation.
 
@@ -78,6 +98,13 @@ Geographic Information System (GIS) tool for nadi. It can help download stream l
 
 Nadi GIS is available as a command line utility as well as a QGIS plugin.
 
+# Contributing
+You can contribute to NADI System even without coding experience in Rust by reporting bugs, suggesting features, and helping with documentation.
+
+Please refer to [CONTRIBUTING.md](./CONTRIBUTING.md) for further details on specific roles and tasks you can do.
+
+And please refer to [architecture.md](./architecture.md) file to read how the components of the NADI are arranged in this repository.
+
 # Future Work
 - Implement timeseries data types with gaps
 - Add syntax to access timeseries data directly,
@@ -90,4 +117,7 @@ Nadi GIS is available as a command line utility as well as a QGIS plugin.
 - Add for loop, for looping through Array and Table Keys.
 - Implement `.0` type syntax for array member access like with attrmap member access.
 - Write a `nadi-server` CLI tool, that opens a server. It opens up an API where users can send tasks to run, and it can return the output from that. It should have `mutable` and `immutable` option. In the immutable option users can only run immutable functions.
+- Write editor modes for nadi, maybe using `lsp` so users can expand it to their editors with minimal work.
+  - Currently, besides the NADI IDE, there are some syntax highlight available for web (through highlight.js), and sublime syntax files in `extra/syntax-highlight` directory.
+  - There is no intelligent analysis of scripts, you can only run it to get errors. Better error handling while parsing, and then 
 

@@ -1,0 +1,63 @@
+%YAML 1.2
+---
+name: task
+# I'm being lazy here and writing a single highlighter
+file_extensions: [tasks, output, net]
+scope: source.tasks
+
+contexts:
+  main:
+    - match: \b(if|else|while)\b
+      scope: keyword.control.conditional.tasks
+    - match: \b(net|network|node|env|inputs|output|nodes)\b
+      scope: keyword.control.tasks
+    - match: '->'
+      scope: keyword.control.tasks
+    - match: '\?'
+      scope: keyword.control.tasks
+    - match: '\#'
+      push: comment
+    - match: '"'
+      push: string
+    - match: \b(true|false)\b
+      scope: constant.bool.tasks
+    - match: '<None>'
+      scope: comment
+    - match: '<(inp|out|seq|inv|inputsfirst|outputfirst|sequential|inverse)>'
+      captures:
+        1: string.tasks
+    - match: \b\w[\w.]*(?=\()
+      scope: entity.name.function.tasks
+    - match: \b[\w]+(?=\=)
+      scope: variable.function.tasks
+    - match: \b[0-9]+[.][0-9]+(eE[+-]?[0-9]+)?\b
+      scope: constant.numeric.float.tasks
+    - match: \b[0-9]+\b
+      scope: constant.numeric.integer.tasks
+    - match: \b\w[\w.]*\b
+      scope: variable.parameter.tasks
+
+  comment:
+    - meta_scope: comment.line.tasks
+    - match: '\n'
+      pop: true
+  string:
+    - meta_scope: string.quoted.double.tasks
+    - match: \\.
+      scope: constant.character.escape.tasks
+    - match: '\{'
+      push: template
+    - match: '"'
+      pop: true
+
+  template:
+    - match: \\.
+      scope: constant.character.escape.tasks
+    - match: \b:[\w]+(?=\()
+      scope: entity.name.function.tasks
+    - match: \b[\w]+\b
+      scope: constant.character.escape.tasks
+    - match: '\?'
+      scope: keyword.control.tasks
+    - match: '\}'
+      pop: true

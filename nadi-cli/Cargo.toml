@@ -13,4 +13,9 @@ readme = "README.md"
 [dependencies]
 anyhow = "1.0.89"
 clap = { version = "4.5.17", features = ["derive"] }
+
 nadi_core = {version = "0.8.0", path="../nadi_core", features=["functions", "parser"]}
+
+[dev-dependencies]
+assert_cmd = "2.0.17"
+predicates = "3.1.3"

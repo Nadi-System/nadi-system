@@ -19,6 +19,20 @@ mod logic {
     /// env assert_eq(ifelse(100.0, 1, 2), 1)
     /// env assert_eq(ifelse(true, 1, 2), if (true) {1} else {2})
     /// ```
+    ///
+    /// There is a special syntax on the task system to do if-else
+    /// conditions, which should be preferred over this function for
+    /// easier readability.
+    ///
+    /// ```task
+    /// if (true) {
+    ///    env.somevar = 12;
+    /// } else {
+    ///    env.someothervar = 12;
+    /// }
+    /// env assert_eq(somevar, 12)
+    /// env assert_eq(someothervar?, false)
+    /// ```
     #[env_func]
     fn ifelse(
         /// Attribute that can be cast to bool value

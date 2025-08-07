@@ -119,6 +119,8 @@ mod regex {
     ///
     /// ```task
     /// env assert_eq(str_split("abc", "^[ab]"), ["", "bc"])
+    /// env assert_eq(str_split("abc", "[ab]"), ["", "", "c"])
+    /// env assert_eq(str_split("abc", "[ab]", limit=2), ["", "bc"])
     /// ```
     #[env_func]
     fn str_split(
@@ -126,7 +128,7 @@ mod regex {
         attr: &str,
         /// Regex pattern to split with
         pattern: Regex,
-        /// Limit the split to maximum number
+        /// Limit the substrings to this number
         limit: Option<usize>,
     ) -> Vec<String> {
         if let Some(l) = limit {

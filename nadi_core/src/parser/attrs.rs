@@ -94,3 +94,23 @@ fn move_in<'a>(keys: &[String], table: &'a mut AttrMap) -> Result<&'a mut AttrMa
     }
     Ok(map)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::attr_map;
+    use crate::parser::tokenizer::get_tokens;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case("val = 12", attr_map!(val => 12))]
+    #[case("val = true\nval2 = \"sth\"", attr_map!(val => true, val2 => "sth"))]
+    #[case("val = true\n[grp]\nval2 = \"sth\"", attr_map!(val => true, grp => attr_map!(val2 => "sth")))]
+    #[case("val.sth = 12", attr_map!(val => attr_map!(sth => 12)))]
+    #[case("[zzz]\nval.sth = 12", attr_map!(zzz => attr_map!(val => attr_map!(sth => 12))))]
+    fn attr_test(#[case] txt: &str, #[case] attrs: AttrMap) {
+        let tokens = get_tokens(txt);
+        let am = parse(tokens).unwrap();
+        assert_eq!(am, attrs);
+    }
+}
