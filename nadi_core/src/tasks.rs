@@ -667,3 +667,28 @@ fn format_help(prefix: &str, name: &str, signature: &str, args: &[FuncArg], help
         prefix, name, signature, short_help, argshelp, desc
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+    use std::str::FromStr;
+
+    #[rstest]
+    fn test_keyword(
+        #[values(
+            "node", "network", "env", "exit", "end", "help", "inputs", "output", "nodes", "if",
+            "else", "while", "in", "match", "function", "map", "attrs", "loop", "for"
+        )]
+        tk: &str,
+    ) {
+        assert_eq!(TaskKeyword::from_str(tk).unwrap().to_string(), tk);
+    }
+
+    #[rstest]
+    #[case("net", "network")]
+    #[case("func", "function")]
+    fn test_keyword_equivalent(#[case] tk: &str, #[case] eqvl: &str) {
+        assert_eq!(TaskKeyword::from_str(tk).unwrap().to_string(), eqvl);
+    }
+}

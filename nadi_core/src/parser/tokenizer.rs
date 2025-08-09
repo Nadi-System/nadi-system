@@ -1,7 +1,7 @@
+use crate::parser::highlight::{Highlight, NadiFileType};
 use crate::parser::string::parse_string;
 use crate::parser::{ParseError as TaskParseError, ParseErrorType};
 use crate::tasks::TaskKeyword;
-use colored::Colorize;
 use nadi_core::attrs::{Attribute, Date, DateTime, Time};
 use nom::{
     branch::alt,
@@ -94,48 +94,13 @@ impl TaskToken {
         }
     }
 
+    pub fn highlight(&self) -> Highlight {
+        Highlight::from_token(self, &NadiFileType::Tasks)
+    }
+
+    #[deprecated(note = "use .highlight().color()")]
     pub fn syntax_color(&self) -> &'static str {
-        match self {
-            TaskToken::NewLine | TaskToken::WhiteSpace => "white",
-            TaskToken::Comment => "gray",
-            TaskToken::Keyword(_) => "red",
-            TaskToken::AngleStart => "blue",
-            TaskToken::ParenStart => "blue",
-            TaskToken::BraceStart => "blue",
-            TaskToken::BracketStart => "blue",
-            TaskToken::PathSep => "blue",
-            TaskToken::Comma => "blue",
-            TaskToken::Caret => "blue",
-            TaskToken::Dot => "blue",
-            TaskToken::Dash => "white",
-            TaskToken::Plus => "white",
-            TaskToken::Star => "white",
-            TaskToken::Slash => "white",
-            TaskToken::Percentage => "white",
-            TaskToken::Question => "yellow",
-            TaskToken::Semicolon => "yellow",
-            TaskToken::And => "yellow",
-            TaskToken::Or => "yellow",
-            TaskToken::Not => "yellow",
-            TaskToken::AngleEnd => "blue",
-            TaskToken::ParenEnd => "blue",
-            TaskToken::BraceEnd => "blue",
-            TaskToken::BracketEnd => "blue",
-            TaskToken::Variable => "green",
-            TaskToken::Function => "magenta",
-            TaskToken::Assignment => "blue",
-            TaskToken::Bool => "yellow",
-            TaskToken::None => "gray",
-            TaskToken::String(_) => "yellow",
-            TaskToken::Integer => "yellow",
-            TaskToken::Float => "yellow",
-            TaskToken::Date => "cyan",
-            TaskToken::Time => "cyan",
-            TaskToken::DateTime => "cyan",
-            TaskToken::NaN => "yellow",
-            TaskToken::Infinity => "yellow",
-            TaskToken::Invalid(_) => "red",
-        }
+        self.highlight().color()
     }
 }
 
@@ -145,47 +110,7 @@ impl Token<'_> {
     }
 
     pub fn colored(&self) -> String {
-        match self.ty {
-            TaskToken::NewLine | TaskToken::WhiteSpace => self.content.to_string(),
-            TaskToken::Comment => format!("{}", self.content.truecolor(100, 100, 100)),
-            TaskToken::Keyword(_) => format!("{}", self.content.red()),
-            TaskToken::AngleStart => format!("{}", self.content.blue()),
-            TaskToken::ParenStart => format!("{}", self.content.blue()),
-            TaskToken::BraceStart => format!("{}", self.content.blue()),
-            TaskToken::BracketStart => format!("{}", self.content.blue()),
-            TaskToken::PathSep => format!("{}", self.content.blue()),
-            TaskToken::Comma => format!("{}", self.content.blue()),
-            TaskToken::Caret => format!("{}", self.content.blue()),
-            TaskToken::Dot => format!("{}", self.content.blue()),
-            TaskToken::Dash => format!("{}", self.content.blue()),
-            TaskToken::Plus => self.content.to_string(),
-            TaskToken::Star => self.content.to_string(),
-            TaskToken::Slash => self.content.to_string(),
-            TaskToken::Percentage => self.content.to_string(),
-            TaskToken::Question => format!("{}", self.content.yellow()),
-            TaskToken::Semicolon => format!("{}", self.content.yellow()),
-            TaskToken::And => format!("{}", self.content.yellow()),
-            TaskToken::Or => format!("{}", self.content.yellow()),
-            TaskToken::Not => format!("{}", self.content.yellow()),
-            TaskToken::AngleEnd => format!("{}", self.content.blue()),
-            TaskToken::ParenEnd => format!("{}", self.content.blue()),
-            TaskToken::BraceEnd => format!("{}", self.content.blue()),
-            TaskToken::BracketEnd => format!("{}", self.content.blue()),
-            TaskToken::Variable => format!("{}", self.content.green()),
-            TaskToken::Function => format!("{}", self.content.magenta()),
-            TaskToken::Assignment => format!("{}", self.content.blue()),
-            TaskToken::None => format!("{}", self.content.truecolor(100, 100, 100)),
-            TaskToken::Bool => format!("{}", self.content.yellow()),
-            TaskToken::String(_) => format!("{}", self.content.yellow()),
-            TaskToken::Integer => format!("{}", self.content.yellow()),
-            TaskToken::Float => format!("{}", self.content.yellow()),
-            TaskToken::Date => format!("{}", self.content.cyan()),
-            TaskToken::Time => format!("{}", self.content.cyan()),
-            TaskToken::DateTime => format!("{}", self.content.cyan()),
-            TaskToken::NaN => format!("{}", self.content.yellow()),
-            TaskToken::Infinity => format!("{}", self.content.yellow()),
-            TaskToken::Invalid(_) => format!("{}", self.content.red()),
-        }
+        self.ty.highlight().colored(&self.content)
     }
 
     pub fn attribute(&self) -> Result<Option<Attribute>, &'static str> {

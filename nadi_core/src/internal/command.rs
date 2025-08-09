@@ -1,12 +1,16 @@
 use nadi_plugin::nadi_internal_plugin;
 
+/// Command plugin to interact with shell
+///
+/// Put anything related to shells here, because if some plugins are
+/// disabled for security reasons it is easier to block the group.
 #[nadi_internal_plugin]
 mod command {
     use crate::parser;
     use crate::prelude::*;
     use anyhow::Context;
     use colored::Colorize;
-    use nadi_core::nadi_plugin::{network_func, node_func};
+    use nadi_core::nadi_plugin::{env_func, network_func, node_func};
     use std::io::BufRead;
     use std::sync::mpsc::{self, Receiver, Sender};
     use std::sync::{Arc, Mutex};
@@ -22,6 +26,28 @@ mod command {
             .map(|v| (v.0.to_string(), v.1))
             .next()
             .context("No values read")
+    }
+
+    /// Get environment variable from the shell
+    ///
+    /// ```task
+    /// # will error if "HOME" is empty, as it can't assign None
+    /// env.home = shell_env("HOME")
+    /// ```
+    #[env_func]
+    fn shell_env(var: String) -> Option<String> {
+        std::env::var(var).ok()
+    }
+
+    /// Set environment variable in the shell
+    ///
+    /// ```task
+    /// env set_shell_env("testing", "true");
+    /// env assert_eq(shell_env("testing"), "true")
+    /// ```
+    #[env_func]
+    fn set_shell_env(var: String, val: String) {
+        std::env::set_var(var, val)
     }
 
     /** Run the given template as a shell command.
