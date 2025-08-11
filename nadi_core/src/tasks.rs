@@ -618,6 +618,7 @@ impl std::fmt::Display for TaskKeyword {
 }
 
 impl TaskKeyword {
+    #[cfg(not(tarpaulin_include))]
     pub fn help(&self) -> String {
         match self {
             TaskKeyword::Node => "node function",
