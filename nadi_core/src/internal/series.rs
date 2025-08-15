@@ -3,7 +3,7 @@ use nadi_plugin::nadi_internal_plugin;
 #[nadi_internal_plugin]
 mod series {
     use crate::prelude::*;
-    use crate::timeseries::Series;
+    use crate::timeseries::{CompleteSeries, Series};
     use nadi_plugin::node_func;
 
     /// Number of series in the node
@@ -50,7 +50,7 @@ mod series {
         }
     }
 
-    /// Type name of the series
+    /// Mean of a series values
     #[node_func]
     fn sr_mean(
         node: &NodeInner,
@@ -59,9 +59,13 @@ mod series {
     ) -> Result<f64, String> {
         let sr = node.try_series(name)?;
         match sr {
-            Series::Floats(ref vals) => Ok(vals.iter().sum::<f64>() / vals.len() as f64),
-            Series::Integers(ref vals) => Ok(vals.iter().sum::<i64>() as f64 / vals.len() as f64),
-            Series::Booleans(ref vals) => {
+            Series::Complete(CompleteSeries::Floats(ref vals)) => {
+                Ok(vals.iter().sum::<f64>() / vals.len() as f64)
+            }
+            Series::Complete(CompleteSeries::Integers(ref vals)) => {
+                Ok(vals.iter().sum::<i64>() as f64 / vals.len() as f64)
+            }
+            Series::Complete(CompleteSeries::Booleans(ref vals)) => {
                 Ok(vals.iter().filter(|v| **v).count() as f64 / vals.len() as f64)
             }
             s => Err(format!(
@@ -71,7 +75,7 @@ mod series {
         }
     }
 
-    /// Sum of the series
+    /// Sum of the series values
     #[node_func]
     fn sr_sum(
         node: &NodeInner,
@@ -80,9 +84,15 @@ mod series {
     ) -> Result<Attribute, String> {
         let sr = node.try_series(name)?;
         match sr {
-            Series::Floats(ref vals) => Ok(vals.iter().sum::<f64>().into()),
-            Series::Integers(ref vals) => Ok(vals.iter().sum::<i64>().into()),
-            Series::Booleans(ref vals) => Ok(vals.iter().filter(|v| **v).count().into()),
+            Series::Complete(CompleteSeries::Floats(ref vals)) => {
+                Ok(vals.iter().sum::<f64>().into())
+            }
+            Series::Complete(CompleteSeries::Integers(ref vals)) => {
+                Ok(vals.iter().sum::<i64>().into())
+            }
+            Series::Complete(CompleteSeries::Booleans(ref vals)) => {
+                Ok(vals.iter().filter(|v| **v).count().into())
+            }
             s => Err(format!(
                 "Incorrect Type: Mean cannot be calculated for series of type `{}`",
                 s.type_name(),
@@ -106,17 +116,24 @@ mod series {
         Ok(())
     }
 
-    /// Make an array from the series
+    /// Make an array from the series if it's complete
     #[node_func(safe = false)]
     fn sr_to_array(
         node: &NodeInner,
         /// Name of the series
         name: &str,
-        /// Do not error if series does't exist
+        /// Do not error if series does't exist or there are gaps
         safe: bool,
     ) -> Result<Option<Attribute>, String> {
         match node.try_series(name) {
-            Ok(s) => Ok(Some(Attribute::Array(s.clone().to_attributes().into()))),
+            Ok(Series::Complete(s)) => Ok(Some(Attribute::Array(s.clone().to_attributes().into()))),
+            Ok(Series::Masked(..)) => {
+                if safe {
+                    Ok(None)
+                } else {
+                    Err("The Series is not Complete".into())
+                }
+            }
             Err(_) if safe => Ok(None),
             Err(e) => Err(e),
         }

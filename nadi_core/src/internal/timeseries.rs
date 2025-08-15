@@ -70,19 +70,13 @@ mod ts {
         head: Option<i64>,
     ) -> Result<(), RString> {
         if let Some(ts) = node.ts(name) {
-            let values = ts.values_as_attributes();
+            let values = ts.str_values();
             if header {
                 println!("time,{name}");
             }
-            let head = head.map(|h| h as usize).unwrap_or_else(|| values.len());
-            for (t, v) in ts
-                .timeline()
-                .lock()
-                .str_values()
-                .zip(values.iter())
-                .take(head)
-            {
-                println!("{},{}", t, v.to_string());
+            let head = head.map(|h| h as usize).unwrap_or_else(|| ts.len());
+            for (t, v) in ts.timeline().lock().str_values().zip(values).take(head) {
+                println!("{t},{v}");
             }
             println!();
         } else {
@@ -131,7 +125,7 @@ mod ts {
                     timeline = Some(ts.timeline().clone());
                 }
                 ts_nodes.push(node.name().to_string());
-                values.push(ts.values_as_attributes());
+                values.push(ts.str_values().collect::<Vec<String>>());
             }
         }
         // export to CSV
@@ -143,7 +137,7 @@ mod ts {
                 if i >= head {
                     break;
                 }
-                let row: Vec<String> = values.iter().map(|v| v[i].to_string()).collect();
+                let row: Vec<&str> = values.iter().map(|v| v[i].as_str()).collect();
                 println!("{t},{}", row.join(","));
             }
         }
@@ -183,13 +177,7 @@ mod ts {
                 .iter()
                 .map(|a| {
                     node.series(a)
-                        .map(|s| {
-                            s.clone()
-                                .to_attributes()
-                                .into_iter()
-                                .map(|a| a.to_string())
-                                .collect()
-                        })
+                        .map(|s| s.str_values().collect())
                         .unwrap_or_default()
                 })
                 .collect();

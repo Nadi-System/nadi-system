@@ -1,9 +1,9 @@
-use crate::attrs::{type_name, Attribute, Date, DateTime, FromAttribute, Time};
+use crate::attrs::{Attribute, Date, DateTime, FromAttribute, Time, type_name};
 
 use abi_stable::{
-    external_types::RMutex,
-    std_types::{RArc, RHashMap, RString, RVec},
     StableAbi,
+    external_types::RMutex,
+    std_types::{RArc, RHashMap, ROption, RString, RVec},
 };
 
 pub type TimeLine = RArc<RMutex<TimeLineInner>>;
@@ -146,9 +146,17 @@ impl TimeSeries {
         &self.timeline
     }
 
-    pub fn values_as_attributes(&self) -> Vec<Attribute> {
-        self.values.clone().to_attributes()
+    pub fn len(&self) -> usize {
+        self.values.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
+    // pub fn values_as_attributes(&self) -> Vec<Attribute> {
+    //     self.values.clone().to_attributes()
+    // }
 
     pub fn series(&self) -> &Series {
         &self.values
@@ -156,6 +164,10 @@ impl TimeSeries {
 
     pub fn values<'a, T: FromSeries<'a>>(&'a self) -> Option<&'a [T]> {
         FromSeries::from_series(&self.values)
+    }
+
+    pub fn str_values<'a>(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
+        self.values.str_values()
     }
 
     pub fn values_mut<'a, T: FromSeries<'a>>(&'a mut self) -> Option<&'a mut [T]> {
@@ -187,6 +199,195 @@ impl TimeSeries {
 #[repr(C)]
 #[derive(StableAbi, Clone, PartialEq, Debug)]
 pub enum Series {
+    /// Masked Series and optional fill value
+    Masked(MaskedSeries, ROption<Attribute>),
+    /// Series without values
+    Complete(CompleteSeries),
+}
+
+/// Matches and calls respective functions for all variations of [`Series`]
+macro_rules! forward_funcs {
+    ($($func:ident -> $ret:ty),*) => {
+	impl Series {
+	    $(
+		pub fn $func(&self) -> $ret {
+		    match self {
+			Self::Masked(v, _) => v. $func (),
+			Self::Complete(v) => v. $func (),
+		    }
+		}
+	    )*
+	}
+    }
+}
+
+forward_funcs! {
+    len -> usize,
+    is_empty -> bool,
+    type_name -> &str
+}
+
+impl Series {
+    pub fn is_masked(&self) -> bool {
+        matches!(self, Self::Masked(_, _))
+    }
+
+    pub fn is_complete(&self) -> bool {
+        matches!(self, Self::Complete(_))
+    }
+
+    pub fn from_attr(vals: &Attribute, dtype: &str) -> Result<Self, String> {
+        CompleteSeries::from_attr(vals, dtype).map(Self::Complete)
+    }
+
+    pub fn str_values<'a>(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
+        match self {
+            Self::Masked(v, _) => v.str_values(),
+            Self::Complete(v) => v.str_values(),
+        }
+    }
+
+    pub fn maybe_complete(self) -> Self {
+        match self {
+            Self::Complete(_) => self,
+            Self::Masked(ms, fill) => {
+                if ms.has_gaps() {
+                    Self::Masked(ms, fill)
+                } else {
+                    Self::Complete(ms.complete().unwrap())
+                }
+            }
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(StableAbi, Clone, PartialEq, Debug)]
+pub enum MaskedSeries {
+    Floats(RVec<ROption<f64>>),
+    Integers(RVec<ROption<i64>>),
+    Strings(RVec<ROption<RString>>),
+    Booleans(RVec<ROption<bool>>),
+    Dates(RVec<ROption<Date>>),
+    Times(RVec<ROption<Time>>),
+    DateTimes(RVec<ROption<DateTime>>),
+    Attributes(RVec<ROption<Attribute>>),
+}
+
+fn has_gaps<T>(vals: &RVec<ROption<T>>) -> bool {
+    vals.iter().find(|v| v.is_none()).is_some()
+}
+
+fn to_complete<T>(vals: RVec<ROption<T>>) -> RVec<T> {
+    vals.into_iter().map(|v| v.unwrap()).collect()
+}
+
+fn fill_gaps<T: Clone>(vals: RVec<ROption<T>>, fill: T) -> RVec<T> {
+    vals.into_iter()
+        .map(|v| v.unwrap_or(fill.clone()))
+        .collect()
+}
+
+impl MaskedSeries {
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Floats(v) => v.len(),
+            Self::Integers(v) => v.len(),
+            Self::Strings(v) => v.len(),
+            Self::Booleans(v) => v.len(),
+            Self::Dates(v) => v.len(),
+            Self::Times(v) => v.len(),
+            Self::DateTimes(v) => v.len(),
+            Self::Attributes(v) => v.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn str_values<'a>(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
+        match self {
+            Self::Floats(v) => Box::new(
+                v.iter()
+                    .map(|v| v.as_ref().map(ToString::to_string).unwrap_or_default()),
+            ),
+            Self::Integers(v) => Box::new(
+                v.iter()
+                    .map(|v| v.as_ref().map(ToString::to_string).unwrap_or_default()),
+            ),
+            Self::Strings(v) => Box::new(
+                v.iter()
+                    .map(|v| v.as_ref().map(ToString::to_string).unwrap_or_default()),
+            ),
+            Self::Booleans(v) => Box::new(
+                v.iter()
+                    .map(|v| v.as_ref().map(ToString::to_string).unwrap_or_default()),
+            ),
+            Self::Dates(v) => Box::new(
+                v.iter()
+                    .map(|v| v.as_ref().map(ToString::to_string).unwrap_or_default()),
+            ),
+            Self::Times(v) => Box::new(
+                v.iter()
+                    .map(|v| v.as_ref().map(ToString::to_string).unwrap_or_default()),
+            ),
+            Self::DateTimes(v) => Box::new(
+                v.iter()
+                    .map(|v| v.as_ref().map(ToString::to_string).unwrap_or_default()),
+            ),
+            Self::Attributes(v) => Box::new(
+                v.iter()
+                    .map(|v| v.as_ref().map(ToString::to_string).unwrap_or_default()),
+            ),
+        }
+    }
+
+    fn has_gaps(&self) -> bool {
+        match self {
+            Self::Floats(v) => has_gaps(v),
+            Self::Integers(v) => has_gaps(v),
+            Self::Strings(v) => has_gaps(v),
+            Self::Booleans(v) => has_gaps(v),
+            Self::Dates(v) => has_gaps(v),
+            Self::Times(v) => has_gaps(v),
+            Self::DateTimes(v) => has_gaps(v),
+            Self::Attributes(v) => has_gaps(v),
+        }
+    }
+
+    pub fn complete(self) -> Option<CompleteSeries> {
+        if self.has_gaps() {
+            return None;
+        }
+        Some(match self {
+            Self::Floats(v) => CompleteSeries::Floats(to_complete(v)),
+            Self::Integers(v) => CompleteSeries::Integers(to_complete(v)),
+            Self::Strings(v) => CompleteSeries::Strings(to_complete(v)),
+            Self::Booleans(v) => CompleteSeries::Booleans(to_complete(v)),
+            Self::Dates(v) => CompleteSeries::Dates(to_complete(v)),
+            Self::Times(v) => CompleteSeries::Times(to_complete(v)),
+            Self::DateTimes(v) => CompleteSeries::DateTimes(to_complete(v)),
+            Self::Attributes(v) => CompleteSeries::Attributes(to_complete(v)),
+        })
+    }
+    pub fn type_name(&self) -> &str {
+        match self {
+            Self::Floats(_) => "Floats",
+            Self::Integers(_) => "Integers",
+            Self::Strings(_) => "Strings",
+            Self::Booleans(_) => "Booleans",
+            Self::Dates(_) => "Dates",
+            Self::Times(_) => "Times",
+            Self::DateTimes(_) => "DateTimes",
+            Self::Attributes(_) => "Attributes",
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(StableAbi, Clone, PartialEq, Debug)]
+pub enum CompleteSeries {
     Floats(RVec<f64>),
     Integers(RVec<i64>),
     Strings(RVec<RString>),
@@ -197,7 +398,7 @@ pub enum Series {
     Attributes(RVec<Attribute>),
 }
 
-impl Series {
+impl CompleteSeries {
     pub fn floats(v: Vec<f64>) -> Self {
         Self::Floats(v.into())
     }
@@ -238,6 +439,19 @@ impl Series {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    pub fn str_values<'a>(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
+        match self {
+            Self::Floats(v) => Box::new(v.iter().map(ToString::to_string)),
+            Self::Integers(v) => Box::new(v.iter().map(ToString::to_string)),
+            Self::Strings(v) => Box::new(v.iter().map(ToString::to_string)),
+            Self::Booleans(v) => Box::new(v.iter().map(ToString::to_string)),
+            Self::Dates(v) => Box::new(v.iter().map(ToString::to_string)),
+            Self::Times(v) => Box::new(v.iter().map(ToString::to_string)),
+            Self::DateTimes(v) => Box::new(v.iter().map(ToString::to_string)),
+            Self::Attributes(v) => Box::new(v.iter().map(ToString::to_string)),
+        }
     }
 
     pub fn from_attr(vals: &Attribute, dtype: &str) -> Result<Self, String> {
@@ -281,14 +495,14 @@ impl Series {
 
     pub fn to_attributes(self) -> Vec<Attribute> {
         match self {
-            Series::Floats(v) => v.into_iter().map(Attribute::Float).collect(),
-            Series::Integers(v) => v.into_iter().map(Attribute::Integer).collect(),
-            Series::Strings(v) => v.into_iter().map(Attribute::String).collect(),
-            Series::Booleans(v) => v.into_iter().map(Attribute::Bool).collect(),
-            Series::Dates(v) => v.into_iter().map(Attribute::Date).collect(),
-            Series::Times(v) => v.into_iter().map(Attribute::Time).collect(),
-            Series::DateTimes(v) => v.into_iter().map(Attribute::DateTime).collect(),
-            Series::Attributes(v) => v.into(),
+            Self::Floats(v) => v.into_iter().map(Attribute::Float).collect(),
+            Self::Integers(v) => v.into_iter().map(Attribute::Integer).collect(),
+            Self::Strings(v) => v.into_iter().map(Attribute::String).collect(),
+            Self::Booleans(v) => v.into_iter().map(Attribute::Bool).collect(),
+            Self::Dates(v) => v.into_iter().map(Attribute::Date).collect(),
+            Self::Times(v) => v.into_iter().map(Attribute::Time).collect(),
+            Self::DateTimes(v) => v.into_iter().map(Attribute::DateTime).collect(),
+            Self::Attributes(v) => v.into(),
         }
     }
 
@@ -328,45 +542,45 @@ pub trait FromSeries<'a>: Sized {
 }
 
 macro_rules! impl_from_series {
-    ($t: tt, $x: path) => {
+    ($t:tt, $x:ident) => {
         impl<'a> FromSeries<'a> for $t {
             fn from_series(value: &Series) -> Option<&[$t]> {
                 match value {
-                    $x(v) => Some(v.as_slice()),
+                    Series::Complete(CompleteSeries::$x(v)) => Some(v.as_slice()),
                     _ => None,
                 }
             }
             fn from_series_mut(value: &mut Series) -> Option<&mut [$t]> {
                 match value {
-                    $x(v) => Some(v.as_mut_slice()),
+                    Series::Complete(CompleteSeries::$x(v)) => Some(v.as_mut_slice()),
                     _ => None,
                 }
             }
         }
 
-        impl From<&[$t]> for Series {
+        impl From<&[$t]> for CompleteSeries {
             fn from(item: &[$t]) -> Self {
-                $x(item.into())
+                CompleteSeries::$x(item.into())
             }
         }
-        impl From<Vec<$t>> for Series {
+        impl From<Vec<$t>> for CompleteSeries {
             fn from(item: Vec<$t>) -> Self {
-                $x(RVec::from(item))
+                CompleteSeries::$x(RVec::from(item))
             }
         }
-        impl From<RVec<$t>> for Series {
+        impl From<RVec<$t>> for CompleteSeries {
             fn from(item: RVec<$t>) -> Self {
-                $x(item)
+                CompleteSeries::$x(item)
             }
         }
     };
 }
 
-impl_from_series!(f64, Series::Floats);
-impl_from_series!(i64, Series::Integers);
-impl_from_series!(RString, Series::Strings);
-impl_from_series!(bool, Series::Booleans);
-impl_from_series!(Date, Series::Dates);
-impl_from_series!(Time, Series::Times);
-impl_from_series!(DateTime, Series::DateTimes);
-impl_from_series!(Attribute, Series::Attributes);
+impl_from_series!(f64, Floats);
+impl_from_series!(i64, Integers);
+impl_from_series!(RString, Strings);
+impl_from_series!(bool, Booleans);
+impl_from_series!(Date, Dates);
+impl_from_series!(Time, Times);
+impl_from_series!(DateTime, DateTimes);
+impl_from_series!(Attribute, Attributes);
