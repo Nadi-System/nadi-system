@@ -3,7 +3,7 @@ use crate::attrs::{Attribute, Date, DateTime, FromAttribute, Time, type_name};
 use abi_stable::{
     StableAbi,
     external_types::RMutex,
-    std_types::{RArc, RHashMap, ROption, RString, RVec},
+    std_types::{RArc, RHashMap, ROption, RSome, RString, RVec},
 };
 
 pub type TimeLine = RArc<RMutex<TimeLineInner>>;
@@ -236,6 +236,13 @@ impl Series {
         matches!(self, Self::Complete(_))
     }
 
+    pub fn len_valid(&self) -> usize {
+        match self {
+            Self::Masked(v, _) => v.len_valid(),
+            Self::Complete(v) => v.len(),
+        }
+    }
+
     pub fn from_attr(vals: &Attribute, dtype: &str) -> Result<Self, String> {
         CompleteSeries::from_attr(vals, dtype).map(Self::Complete)
     }
@@ -289,6 +296,31 @@ fn fill_gaps<T: Clone>(vals: RVec<ROption<T>>, fill: T) -> RVec<T> {
 }
 
 impl MaskedSeries {
+    pub fn floats(v: Vec<ROption<f64>>) -> Self {
+        Self::Floats(v.into())
+    }
+    pub fn integers(v: Vec<ROption<i64>>) -> Self {
+        Self::Integers(v.into())
+    }
+    pub fn strings(v: Vec<ROption<RString>>) -> Self {
+        Self::Strings(v.into())
+    }
+    pub fn booleans(v: Vec<ROption<bool>>) -> Self {
+        Self::Booleans(v.into())
+    }
+    pub fn dates(v: Vec<ROption<Date>>) -> Self {
+        Self::Dates(v.into())
+    }
+    pub fn times(v: Vec<ROption<Time>>) -> Self {
+        Self::Times(v.into())
+    }
+    pub fn datetimes(v: Vec<ROption<DateTime>>) -> Self {
+        Self::DateTimes(v.into())
+    }
+    pub fn attributes(v: Vec<ROption<Attribute>>) -> Self {
+        Self::Attributes(v.into())
+    }
+
     pub fn len(&self) -> usize {
         match self {
             Self::Floats(v) => v.len(),
@@ -299,6 +331,19 @@ impl MaskedSeries {
             Self::Times(v) => v.len(),
             Self::DateTimes(v) => v.len(),
             Self::Attributes(v) => v.len(),
+        }
+    }
+
+    pub fn len_valid(&self) -> usize {
+        match self {
+            Self::Floats(v) => v.iter().filter(|v| matches!(v, RSome(_))).count(),
+            Self::Integers(v) => v.iter().filter(|v| matches!(v, RSome(_))).count(),
+            Self::Strings(v) => v.iter().filter(|v| matches!(v, RSome(_))).count(),
+            Self::Booleans(v) => v.iter().filter(|v| matches!(v, RSome(_))).count(),
+            Self::Dates(v) => v.iter().filter(|v| matches!(v, RSome(_))).count(),
+            Self::Times(v) => v.iter().filter(|v| matches!(v, RSome(_))).count(),
+            Self::DateTimes(v) => v.iter().filter(|v| matches!(v, RSome(_))).count(),
+            Self::Attributes(v) => v.iter().filter(|v| matches!(v, RSome(_))).count(),
         }
     }
 

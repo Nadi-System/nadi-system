@@ -64,6 +64,42 @@ mod core {
             .and_then(|n| n.lock().attr_dot(&attribute).ok().flatten().cloned())
     }
 
+    /// Get a attrmap with node name and attributes
+    ///
+    /// ```task
+    /// network load_str("a -> b")
+    /// network assert_eq(node_map("NAME"), attr_map(a="a", b="b"))
+    /// network assert_eq(node_map("INDEX"), attr_map(a=1, b=0))
+    /// network assert_eq(node_map(), attr_map(a=1, b=0))
+    /// ```
+    #[network_func(invert = false)]
+    fn node_map(
+        net: &Network,
+        /// attribute to get (defaults to INDEX)
+        attribute: Option<String>,
+        /// invert the map key and value
+        invert: bool,
+    ) -> Result<AttrMap, String> {
+        let attr = attribute.unwrap_or("INDEX".into());
+        Ok(net
+            .nodes()
+            .map(|n| -> Result<(RString, Attribute), String> {
+                let n = n.lock();
+                let key: RString = n.name().to_string().into();
+                let val: Attribute = n
+                    .attr_dot(&attr)?
+                    .ok_or("Attribute Not Found".to_string())?
+                    .clone();
+                if invert {
+                    Ok((RString::try_from_attr_relaxed(&val)?, key.into()))
+                } else {
+                    Ok((key, val))
+                }
+            })
+            .collect::<Result<HashMap<RString, Attribute>, String>>()?
+            .into())
+    }
+
     /// Count the number of input nodes in the node
     ///
     /// ```task

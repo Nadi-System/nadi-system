@@ -968,6 +968,68 @@ tuple_impls!(a A 0, b B 1, c C 2, d D 3);
 tuple_impls!(a A 0, b B 1, c C 2, d D 3, e E 4);
 tuple_impls!(a A 0, b B 1, c C 2, d D 3, e E 4, f F 5);
 
+/// For generating data types that are subset of a few attribute variations
+macro_rules! attr_subset {
+    (
+	$(#[$outer:meta])*
+	enum $t:ident {
+	    $(
+		$alt:ident($inner:tt),
+	    )*
+	}
+    ) => {
+	$(#[$outer])*
+	pub enum $t {
+	    $(
+		$alt($inner),
+	    )*
+	}
+
+	impl From<$t> for Attribute {
+	    fn from(value: $t) -> Self {
+		match value {
+		    $(
+			$t ::$alt(v) => Attribute::$alt(v.clone()),
+		    )*
+		}
+	    }
+	}
+
+        impl FromAttribute for $t {
+            fn from_attr(value: &Attribute) -> Option<$t> {
+                match value {
+		    $(
+			Attribute::$alt(v) => Some($t ::$alt(v.clone())),
+		    )*
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+attr_subset! {
+    /// Integer or String, useful for indexing something with number or name
+    enum IntOrStr{
+    Integer(i64),
+    String(RString),
+    }
+}
+attr_subset! {
+    /// Integer or Float, useful for number related things
+    enum IntOrFloat{
+    Integer(i64),
+    Float(f64),
+    }
+}
+attr_subset! {
+    /// DateTime or Date, useful when date can be defaulted to DateTime
+    enum DateMaybeTime{
+    DateTime(DateTime),
+    Date(Date),
+    }
+}
+
 /// Macro to generate attribute value with different patterns.
 ///
 /// It uses (val) for single attribute, [val,...] for array attribute

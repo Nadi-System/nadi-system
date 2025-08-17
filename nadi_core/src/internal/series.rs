@@ -35,16 +35,18 @@ mod series {
     }
 
     /// Length of the series
-    #[node_func(safe = false)]
+    #[node_func(safe = false, countna = true)]
     fn sr_len(
         node: &NodeInner,
         /// Name of the series
         name: &str,
         /// Do not error if series does't exist
         safe: bool,
+        /// count na values in the length
+        countna: bool,
     ) -> Result<Option<usize>, String> {
         match node.try_series(name) {
-            Ok(s) => Ok(Some(s.len())),
+            Ok(s) => Ok(Some(if countna { s.len() } else { s.len_valid() })),
             Err(_) if safe => Ok(None),
             Err(e) => Err(e),
         }
