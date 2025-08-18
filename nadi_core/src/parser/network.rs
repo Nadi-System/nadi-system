@@ -4,7 +4,7 @@ use crate::parser::{
     tokenizer::{RawToken, Token},
 };
 use nadi_core::network::StrPath;
-use nom::{Finish, branch::alt, combinator::map, sequence::separated_pair};
+use nom::{branch::alt, combinator::map, sequence::separated_pair, Finish};
 
 pub fn node_name<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, String> {
     err_ctx(

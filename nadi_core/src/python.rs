@@ -2,7 +2,7 @@ use crate::expressions::{EvalError, EvalErrorType};
 #[cfg(feature = "parser")]
 use crate::parser::ParseError;
 pub use pyo3;
-use pyo3::{IntoPyObject, PyErr, PyErrArguments, PyObject, Python, exceptions::*};
+use pyo3::{exceptions::*, IntoPyObject, PyErr, PyErrArguments, PyObject, Python};
 
 impl PyErrArguments for EvalError {
     fn arguments(self, py: Python<'_>) -> PyObject {

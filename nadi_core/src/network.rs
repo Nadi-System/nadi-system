@@ -1,15 +1,15 @@
 use crate::attrs::{AttrMap, HasAttributes};
 use crate::expressions::{EvalErrorType, Expression};
-use crate::node::{Node, new_node};
+use crate::node::{new_node, Node};
 use crate::timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap};
 use abi_stable::std_types::RDuration;
 use abi_stable::{
-    StableAbi,
     std_types::{
         RHashMap,
         ROption::{self, RNone, RSome},
         RString, RVec,
     },
+    StableAbi,
 };
 use colored::Colorize;
 use std::collections::{HashMap, HashSet};

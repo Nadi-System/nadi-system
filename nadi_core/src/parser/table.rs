@@ -1,9 +1,9 @@
 use crate::table::{Column, ColumnAlign};
-use nom::IResult;
 use nom::bytes::complete::{is_not, take_till, take_until};
 use nom::error::convert_error;
 use nom::error::{ParseError, VerboseError};
 use nom::multi::{many0, many1};
+use nom::IResult;
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_while},

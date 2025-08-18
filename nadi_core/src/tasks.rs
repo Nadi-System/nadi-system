@@ -2,7 +2,7 @@ use crate::expressions::{EvalError, EvalErrorType, Expression, TaskPosition};
 use crate::functions::{FuncArg, FuncArgType, NadiFunctions};
 use crate::network::PropCondition;
 use crate::prelude::*;
-use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::mpsc::{channel, Receiver, Sender};
 
 /// Result of a Task when executed
 pub enum TaskResult {

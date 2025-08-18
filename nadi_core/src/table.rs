@@ -174,7 +174,7 @@ impl FromAttribute for Table {
                 return Err(format!(
                     "Incorrect Type: got {} instead of Table/Array or String",
                     value.type_name()
-                ))
+                ));
             }
         }
         Ok(Table {

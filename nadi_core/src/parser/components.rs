@@ -5,11 +5,11 @@ use crate::parser::{
 use crate::tasks::TaskKeyword;
 use nadi_core::attrs::{Attribute, Date, DateTime, Time};
 use nom::{
-    IResult,
     branch::alt,
     combinator::{map, value},
     multi::{many0, many1, separated_list0, separated_list1},
     sequence::{delimited, preceded, separated_pair, terminated},
+    IResult,
 };
 use std::str::FromStr;
 

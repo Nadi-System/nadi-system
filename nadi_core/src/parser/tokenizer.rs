@@ -5,14 +5,14 @@ use crate::tasks::TaskKeyword;
 use colored::Colorize;
 use nadi_core::attrs::{Attribute, Date, DateTime, Time};
 use nom::{
-    IResult,
     branch::alt,
     bytes::complete::{is_not, tag},
     character::complete::{alpha1, alphanumeric1, anychar, char, digit1, one_of},
     combinator::{map, opt, recognize},
-    error::{VerboseError, context},
+    error::{context, VerboseError},
     multi::{many0, many1},
     sequence::{pair, preceded, terminated, tuple},
+    IResult,
 };
 use std::str::FromStr;
 

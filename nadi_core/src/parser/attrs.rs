@@ -4,7 +4,7 @@ use crate::parser::{
     errors::ParseError,
     tokenizer::{RawToken, Token},
 };
-use nom::{Finish, branch::alt, combinator::map, sequence::delimited};
+use nom::{branch::alt, combinator::map, sequence::delimited, Finish};
 
 pub fn attr_group<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<String>> {
     delimited(

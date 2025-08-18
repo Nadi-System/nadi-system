@@ -74,68 +74,68 @@ fn check_library(path: &Path) -> Result<(), LibraryError> {
 
 fn print_library_err(err: LibraryError) {
     match err {
-	LibraryError::OpenError {
-            path,
-            ..
-	} => eprintln!("Couln't open library {path:?}"),
-	LibraryError::GetSymbolError {
-            library,
-            symbol,
-            ..
-	} => eprintln!("Plugin invalid {library:?} {symbol:?}"),
-	LibraryError::ParseVersionError(_) => eprintln!("Error parsing version"),
-	LibraryError::IncompatibleVersionNumber {
+        LibraryError::OpenError { path, .. } => eprintln!("Couln't open library {path:?}"),
+        LibraryError::GetSymbolError {
+            library, symbol, ..
+        } => eprintln!("Plugin invalid {library:?} {symbol:?}"),
+        LibraryError::ParseVersionError(_) => eprintln!("Error parsing version"),
+        LibraryError::IncompatibleVersionNumber {
             library_name,
             expected_version,
             actual_version,
-	} => eprintln!("Incompatible Versions: {library_name} expected {expected_version} got {actual_version}"),
-	LibraryError::RootModule {
+        } => eprintln!(
+            "Incompatible Versions: {library_name} expected {expected_version} got {actual_version}"
+        ),
+        LibraryError::RootModule {
             module_name,
             version,
-	    ..
-	} => eprintln!("Plugin Error: {module_name:?} {version}"),
-	LibraryError::AbiInstability(_) => eprintln!("ABI not stable; recompile the plugin with correct nadi_core version"),
-	LibraryError::InvalidAbiHeader(_) => eprintln!("Invalid Header"),
-	LibraryError::InvalidCAbi {
-            expected,
-            found,
-	} => eprintln!("C ABI Mismatch expected {expected} got {found}"),
-	LibraryError::Many(errs) => for err in errs {
-	    print_library_err(err);
-	},
+            ..
+        } => eprintln!("Plugin Error: {module_name:?} {version}"),
+        LibraryError::AbiInstability(_) => {
+            eprintln!("ABI not stable; recompile the plugin with correct nadi_core version")
+        }
+        LibraryError::InvalidAbiHeader(_) => eprintln!("Invalid Header"),
+        LibraryError::InvalidCAbi { expected, found } => {
+            eprintln!("C ABI Mismatch expected {expected} got {found}")
+        }
+        LibraryError::Many(errs) => {
+            for err in errs {
+                print_library_err(err);
+            }
+        }
     }
 }
 
 fn _print_library_err_full(err: LibraryError) {
     match err {
-	LibraryError::OpenError {
-            path,
-            err,
-	} => eprintln!("Couln't open library {path:?} {err:?}"),
-	LibraryError::GetSymbolError {
+        LibraryError::OpenError { path, err } => eprintln!("Couln't open library {path:?} {err:?}"),
+        LibraryError::GetSymbolError {
             library,
             symbol,
             err,
-	} => eprintln!("Plugin invalid {library:?} {symbol:?} {err:?}"),
-	LibraryError::ParseVersionError(e) => eprintln!("Error parsing version {e:?}"),
-	LibraryError::IncompatibleVersionNumber {
+        } => eprintln!("Plugin invalid {library:?} {symbol:?} {err:?}"),
+        LibraryError::ParseVersionError(e) => eprintln!("Error parsing version {e:?}"),
+        LibraryError::IncompatibleVersionNumber {
             library_name,
             expected_version,
             actual_version,
-	} => eprintln!("Incompatible Versions: {library_name} expected {expected_version} got {actual_version}"),
-	LibraryError::RootModule {
+        } => eprintln!(
+            "Incompatible Versions: {library_name} expected {expected_version} got {actual_version}"
+        ),
+        LibraryError::RootModule {
             err,
             module_name,
             version,
-	} => eprintln!("Plugin Error: {err:?} {module_name:?} {version}"),
-	LibraryError::AbiInstability(e) => eprintln!("Abi Unstable {e:?}"),
-	LibraryError::InvalidAbiHeader(h) => eprintln!("Invalid Header {h:?}"),
-	LibraryError::InvalidCAbi {
-            expected,
-            found,
-	} => eprintln!("C ABI Mismatch expected {expected} got {found}"),
-	LibraryError::Many(errs) => for err in errs {
-	    print_library_err(err);
-	},
+        } => eprintln!("Plugin Error: {err:?} {module_name:?} {version}"),
+        LibraryError::AbiInstability(e) => eprintln!("Abi Unstable {e:?}"),
+        LibraryError::InvalidAbiHeader(h) => eprintln!("Invalid Header {h:?}"),
+        LibraryError::InvalidCAbi { expected, found } => {
+            eprintln!("C ABI Mismatch expected {expected} got {found}")
+        }
+        LibraryError::Many(errs) => {
+            for err in errs {
+                print_library_err(err);
+            }
+        }
     }
 }

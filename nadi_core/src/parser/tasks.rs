@@ -1,10 +1,10 @@
 use crate::parser::{
-    ParseError, ParseErrorType,
     components::*,
     errors::MatchErr,
     expressions::{complete_expression, expression_group},
     network::{node_name, str_path},
     tokenizer::{RawToken, Token},
+    ParseError, ParseErrorType,
 };
 use crate::{
     expressions::TaskPosition,
@@ -13,11 +13,11 @@ use crate::{
 };
 use abi_stable::std_types::{RString, RVec};
 use nom::{
-    Finish,
     branch::alt,
     combinator::{cut, map, opt, value},
     multi::separated_list1,
     sequence::{delimited, preceded, tuple},
+    Finish,
 };
 
 pub fn prop_order<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, PropOrder> {

@@ -7,8 +7,8 @@ mod visuals {
     use nadi_core::abi_stable::std_types::RSome;
     use nadi_plugin::network_func;
     use std::path::Path;
-    use svg::Document;
     use svg::node::element::*;
+    use svg::Document;
 
     /// Set the node size of the nodes based on the attribute value
     #[network_func(minsize = 4.0, maxsize = 12.0)]

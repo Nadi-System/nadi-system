@@ -1,12 +1,12 @@
 use crate::expressions::EvalErrorType;
 use crate::valid_var;
 use abi_stable::{
-    StableAbi,
     std_types::{
         RHashMap,
         ROption::{self, RNone},
         RSlice, RStr, RString, RVec, Tuple2,
     },
+    StableAbi,
 };
 use colored::Colorize;
 use regex::Regex;
@@ -1606,7 +1606,11 @@ impl From<chrono::FixedOffset> for Offset {
     fn from(value: chrono::FixedOffset) -> Self {
         let (secs, east) = {
             let s = value.local_minus_utc();
-            if s > 0 { (s, false) } else { (s.abs(), true) }
+            if s > 0 {
+                (s, false)
+            } else {
+                (s.abs(), true)
+            }
         };
         let m = secs / 60;
         let h = m / 60;
