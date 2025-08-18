@@ -1346,6 +1346,15 @@ impl PartialOrd<Date> for DateTime {
     }
 }
 
+impl From<Date> for DateTime {
+    fn from(date: Date) -> Self {
+        Self {
+            date,
+            ..Default::default()
+        }
+    }
+}
+
 impl std::fmt::Display for DateTime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} {}", self.date, self.time)

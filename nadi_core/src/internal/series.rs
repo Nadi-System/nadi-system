@@ -140,4 +140,27 @@ mod series {
             Err(e) => Err(e),
         }
     }
+
+    /// Fill the series with a value
+    #[node_func(inplace = true)]
+    fn sr_fill(
+        node: &mut NodeInner,
+        /// Name of the series
+        name: &str,
+        /// Value to fill the series with: needs to be same type
+        value: Attribute,
+        /// Fill the series inplace
+        inplace: bool,
+        /// New name for the series, adds `_filled` by default; ignored for inplace
+        newname: Option<String>,
+    ) -> Result<(), String> {
+        if inplace {
+            node.fill_series(name, value)
+        } else {
+            let ser = node.try_series(name)?.clone();
+            let newname = newname.unwrap_or_else(|| format!("{name}_filled"));
+            node.set_series(&newname, ser.fill_gaps(value)?);
+            Ok(())
+        }
+    }
 }
