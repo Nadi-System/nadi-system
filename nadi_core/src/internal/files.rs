@@ -22,6 +22,21 @@ mod files {
 
     /// Checks if the given path exists
     #[env_func]
+    fn line(
+        /// Path to check
+        path: PathBuf,
+        /// Line number to load as string (starts from 1)
+        line: usize,
+    ) -> std::io::Result<Option<String>> {
+        let f = std::fs::File::open(path)?;
+        BufReader::new(f)
+            .lines()
+            .nth(line - 1)
+            .map_or(Ok(None), |v| v.map(Some))
+    }
+
+    /// Checks if the given path exists
+    #[env_func]
     fn exists(
         /// Path to check
         path: PathBuf,
