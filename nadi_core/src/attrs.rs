@@ -1,12 +1,12 @@
 use crate::expressions::EvalErrorType;
 use crate::valid_var;
 use abi_stable::{
+    StableAbi,
     std_types::{
         RHashMap,
         ROption::{self, RNone},
         RSlice, RStr, RString, RVec, Tuple2,
     },
-    StableAbi,
 };
 use colored::Colorize;
 use regex::Regex;
@@ -908,6 +908,18 @@ impl_from_attr!(AttrMap, Attribute::Table,);
 /// impl for tuples of different types
 macro_rules! tuple_impls {
     ( $($name:ident $gen:ident $ind:expr),+ ) => {
+	impl<$($gen),+> From<($($gen),+)> for Attribute
+	where $(
+	    Attribute: From<$gen>,
+	)+
+	{
+	    fn from(($($name),+): ($($gen),+)) -> Attribute {
+		Attribute::Array(vec![
+		    $($name .into()),+
+		].into())
+	    }
+	}
+
         impl<$($gen: FromAttribute),+> FromAttribute for ($($gen,)+)
         {
 	    fn from_attr(value: &Attribute) -> Option<Self> {
@@ -961,7 +973,7 @@ macro_rules! tuple_impls {
 // of generic and identifier needing to be different case; 0-5 numbers
 // are used so that we can stop using `${index()}` which is unstable
 // #![feature(macro_metavar_expr)]
-tuple_impls!(a A 0);
+// tuple_impls!(a A 0);
 tuple_impls!(a A 0, b B 1);
 tuple_impls!(a A 0, b B 1, c C 2);
 tuple_impls!(a A 0, b B 1, c C 2, d D 3);
@@ -1606,11 +1618,7 @@ impl From<chrono::FixedOffset> for Offset {
     fn from(value: chrono::FixedOffset) -> Self {
         let (secs, east) = {
             let s = value.local_minus_utc();
-            if s > 0 {
-                (s, false)
-            } else {
-                (s.abs(), true)
-            }
+            if s > 0 { (s, false) } else { (s.abs(), true) }
         };
         let m = secs / 60;
         let h = m / 60;
