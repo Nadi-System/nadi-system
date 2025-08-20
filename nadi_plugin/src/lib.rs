@@ -6,10 +6,10 @@ use convert_case::{Case, Casing};
 use std::collections::HashMap;
 
 use proc_macro::TokenStream;
-use quote::{format_ident, quote, quote_spanned, ToTokens};
+use quote::{ToTokens, format_ident, quote, quote_spanned};
 use syn::{
-    parse_macro_input, punctuated::Punctuated, token::Comma, Attribute, DeriveInput, Expr, FnArg,
-    Ident, ItemFn, ItemMod, Lit, MetaNameValue, Type, TypeReference,
+    Attribute, DeriveInput, Expr, FnArg, Ident, ItemFn, ItemMod, Lit, MetaNameValue, Type,
+    TypeReference, parse_macro_input, punctuated::Punctuated, token::Comma,
 };
 
 #[derive(PartialEq)]
@@ -365,6 +365,10 @@ fn get_fn_arg(arg: &FnArg) -> (&Ident, &Type, FuncArgType) {
 }
 
 // HACK ignoring the path and assuming anything::Option is Option
+/// Checks if a type is Option
+///
+/// Any type with the name Option as the type name before the generics
+/// is considered as an option type.
 fn type_is_opt(ty: &Type) -> bool {
     // if let Type::Path(p) = ty {
     //     p.path.is_ident("Option")
@@ -419,7 +423,9 @@ fn get_opt_type(ty: &Type) -> Option<&Type> {
 /// external plugins compiled to cdynlib.
 #[proc_macro_attribute]
 pub fn nadi_plugin(args: TokenStream, item: TokenStream) -> TokenStream {
-    nadi_export_plugin(args, item, true)
+    let item = parse_macro_input!(item as ItemMod);
+    let args = parse_macro_input!(args with Punctuated<MetaNameValue, Comma>::parse_terminated);
+    nadi_export_plugin(args, item, true).into()
 }
 
 /// Register the `mod` as an internal plugin, only to be used on
@@ -427,12 +433,16 @@ pub fn nadi_plugin(args: TokenStream, item: TokenStream) -> TokenStream {
 /// top of the `mod` definition so it can see all the functions.
 #[proc_macro_attribute]
 pub fn nadi_internal_plugin(args: TokenStream, item: TokenStream) -> TokenStream {
-    nadi_export_plugin(args, item, false)
+    let item = parse_macro_input!(item as ItemMod);
+    let args = parse_macro_input!(args with Punctuated<MetaNameValue, Comma>::parse_terminated);
+    nadi_export_plugin(args, item, false).into()
 }
 
-fn nadi_export_plugin(_args: TokenStream, item: TokenStream, external: bool) -> TokenStream {
-    let item = parse_macro_input!(item as ItemMod);
-
+fn nadi_export_plugin(
+    _args: Punctuated<MetaNameValue, Comma>,
+    item: ItemMod,
+    external: bool,
+) -> proc_macro2::TokenStream {
     let name = &item.ident;
     let name_s = if external {
         name.to_string().to_lowercase()
@@ -561,7 +571,6 @@ fn nadi_export_plugin(_args: TokenStream, item: TokenStream, external: bool) -> 
             #item
         }
     }
-    .into()
 }
 
 fn get_nadi_functions<'a>(item: &'a ItemMod, funct: &'_ str) -> Vec<&'a Ident> {
@@ -974,7 +983,55 @@ fn format_docstrings(string: String) -> String {
 #[cfg(test)]
 mod test {
     use super::*;
+    use rstest::*;
     use syn::parse_quote;
+
+    #[rstest]
+    #[case(parse_quote!(Option<i32>), true)]
+    #[case(parse_quote!(i32), false)]
+    #[case(parse_quote!(OptionT), false)]
+    #[case(parse_quote!(std::core::Option<i32>), true)]
+    // this could be a type alias, so anything with "Option", but get_opt_type will fail
+    #[case(parse_quote!(some_crate::Option), true)]
+    #[case(parse_quote!(Option<some_crate::CustomVec<i32>>), true)]
+    #[case(parse_quote!(std::core::Option<some_crate::CustomVec<i32>>), true)]
+    fn test_type_is_opt(#[case] ty: Type, #[case] is_opt: bool) {
+        assert_eq!(type_is_opt(&ty), is_opt);
+    }
+
+    #[rstest]
+    #[case(parse_quote!(Option<i32>), Some(parse_quote!(i32)))]
+    #[case(parse_quote!(i32), None)]
+    #[case(parse_quote!(OptionT), None)]
+    #[case(parse_quote!(std::core::Option<i32>), Some(parse_quote!(i32)))]
+    // this could be a type aliasil
+    #[case(parse_quote!(some_crate::Option), None)]
+    #[case(parse_quote!(Option<some_crate::CustomVec<i32>>), Some(parse_quote!(some_crate::CustomVec<i32>)))]
+    #[case(parse_quote!(std::core::Option<some_crate::CustomVec<i32>>), Some(parse_quote!(some_crate::CustomVec<i32>)))]
+    fn test_get_opt_type(#[case] ty: Type, #[case] inner: Option<Type>) {
+        assert_eq!(get_opt_type(&ty), inner.as_ref());
+    }
+
+    #[test]
+    fn test_clean_func() {
+        let item: syn::ItemFn = parse_quote! {
+            /// Document for Function
+            fn func_name(
+        node: &NodeInner,
+            /// Document for val
+        val: i64,
+        #[relaxed]
+        val2: String,
+            ) {
+              todo!()
+                }
+        };
+        let clean = clean_function(&item);
+        let clean = quote!(#clean).to_string();
+        assert!(!clean.contains("Document for val"));
+        assert!(!clean.contains("relaxed"));
+        assert!(clean.contains("Document for Function"));
+    }
 
     #[test]
     fn count_node_functions() {
@@ -1114,6 +1171,8 @@ mod test {
         let args = Punctuated::<MetaNameValue, Comma>::new();
         let output = nadi_func_inner(args, item, FuncType::Env).to_string();
         assert!(!output.contains("compile_error!"));
+        assert!(output.contains("Document for val"));
+        assert!(output.contains("Document for Function"));
     }
 
     #[test]
@@ -1148,8 +1207,10 @@ mod test {
                 }
         };
         let args = Punctuated::<MetaNameValue, Comma>::new();
-        let output = nadi_func_inner(args, item, FuncType::Env).to_string();
+        let output = nadi_func_inner(args, item, FuncType::Node).to_string();
         assert!(!output.contains("compile_error!"));
+        assert!(output.contains("Document for val"));
+        assert!(output.contains("Document for Function"));
     }
 
     #[test]
@@ -1169,5 +1230,73 @@ mod test {
         };
         // panic!("First argument should be a reference")
         let _ = nadi_func_inner(args, item, FuncType::Node);
+    }
+
+    #[test]
+    fn test_valid_network_func() {
+        let item: syn::ItemFn = parse_quote! {
+            /// Document for Function
+            fn func_name(
+        network: &Network,
+            /// Document for val
+            val: i64
+            ) {
+              todo!()
+                }
+        };
+        let args = Punctuated::<MetaNameValue, Comma>::new();
+        let output = nadi_func_inner(args, item, FuncType::Network).to_string();
+        assert!(!output.contains("compile_error!"));
+        assert!(output.contains("Document for val"));
+        assert!(output.contains("Document for Function"));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_invalid_network_func() {
+        let item: syn::ItemFn = parse_quote! {
+            /// Document for Function
+                fn func_two(
+            /// Document for val
+            val: i64
+            ) {
+              todo!()
+                }
+        };
+        let args: Punctuated<MetaNameValue, Comma> = parse_quote! {
+            val = 12
+        };
+        // panic!("First argument should be a reference")
+        let _ = nadi_func_inner(args, item, FuncType::Network);
+    }
+
+    #[test]
+    fn test_valid_plugin() {
+        let item: syn::ItemMod = parse_quote! {
+            mod plug_name{
+
+        /// Document for Function
+        #[env_func]
+            fn func_name(
+        network: &Network,
+            /// Document for val
+            val: i64
+            ) {
+              todo!()
+            }
+        }
+        };
+        let args = Punctuated::<MetaNameValue, Comma>::new();
+        let output = nadi_export_plugin(args.clone(), item.clone(), true).to_string();
+        // it doesn't test many things now, I think the best way to
+        // test would be to compile the plugin and call it, refer to
+        // the tests in cargo package for that type of tests.
+        assert!(!output.contains("compile_error!"));
+        assert!(output.contains("NadiExternalPlugin"));
+        assert!(!output.contains("NadiPlugin"));
+        let output = nadi_export_plugin(args, item, false).to_string();
+        assert!(!output.contains("compile_error!"));
+        assert!(!output.contains("NadiExternalPlugin"));
+        assert!(output.contains("NadiPlugin"));
     }
 }

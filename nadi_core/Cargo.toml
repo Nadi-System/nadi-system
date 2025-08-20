@@ -38,3 +38,6 @@ functions = ["dep:filetime", "graphics", "parser"]
 graphics = ["dep:svg"]
 parser = ["dep:nom"]
 python = ["dep:pyo3"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }

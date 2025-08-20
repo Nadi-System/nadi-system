@@ -4,10 +4,15 @@ use nadi_core::prelude::*;
 /// color can be 0.0-1.0; 0-255, [r, g, b], {r=.,g=.,b=.} or name
 #[derive(Debug, Clone, FromAttribute)]
 pub enum AttrColor {
+    /// Integer mono color range (0-255)
     MonoInt(u64),
+    /// Fractional color range (0.0-1.0)
     Mono(f64),
+    /// Named color
     Named(String),
+    /// RGB sequence of integers
     Rgb((u64, u64, u64)),
+    /// Parsed `Color` with RGB
     RgbNamed(Color),
 }
 
@@ -47,6 +52,8 @@ impl Color {
 }
 
 // copied from named_colors crate
+/// Convert color name to RGB (0-255)
+#[cfg(not(tarpaulin_include))]
 fn color_by_name(name: &str) -> Option<(u64, u64, u64)> {
     let (r, g, b) = match name {
         "red" => (255, 0, 0),

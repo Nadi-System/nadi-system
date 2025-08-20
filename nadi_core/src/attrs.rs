@@ -1645,6 +1645,48 @@ mod tests {
     use super::*;
     use rstest::rstest;
 
+    #[rstest]
+    #[case("something", true.into())]
+    #[case("sething", 12.into())]
+    #[case("someng", 12.0.into())]
+    #[case("SOMETHING", "same_true".into())]
+    #[case("SoMe", attr!(true, "something").into())]
+    #[case("SoMe", attr!(x => true, y => "something").into())]
+    #[should_panic]
+    #[case("_", attr!("some value"))]
+    fn test_set_get_attr(#[case] key: &str, #[case] val: Attribute) {
+        let mut am = AttrMap::new();
+        assert!(am.set_attr(key, val.clone()).is_none());
+        assert_eq!(am.attr(key), Some(&val));
+        assert_eq!(am.del_attr(key), Some(val));
+        assert!(am.attr(key).is_none());
+    }
+
+    #[rstest]
+    #[case("something", true.into())]
+    #[case("sething", 12.into())]
+    #[case("someng", 12.0.into())]
+    #[case("SOMETHING", "same_true".into())]
+    #[case("SoMe", attr!(true, "something").into())]
+    #[case("SoMe", attr!(x => true, y => "something").into())]
+    #[should_panic]
+    #[case("_", attr!("some value"))]
+    #[case("something.else", true.into())]
+    #[case("set.hing", 12.into())]
+    #[case("some.ng", 12.0.into())]
+    #[case("SOMET.HING", "same_true".into())]
+    #[case("So.Me", attr!(true, "something").into())]
+    #[case("SoMe.STH", attr!(x => true, y => "something").into())]
+    #[should_panic]
+    #[case("hsh._.shs", attr!("some value"))]
+    fn test_set_get_attr_dot(#[case] key: &str, #[case] val: Attribute) {
+        let mut am = AttrMap::new();
+        assert!(am.set_attr_dot(key, val.clone()).unwrap().is_none());
+        assert_eq!(am.attr_dot(key), Ok(Some(&val)));
+        assert_eq!(am.del_attr_dot(key), Ok(Some(val)));
+        assert_eq!(am.attr_dot(key), Ok(None));
+    }
+
     // this tests the conversion using into, as well as the type name
     #[rstest]
     #[case(attr![true,], attr!(true), Ok(true))]

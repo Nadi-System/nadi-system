@@ -1,4 +1,5 @@
 use crate::parser::tokenizer::{get_tokens, TaskToken};
+use colored::Colorize;
 use core::ops::Range;
 
 pub fn get_highlight(txt: &str, nft: &NadiFileType) -> Vec<(Range<usize>, Highlight)> {
@@ -45,6 +46,42 @@ impl Highlight {
             Self::String => "string",
             Self::Error => "error",
             Self::None => "none",
+        }
+    }
+
+    pub fn color(&self) -> &'static str {
+        match self {
+            Self::Comment => "gray",
+            Self::Keyword => "red",
+            Self::Symbol => "blue",
+            Self::Operator => "white",
+            Self::Paren => "blue",
+            Self::Variable => "darkgreen",
+            Self::Function => "magenta",
+            Self::Bool => "yellow",
+            Self::Number => "white",
+            Self::DateTime => "cyan",
+            Self::String => "green",
+            Self::Error => "red",
+            Self::None => "white",
+        }
+    }
+
+    pub fn colored(&self, content: &str) -> String {
+        match self {
+            Self::Comment => format!("{}", content.truecolor(100, 100, 100)),
+            Self::Keyword => format!("{}", content.red()),
+            Self::Symbol => format!("{}", content.blue()),
+            Self::Operator => content.to_string(),
+            Self::Paren => format!("{}", content.blue()),
+            Self::Variable => format!("{}", content.green()),
+            Self::Function => format!("{}", content.magenta()),
+            Self::Bool => format!("{}", content.yellow()),
+            Self::Number => content.to_string(),
+            Self::DateTime => format!("{}", content.cyan()),
+            Self::String => format!("{}", content.green()),
+            Self::Error => format!("{}", content.red()),
+            Self::None => content.to_string(),
         }
     }
 }
