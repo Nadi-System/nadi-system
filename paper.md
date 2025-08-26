@@ -58,7 +58,7 @@ capabilities.
 Domain Specific Languages (DSLs) have several advantages
 including improved code readability and maintainability due to the
 tailored syntax and semantics [@mernikWhenHowDevelop2005;
-albuquerqueQuantifyingUsabilityDomainspecific2015]. Among DSLs that
+@albuquerqueQuantifyingUsabilityDomainspecific2015]. Among DSLs that
 have been developed for networks or hydrology, Graphviz focuses on
 graph visualization [@gansnerOpenGraphVisualization2000;
 @ellsonGraphvizDynagraphStatic2004], but lacks analytical
