@@ -1,0 +1,44 @@
+cff-version: "1.2.0"
+authors:
+- family-names: Atreya
+  given-names: Gaurav
+  orcid: "https://orcid.org/0000-0002-0234-2165"
+- family-names: Steissberg
+  given-names: Todd
+  orcid: "https://orcid.org/0000-0003-3744-701X"
+- family-names: Ray
+  given-names: Patrick A.
+  orcid: "https://orcid.org/0000-0001-9495-2317"
+contact:
+- family-names: Atreya
+  given-names: Gaurav
+  orcid: "https://orcid.org/0000-0002-0234-2165"
+doi: 10.5281/zenodo.16956958
+message: If you use this software, please cite our article in the
+  Journal of Open Source Software.
+preferred-citation:
+  authors:
+  - family-names: Atreya
+    given-names: Gaurav
+    orcid: "https://orcid.org/0000-0002-0234-2165"
+  - family-names: Steissberg
+    given-names: Todd
+    orcid: "https://orcid.org/0000-0003-3744-701X"
+  - family-names: Ray
+    given-names: Patrick A.
+    orcid: "https://orcid.org/0000-0001-9495-2317"
+  date-published: 2025-08-27
+  doi: 10.21105/joss.08655
+  issn: 2475-9066
+  issue: 112
+  journal: Journal of Open Source Software
+  publisher:
+    name: Open Journals
+  start: 8655
+  title: NADI -- Network Analysis and Data Integration with a Domain
+    Specific Language
+  type: article
+  url: "https://joss.theoj.org/papers/10.21105/joss.08655"
+  volume: 10
+title: NADI -- Network Analysis and Data Integration with a Domain
+  Specific Language
