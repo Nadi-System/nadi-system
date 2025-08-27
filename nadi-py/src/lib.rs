@@ -4,6 +4,7 @@ mod attrs;
 mod functions;
 mod network;
 mod node;
+mod tasks;
 
 use functions::*;
 use nadi_core::functions::NadiFunctions;
@@ -17,6 +18,7 @@ fn nadi(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<node::PyNode>()?;
     m.add_class::<network::PyNetwork>()?;
     m.add_class::<functions::PyNadiFunctions>()?;
+    m.add_class::<tasks::PyTaskContext>()?;
     register_function_modules(py, m)
 }
 
