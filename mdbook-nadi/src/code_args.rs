@@ -1,13 +1,15 @@
 use crate::output::{clipped_from_stdout, output_handler, output_verbose};
 use anyhow::Context;
 use nadi_core::{
+    attrs::AttrMap,
     parser::{tasks, tokenizer::get_tokens},
-    string_template::{Render, RenderOptions, Template},
     tasks::{Task, TaskContextWrap},
+    template::Template,
 };
 use pulldown_cmark::Event;
 use std::io::Read;
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::{LazyLock, Mutex};
 
 pub type CodeHandler = fn(&str, &str, &Path) -> Result<Vec<Event<'static>>, anyhow::Error>;
@@ -102,8 +104,8 @@ pub fn run_task(task: &str, args: &str, pwd: &Path) -> anyhow::Result<Vec<Event<
 }
 
 pub fn run_template(templ: &str, args: &str, pwd: &Path) -> anyhow::Result<Vec<Event<'static>>> {
-    let templ = Template::parse_template(templ)?;
-    let mut op = RenderOptions::default();
+    let templ = Template::from_str(templ)?;
+    let mut op = AttrMap::default();
     for kv in args.split(';') {
         if kv.is_empty() {
             continue;
@@ -111,8 +113,7 @@ pub fn run_template(templ: &str, args: &str, pwd: &Path) -> anyhow::Result<Vec<E
         let (k, v) = kv
             .split_once('=')
             .context("variables not in key=value pairs")?;
-        op.variables
-            .insert(k.trim().to_string(), v.trim().to_string());
+        op.insert(k.trim().into(), v.trim().to_string().into());
     }
     match templ.render(&op) {
         Ok(txt) => Ok(output_verbose(

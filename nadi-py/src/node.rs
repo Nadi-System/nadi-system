@@ -1,9 +1,10 @@
 use crate::attrs::PyAttribute;
 use nadi_core::prelude::*;
-use nadi_core::string_template::Template;
+use nadi_core::template::Template;
 use pyo3::exceptions::PyAttributeError;
 use pyo3::prelude::*;
 use std::collections::HashSet;
+use std::str::FromStr;
 
 #[pyclass(module = "nadi", name = "Node")]
 #[repr(transparent)]
@@ -71,8 +72,8 @@ impl PyNode {
     }
 
     fn render(&self, text: &str) -> PyResult<String> {
-        let templ = Template::parse_template(text)?;
-        let text = self.0.lock().render(&templ)?;
+        let templ = Template::from_str(text)?;
+        let text = templ.render(&self.0.lock())?;
         Ok(text)
     }
 

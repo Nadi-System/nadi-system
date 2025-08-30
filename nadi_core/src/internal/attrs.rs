@@ -11,7 +11,6 @@ use abi_stable::sabi_trait::TD_CanDowncast;
 
 use abi_stable::std_types::{RString, RVec, Tuple2};
 use nadi_plugin::node_func;
-use string_template_plus::Template;
 
 /// The main Mod object of the plugin
 pub struct AttrsMod;
@@ -85,7 +84,7 @@ The function will error out in following conditions:
             Some(Err(e)) => return FunctionRet::Error(e.into()),
             None => false,
         };
-        let filepath = match node.render(&templ) {
+        let filepath = match templ.render(node) {
             Ok(f) => f,
             Err(e) => return FunctionRet::Error(e.to_string().into()),
         };

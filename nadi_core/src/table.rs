@@ -1,13 +1,13 @@
 use crate::{
-    attrs::{Attribute, FromAttribute, HasAttributes},
+    attrs::{Attribute, FromAttribute},
     network::Network,
+    template::{Template, TemplateError},
 };
 use abi_stable::{
     std_types::{RString, RVec},
     StableAbi,
 };
 use std::str::FromStr;
-use string_template_plus::Template;
 
 /// Alignment of a column
 #[repr(C)]
@@ -196,18 +196,17 @@ impl Table {
         let templates = self
             .columns
             .iter()
-            .map(|c| Template::parse_template(&c.template))
-            .collect::<Result<Vec<Template>, anyhow::Error>>()?;
+            .map(|c| Template::from_str(&c.template))
+            .collect::<Result<Vec<Template>, TemplateError>>()?;
 
         if conn {
             net.nodes()
                 .zip(net.connections_utf8())
                 .map(|(n, c)| {
-                    let n = n.lock();
                     let mut row = templates
                         .iter()
-                        .map(|t| n.render(t))
-                        .collect::<Result<Vec<String>, anyhow::Error>>()?;
+                        .map(|t| t.render(&n.lock()))
+                        .collect::<Result<Vec<String>, TemplateError>>()?;
                     row.insert(0, c);
                     Ok(row)
                 })
@@ -218,8 +217,8 @@ impl Table {
                     let n = n.lock();
                     let row = templates
                         .iter()
-                        .map(|t| n.render(t))
-                        .collect::<Result<Vec<String>, anyhow::Error>>()?;
+                        .map(|t| t.render(&n))
+                        .collect::<Result<Vec<String>, TemplateError>>()?;
                     Ok(row)
                 })
                 .collect()

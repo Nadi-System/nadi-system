@@ -7,6 +7,7 @@ pub mod node;
 pub mod plugins;
 pub mod table;
 pub mod tasks;
+pub mod template;
 pub mod timeseries;
 
 #[cfg(feature = "graphics")]
@@ -32,9 +33,10 @@ pub mod prelude {
     pub use crate::attrs::{
         AttrMap, AttrSlice, Attribute, FromAttribute, FromAttributeRelaxed, HasAttributes,
     };
-    pub use crate::expressions::{EvalError, Expression};
+    pub use crate::expressions::{EvalError, EvalErrorType, Expression};
     pub use crate::network::{Network, Propagation};
     pub use crate::node::{Node, NodeInner};
+    pub use crate::template::{Template, TemplateError};
     pub use crate::timeseries::{HasSeries, HasTimeSeries};
 }
 
@@ -46,7 +48,6 @@ extern crate self as nadi_core;
 pub use abi_stable;
 pub use anyhow;
 pub use nadi_plugin;
-pub use string_template_plus as string_template;
 
 /// Version of the crate, to be used to check plugin compatibility
 pub const NADI_CORE_VERSION: &str = env!("CARGO_PKG_VERSION");

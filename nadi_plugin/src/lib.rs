@@ -6,10 +6,10 @@ use convert_case::{Case, Casing};
 use std::collections::HashMap;
 
 use proc_macro::TokenStream;
-use quote::{ToTokens, format_ident, quote, quote_spanned};
+use quote::{format_ident, quote, quote_spanned, ToTokens};
 use syn::{
-    Attribute, DeriveInput, Expr, FnArg, Ident, ItemFn, ItemMod, Lit, MetaNameValue, Type,
-    TypeReference, parse_macro_input, punctuated::Punctuated, token::Comma,
+    parse_macro_input, punctuated::Punctuated, token::Comma, Attribute, DeriveInput, Expr, FnArg,
+    Ident, ItemFn, ItemMod, Lit, MetaNameValue, Type, TypeReference,
 };
 
 #[derive(PartialEq)]

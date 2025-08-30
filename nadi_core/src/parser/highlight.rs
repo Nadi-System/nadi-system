@@ -176,7 +176,7 @@ impl Highlight {
                 TaskToken::Function => Self::Function,
                 TaskToken::Assignment => Self::Operator,
                 TaskToken::Bool => Self::Bool,
-                TaskToken::String(_) => Self::String,
+                TaskToken::String(_) | TaskToken::Template(_) => Self::String,
                 TaskToken::Integer | TaskToken::Float => Self::Number,
                 TaskToken::Date | TaskToken::Time | TaskToken::DateTime => Self::DateTime,
                 TaskToken::NaN | TaskToken::Infinity => Self::Number,

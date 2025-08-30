@@ -3,7 +3,6 @@ use nadi_plugin::nadi_internal_plugin;
 #[nadi_internal_plugin]
 mod files {
     use crate::prelude::*;
-    use crate::string_template::Template;
     use nadi_core::nadi_plugin::{env_func, node_func};
     use std::io::Write;
     use std::io::{BufRead, BufReader};
@@ -55,7 +54,7 @@ mod files {
         /// Minimum number of lines the file should have
         min_lines: Option<usize>,
     ) -> anyhow::Result<bool> {
-        let p = node.render(&path)?;
+        let p = path.render(node)?;
         Ok(file_exists(p.as_ref(), min_lines))
     }
 

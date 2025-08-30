@@ -68,9 +68,9 @@ mod core {
     ///
     /// ```task
     /// network load_str("a -> b")
-    /// network assert_eq(node_map("NAME"), attr_map(a="a", b="b"))
-    /// network assert_eq(node_map("INDEX"), attr_map(a=1, b=0))
-    /// network assert_eq(node_map(), attr_map(a=1, b=0))
+    /// network assert_eq(node_map("NAME"), attrmap(a="a", b="b"))
+    /// network assert_eq(node_map("INDEX"), attrmap(a=1, b=0))
+    /// network assert_eq(node_map(), attrmap(a=1, b=0))
     /// ```
     #[network_func(invert = false)]
     fn node_map(

@@ -3,6 +3,7 @@ use crate::parser::{
     tokenizer::{TaskToken, Token},
 };
 use crate::tasks::TaskKeyword;
+use crate::template::Template;
 use nadi_core::attrs::{Attribute, Date, DateTime, Time};
 use nom::{
     branch::alt,
@@ -19,6 +20,23 @@ pub fn string_val<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, String> {
     if let [first, rest @ ..] = inp {
         match &first.ty {
             TaskToken::String(s) => Ok((rest, s.clone())),
+            _ => Err(nom::Err::Error(
+                MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch),
+            )),
+        }
+    } else {
+        Err(nom::Err::Error(
+            MatchErr::new(inp).ty(&ParseErrorType::Incomplete),
+        ))
+    }
+}
+
+pub fn template_val<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Template> {
+    if let [first, rest @ ..] = inp {
+        match &first.ty {
+            TaskToken::Template(s) => Template::from_str(&s).map(|t| (rest, t)).map_err(|e| {
+                nom::Err::Error(MatchErr::new(inp).ty(&ParseErrorType::InvalidTemplate(e)))
+            }),
             _ => Err(nom::Err::Error(
                 MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch),
             )),
@@ -69,6 +87,7 @@ one_token!(float, TaskToken::Float);
 one_token!(integer, TaskToken::Integer);
 one_token!(boolean, TaskToken::Bool);
 one_token!(string, TaskToken::String(_));
+one_token!(template, TaskToken::Template(_));
 one_token!(date, TaskToken::Date);
 one_token!(time, TaskToken::Time);
 one_token!(datetime, TaskToken::DateTime);

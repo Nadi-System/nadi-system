@@ -5,6 +5,7 @@ use crate::node::Node;
 use crate::tasks::{
     AttrTask, CondTask, EvalTask, FunctionType, TaskContext, TaskKeyword, WhileTask,
 };
+use crate::template::Template;
 use std::collections::HashMap;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -133,6 +134,8 @@ pub enum EvalErrorType {
     DifferentLength(usize, usize),
     /// Division by zero
     DivideByZero,
+    /// String Template Rendering Failed
+    RenderError(String),
     /// Regex compilation failed (invalid pattern)
     RegexError(regex::Error),
     /// Logical error by the developer
@@ -183,6 +186,7 @@ impl EvalErrorType {
                 return format!("Different number of members in an array: {a} and {b}");
             }
             Self::DivideByZero => "Division by Zero",
+            Self::RenderError(e) => return format!("Rendering Failed: {e}"),
             Self::RegexError(e) => return format!("Error in regex: {e}"),
             Self::LogicalError(s) => return format!("Logical Error: {s}, contact developer"),
             Self::MutexError(f, l) => {
@@ -200,6 +204,8 @@ pub enum Expression {
     Literal(Attribute),
     /// Variable (dot separated, optionally with context)
     Variable(InputVar),
+    /// String Template to Render in given context
+    Render(Template),
     /// Error in variable resolve process. Will propagation if evaluation is tried.
     ///
     /// This is for cases where the evaluation might short circuit,
@@ -224,6 +230,7 @@ impl std::fmt::Display for Expression {
         match self {
             Self::Literal(a) => std::fmt::Display::fmt(a, f),
             Self::Variable(v) => std::fmt::Display::fmt(v, f),
+            Self::Render(v) => write!(f, "r{v:?}"),
             Self::ResolveError(e) => write!(f, "ResolveError: {}", e),
             Self::Function(fc) => std::fmt::Display::fmt(fc, f),
             // multifunction is only generated after resolving
@@ -280,6 +287,7 @@ impl Expression {
             Self::Literal(_) => false,
             Self::ResolveError(_) => false,
             Self::Variable(_) => false,
+            Self::Render(_) => false,
             Self::Function(_) => false,
             Self::MultiFunction(_) => false,
             Self::UniOp(_, _) => true,
@@ -294,6 +302,8 @@ impl Expression {
             Self::Literal(_) => false,
             Self::ResolveError(_) => false,
             Self::Variable(_) => true,
+            // Could also do true here, as render stirng without variable is converted to a string
+            Self::Render(templ) => templ.has_variables(),
             Self::Function(fc) => {
                 fc.args.iter().any(|e| e.has_variables())
                     || fc.kwargs.iter().any(|e| e.1.has_variables())
@@ -326,6 +336,10 @@ impl Expression {
                 Ok(Self::Literal(v))
             }
             Self::Variable(v) => Ok(Self::Variable(v)),
+            Self::Render(v) => match v.lit() {
+                Some(s) => Ok(Self::Literal(Attribute::String(s.into()))),
+                None => Ok(Self::Render(v)),
+            },
             // this should also be handled on has_variables()
             Self::ResolveError(e) => Err(e),
             Self::Function(mut fc) => {
@@ -573,16 +587,14 @@ impl Expression {
                             Some(n) => n
                                 .try_lock()
                                 .into_option()
-                                .ok_or(
-                                    EvalErrorType::MutexError(file!(), line!()).pos(vt.position()),
-                                )?
+                                .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
                                 .attr_nested(&vt.prefix, &vt.name)
                                 .map(|a| a.cloned()),
                             None => {
                                 return Err(EvalErrorType::LogicalError(
                                     "Node function ran without Node value",
                                 )
-                                .pos(vt.position()));
+                                .no_pos());
                             }
                         },
                     },
@@ -603,6 +615,31 @@ impl Expression {
                             EvalErrorType::AttributeError(e).pos(vt.position()),
                         )),
                     }
+                }
+            }
+            Self::Render(t) => {
+                let res = match ft {
+                    FunctionType::Env => t.render(&ctx.env),
+                    FunctionType::Network => t.render(&ctx.network),
+                    FunctionType::Node => match node {
+                        Some(n) => t.render(
+                            &n.try_lock()
+                                .into_option()
+                                .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?,
+                        ),
+                        None => {
+                            return Err(EvalErrorType::LogicalError(
+                                "Node function ran without Node value",
+                            )
+                            .no_pos());
+                        }
+                    },
+                };
+                match res {
+                    Ok(s) => Ok(Self::Literal(Attribute::String(s.into()))),
+                    Err(e) => Ok(Self::ResolveError(
+                        EvalErrorType::RenderError(e.to_string()).no_pos(),
+                    )),
                 }
             }
             Self::Function(fc) => match fc.ty {
@@ -713,6 +750,8 @@ impl Expression {
         match self {
             Self::Literal(v) => Ok(v.clone()),
             Self::Variable(vt) => Err(EvalErrorType::UnresolvedVariable.pos(vt.position())),
+            // Resolve should have converted Render to Lit(String)
+            Self::Render(_) => Err(EvalErrorType::UnresolvedVariable.no_pos()),
             Self::ResolveError(e) => Err(e.clone()),
             Self::Function(fc) => match fc.eval(ft, ctx, node) {
                 Ok(None) => {

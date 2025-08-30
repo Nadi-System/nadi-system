@@ -97,6 +97,7 @@ mod tests {
         let mut tests = 0;
         let mut errors = Vec::new();
         for Tuple2(name, func) in functions.env_functions() {
+            eprintln!("Testing env {name}");
             let tasks = extract_tasks(func.help().as_str());
             if let Err(e) = test_plugin_function(&tasks, &mut ctx) {
                 errors.push(("env", name, e));
@@ -104,6 +105,7 @@ mod tests {
             ctx.clear();
         }
         for Tuple2(name, func) in functions.network_functions() {
+            eprintln!("Testing network {name}");
             let tasks = extract_tasks(func.help().as_str());
             if let Err(e) = test_plugin_function(&tasks, &mut ctx) {
                 errors.push(("net", name, e));
@@ -112,6 +114,7 @@ mod tests {
             ctx.clear();
         }
         for Tuple2(name, func) in functions.node_functions() {
+            eprintln!("Testing node {name}");
             let tasks = extract_tasks(func.help().as_str());
             if let Err(e) = test_plugin_function(&tasks, &mut ctx) {
                 errors.push(("node", name, e));

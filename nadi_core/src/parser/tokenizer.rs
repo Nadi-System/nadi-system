@@ -5,14 +5,14 @@ use crate::parser::{ParseError as TaskParseError, ParseErrorType};
 use crate::tasks::TaskKeyword;
 use nadi_core::attrs::{Attribute, Date, DateTime, Time};
 use nom::{
-    IResult,
     branch::alt,
     bytes::complete::{is_not, tag},
     character::complete::{alpha1, alphanumeric1, anychar, char, digit1, one_of},
     combinator::{map, opt, recognize},
-    error::{VerboseError, context},
+    error::{context, VerboseError},
     multi::{many0, many1},
-    sequence::{pair, preceded, terminated, tuple},
+    sequence::{delimited, pair, preceded, terminated, tuple},
+    IResult,
 };
 use std::str::FromStr;
 
@@ -127,6 +127,7 @@ pub enum TaskToken {
     None, // <None>
     Bool,
     String(String), // might need new value instead of slice (think escape seq)
+    Template(String),
     Integer,
     Float,
     Date,
@@ -318,11 +319,33 @@ fn variable(i: &str) -> TokenRes<'_> {
     Ok((rest, RawToken::new(ty, var)))
 }
 
+fn template(i: &str) -> TokenRes<'_> {
+    let (rest, s) = context("template", preceded(tag("r"), parse_string))(i)?;
+    Ok((
+        rest,
+        RawToken::new(TaskToken::Template(s), &i[..(i.len() - rest.len())]),
+    ))
+}
+
 fn string(i: &str) -> TokenRes<'_> {
     let (rest, s) = context("string", parse_string)(i)?;
     Ok((
         rest,
         RawToken::new(TaskToken::String(s), &i[..(i.len() - rest.len())]),
+    ))
+}
+
+fn lit_string(i: &str) -> TokenRes<'_> {
+    let (rest, s) = context(
+        "string",
+        delimited(tag("'"), recognize(many0(is_not("'"))), tag("'")),
+    )(i)?;
+    Ok((
+        rest,
+        RawToken::new(
+            TaskToken::String(s.to_string()),
+            &i[..(i.len() - rest.len())],
+        ),
     ))
 }
 
@@ -386,8 +409,8 @@ fn datetime(i: &str) -> TokenRes<'_> {
 
 fn task_token(i: &str) -> TokenRes<'_> {
     alt((
-        whitespace, newline, comment, string, datetime, date, time, boolean, float, integer,
-        variable, none, symbols, operators, invalid,
+        whitespace, newline, comment, template, string, lit_string, datetime, date, time, boolean,
+        float, integer, variable, none, symbols, operators, invalid,
     ))(i)
 }
 

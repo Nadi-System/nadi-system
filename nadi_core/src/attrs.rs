@@ -1,18 +1,20 @@
 use crate::expressions::EvalErrorType;
+use crate::template::Template;
 use crate::valid_var;
 use abi_stable::{
-    StableAbi,
     std_types::{
         RHashMap,
         ROption::{self, RNone},
         RSlice, RStr, RString, RVec, Tuple2,
     },
+    StableAbi,
 };
 use colored::Colorize;
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
+use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
-use string_template_plus::{Render, RenderOptions, Template};
+use std::str::FromStr;
 
 #[cfg(feature = "chrono")]
 use abi_stable::std_types::RSome;
@@ -194,43 +196,6 @@ pub trait HasAttributes {
             )),
         }
     }
-
-    /// Render the given template using the attribute values
-    ///
-    /// The attributes will be available to be used in the template
-    /// based on the following rules:
-    /// - String attributes will be quoted, extra variable with `_`
-    ///   prefix will be available to use unquoted string variables,
-    /// - nested variables will be available using the `.` separator
-    /// - all other variables will be available with their name,
-    ///   their value will be their string representation.
-    fn render(&self, template: &Template) -> anyhow::Result<String> {
-        let mut op = RenderOptions::default();
-        let used_vars = template.parts().iter().flat_map(|p| p.variables());
-        for var in used_vars {
-            if let Some(val) = self.attr(var) {
-                op.variables.insert(var.to_string(), val.to_string());
-            }
-            if let Some((pre, name)) = var.rsplit_once(".") {
-                let pre: Vec<String> = pre.split(".").map(|s| s.to_string()).collect();
-                if let Ok(Some(val)) = self.attr_nested(&pre, name) {
-                    op.variables.insert(var.to_string(), val.to_string());
-                }
-            }
-            if let Some(val) = var.strip_prefix('_') {
-                if let Some(Attribute::String(s)) = self.attr(val) {
-                    op.variables.insert(var.to_string(), s.to_string());
-                }
-                if let Some((pre, name)) = val.rsplit_once(".") {
-                    let pre: Vec<String> = pre.split(".").map(|s| s.to_string()).collect();
-                    if let Ok(Some(Attribute::String(val))) = self.attr_nested(&pre, name) {
-                        op.variables.insert(var.to_string(), val.to_string());
-                    }
-                }
-            }
-        }
-        template.render(&op)
-    }
 }
 
 /// This Blanket Implementation helps us use the functions recursively
@@ -240,6 +205,18 @@ impl HasAttributes for AttrMap {
     }
     fn attr_map_mut(&mut self) -> &mut AttrMap {
         self
+    }
+}
+
+/// This Blanket Implementation helps us use mutex
+impl<T: HasAttributes> HasAttributes
+    for abi_stable::external_types::parking_lot::mutex::RMutexGuard<'_, T>
+{
+    fn attr_map(&self) -> &AttrMap {
+        self.deref().attr_map()
+    }
+    fn attr_map_mut(&mut self) -> &mut AttrMap {
+        self.deref_mut().attr_map_mut()
     }
 }
 
@@ -639,6 +616,14 @@ impl std::ops::Rem for Attribute {
 }
 
 impl Attribute {
+    /// Representative string for rendering as it is
+    pub fn repr(&self) -> String {
+        match self {
+            Self::String(s) => s.to_string(),
+            _ => self.to_string(),
+        }
+    }
+
     /// Convert the attribute into a valid JSON [`String`]
     pub fn to_json(&self) -> String {
         match self {
@@ -1165,14 +1150,13 @@ convert_impls!(RString => String);
 convert_impls!(String => PathBuf);
 convert_impls!(String => Regex);
 
-// TODO impl try_from for String => Template in string_template crate
 impl FromAttribute for Template {
     fn from_attr(value: &Attribute) -> Option<Self> {
-        Template::parse_template(&String::from_attr(value)?).ok()
+        Template::from_str(&String::from_attr(value)?).ok()
     }
 
     fn try_from_attr(value: &Attribute) -> Result<Self, String> {
-        Template::parse_template(&String::try_from_attr(value)?).map_err(|e| e.to_string())
+        Template::from_str(&String::try_from_attr(value)?).map_err(|e| e.to_string())
     }
 }
 
@@ -1618,7 +1602,11 @@ impl From<chrono::FixedOffset> for Offset {
     fn from(value: chrono::FixedOffset) -> Self {
         let (secs, east) = {
             let s = value.local_minus_utc();
-            if s > 0 { (s, false) } else { (s.abs(), true) }
+            if s > 0 {
+                (s, false)
+            } else {
+                (s.abs(), true)
+            }
         };
         let m = secs / 60;
         let h = m / 60;
@@ -1643,6 +1631,7 @@ impl From<Offset> for chrono::FixedOffset {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::prelude::EvalErrorType;
     use rstest::rstest;
 
     #[rstest]
@@ -1694,17 +1683,17 @@ mod tests {
     #[case(attr!["vals", 1], attr!("vals"), Ok(true))]
     #[case(attr!["value is this"], attr!("this"), Ok(true))]
     #[case(attr!["value is this"], attr!("that"), Ok(false))]
-    #[case(attr![true], attr!(12), Err(EvalError::InvalidOperation))]
+    #[case(attr![true], attr!(12), Err(EvalErrorType::InvalidOperation))]
     // you can check other attributes in a string
     #[case(attr!["12 numbers"], attr!(12), Ok(true))]
     #[case(attr!["12 numbers"], attr!(true), Ok(false))]
     #[case(attr!["true numbers"], attr!(true), Ok(true))]
-    #[case(attr![2024], attr!(12), Err(EvalError::InvalidOperation))]
-    #[case(attr![1.1232], attr!(12), Err(EvalError::InvalidOperation))]
+    #[case(attr![2024], attr!(12), Err(EvalErrorType::InvalidOperation))]
+    #[case(attr![1.1232], attr!(12), Err(EvalErrorType::InvalidOperation))]
     fn test_contains(
         #[case] a: Attribute,
         #[case] b: Attribute,
-        #[case] res: Result<bool, EvalError>,
+        #[case] res: Result<bool, EvalErrorType>,
     ) {
         println!("{a:?} {b:?}");
         assert_eq!(a.contains(&b), res)

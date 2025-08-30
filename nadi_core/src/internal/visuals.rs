@@ -3,10 +3,10 @@ use nadi_plugin::nadi_internal_plugin;
 #[nadi_internal_plugin]
 mod visuals {
     use crate::prelude::*;
-    use crate::string_template::Template;
     use nadi_core::abi_stable::std_types::RSome;
     use nadi_plugin::network_func;
     use std::path::Path;
+    use std::str::FromStr;
     use svg::node::element::*;
     use svg::Document;
 
@@ -37,7 +37,7 @@ mod visuals {
 
     /// Exports the network as a svg
     #[network_func(
-	label = Template::parse_template("{_NAME}").unwrap(),
+	label = Template::from_str("{_NAME}").unwrap(),
         x_spacing = 25u64,
         y_spacing = 25u64,
         offset = 10u64,
@@ -74,11 +74,11 @@ mod visuals {
         let mut nodes = Group::new();
         let mut edges = Group::new();
         for node in net.nodes() {
-            let n = node.lock();
+            let n: &NodeInner = &node.lock();
             let x = n.level() * x_spacing + offset;
             let y = (count - n.index() as u64) * y_spacing + offset;
-            let lab = n
-                .render(&label)
+            let lab = label
+                .render(n)
                 .unwrap_or_else(|_| label.original().to_string());
             if lab.len() > max_textlen {
                 max_textlen = lab.len();

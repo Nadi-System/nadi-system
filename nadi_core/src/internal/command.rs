@@ -15,7 +15,6 @@ mod command {
     use std::sync::mpsc::{self, Receiver, Sender};
     use std::sync::{Arc, Mutex};
     use std::thread;
-    use string_template_plus::Template;
     use subprocess::Exec;
 
     pub fn key_val(txt: &str) -> anyhow::Result<(String, Attribute)> {
@@ -89,7 +88,7 @@ mod command {
         /// Echo the stdout from the command
         echo: bool,
     ) -> anyhow::Result<()> {
-        let cmd = node.render(cmd)?;
+        let cmd = cmd.render(node)?;
         run_command_on_node(node, &cmd, verbose, echo)
     }
 
@@ -206,8 +205,8 @@ mod command {
         let commands: Arc<Mutex<Vec<_>>> = Arc::new(Mutex::new(
             net.nodes()
                 .enumerate()
-                .map(|(i, n)| Ok((i, n.lock().render(cmd)?)))
-                .collect::<Result<Vec<_>, anyhow::Error>>()?
+                .map(|(i, n)| Ok((i, cmd.render(&n.lock())?)))
+                .collect::<Result<Vec<_>, TemplateError>>()?
                 .into_iter()
                 .rev()
                 .collect(),
@@ -322,7 +321,7 @@ mod command {
         /// Show the output of the command
         echo: bool,
     ) -> anyhow::Result<()> {
-        let cmd = net.render(&cmd)?;
+        let cmd = cmd.render(net)?;
         if verbose {
             println!("$ {cmd}");
         }

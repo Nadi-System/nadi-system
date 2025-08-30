@@ -1,6 +1,7 @@
 use crate::expressions::{EvalError, EvalErrorType};
 #[cfg(feature = "parser")]
 use crate::parser::ParseError;
+use crate::template::TemplateError;
 pub use pyo3;
 use pyo3::{exceptions::*, IntoPyObject, PyErr, PyErrArguments, PyObject, Python};
 
@@ -35,6 +36,7 @@ impl From<EvalError> for PyErr {
             EvalErrorType::NotANumber => PyTypeError::new_err(err),
             EvalErrorType::NotABool => PyTypeError::new_err(err),
 
+            EvalErrorType::RenderError(_) => PyNameError::new_err(err),
             EvalErrorType::RegexError(_) => PyValueError::new_err(err),
             EvalErrorType::DifferentLength(_, _) => PyAssertionError::new_err(err),
             EvalErrorType::DivideByZero => PyZeroDivisionError::new_err(err),
@@ -58,6 +60,22 @@ impl PyErrArguments for ParseError {
 #[cfg(feature = "parser")]
 impl From<ParseError> for PyErr {
     fn from(err: ParseError) -> PyErr {
+        PySyntaxError::new_err(err.to_string())
+    }
+}
+
+impl PyErrArguments for TemplateError {
+    fn arguments(self, py: Python<'_>) -> PyObject {
+        self.to_string()
+            .into_pyobject(py)
+            .unwrap()
+            .into_any()
+            .unbind()
+    }
+}
+
+impl From<TemplateError> for PyErr {
+    fn from(err: TemplateError) -> PyErr {
         PySyntaxError::new_err(err.to_string())
     }
 }

@@ -350,9 +350,6 @@ impl Network {
             });
 
         for (node, ord) in orders {
-            // this panic-ed but how? all node are from nodes_map; maybe some output from while loop not in nodes_map
-            // panicked at nadi_core/src/network.rs:353:27:
-            // no entry in RHashMap<_, _> found for key
             self.nodes_map[&node].lock().set_order(ord);
         }
     }
@@ -543,6 +540,7 @@ impl Network {
     }
 
     pub fn new_outlet(&mut self, node: Node) {
+        node.lock().unset_output();
         let mut nodes = Vec::with_capacity(self.nodes.len());
         let mut nodes_map = HashMap::with_capacity(self.nodes.len());
         fn register(n: &Node, nds: &mut Vec<RString>, nmp: &mut HashMap<RString, Node>) {

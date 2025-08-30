@@ -4,7 +4,7 @@ use iced_graphics::geometry::Path;
 use nadi_core::graphics::color::Color as NadiColor;
 use nadi_core::graphics::node::NodeShape;
 use nadi_core::prelude::*;
-use nadi_core::string_template::Template;
+use nadi_core::template::Template;
 
 pub struct NodeData {
     pub index: usize,
@@ -30,7 +30,7 @@ impl NodeData {
         // TODO load node.visual.nodelabel if not use network label provided
         let label = label
             .as_ref()
-            .map(|t| node.render(t).unwrap_or(t.original().to_string()))
+            .map(|t| t.render(node).unwrap_or(t.original().to_string()))
             .unwrap_or_else(|| node.name().to_string());
         Self {
             index: node.index(),

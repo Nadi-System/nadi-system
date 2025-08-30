@@ -6,7 +6,6 @@ mod attrs {
     use abi_stable::std_types::Tuple2;
     use nadi_plugin::{env_func, network_func, node_func};
     use std::str::FromStr;
-    use string_template_plus::Template;
 
     /// Set node attributes
     ///
@@ -206,7 +205,7 @@ mod attrs {
     ) -> Result<(), String> {
         for Tuple2(k, v) in kwargs {
             let templ: Template = Template::try_from_attr(v)?;
-            let text = node.render(&templ).map_err(|e| e.to_string())?;
+            let text = templ.render(node).map_err(|e| e.to_string())?;
             node.set_attr(k.as_str(), text.into());
         }
         Ok(())
@@ -236,7 +235,7 @@ mod attrs {
         /// Print the rendered toml or not
         echo: bool,
     ) -> anyhow::Result<()> {
-        let toml = format!("{}\n", node.render(toml)?);
+        let toml = format!("{}\n", toml.render(node)?);
         if echo {
             println!("{toml}");
         }
@@ -467,7 +466,7 @@ mod attrs {
     ) -> Result<(), String> {
         for Tuple2(k, v) in kwargs {
             let templ: Template = Template::try_from_attr(v)?;
-            let text = network.render(&templ).map_err(|e| e.to_string())?;
+            let text = templ.render(network).map_err(|e| e.to_string())?;
             network.set_attr(k.as_str(), text.into());
         }
         Ok(())

@@ -5,7 +5,6 @@ mod render {
     use crate::prelude::*;
     use nadi_plugin::{env_func, network_func, node_func};
     use std::path::PathBuf;
-    use string_template_plus::Template;
 
     /// Render the template based on the node attributes
     ///
@@ -36,12 +35,11 @@ mod render {
         safe: bool,
         #[kwargs] keyval: &AttrMap,
     ) -> Result<String, String> {
+        let res = template.render(keyval);
         let text = if safe {
-            keyval
-                .render(template)
-                .unwrap_or_else(|_| template.original().to_string())
+            res.unwrap_or_else(|_| template.original().to_string())
         } else {
-            keyval.render(template).map_err(|e| e.to_string())?
+            res.map_err(|e| e.to_string())?
         };
         Ok(text)
     }
@@ -65,11 +63,11 @@ mod render {
         /// if render fails keep it as it is instead of exiting
         safe: bool,
     ) -> Result<String, String> {
+        let res = template.render(node);
         let text = if safe {
-            node.render(template)
-                .unwrap_or_else(|_| template.original().to_string())
+            res.unwrap_or_else(|_| template.original().to_string())
         } else {
-            node.render(template).map_err(|e| e.to_string())?
+            res.map_err(|e| e.to_string())?
         };
         Ok(text)
     }
@@ -89,12 +87,11 @@ mod render {
         /// if render fails keep it as it is instead of exiting
         safe: bool,
     ) -> Result<String, String> {
+        let res = template.render(network);
         let text = if safe {
-            network
-                .render(template)
-                .unwrap_or_else(|_| template.original().to_string())
+            res.unwrap_or_else(|_| template.original().to_string())
         } else {
-            network.render(template).map_err(|e| e.to_string())?
+            res.map_err(|e| e.to_string())?
         };
         Ok(text)
     }
@@ -119,13 +116,12 @@ mod render {
         let lines: Vec<String> = network
             .nodes()
             .map(|n| {
-                let node = n.lock();
+                let n: &NodeInner = &n.lock();
+                let res = template.render(n);
                 if safe {
-                    Ok(node
-                        .render(template)
-                        .unwrap_or_else(|_| template.original().to_string()))
+                    Ok(res.unwrap_or_else(|_| template.original().to_string()))
                 } else {
-                    node.render(template).map_err(|e| e.to_string())
+                    res.map_err(|e| e.to_string())
                 }
             })
             .collect::<Result<Vec<_>, String>>()?;
@@ -177,7 +173,6 @@ mod render_utils {
     use std::io::{BufRead, BufReader};
     use std::path::{Path, PathBuf};
     use std::str::FromStr;
-    use string_template_plus::Template;
 
     pub enum RenderFileContentsType {
         Include(PathBuf, String),
@@ -195,7 +190,7 @@ mod render_utils {
         filecontents: &mut RenderFileContents,
     ) -> Result<(), Error> {
         let p = if let Some(batch) = batch {
-            RenderFileContentsType::Snippet(Template::parse_template(lines)?, batch)
+            RenderFileContentsType::Snippet(Template::from_str(lines)?, batch)
         } else {
             RenderFileContentsType::Literal(lines.clone())
         };
@@ -270,7 +265,7 @@ mod render_utils {
         fn _snippet(templ: &str, batch: Propagation) -> Result<Self, Error> {
             Ok(Self {
                 contents: vec![RenderFileContentsType::Snippet(
-                    Template::parse_template(templ)?,
+                    Template::from_str(templ)?,
                     batch,
                 )],
             })
@@ -301,7 +296,8 @@ mod render_utils {
                             .nodes_select(&prop.order, &prop.nodes)
                             .map_err(anyhow::Error::msg)?
                         {
-                            output.push_str(&node.lock().render(templ)?);
+                            let n: &NodeInner = &node.lock();
+                            output.push_str(&templ.render(n)?);
                         }
                     }
                 }

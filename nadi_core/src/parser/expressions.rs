@@ -18,6 +18,7 @@ use nom::{
 pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
     alt((
         input_variable,
+        map(template_val, Expression::Render),
         map(attribute, Expression::Literal),
         map(function_call, Expression::Function),
         uni_operator_expr,
