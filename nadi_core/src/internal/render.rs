@@ -14,7 +14,7 @@ mod render {
     /// NADI book.
     ///
     /// ```task
-    /// env assert_eq(render("abc {_x}", x="ab"), "abc ab")
+    /// env assert_eq(render("abc {x}", x="ab"), "abc ab")
     /// env assert_eq(render("abc {x}", x=23), "abc 23")
     /// env assert_eq(render("abc {x} {a}", safe=true), "abc {x} {a}")
     /// ```

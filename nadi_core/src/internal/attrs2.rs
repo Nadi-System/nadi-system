@@ -193,7 +193,7 @@ mod attrs {
     ///
     /// ```task
     /// network load_str("a -> b");
-    /// node set_attrs_render(val1 = "Node: {_NAME}");
+    /// node set_attrs_render(val1 = "Node: {NAME}");
     /// node[a] assert_eq(val1, "Node: a")
     /// ```
     #[node_func]
@@ -224,8 +224,8 @@ mod attrs {
     ///
     /// ```task
     /// network load_str("a -> b");
-    /// node load_toml_render("label = \\\"Node: {_NAME}\\\"")
-    /// node assert_eq(label, render("Node: {_NAME}"))
+    /// node load_toml_render("label = \"Node: {NAME}\"")
+    /// node assert_eq(label, render("Node: {NAME}"))
     /// ```
     #[node_func(echo = false)]
     fn load_toml_render(
