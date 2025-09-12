@@ -1,4 +1,6 @@
 # Nadi System
+[![joss](https://joss.theoj.org/papers/dccad16648a06737cf6c33240943fd67/status.svg)](https://joss.theoj.org/papers/dccad16648a06737cf6c33240943fd67)
+[![zenodo](https://zenodo.org/badge/DOI/10.5281/zenodo.16956958.svg)](https://doi.org/10.5281/zenodo.16956958)
 
 Collection of Utilities to do Network Analysis and Data Integration. This is made targeting analysis of point data in a river system but it should work for any network analysis that work on directed tree network.
 

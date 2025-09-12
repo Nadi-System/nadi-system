@@ -212,7 +212,7 @@ impl PyNadiFunctions {
             None => {
                 return Err(PyKeyError::new_err(format!(
                     "Node Function {function} not found"
-                )))
+                )));
             }
         };
         match func.call_mut(&mut node.0.lock(), &ctx) {
@@ -237,7 +237,7 @@ impl PyNadiFunctions {
             None => {
                 return Err(PyKeyError::new_err(format!(
                     "Network Function {function} not found"
-                )))
+                )));
             }
         };
         match func.call_mut(&mut network.0, &ctx) {
@@ -261,7 +261,7 @@ impl PyNadiFunctions {
             None => {
                 return Err(PyKeyError::new_err(format!(
                     "Env Function {function} not found"
-                )))
+                )));
             }
         };
         match func.call(&ctx) {

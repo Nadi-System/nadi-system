@@ -12,8 +12,10 @@ authors:
     affiliation: 1
   - name: Todd Steissberg
     affiliation: 2
+    orcid: 0000-0003-3744-701X
   - name: Patrick A. Ray
     affiliation: 1
+    orcid: 0000-0001-9495-2317
 affiliations:
   - name: Department of Chemical and Environmental Engineering, University of Cincinnati, OH, USA
     index: 1
@@ -58,7 +60,7 @@ capabilities.
 Domain Specific Languages (DSLs) have several advantages
 including improved code readability and maintainability due to the
 tailored syntax and semantics [@mernikWhenHowDevelop2005;
-albuquerqueQuantifyingUsabilityDomainspecific2015]. Among DSLs that
+@albuquerqueQuantifyingUsabilityDomainspecific2015]. Among DSLs that
 have been developed for networks or hydrology, Graphviz focuses on
 graph visualization [@gansnerOpenGraphVisualization2000;
 @ellsonGraphvizDynagraphStatic2004], but lacks analytical
