@@ -1039,15 +1039,15 @@ macro_rules! attr {
     [ $($val:expr),* $(,)? ] => {
 	::nadi_core::attrs::Attribute::Array(
 	    vec![
-		$(::nadi_core::attrs::Attribute::from($val),)+
+		$(::nadi_core::attrs::Attribute::from($val),)*
 	    ].into()
 	)
     };
-    [ $($key:ident => $val:expr),+ $(,)? ] => {
+    [ $($key:ident => $val:expr),* $(,)? ] => {
 	::nadi_core::attrs::AttrMap::from(
 	    std::collections::HashMap::from([$(
 		(::nadi_core::abi_stable::std_types::RString::from(stringify!($key)), ::nadi_core::attrs::Attribute::from($val)),
-	    )+
+	    )*
 	    ])
 	)
     };
@@ -1070,11 +1070,11 @@ macro_rules! attr_array {
 /// Macro to create a AttrMap from key, value pairs
 #[macro_export]
 macro_rules! attr_map {
-    ( $($key:ident => $val:expr),+ ) => {
+    ( $($key:ident => $val:expr),* ) => {
 	::nadi_core::attrs::AttrMap::from(
 	    std::collections::HashMap::from([$(
 		(::nadi_core::abi_stable::std_types::RString::from(stringify!($key)), ::nadi_core::attrs::Attribute::from($val)),
-	    )+
+	    )*
 	    ])
 	)
     }

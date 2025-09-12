@@ -1,6 +1,47 @@
 # load network
-network load_file("scioto.network")
+network load_file("scioto-gage.network")
 
+network csv.load_timeseries("scioto.csv", "date", "streamflow");
+node ts_complete("streamflow")
+node.data_frac =  ts_len("streamflow", valid=true) / ts_len("streamflow");
+node.good = data_frac > 0.75;
+
+
+network gis.fields("/home/gaurav/work/nadi-project/analysis/data/gagesII_9322_point_shapefile.shp.zip")
+network gis.load_attrs("/home/gaurav/work/nadi-project/analysis/data/usgs-drainage.csv", "SiteNumber")
+network gis.load_attrs("/home/gaurav/work/nadi-project/analysis/data/gagesII_9322_point_shapefile.shp.zip", "STAID")
+network gis.load_attrs("/home/gaurav/work/nadi-project/analysis/data/usgs-gages-stat.csv", "Site Number")
+
+node(DRAIN_SQKM?).area = DRAIN_SQKM;
+node(Drainage?).area = float(node.Drainage) * 2.5899881;
+
+node.visual.nodeshape = "circle";
+node(good).visual.nodecolor = "blue";
+node(good).visual.textcolor = "blue";
+network set_nodesize_attrs(nodes.area, maxsize=8.0);
+network svg.ts_blocks("test.svg", "{NAME}", "streamflow", 500.0, 380.0, svg.settings(top=25.0, deltax=10.0))
+network typst.svg2pdf("test.svg", "/tmp/test.pdf")
+
+# node<inp>.gcarea = if (good) {area} else { sum(inputs.garea)};
+# node.ratio = gcarea / area;
+# node.dratio = r"{ratio:.4}";
+
+node.darea = r"{area:.1}";
+node.data = r"{data_frac:.4}";
+node[03227500].area = 3000.0
+node.area_check = area >= sum(inputs.area);
+node.area_valid = if (area_check) {"✓"} else {"✗"};
+node(!area_check).visual.nodecolor = "red";
+network typst.compile(typst.table("
+Index => {INDEX}
+USGS ID => {NAME}
+<Name => {Site_Name}
+>Area ($\"km\"^2$) => {darea}
+Area Check => {area_valid}
+Data Fraction => {data}
+"), "/tmp/table.pdf")
+
+exit
 # simple loop
 env.count = 1;
 while (count < 5) {

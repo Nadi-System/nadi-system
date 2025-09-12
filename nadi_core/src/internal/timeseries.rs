@@ -4,7 +4,10 @@ use nadi_plugin::nadi_internal_plugin;
 mod ts {
 
     use crate::prelude::*;
-    use abi_stable::std_types::RString;
+    use abi_stable::std_types::{
+        ROption::{RNone, RSome},
+        RString,
+    };
     use nadi_plugin::{network_func, node_func};
     use std::collections::HashSet;
     use std::fs::File;
@@ -40,18 +43,42 @@ mod ts {
     }
 
     /// Length of the timeseries
-    #[node_func(safe = false)]
+    #[node_func(safe = false, valid = false)]
     fn ts_len(
         node: &NodeInner,
         /// Name of the timeseries
         name: &str,
         /// Do not error if timeseries does't exist
         safe: bool,
+        /// Only count valid data (skip nulls)
+        valid: bool,
     ) -> Result<Option<usize>, String> {
         match node.try_ts(name) {
-            Ok(s) => Ok(Some(s.series().len())),
+            Ok(s) => {
+                if valid {
+                    Ok(Some(s.series().len_valid()))
+                } else {
+                    Ok(Some(s.series().len()))
+                }
+            }
             Err(_) if safe => Ok(None),
             Err(e) => Err(e),
+        }
+    }
+
+    /// Convert the timeseries to complete if it doesn't have gaps
+    #[node_func]
+    fn ts_complete(
+        node: &mut NodeInner,
+        /// Name of the timeseries
+        name: &str,
+    ) -> Result<(), String> {
+        match node.ts_map_mut().remove(name) {
+            RSome(s) => {
+                node.ts_map_mut().insert(name.into(), s.maybe_complete());
+                Ok(())
+            }
+            RNone => Err(format!("Timeseris {name} doesn't exist")),
         }
     }
 

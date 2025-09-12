@@ -28,6 +28,12 @@ pub trait HasTimeSeries {
             .get(name)
             .ok_or(format!("Timeseries `{name}` not found"))
     }
+
+    fn try_ts_mut(&mut self, name: &str) -> Result<&mut TimeSeries, String> {
+        self.ts_map_mut()
+            .get_mut(name)
+            .ok_or(format!("Timeseries `{name}` not found"))
+    }
 }
 
 pub trait HasSeries {
@@ -127,6 +133,14 @@ impl<'a> TimeLineInner {
         self.step
     }
 
+    pub fn len(&self) -> usize {
+        self.str_values.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.str_values.is_empty()
+    }
+
     pub fn str_values(&'a self) -> impl Iterator<Item = &'a str> {
         self.str_values.iter().map(|s| s.as_str())
     }
@@ -174,6 +188,11 @@ impl TimeSeries {
 
     pub fn series(&self) -> &Series {
         &self.values
+    }
+
+    pub fn maybe_complete(mut self) -> Self {
+        self.values = self.values.maybe_complete();
+        self
     }
 
     pub fn values<'a, T: FromSeries<'a>>(&'a self) -> Option<&'a [T]> {
@@ -310,6 +329,14 @@ fn to_complete<T>(vals: RVec<ROption<T>>) -> RVec<T> {
     vals.into_iter().map(|v| v.unwrap()).collect()
 }
 
+fn get_nulls<T>(vals: &RVec<ROption<T>>) -> Vec<bool> {
+    vals.into_iter().map(|v| v.is_none()).collect()
+}
+
+fn get_valids<T>(vals: &RVec<ROption<T>>) -> Vec<bool> {
+    vals.into_iter().map(|v| v.is_some()).collect()
+}
+
 fn fill_gaps<T: Clone>(vals: RVec<ROption<T>>, fill: T) -> RVec<T> {
     vals.into_iter()
         .map(|v| v.unwrap_or(fill.clone()))
@@ -409,7 +436,7 @@ impl MaskedSeries {
         }
     }
 
-    fn has_gaps(&self) -> bool {
+    pub fn has_gaps(&self) -> bool {
         match self {
             Self::Floats(v) => has_gaps(v),
             Self::Integers(v) => has_gaps(v),
@@ -420,6 +447,67 @@ impl MaskedSeries {
             Self::DateTimes(v) => has_gaps(v),
             Self::Attributes(v) => has_gaps(v),
         }
+    }
+
+    pub fn get_nulls(&self) -> Vec<bool> {
+        match self {
+            Self::Floats(v) => get_nulls(v),
+            Self::Integers(v) => get_nulls(v),
+            Self::Strings(v) => get_nulls(v),
+            Self::Booleans(v) => get_nulls(v),
+            Self::Dates(v) => get_nulls(v),
+            Self::Times(v) => get_nulls(v),
+            Self::DateTimes(v) => get_nulls(v),
+            Self::Attributes(v) => get_nulls(v),
+        }
+    }
+
+    pub fn get_valids(&self) -> Vec<bool> {
+        match self {
+            Self::Floats(v) => get_valids(v),
+            Self::Integers(v) => get_valids(v),
+            Self::Strings(v) => get_valids(v),
+            Self::Booleans(v) => get_valids(v),
+            Self::Dates(v) => get_valids(v),
+            Self::Times(v) => get_valids(v),
+            Self::DateTimes(v) => get_valids(v),
+            Self::Attributes(v) => get_valids(v),
+        }
+    }
+
+    pub fn data_blocks(&self, valid: bool) -> Vec<(usize, usize)> {
+        let valids = if valid {
+            self.get_valids()
+        } else {
+            self.get_nulls()
+        };
+        if valids.is_empty() {
+            return Vec::new();
+        }
+        let change: Vec<bool> = valids
+            .iter()
+            .zip(&valids[1..])
+            .map(|(a, b)| a != b)
+            .collect();
+        let num_blocks = change.iter().filter(|v| **v).count() + 1;
+        // position length and flag for the blocks
+        let mut blocks: Vec<(usize, usize, bool)> =
+            (0..num_blocks).map(|_| (0, 0, false)).collect();
+        blocks[0].2 = valids[0];
+        let mut block_id: Vec<usize> = valids.iter().map(|_| 0).collect();
+        for (i, ch) in change.into_iter().enumerate() {
+            let id = block_id[i] + ch as usize;
+            block_id[i + 1] = id;
+            blocks[id].1 += 1;
+            if ch {
+                blocks[id].0 = i + 1;
+                blocks[id].2 = valids[i + 1];
+            }
+        }
+        blocks
+            .into_iter()
+            .filter_map(|(pos, len, val)| val.then(|| (pos, len)))
+            .collect()
     }
 
     pub fn complete(self) -> Option<CompleteSeries> {

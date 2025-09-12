@@ -33,7 +33,7 @@ pulldown-cmark = "0.13.0"
 [features]
 all = ["chrono", "functions", "parser", "graphics"]
 chrono = ["dep:chrono"]
-functions = ["dep:filetime", "graphics", "parser"]
+functions = ["dep:filetime", "chrono", "graphics", "parser"]
 graphics = ["dep:svg"]
 parser = ["dep:nom"]
 python = ["dep:pyo3"]

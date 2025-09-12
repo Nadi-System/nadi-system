@@ -78,6 +78,9 @@ struct CliArgs {
     /// Open the REPL (interactive session) before exiting
     #[arg(short, long, action)]
     repl: bool,
+    /// Follow the path of the tasks file as current path while running it
+    #[arg(short = 'F', long)]
+    follow_path: bool,
     /// Run given string as task before running the file
     #[arg(short, long, value_name = "TASK_STR")]
     task: Option<String>,
@@ -126,6 +129,11 @@ fn main() -> anyhow::Result<()> {
         }
         if let Some(ref tasks) = args.tasks {
             let txt = std::fs::read_to_string(tasks)?;
+            if args.follow_path {
+                if let Some(p) = tasks.parent() {
+                    _ = std::env::set_current_dir(p);
+                }
+            }
             execute_tasks(&txt, args.print_tasks, &mut tasks_ctx)?;
         }
         if args.stdin {

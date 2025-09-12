@@ -330,24 +330,23 @@ impl Network {
         let mut orders = HashMap::<RString, u64>::with_capacity(self.nodes.len());
 
         // ran into stackoverflow with the recursive pattern of calculation
-        self.nodes_map
-            .iter()
-            .filter(|n| n.1.lock().inputs().len() == 0)
-            .for_each(|n| {
+        self.nodes_map.iter().for_each(|n| {
+            if n.1.lock().inputs().len() == 0 {
                 orders.insert(n.0.clone(), 1);
-                let mut n =
-                    n.1.try_lock_for(RDuration::from_secs(1))
-                        .expect("Lock failed for node, maybe branched network")
-                        .output()
-                        .cloned();
-                while let RSome(out) = n {
-                    let o = out
-                        .try_lock_for(RDuration::from_secs(1))
-                        .expect("Lock failed for node, maybe branched network");
-                    *orders.entry(o.name().into()).or_insert(0) += 1;
-                    n = o.output().cloned();
-                }
-            });
+            }
+            let mut n =
+                n.1.try_lock_for(RDuration::from_secs(1))
+                    .expect("Lock failed for node, maybe branched network")
+                    .output()
+                    .cloned();
+            while let RSome(out) = n {
+                let o = out
+                    .try_lock_for(RDuration::from_secs(1))
+                    .expect("Lock failed for node, maybe branched network");
+                *orders.entry(o.name().into()).or_insert(0) += 1;
+                n = o.output().cloned();
+            }
+        });
 
         for (node, ord) in orders {
             self.nodes_map[&node].lock().set_order(ord);

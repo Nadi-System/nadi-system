@@ -83,11 +83,11 @@ impl FromAttribute for NodeShape {
 }
 
 impl NodeShape {
-    pub fn svg(&self, x: u64, y: u64, size: f64, color: String) -> Element {
+    pub fn svg(&self, x: f64, y: f64, size: f64, color: String) -> Element {
         match self {
             NodeShape::Square => Rectangle::new()
-                .set("x", x as f64 - size / 2.0)
-                .set("y", y as f64 - size / 2.0)
+                .set("x", x - size / 2.0)
+                .set("y", y - size / 2.0)
                 .set("height", size)
                 .set("width", size)
                 .set("fill", color)
@@ -100,8 +100,8 @@ impl NodeShape {
                     (size, size * r)
                 };
                 Rectangle::new()
-                    .set("x", x as f64 - sizex / 2.0)
-                    .set("y", y as f64 - sizey / 2.0)
+                    .set("x", x - sizex / 2.0)
+                    .set("y", y - sizey / 2.0)
                     .set("height", sizey)
                     .set("width", sizex)
                     .set("fill", color)
@@ -132,9 +132,9 @@ impl NodeShape {
                 let ht = 0.8660 * size;
                 let dx = size / 2.0;
                 let points = [
-                    format!("{},{}", x as f64 - dx, y as f64 + ht / 3.0),
-                    format!("{},{}", x as f64, y as f64 - 2.0 * ht / 3.0),
-                    format!("{},{}", x as f64 + dx, y as f64 + ht / 3.0),
+                    format!("{},{}", x - dx, y + ht / 3.0),
+                    format!("{},{}", x, y - 2.0 * ht / 3.0),
+                    format!("{},{}", x + dx, y + ht / 3.0),
                 ];
                 Polygon::new()
                     .set("points", points.join(" "))
@@ -147,9 +147,9 @@ impl NodeShape {
                 let r = r.abs();
                 let (ht, dx) = if r > 1.0 { (ht / r, dx) } else { (ht, dx * r) };
                 let points = [
-                    format!("{},{}", x as f64 - dx, y as f64 + ht / 3.0),
-                    format!("{},{}", x as f64, y as f64 - 2.0 * ht / 3.0),
-                    format!("{},{}", x as f64 + dx, y as f64 + ht / 3.0),
+                    format!("{},{}", x - dx, y + ht / 3.0),
+                    format!("{},{}", x, y - 2.0 * ht / 3.0),
+                    format!("{},{}", x + dx, y + ht / 3.0),
                 ];
                 Polygon::new()
                     .set("points", points.join(" "))
@@ -204,7 +204,7 @@ impl NodeInner {
         self.try_attr(NODE_SHAPE.0).unwrap_or_default()
     }
 
-    pub fn node_point(&self, x: u64, y: u64) -> Element {
+    pub fn node_point(&self, x: f64, y: f64) -> Element {
         self.node_shape().svg(
             x,
             y,
@@ -213,7 +213,7 @@ impl NodeInner {
         )
     }
 
-    pub fn node_label(&self, x: u64, y: u64, text: String) -> Text {
+    pub fn node_label(&self, x: f64, y: f64, text: String) -> Text {
         let lab = Text::new(text)
             .set("x", x)
             .set("y", y)
@@ -228,7 +228,7 @@ impl NodeInner {
         }
     }
 
-    pub fn node_line(&self, x1: u64, y1: u64, x2: u64, y2: u64) -> Line {
+    pub fn node_line(&self, x1: f64, y1: f64, x2: f64, y2: f64) -> Line {
         Line::new()
             .set("x1", x1)
             .set("y1", y1)
