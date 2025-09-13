@@ -431,9 +431,9 @@ impl NadiFunctions {
         let fullname = RString::from(format!("{}.{}", plugin, name));
         self.node.insert(fullname.clone(), func);
         match self.plugins.entry(plugin.into()) {
-            REntry::Occupied(mut o) => o.get_mut().push_network(name),
+            REntry::Occupied(mut o) => o.get_mut().push_node(name),
             REntry::Vacant(v) => {
-                v.insert(PluginFunctions::default().with_network(name));
+                v.insert(PluginFunctions::default().with_node(name));
             }
         };
     }
@@ -442,9 +442,9 @@ impl NadiFunctions {
         let fullname = RString::from(format!("{}.{}", plugin, name));
         self.env.insert(fullname.clone(), func);
         match self.plugins.entry(plugin.into()) {
-            REntry::Occupied(mut o) => o.get_mut().push_network(name),
+            REntry::Occupied(mut o) => o.get_mut().push_env(name),
             REntry::Vacant(v) => {
-                v.insert(PluginFunctions::default().with_network(name));
+                v.insert(PluginFunctions::default().with_env(name));
             }
         };
     }
