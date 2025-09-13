@@ -463,7 +463,7 @@ mod tests {
     #[case("{foo:0.0}", attr_map!(foo => 3.1415), "3")]
     #[case("{foo:>10}", attr_map!(foo => "hi"), "        hi")]
     #[case("{foo:<10}", attr_map!(foo => "hi"), "hi        ")]
-    // #[case("{foo:^10}", attr_map!(foo => "hi"), "    hi    ")]
+    #[case("{foo:^10}", attr_map!(foo => "hi"), "    hi    ")]
     // #[case("{foo:0?}", attr_map!(foo => "test"), "\"test\"")]
     #[case("{foo:1.2}", attr_map!(foo => 1.2345), "1.23")]
     #[case("{foo:0.2}", attr_map!(foo => 1), "1.00")]

@@ -22,6 +22,18 @@ pub enum TaskMessage {
     Info(String),
 }
 
+impl TaskMessage {
+    pub fn print(&self) {
+        match self {
+            Self::Progress(l, i, t) => {
+                eprintln!("{l}: {}", i * 100 / t);
+            }
+            Self::Warning(msg) => eprintln!("WARN: {msg}"),
+            Self::Info(msg) => eprintln!("INFO: {msg}"),
+        }
+    }
+}
+
 /// Wrapper for TaskContext without any Channel
 pub struct TaskContextWrap {
     pub receiver: Receiver<TaskMessage>,

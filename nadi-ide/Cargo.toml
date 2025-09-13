@@ -18,3 +18,6 @@ gag = "1.0.0"
 iced_core = {git = "https://github.com/atreyagaurav/iced.git", branch="cargo-stable"}
 iced_graphics = { git = "https://github.com/atreyagaurav/iced.git", branch="cargo-stable", features = ["geometry"] }
 webbrowser = "1.0.4"
+
+[dev-dependencies]
+rstest = "0.25.0"

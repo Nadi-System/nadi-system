@@ -1,19 +1,34 @@
 use crate::network::PyNetwork;
 use nadi_core::parser::{tasks, tokenizer};
-use nadi_core::tasks::TaskContext;
+use nadi_core::tasks::{TaskContext, TaskMessage};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
+use std::sync::mpsc::channel;
+use std::thread;
 
 #[pyclass(unsendable, module = "nadi", name = "TaskContext")]
 #[derive(Clone)]
 /// Task Context for NADI, this is used to run tasks as strings
 pub struct PyTaskContext(pub TaskContext);
 
+// /// Message
+// #[pyclass(module = "nadi", name = "TaskMessage")]
+// #[derive(Clone)]
+// pub struct PyTaskMessage(pub TaskMessage);
+
 #[pymethods]
 impl PyTaskContext {
     #[new]
     #[pyo3(signature = (net=None))]
     fn new(net: Option<PyNetwork>) -> Self {
-        Self(TaskContext::new(net.map(|n| n.0)))
+        let (sender, receiver) = channel::<TaskMessage>();
+        thread::spawn(|| {
+            for msg in receiver {
+                // getting callback function from the python didn't
+                // work due to threads problem. (not Sync)
+                msg.print();
+            }
+        });
+        Self(TaskContext::new(net.map(|n| n.0), sender))
     }
 
     /// Clear the context of network and env variables

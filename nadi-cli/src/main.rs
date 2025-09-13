@@ -121,7 +121,7 @@ fn main() -> anyhow::Result<()> {
         let mut tasks_ctx = nadi_core::tasks::TaskContext::new(net, sender);
         thread::spawn(move || {
             for msg in receiver {
-                println!("{msg:?}");
+                msg.print();
             }
         });
         if let Some(ref txt) = args.task {

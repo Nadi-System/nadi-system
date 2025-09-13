@@ -422,3 +422,72 @@ pub fn secondary_even(theme: &Theme, status: button::Status) -> button::Style {
         button::Status::Disabled => base,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::{fixture, rstest};
+    use std::sync::OnceLock;
+
+    static mut NADI_FUNCS: OnceLock<NadiFunctions> = OnceLock::new();
+
+    #[fixture]
+    fn help() -> MdHelp {
+        // The static mut ref is for OnceLock, and it is immediately
+        // cloned to be used, so it is safe. This just saves us from
+        // loading the plugins over and over again for each test,
+        // significantly improving the runtime speed.
+        #[allow(static_mut_refs)]
+        let functions = unsafe { NADI_FUNCS.get_or_init(NadiFunctions::new) }.clone();
+
+        MdHelp {
+            functions,
+            ..Default::default()
+        }
+    }
+
+    #[rstest]
+    fn test_theme_change(mut help: MdHelp) {
+        for b in [true, false, true, false, false, true, true] {
+            help.update(Message::ThemeChange(b));
+            assert_eq!(help.light_theme, b);
+        }
+    }
+
+    #[rstest]
+    fn test_collapsed_change(mut help: MdHelp) {
+        let mut col = help.collapsed;
+        for _ in 0..5 {
+            help.update(Message::ToggleCollapsed);
+            col = !col;
+            assert_eq!(help.collapsed, col);
+        }
+    }
+
+    #[rstest]
+    fn test_search_change(mut help: MdHelp) {
+        for search in ["test", "testing", "env", "env is"] {
+            help.update(Message::SearchChange(search.into()));
+            assert_eq!(&help.search, search);
+        }
+    }
+
+    #[rstest]
+    fn test_functiontype_change(mut help: MdHelp) {
+        for ft in [
+            None,
+            Some(FunctionType::Node),
+            None,
+            Some(FunctionType::Network),
+            Some(FunctionType::Node),
+            Some(FunctionType::Node),
+            Some(FunctionType::Network),
+            Some(FunctionType::Env),
+        ] {
+            help.update(Message::FunctionTypeChange(ft.clone()));
+            assert_eq!(help.state, ft);
+        }
+    }
+
+    // TODO: need to think of ways to make sure the graphics elements are there. Like with searching functions and such.
+}

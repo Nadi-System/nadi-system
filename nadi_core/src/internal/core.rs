@@ -7,6 +7,28 @@ mod core {
     use nadi_plugin::{env_func, network_func, node_func};
     use std::collections::HashMap;
 
+    /// Convert string to double quoted form
+    ///
+    /// ```task
+    /// env assert_eq(str_quote("value"), "\"value\"")
+    /// env assert_eq(str_quote(true), "\"true\"")
+    /// env assert_eq(str_quote(12), "\"12\"")
+    /// ```
+    #[env_func(quote_char = "\"")]
+    fn str_quote(#[relaxed] vars: String, quote_char: &str) -> Result<String, String> {
+        if quote_char.len() == 1 {
+            Ok(format!(
+                "{quote_char}{}{quote_char}",
+                vars.replace(&quote_char.to_string(), &format!("\\{quote_char}"))
+            ))
+        } else {
+            Err(format!(
+                "Quote Character should be a single character {}",
+                quote_char
+            ))
+        }
+    }
+
     /// Count the number of true values in the array
     ///
     /// ```task

@@ -13,8 +13,8 @@ mod visuals {
     use nadi_core::timeseries::{HasTimeSeries, Series, TimeLine};
     use std::path::Path;
     use std::str::FromStr;
-    use svg::Document;
     use svg::node::element::*;
+    use svg::Document;
 
     #[derive(FromAttribute, Debug)]
     struct Settings {
