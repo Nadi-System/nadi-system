@@ -452,12 +452,20 @@ impl NadiFunctions {
     pub fn load_plugins(&mut self) -> anyhow::Result<()> {
         if let Ok(plugin_dirs) = std::env::var("NADI_PLUGIN_DIRS") {
             for pdir in plugin_dirs.split(':') {
-                if let Ok(dir) = std::fs::read_dir(pdir) {
+                let pdir = Path::new(pdir).join(crate::NADI_CORE_VERSION);
+                if let Ok(dir) = std::fs::read_dir(&pdir) {
                     for path in dir {
-                        if let Some(lib) = load_library_safe(&path?.path()) {
+                        let p = path?.path();
+                        if p.is_dir() {
+                            // No recursive directories
+                            continue;
+                        }
+                        if let Some(lib) = load_library_safe(&p) {
                             lib.register(self);
                         }
                     }
+                } else {
+                    eprintln!("WARN: Can't read plugin directory: {pdir:?}");
                 }
             }
         } else {
