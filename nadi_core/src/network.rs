@@ -343,7 +343,7 @@ impl Network {
                 let o = out
                     .try_lock_for(RDuration::from_secs(1))
                     .expect("Lock failed for node, maybe branched network");
-                *orders.entry(o.name().into()).or_insert(0) += 1;
+                *orders.entry(o.name().into()).or_insert(1) += 1;
                 n = o.output().cloned();
             }
         });
@@ -359,7 +359,7 @@ impl Network {
         self.outlet = {
             let outlets: Vec<Node> = self
                 .nodes()
-                .filter(|n| n.lock().output().is_none())
+                .filter(|n| n.try_lock().expect("mutex failed").output().is_none())
                 .map(|o| o.clone())
                 .collect();
             match &outlets[..] {
@@ -380,7 +380,9 @@ impl Network {
                         let maybe_root = outs
                             .iter()
                             .enumerate()
-                            .filter(|(_, o)| o.lock().name() == ROOT_NODE_NAME)
+                            .filter(|(_, o)| {
+                                o.try_lock().expect("mutex failed").name() == ROOT_NODE_NAME
+                            })
                             .next();
                         if let Some(root) = maybe_root {
                             eprintln!("WARN: a *ROOT* node found, adding others to it");
@@ -397,25 +399,62 @@ impl Network {
                     }
                     let outlet = self.node_by_name(ROOT_NODE_NAME).expect("Just inserted");
                     for o in outs {
-                        o.lock().set_output(outlet.clone());
-                        outlet.lock().add_input(o.clone());
+                        o.try_lock()
+                            .expect("mutex failed")
+                            .set_output(outlet.clone());
+                        outlet
+                            .try_lock()
+                            .expect("mutex failed")
+                            .add_input(o.clone());
                     }
                     RSome(outlet.clone())
                 }
             }
         };
-        let mut new_nodes: Vec<Node> = Vec::with_capacity(self.nodes.len());
-        fn insert_node(nv: &mut Vec<Node>, n: Node) {
-            nv.push(n.clone());
-            let mut inps: Vec<Node> = n.lock().inputs().to_vec();
-            inps.sort_by(compare_node_order);
+        self.calc_order();
+        let orders: HashMap<_, _> = self
+            .nodes_map
+            .iter()
+            .map(|n| (n.0.as_str(), n.1.try_lock().expect("mutex error").order()))
+            .collect();
+        let mut nodes_queue: Vec<String> = Vec::with_capacity(self.nodes.len());
+        let mut new_nodes: Vec<String> = Vec::with_capacity(self.nodes.len());
+        nodes_queue.push(
+            self.outlet
+                .clone()
+                .unwrap()
+                .try_lock()
+                .expect("mutex error")
+                .name()
+                .to_string(),
+        );
+
+        loop {
+            let curr = match nodes_queue.pop() {
+                Some(n) => n,
+                None => break,
+            };
+            let mut inps: Vec<String> = self.nodes_map[curr.as_str()]
+                .try_lock()
+                .expect("mutex failed")
+                .inputs()
+                .iter()
+                .map(|i| i.lock().name().to_string())
+                .collect();
+            inps.sort_by(|n1, n2| {
+                orders[n2.as_str()]
+                    .partial_cmp(&orders[n1.as_str()])
+                    .unwrap()
+            });
             for c in inps {
-                insert_node(nv, c);
+                nodes_queue.push(c.clone());
             }
+            new_nodes.push(curr);
         }
-        if let RSome(out) = &self.outlet {
-            insert_node(&mut new_nodes, out.clone());
-        }
+        let new_nodes: Vec<Node> = new_nodes
+            .iter()
+            .map(|n| self.nodes_map[n.as_str()].clone())
+            .collect();
         if new_nodes.len() < self.nodes.len() {
             // todo, make the nodes into different groups?
             eprintln!(
@@ -428,11 +467,12 @@ impl Network {
         }
         self.nodes = new_nodes
             .iter()
-            .map(|n| n.lock().name().into())
+            .map(|n| n.try_lock().expect("mutex failed").name().into())
             .collect::<Vec<RString>>()
             .into();
         self.reindex();
         self.ordered = true;
+        // eprintln!("Exit Re Order");
     }
 
     /// reindex the nodes in the network
@@ -743,10 +783,6 @@ impl std::fmt::Display for PropCondition {
             Self::Expr(expr) => write!(fmt, "({})", expr.to_string()),
         }
     }
-}
-
-fn compare_node_order(n1: &Node, n2: &Node) -> std::cmp::Ordering {
-    n1.lock().order().partial_cmp(&n2.lock().order()).unwrap()
 }
 
 /// Take any [`Node`] and create [`Network`] with it as the outlet.
