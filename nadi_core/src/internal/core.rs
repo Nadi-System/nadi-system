@@ -122,6 +122,18 @@ mod core {
             .into())
     }
 
+    /// Insert a key and value to a attrmap
+    ///
+    /// ```task
+    /// env.x = attrmap(a=1, b=2)
+    /// node assert_eq(insert(x, c, 3), attrmap(a=1, b=2, c=3))
+    /// ```
+    #[env_func]
+    fn insert(mut map: AttrMap, key: RString, value: Attribute) -> AttrMap {
+        map.insert(key, value);
+        map
+    }
+
     /// Count the number of input nodes in the node
     ///
     /// ```task
