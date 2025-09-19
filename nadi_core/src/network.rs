@@ -486,15 +486,16 @@ impl Network {
     /// increasing number is for tributories level
     pub fn set_levels(&mut self) {
         fn recc_set(node: &Node, level: u64) {
-            node.lock().set_level(level);
-            node.lock().order_inputs();
-            let node = node.lock();
-            let mut inps = node.inputs().iter();
-            if let Some(i) = inps.next() {
-                recc_set(i, level);
-            }
-            for i in inps {
-                recc_set(i, level + 1);
+            node.try_lock().expect("mutex problem").set_level(level);
+            let inputs = node.try_lock().expect("mutex problem").inputs().to_vec();
+            match &inputs[..] {
+                [] => (),
+                [first, rest @ ..] => {
+                    recc_set(first, level);
+                    for i in rest {
+                        recc_set(i, level + 1);
+                    }
+                }
             }
         }
         if let RSome(output) = &self.outlet {
@@ -511,7 +512,7 @@ impl Network {
     /// function will print a warning.
     fn remove_node_single(&mut self, node: &Node) {
         let (ind, out) = {
-            let n = node.try_lock().expect("mutex problem 1");
+            let n = node.try_lock().expect("mutex problem");
             let ind = n.index();
             self.nodes.remove(ind);
             self.nodes_map.remove(n.name());
@@ -521,28 +522,28 @@ impl Network {
         if let RSome(out) = out {
             let pos = out
                 .try_lock()
-                .expect("mutex problem 2")
+                .expect("mutex problem")
                 .inputs()
                 .iter()
-                .position(|i| i.try_lock().expect("mutex problem 3").index() == ind)
+                .position(|i| i.try_lock().expect("mutex problem").index() == ind)
                 .expect("Node should be in input list of output");
             out.try_lock()
-                .expect("mutex problem 4")
+                .expect("mutex problem")
                 .inputs_mut()
                 .remove(pos);
-            for inp in node.lock().inputs() {
+            for inp in node.try_lock().expect("mutex problem").inputs() {
                 inp.try_lock()
-                    .expect("mutex problem 5")
+                    .expect("mutex problem")
                     .set_output(out.clone());
                 out.try_lock()
-                    .expect("mutex problem 6")
+                    .expect("mutex problem")
                     .add_input(inp.clone());
             }
         } else {
-            for inp in node.lock().inputs() {
-                inp.try_lock().expect("mutex problem 7").unset_output();
+            for inp in node.try_lock().expect("mutex problem").inputs() {
+                inp.try_lock().expect("mutex problem").unset_output();
             }
-            if node.lock().inputs().len() > 1 {
+            if node.try_lock().expect("mutex problem").inputs().len() > 1 {
                 eprintln!("WARN: Node with multiple inputs and no output Removed");
             }
         }
