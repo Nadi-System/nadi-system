@@ -446,6 +446,14 @@ impl Network {
                     .partial_cmp(&orders[n1.as_str()])
                     .unwrap()
             });
+            // this just reorders the inputs, we don't change the input nodes
+            self.nodes_map[curr.as_str()]
+                .try_lock()
+                .expect("mutex failed")
+                .inputs = inps
+                .iter()
+                .map(|i| self.nodes_map[i.as_str()].clone())
+                .collect();
             for c in inps {
                 nodes_queue.push(c.clone());
             }
