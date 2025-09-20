@@ -141,17 +141,30 @@ impl Network {
     /// Append the edges from the list, making new nodes if necessary
     pub fn append_edges(&mut self, edges: &[(&str, &str)]) -> Result<(), String> {
         for (start, end) in edges {
+            if start == end {
+                return Err(format!("Node {:?} has itself as the output", start));
+            }
             if !self.nodes_map.contains_key(*start) {
                 self.insert_node_by_name(start);
             }
             if !self.nodes_map.contains_key(*end) {
                 self.insert_node_by_name(end);
             }
-            let inp = self.node_by_name(start).unwrap();
-            let out = self.node_by_name(end).unwrap();
+            let inp = self.node_by_name(start).expect("Input just inserted");
+            let out = self.node_by_name(end).expect("Output just inserted");
             {
-                if let RSome(n) = inp.lock().set_output(out.clone()) {
-                    let old = n.lock().name().to_string();
+                if let RSome(n) = inp
+                    .try_lock()
+                    .into_option()
+                    .expect("mutex error n1")
+                    .set_output(out.clone())
+                {
+                    let old = n
+                        .try_lock()
+                        .into_option()
+                        .expect("mutex error n2")
+                        .name()
+                        .to_string();
                     if &old != end {
                         return Err(format!(
                             "Node {:?} already has {:?} as output (new: {:?})",
@@ -159,7 +172,10 @@ impl Network {
                         ));
                     }
                 }
-                out.lock().add_input(inp.clone());
+                out.try_lock()
+                    .into_option()
+                    .expect("mutex error n3")
+                    .add_input(inp.clone());
             }
         }
         self.reorder();
@@ -359,7 +375,7 @@ impl Network {
         self.outlet = {
             let outlets: Vec<Node> = self
                 .nodes()
-                .filter(|n| n.try_lock().expect("mutex failed").output().is_none())
+                .filter(|n| n.try_lock().expect("mutex error nr1").output().is_none())
                 .map(|o| o.clone())
                 .collect();
             match &outlets[..] {
@@ -381,7 +397,7 @@ impl Network {
                             .iter()
                             .enumerate()
                             .filter(|(_, o)| {
-                                o.try_lock().expect("mutex failed").name() == ROOT_NODE_NAME
+                                o.try_lock().expect("mutex error nr2").name() == ROOT_NODE_NAME
                             })
                             .next();
                         if let Some(root) = maybe_root {
@@ -400,11 +416,11 @@ impl Network {
                     let outlet = self.node_by_name(ROOT_NODE_NAME).expect("Just inserted");
                     for o in outs {
                         o.try_lock()
-                            .expect("mutex failed")
+                            .expect("mutex error nr3")
                             .set_output(outlet.clone());
                         outlet
                             .try_lock()
-                            .expect("mutex failed")
+                            .expect("mutex error nr4")
                             .add_input(o.clone());
                     }
                     RSome(outlet.clone())
@@ -415,7 +431,12 @@ impl Network {
         let orders: HashMap<_, _> = self
             .nodes_map
             .iter()
-            .map(|n| (n.0.as_str(), n.1.try_lock().expect("mutex error").order()))
+            .map(|n| {
+                (
+                    n.0.as_str(),
+                    n.1.try_lock().expect("mutex error nr6").order(),
+                )
+            })
             .collect();
         let mut nodes_queue: Vec<String> = Vec::with_capacity(self.nodes.len());
         let mut new_nodes: Vec<String> = Vec::with_capacity(self.nodes.len());
@@ -424,7 +445,7 @@ impl Network {
                 .clone()
                 .unwrap()
                 .try_lock()
-                .expect("mutex error")
+                .expect("mutex error nr7")
                 .name()
                 .to_string(),
         );
@@ -436,7 +457,7 @@ impl Network {
             };
             let mut inps: Vec<String> = self.nodes_map[curr.as_str()]
                 .try_lock()
-                .expect("mutex failed")
+                .expect("mutex error nr8")
                 .inputs()
                 .iter()
                 .map(|i| i.lock().name().to_string())
@@ -449,7 +470,7 @@ impl Network {
             // this just reorders the inputs, we don't change the input nodes
             self.nodes_map[curr.as_str()]
                 .try_lock()
-                .expect("mutex failed")
+                .expect("mutex error nr9")
                 .inputs = inps
                 .iter()
                 .map(|i| self.nodes_map[i.as_str()].clone())
@@ -475,7 +496,7 @@ impl Network {
         }
         self.nodes = new_nodes
             .iter()
-            .map(|n| n.try_lock().expect("mutex failed").name().into())
+            .map(|n| n.try_lock().expect("mutex error nr10").name().into())
             .collect::<Vec<RString>>()
             .into();
         self.reindex();
@@ -573,15 +594,43 @@ impl Network {
 
     /// Subset the network into a new network by removing a bunch of nodes
     pub fn subset(&mut self, filter: &[bool], keep: bool) -> Result<(), String> {
-        let remove_nodes: Vec<Node> = self
+        let include_nodes: HashMap<String, Node> = self
             .nodes()
+            .zip(self.node_names())
             .zip(filter)
-            .filter(|(_, &f)| f ^ keep)
-            .map(|n| n.0.clone())
+            .filter(|(_, &f)| !(f ^ keep))
+            .map(|((n, name), _)| (name.to_string(), n.clone()))
             .collect();
-        for node in remove_nodes {
-            self.remove_node_single(&node);
+        include_nodes.values().for_each(|n| n.lock().unset_inputs());
+        for node in include_nodes.values() {
+            let mut start = node.clone();
+            loop {
+                let out = start.lock().output().cloned();
+                match out {
+                    RNone => {
+                        node.try_lock().expect("mutex error ns1").unset_output();
+                        break;
+                    }
+                    RSome(o) => {
+                        let mut op = o.try_lock().expect("mutex error ns2");
+                        if include_nodes.contains_key(op.name()) {
+                            op.add_input(node.clone());
+                            node.try_lock()
+                                .expect("mutex error ns3")
+                                .set_output(o.clone());
+                            break;
+                        } else {
+                            start = o.clone();
+                        }
+                    }
+                }
+            }
         }
+        self.nodes_map = include_nodes
+            .into_iter()
+            .map(|(n, o)| (n.into(), o))
+            .collect();
+        self.nodes = self.nodes_map.keys().map(|s| s.clone()).collect();
         self.reorder();
         self.set_levels();
         Ok(())
