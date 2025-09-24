@@ -2,7 +2,7 @@ use crate::attrs::{type_name, Attribute, Date, DateTime, FromAttribute, Time};
 
 use abi_stable::{
     external_types::RMutex,
-    std_types::{RArc, RHashMap, ROption, RSome, RString, RVec},
+    std_types::{RArc, RHashMap, RNone, ROption, RSome, RString, RVec},
     StableAbi,
 };
 
@@ -236,6 +236,31 @@ pub enum Series {
     Masked(MaskedSeries, ROption<Attribute>),
     /// Series without values
     Complete(CompleteSeries),
+}
+
+impl From<MaskedSeries> for Series {
+    fn from(val: MaskedSeries) -> Series {
+        if val.has_gaps() {
+            return Series::Masked(val, RNone);
+        }
+        // if there are gaps then to_complete(_) will panic
+        Series::Complete(match val {
+            MaskedSeries::Floats(v) => CompleteSeries::Floats(to_complete(v)),
+            MaskedSeries::Integers(v) => CompleteSeries::Integers(to_complete(v)),
+            MaskedSeries::Strings(v) => CompleteSeries::Strings(to_complete(v)),
+            MaskedSeries::Booleans(v) => CompleteSeries::Booleans(to_complete(v)),
+            MaskedSeries::Dates(v) => CompleteSeries::Dates(to_complete(v)),
+            MaskedSeries::Times(v) => CompleteSeries::Times(to_complete(v)),
+            MaskedSeries::DateTimes(v) => CompleteSeries::DateTimes(to_complete(v)),
+            MaskedSeries::Attributes(v) => CompleteSeries::Attributes(to_complete(v)),
+        })
+    }
+}
+
+impl From<CompleteSeries> for Series {
+    fn from(val: CompleteSeries) -> Series {
+        Series::Complete(val)
+    }
 }
 
 /// Matches and calls respective functions for all variations of [`Series`]
