@@ -491,6 +491,8 @@ mod tests {
     #[case("{foo:>10}bar{bar}", attr_map!(foo => "hi", bar => "z"), "        hibarz")]
     #[case("\\{{foo}\\}", attr_map!(foo => "baz"), "{baz}")] // literal opening brace
     #[case("{foo}\\{bar\\}", attr_map!(foo => "x", bar => "y"), "x{bar}")] // test nested escape? (implementation dependent)
+    // Make sure different syntax can be used
+    #[case::typst("#image(\"corrs/{NAME}.png\", height: 1in)", attr_map!(NAME => "x"), "#image(\"corrs/x.png\", height: 1in)")]
     fn render_template(#[case] templ: &str, #[case] values: AttrMap, #[case] res: String) {
         let templ = Template::from_str(templ).unwrap();
         let rend = templ.render(&values).unwrap();

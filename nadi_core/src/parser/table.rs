@@ -54,11 +54,11 @@ pub fn column(txt: &str) -> Res<&str, Column> {
             tuple((
                 opt(column_align),
                 preceded(
-                    sp,
+                    ws,
                     separated_pair(
                         map(take_until("=>"), str::trim),
                         tag("=>"),
-                        map(delimited(sp, take_till(|c| c == '\n'), sp), str::trim),
+                        map(delimited(ws, take_till(|c| c == '\n'), ws), str::trim),
                     ),
                 ),
             )),
@@ -95,11 +95,7 @@ mod tests {
     use rstest::rstest;
 
     #[rstest]
-    #[case(
-        "field=> test {here}",
-        Column::new("field", "test {here}", Some(ColumnAlign::Center)),
-        ""
-    )]
+    #[case("field=> test {here}", Column::new("field", "test {here}", None), "")]
     #[case(
         "<Field 1 =>{here} is {more_test?\"default\"} 2.4",
         Column::new(
@@ -112,6 +108,11 @@ mod tests {
     #[case(
         "#new field\n < field => test {here}\n",
         Column::new("field", "test {here}", Some(ColumnAlign::Left)),
+        ""
+    )]
+    #[case::hash(
+        "Correlation => #image(\"corrs/{NAME}.png\", height: 1in)\n",
+        Column::new("Correlation", "#image(\"corrs/{NAME}.png\", height: 1in)", None),
         ""
     )]
     fn column_test(#[case] txt: &str, #[case] value: Column, #[case] reminder: &str) {
