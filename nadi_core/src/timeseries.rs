@@ -1,9 +1,10 @@
-use crate::attrs::{type_name, Attribute, Date, DateTime, FromAttribute, Time};
+use crate::attrs::{Attribute, Date, DateTime, FromAttribute, Time, type_name};
+use crate::datafill::DataImputeError;
 
 use abi_stable::{
+    StableAbi,
     external_types::RMutex,
     std_types::{RArc, RHashMap, ROption, RSome, RString, RVec},
-    StableAbi,
 };
 
 pub type TimeLine = RArc<RMutex<TimeLineInner>>;
@@ -65,7 +66,8 @@ pub trait HasSeries {
         self.set_series(
             name,
             ser.ok_or(format!("Series `{name}` not found"))?
-                .fill_gaps(value)?,
+                .fill_gaps(value)
+                .map_err(|e| e.to_string())?,
         );
         Ok(())
     }
@@ -300,12 +302,14 @@ impl Series {
         }
     }
 
-    pub fn fill_gaps(self, value: Attribute) -> Result<Self, String> {
+    pub fn fill_gaps(self, value: Attribute) -> Result<Self, DataImputeError> {
         match self {
             Self::Complete(_) => Ok(self),
             Self::Masked(ms, _) => ms.fill_gaps(value).map(Self::Complete),
         }
     }
+
+    // pub fn minimum(&self) -> Attribute {}
 }
 
 #[repr(C)]
@@ -329,18 +333,17 @@ fn to_complete<T>(vals: RVec<ROption<T>>) -> RVec<T> {
     vals.into_iter().map(|v| v.unwrap()).collect()
 }
 
+fn minimum<T>(vals: RVec<ROption<T>>) -> T {
+    // Just to make it compile for now
+    vals.into_iter().map(|v| v.unwrap()).next().unwrap()
+}
+
 fn get_nulls<T>(vals: &RVec<ROption<T>>) -> Vec<bool> {
     vals.into_iter().map(|v| v.is_none()).collect()
 }
 
 fn get_valids<T>(vals: &RVec<ROption<T>>) -> Vec<bool> {
     vals.into_iter().map(|v| v.is_some()).collect()
-}
-
-fn fill_gaps<T: Clone>(vals: RVec<ROption<T>>, fill: T) -> RVec<T> {
-    vals.into_iter()
-        .map(|v| v.unwrap_or(fill.clone()))
-        .collect()
 }
 
 impl MaskedSeries {
@@ -523,29 +526,6 @@ impl MaskedSeries {
             Self::Times(v) => CompleteSeries::Times(to_complete(v)),
             Self::DateTimes(v) => CompleteSeries::DateTimes(to_complete(v)),
             Self::Attributes(v) => CompleteSeries::Attributes(to_complete(v)),
-        })
-    }
-
-    pub fn fill_gaps(self, value: Attribute) -> Result<CompleteSeries, String> {
-        Ok(match (self, value) {
-            (Self::Floats(v), Attribute::Float(f)) => CompleteSeries::Floats(fill_gaps(v, f)),
-            (Self::Floats(v), Attribute::Integer(i)) => {
-                CompleteSeries::Floats(fill_gaps(v, i as f64))
-            }
-            (Self::Integers(v), Attribute::Integer(f)) => CompleteSeries::Integers(fill_gaps(v, f)),
-            (Self::Strings(v), Attribute::String(f)) => CompleteSeries::Strings(fill_gaps(v, f)),
-            (Self::Booleans(v), Attribute::Bool(f)) => CompleteSeries::Booleans(fill_gaps(v, f)),
-            (Self::Dates(v), Attribute::Date(f)) => CompleteSeries::Dates(fill_gaps(v, f)),
-            (Self::Times(v), Attribute::Time(f)) => CompleteSeries::Times(fill_gaps(v, f)),
-            (Self::DateTimes(v), Attribute::DateTime(f)) => {
-                CompleteSeries::DateTimes(fill_gaps(v, f))
-            }
-            (Self::DateTimes(v), Attribute::Date(f)) => {
-                let f: DateTime = f.into();
-                CompleteSeries::DateTimes(fill_gaps(v, f))
-            }
-            (Self::Attributes(v), f) => CompleteSeries::Attributes(fill_gaps(v, f)),
-            _ => return Err("Data Type does not match with Series".to_string()),
         })
     }
 

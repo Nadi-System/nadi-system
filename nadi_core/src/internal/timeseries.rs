@@ -26,6 +26,16 @@ mod ts {
         node.ts_map().keys().map(|s| s.to_string()).collect()
     }
 
+    #[node_func]
+    /// Delete the timeseries with the given name
+    fn ts_delete(
+        node: &mut NodeInner,
+        /// Name of the timeseries to delete from this node
+        name: &str,
+    ) -> bool {
+        node.del_ts(name).is_some()
+    }
+
     /// Type name of the timeseries
     #[node_func(safe = false)]
     fn ts_dtype(

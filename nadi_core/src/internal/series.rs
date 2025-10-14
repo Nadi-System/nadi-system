@@ -118,6 +118,16 @@ mod series {
         Ok(())
     }
 
+    #[node_func]
+    /// Delete the series with the given name
+    fn sr_delete(
+        node: &mut NodeInner,
+        /// Name of the series to delete from this node
+        name: &str,
+    ) -> bool {
+        node.del_series(name).is_some()
+    }
+
     /// Make an array from the series if it's complete
     #[node_func(safe = false)]
     fn sr_to_array(
@@ -159,7 +169,7 @@ mod series {
         } else {
             let ser = node.try_series(name)?.clone();
             let newname = newname.unwrap_or_else(|| format!("{name}_filled"));
-            node.set_series(&newname, ser.fill_gaps(value)?);
+            node.set_series(&newname, ser.fill_gaps(value).map_err(|e| e.to_string())?);
             Ok(())
         }
     }

@@ -10,6 +10,7 @@ use abi_stable::{
     StableAbi,
 };
 use colored::Colorize;
+pub use nadi_plugin::FromAttribute;
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
