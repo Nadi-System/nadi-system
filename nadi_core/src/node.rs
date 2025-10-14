@@ -173,8 +173,13 @@ impl NodeInner {
 
     /// order the input nodes in the network
     pub fn order_inputs(&mut self) {
-        self.inputs
-            .sort_by(|a, b| b.lock().order.partial_cmp(&a.lock().order).unwrap());
+        self.inputs.sort_by(|a, b| {
+            b.try_lock()
+                .expect("mutex problem")
+                .order
+                .partial_cmp(&a.try_lock().expect("mutex problem").order)
+                .unwrap()
+        });
     }
 
     /// output of the node

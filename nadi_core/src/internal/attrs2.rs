@@ -448,6 +448,30 @@ mod attrs {
         Ok(())
     }
 
+    /// Set node attributes in a network using a attrmap
+    ///
+    /// ```task
+    /// network set_attrs(val = 23.4)
+    /// network assert_eq(val, 23.4)
+    /// ```
+    #[network_func]
+    fn set_node_attrs(
+        network: &mut Network,
+        /// Name of the attribute to set,
+        attr_name: &str,
+        /// key value pair of attributes to set (key = node name)
+        node_map: AttrMap,
+    ) -> Result<(), String> {
+        for Tuple2(k, v) in node_map.into_iter() {
+            network
+                .node_by_name(&k)
+                .ok_or(format!("Node {k} not found"))?
+                .lock()
+                .set_attr(attr_name, v);
+        }
+        Ok(())
+    }
+
     /// Set network attributes based on string templates
     ///
     /// It will set the attribute as a String

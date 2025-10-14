@@ -122,6 +122,18 @@ mod core {
             .into())
     }
 
+    /// Insert a key and value to a attrmap
+    ///
+    /// ```task
+    /// env.x = attrmap(a=1, b=2)
+    /// node assert_eq(insert(x, c, 3), attrmap(a=1, b=2, c=3))
+    /// ```
+    #[env_func]
+    fn insert(mut map: AttrMap, key: RString, value: Attribute) -> AttrMap {
+        map.insert(key, value);
+        map
+    }
+
     /// Count the number of input nodes in the node
     ///
     /// ```task
@@ -593,7 +605,7 @@ mod core {
     /// env assert_eq(length(uniq), 3)
     /// ```
     #[env_func]
-    fn unique_str(vars: Vec<String>) -> Vec<String> {
+    fn unique_str(#[relaxed] vars: Vec<String>) -> Vec<String> {
         vars.into_iter()
             .collect::<std::collections::HashSet<_>>()
             .into_iter()
@@ -609,7 +621,7 @@ mod core {
     /// )
     /// ```
     #[env_func]
-    fn count_str(vars: Vec<String>) -> HashMap<String, usize> {
+    fn count_str(#[relaxed] vars: Vec<String>) -> HashMap<String, usize> {
         let mut counts: HashMap<String, usize> = HashMap::new();
         vars.into_iter().for_each(|v| {
             let v = counts.entry(v).or_insert(0);
