@@ -4,8 +4,10 @@ use crate::expressions::{
 use crate::parser::{
     components::*,
     errors::{MatchErr, ParseErrorType},
+    tasks::{function_type, tasks_block},
     tokenizer::Token,
 };
+use crate::udf::UserFunction;
 use nom::{
     branch::alt,
     combinator::{cut, map, opt, value},
@@ -199,40 +201,88 @@ pub fn pos_args<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<Expression
     separated_list1(comma, maybe_newline(complete_expression))(inp)
 }
 
+pub fn pos_vars<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<String>> {
+    separated_list1(
+        comma,
+        maybe_newline(map(variable, |v| v.content.to_string())),
+    )(inp)
+}
+
+pub fn funcdef_args<'a, 'b>(
+    inp: &'a [Token<'b>],
+) -> MatchRes<'a, 'b, (Vec<String>, Vec<(String, Expression)>)> {
+    err_ctx(
+        &ParseErrorType::InvalidFunctionParameters,
+        alt((
+            value(
+                (vec![], vec![]),
+                pair(paren_start, maybe_newline(paren_end)),
+            ),
+            delimited(
+                paren_start,
+                map(pos_vars, |a| (a, vec![])),
+                maybe_newline(paren_end),
+            ),
+            delimited(
+                paren_start,
+                map(kw_args, |a| (vec![], a)),
+                maybe_newline(paren_end),
+            ),
+            delimited(
+                paren_start,
+                pair(
+                    many1(terminated(
+                        maybe_newline(map(variable, |v| v.content.to_string())),
+                        maybe_newline(comma),
+                    )),
+                    maybe_newline(kw_args),
+                ),
+                maybe_newline(paren_end),
+            ),
+        )),
+    )(inp)
+}
+
+pub fn func_args<'a, 'b>(
+    inp: &'a [Token<'b>],
+) -> MatchRes<'a, 'b, (Vec<Expression>, Vec<(String, Expression)>)> {
+    err_ctx(
+        &ParseErrorType::InvalidFunctionParameters,
+        alt((
+            value(
+                (vec![], vec![]),
+                pair(paren_start, maybe_newline(paren_end)),
+            ),
+            delimited(
+                paren_start,
+                map(pos_args, |a| (a, vec![])),
+                maybe_newline(paren_end),
+            ),
+            delimited(
+                paren_start,
+                map(kw_args, |a| (vec![], a)),
+                maybe_newline(paren_end),
+            ),
+            delimited(
+                paren_start,
+                pair(
+                    many1(terminated(
+                        maybe_newline(complete_expression),
+                        maybe_newline(comma),
+                    )),
+                    maybe_newline(kw_args),
+                ),
+                maybe_newline(paren_end),
+            ),
+        )),
+    )(inp)
+}
+
 pub fn function_call<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionCall> {
     let (rest, (ty, name, (args, kwargs))) = tuple((
         opt(terminated(variable_type, dot)),
         function,
-        cut(err_ctx(
-            &ParseErrorType::InvalidFunctionParameters,
-            alt((
-                value(
-                    (vec![], vec![]),
-                    pair(paren_start, maybe_newline(paren_end)),
-                ),
-                delimited(
-                    paren_start,
-                    map(pos_args, |a| (a, vec![])),
-                    maybe_newline(paren_end),
-                ),
-                delimited(
-                    paren_start,
-                    map(kw_args, |a| (vec![], a)),
-                    maybe_newline(paren_end),
-                ),
-                delimited(
-                    paren_start,
-                    pair(
-                        many1(terminated(
-                            maybe_newline(complete_expression),
-                            maybe_newline(comma),
-                        )),
-                        maybe_newline(kw_args),
-                    ),
-                    maybe_newline(paren_end),
-                ),
-            )),
-        )),
+        cut(func_args),
     ))(inp)?;
     Ok((
         rest,
@@ -244,6 +294,20 @@ pub fn function_call<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionC
             kwargs.into_iter().collect(),
             inp.position(),
         ),
+    ))
+}
+
+pub fn function_def<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, UserFunction> {
+    let (rest, (_, ty, name, (args, kwargs), tasks)) = tuple((
+        kw_func,
+        maybe_space(opt(terminated(function_type, dot))),
+        maybe_space(opt(function)),
+        maybe_space(cut(funcdef_args)),
+        maybe_newline(tasks_block),
+    ))(inp)?;
+    Ok((
+        rest,
+        UserFunction::new(ty, name.map(|n| n.content.to_string()), args, kwargs, tasks),
     ))
 }
 

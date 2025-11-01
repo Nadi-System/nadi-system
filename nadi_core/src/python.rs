@@ -27,6 +27,7 @@ impl From<EvalError> for PyErr {
 
             EvalErrorType::FunctionError(_, _) => PyRuntimeError::new_err(err),
             EvalErrorType::NoReturnValue(_) => PyRuntimeError::new_err(err),
+            EvalErrorType::InvalidReturn => PyRuntimeError::new_err(err),
             EvalErrorType::PathNotFound(_, _, _) => PyRuntimeError::new_err(err),
             EvalErrorType::AttributeError(_) => PyRuntimeError::new_err(err),
             EvalErrorType::NodeAttributeError(_, _) => PyRuntimeError::new_err(err),

@@ -10,6 +10,7 @@ pub mod table;
 pub mod tasks;
 pub mod template;
 pub mod timeseries;
+pub mod udf;
 
 #[cfg(feature = "graphics")]
 pub mod graphics;

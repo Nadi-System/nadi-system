@@ -1,10 +1,10 @@
-use crate::attrs::{Attribute, Date, DateTime, FromAttribute, Time, type_name};
+use crate::attrs::{type_name, Attribute, Date, DateTime, FromAttribute, Time};
 use crate::datafill::DataImputeError;
 
 use abi_stable::{
-    StableAbi,
     external_types::RMutex,
     std_types::{RArc, RHashMap, RNone, ROption, RSome, RString, RVec},
+    StableAbi,
 };
 
 pub type TimeLine = RArc<RMutex<TimeLineInner>>;

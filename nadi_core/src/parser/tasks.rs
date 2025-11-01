@@ -1,7 +1,7 @@
 use crate::parser::{
     components::*,
     errors::MatchErr,
-    expressions::{complete_expression, expression_group},
+    expressions::{complete_expression, expression_group, function_def},
     network::{node_name, str_path},
     tokenizer::{RawToken, Token},
     ParseError, ParseErrorType,
@@ -218,6 +218,7 @@ pub fn task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
         map(cond_task, Task::Conditional),
         map(while_task, Task::WhileLoop),
         map(hook_task, Task::Hook),
+        map(function_def, Task::Function),
         help_task,
         value(Task::Exit, kw_exit),
     ))(inp)

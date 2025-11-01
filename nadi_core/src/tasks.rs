@@ -2,6 +2,8 @@ use crate::expressions::{EvalError, EvalErrorType, Expression, TaskPosition};
 use crate::functions::{FuncArg, FuncArgType, NadiFunctions};
 use crate::network::PropCondition;
 use crate::prelude::*;
+use crate::udf::UserFunction;
+use std::collections::HashMap;
 use std::sync::mpsc::{channel, Receiver, Sender};
 
 /// Result of a Task when executed
@@ -78,6 +80,8 @@ pub struct TaskContext {
     pub network: Network,
     /// Functions loaded from the plugins
     pub functions: NadiFunctions,
+    /// User defined functions
+    pub udf: HashMap<String, UserFunction>,
     /// environment variables
     pub env: AttrMap,
     /// tasks to run after every assign execution
@@ -92,6 +96,7 @@ impl TaskContext {
         Self {
             network: net.unwrap_or_default(),
             functions: NadiFunctions::new(),
+            udf: HashMap::new(),
             env: AttrMap::new(),
             hook: Vec::new(),
             channel,
@@ -124,6 +129,15 @@ impl TaskContext {
     /// execute a task in the task context
     pub fn execute_single(&mut self, task: Task) -> Result<Option<String>, String> {
         match task {
+            Task::Function(fdef) => {
+                if let Some(name) = fdef.name() {
+                    self.udf.insert(name.into(), fdef);
+                    Ok(None)
+                } else {
+                    Ok(Some("Anonymous Function".into()))
+                }
+            }
+            Task::Return(_) => Err(EvalErrorType::InvalidReturn.to_string()),
             Task::Hook(tasks) => {
                 self.hook = tasks;
                 Ok(None)
@@ -131,8 +145,8 @@ impl TaskContext {
             Task::Eval(et) => self.eval_task(et),
             Task::Attr(at) => self.attr_task(at).map(Some),
             Task::Conditional(ct) => {
-                let cond = ct.cond.resolve(&FunctionType::Env, self, None)?;
-                let res = cond.eval_value(&FunctionType::Env, self, None)?;
+                let cond = ct.cond.resolve(&FunctionType::Env, self, None, None)?;
+                let res = cond.eval_value(&FunctionType::Env, self, None, None)?;
                 match bool::try_from_attr(&res)
                     .map_err(|e| EvalErrorType::AttributeError(e).pos(ct.position()))?
                 {
@@ -178,8 +192,8 @@ impl TaskContext {
                         progress,
                         max_iter,
                     ));
-                    let cond = lt.cond.resolve(&FunctionType::Env, self, None)?;
-                    let res = cond.eval_value(&FunctionType::Env, self, None)?;
+                    let cond = lt.cond.resolve(&FunctionType::Env, self, None, None)?;
+                    let res = cond.eval_value(&FunctionType::Env, self, None, None)?;
                     match bool::try_from_attr(&res)
                         .map_err(|e| EvalErrorType::AttributeError(e).pos(lt.position()))?
                     {
@@ -206,7 +220,7 @@ impl TaskContext {
         match task.ty {
             FunctionType::Env => match task
                 .input
-                .resolve_eval(&FunctionType::Env, self, None)
+                .resolve_eval(&FunctionType::Env, self, None, None)
                 .map_err(|e| e.pos(task.position()))?
             {
                 Some(a) => {
@@ -239,7 +253,7 @@ impl TaskContext {
                     let res = match task
                         .input
                         // add node name to this error
-                        .resolve_eval_mut(&FunctionType::Node, self, Some(&n))
+                        .resolve_eval_mut(&FunctionType::Node, self, None, Some(&n))
                         .map_err(|e| e.pos(task.start))?
                     {
                         Some(r) => r,
@@ -283,7 +297,7 @@ impl TaskContext {
             FunctionType::Network => {
                 match task
                     .input
-                    .resolve_eval_mut(&FunctionType::Network, self, None)
+                    .resolve_eval_mut(&FunctionType::Network, self, None, None)
                     .map_err(|e| e.pos(task.position()))?
                 {
                     Some(a) => {
@@ -426,8 +440,8 @@ impl TaskContext {
                 let expr = expr.simplify(&FunctionType::Node, self)?;
                 // expression is evaluated for each node
                 for n in nodes {
-                    let cond = expr.resolve(&FunctionType::Node, self, Some(&n))?;
-                    let res = cond.eval_value(&FunctionType::Node, self, Some(&n))?;
+                    let cond = expr.resolve(&FunctionType::Node, self, None, Some(&n))?;
+                    let res = cond.eval_value(&FunctionType::Node, self, None, Some(&n))?;
                     match bool::try_from_attr(&res) {
                         Ok(true) => sel_nodes.push(n),
                         Ok(false) => (),
@@ -650,6 +664,10 @@ pub enum Task {
     Hook(Vec<Task>),
     /// get function help information
     Help(Option<TaskKeyword>, Option<String>),
+    /// Function Definition (needs to be named),
+    Function(UserFunction),
+    /// Return the value if inside a function
+    Return(Expression),
     /// exit the task system/process
     Exit,
 }
@@ -664,6 +682,8 @@ impl Task {
             Task::WhileLoop(_) => true,
             Task::Hook(_) => true,
             Task::Help(_, _) => false,
+            Task::Function(_) => false,
+            Task::Return(_) => false,
             Task::Exit => false,
         }
     }
@@ -689,6 +709,8 @@ impl std::fmt::Display for Task {
             Self::Help(Some(kw), None) => write!(f, "help {kw}"),
             Self::Help(None, Some(s)) => write!(f, "help {s}"),
             Self::Help(Some(kw), Some(s)) => write!(f, "help {kw} {s}"),
+            Task::Function(fdef) => write!(f, "{fdef}"),
+            Task::Return(expr) => write!(f, "return({expr})"),
             Self::Exit => write!(f, "exit"),
         }
     }
@@ -712,8 +734,10 @@ pub enum TaskKeyword {
     In,
     Match,
     Hook,
-    // reserved
+    Context,
     Function,
+    Return,
+    // reserved
     Map,
     Attrs,
     Loop,
@@ -739,7 +763,9 @@ impl std::str::FromStr for TaskKeyword {
             "in" => TaskKeyword::In,
             "match" => TaskKeyword::Match,
             "hook" => TaskKeyword::Hook,
+            "ctx" | "context" => TaskKeyword::Context,
             "function" | "func" => TaskKeyword::Function,
+            "return" => TaskKeyword::Return,
             "map" => TaskKeyword::Map,
             "attrs" => TaskKeyword::Attrs,
             "loop" => TaskKeyword::Loop,
@@ -770,7 +796,9 @@ impl std::fmt::Display for TaskKeyword {
                 TaskKeyword::In => "in",
                 TaskKeyword::Match => "match",
                 TaskKeyword::Hook => "hook",
+                TaskKeyword::Context => "context",
                 TaskKeyword::Function => "function",
+                TaskKeyword::Return => "return",
                 TaskKeyword::Map => "map",
                 TaskKeyword::Attrs => "attrs",
                 TaskKeyword::Loop => "loop",
@@ -799,7 +827,9 @@ impl TaskKeyword {
             TaskKeyword::In => "Check if value is in an array/table",
             TaskKeyword::Match => "match regex pattern with strings",
             TaskKeyword::Hook => "hook tasks to run at each execution",
+            TaskKeyword::Context => "Current context; similar to environment",
             TaskKeyword::Function => "function definition",
+            TaskKeyword::Return => "return statement inside function",
             TaskKeyword::Map => "map array to a function",
             TaskKeyword::Attrs => "attrs of a node or network",
             TaskKeyword::Loop => "a generic loop",

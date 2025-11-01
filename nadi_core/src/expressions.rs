@@ -1,4 +1,4 @@
-use crate::attrs::{Attribute, FromAttribute, HasAttributes};
+use crate::attrs::{AttrMap, Attribute, FromAttribute, HasAttributes};
 use crate::functions::FunctionCtx;
 use crate::network::Propagation;
 use crate::node::Node;
@@ -109,6 +109,8 @@ pub enum EvalErrorType {
     FunctionError(String, String),
     /// Function didn't return a value to be used in expression
     NoReturnValue(String),
+    /// Return Statement is outside function context
+    InvalidReturn,
     /// Node with the name doesn't exit
     NodeNotFound(String),
     /// Given Nodes are not connected with a path
@@ -166,6 +168,7 @@ impl EvalErrorType {
             Self::FunctionNotFound(t, n) => return format!("{} function: {n:?} not found", t),
             Self::FunctionError(n, s) => return format!("Error in function {n}: {s}"),
             Self::NoReturnValue(n) => return format!("Function {n} did not return a value"),
+            Self::InvalidReturn => "Return statement outside of function",
             Self::NodeNotFound(n) => return format!("Node: {n:?} not found"),
             Self::PathNotFound(s, e, t) => {
                 return format!("No path found between Nodes {s:?} and {t:?}, path ends at {e:?}");
@@ -327,7 +330,7 @@ impl Expression {
     /// attribute variables.
     pub fn simplify(self, ft: &FunctionType, ctx: &TaskContext) -> Result<Expression, EvalError> {
         if !self.has_variables() {
-            return Ok(Self::Literal(self.eval_value(ft, ctx, None)?));
+            return Ok(Self::Literal(self.eval_value(ft, ctx, None, None)?));
         }
         match self {
             Self::Literal(v) => {
@@ -373,10 +376,11 @@ impl Expression {
         &self,
         ft: &FunctionType,
         ctx: &TaskContext,
+        local: Option<&AttrMap>,
         node: Option<&Node>,
     ) -> Result<Option<Attribute>, EvalError> {
-        self.resolve(ft, ctx, node)
-            .and_then(|e| e.eval(ft, ctx, node))
+        self.resolve(ft, ctx, local, node)
+            .and_then(|e| e.eval(ft, ctx, local, node))
     }
 
     /// Call [`Self::resolve`] then [`Self::eval_mut`]
@@ -384,10 +388,11 @@ impl Expression {
         &self,
         ft: &FunctionType,
         ctx: &mut TaskContext,
+        local: Option<&AttrMap>,
         node: Option<&Node>,
     ) -> Result<Option<Attribute>, EvalError> {
-        self.resolve(ft, ctx, node)
-            .and_then(|e| e.eval_mut(ft, ctx, node))
+        self.resolve(ft, ctx, local, node)
+            .and_then(|e| e.eval_mut(ft, ctx, local, node))
     }
 
     /// Resolve the variables in the expression for the given context
@@ -401,6 +406,7 @@ impl Expression {
         &self,
         ft: &FunctionType,
         ctx: &TaskContext,
+        local: Option<&AttrMap>,
         node: Option<&Node>,
     ) -> Result<Expression, EvalError> {
         match self {
@@ -409,6 +415,10 @@ impl Expression {
             Self::Variable(vt) => {
                 let attr = match &vt.ty {
                     Some(ty) => match ty {
+                        VarType::Context => local
+                            .unwrap_or(&ctx.env)
+                            .attr_nested(&vt.prefix, &vt.name)
+                            .map(|a| a.cloned()),
                         VarType::Env => ctx
                             .env
                             .attr_nested(&vt.prefix, &vt.name)
@@ -647,7 +657,7 @@ impl Expression {
                     let fcs = ctx
                         .network
                         .nodes()
-                        .map(|n| fc.resolve(ft, ctx, Some(n)))
+                        .map(|n| fc.resolve(ft, ctx, local, Some(n)))
                         .collect::<Result<Vec<FunctionCall>, EvalError>>()?;
                     Ok(Self::MultiFunction(fcs))
                 }
@@ -662,7 +672,7 @@ impl Expression {
                         .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(fc.position()))?
                         .inputs()
                         .into_iter()
-                        .map(|n| fc.resolve(ft, ctx, Some(n)))
+                        .map(|n| fc.resolve(ft, ctx, local, Some(n)))
                         .collect::<Result<Vec<FunctionCall>, EvalError>>()?;
                     Ok(Self::MultiFunction(fcs))
                 }
@@ -678,33 +688,33 @@ impl Expression {
                         .output()
                         .into_option()
                     {
-                        Some(o) => Self::Function(fc.resolve(ft, ctx, Some(o))?),
+                        Some(o) => Self::Function(fc.resolve(ft, ctx, local, Some(o))?),
                         None => {
                             Expression::ResolveError(EvalErrorType::NoOutputNode.pos(fc.position()))
                         }
                     };
                     Ok(v)
                 }
-                _ => fc.resolve(ft, ctx, node).map(Self::Function),
+                _ => fc.resolve(ft, ctx, local, node).map(Self::Function),
             },
             Self::MultiFunction(fcs) => fcs
                 .into_iter()
-                .map(|fc| fc.resolve(ft, ctx, node))
+                .map(|fc| fc.resolve(ft, ctx, local, node))
                 .collect::<Result<Vec<FunctionCall>, EvalError>>()
                 .map(|fcs| Self::MultiFunction(fcs)),
             Self::UniOp(op, expr) => Ok(Self::UniOp(
                 op.clone(),
-                Box::new(expr.resolve(ft, ctx, node)?),
+                Box::new(expr.resolve(ft, ctx, local, node)?),
             )),
             Self::BiOp(op, expr1, expr2) => Ok(Self::BiOp(
                 op.clone(),
-                Box::new(expr1.resolve(ft, ctx, node)?),
-                Box::new(expr2.resolve(ft, ctx, node)?),
+                Box::new(expr1.resolve(ft, ctx, local, node)?),
+                Box::new(expr2.resolve(ft, ctx, local, node)?),
             )),
             Self::IfElse(cond, expr1, expr2) => Ok(Self::IfElse(
-                Box::new(cond.resolve(ft, ctx, node)?),
-                Box::new(expr1.resolve(ft, ctx, node)?),
-                Box::new(expr2.resolve(ft, ctx, node)?),
+                Box::new(cond.resolve(ft, ctx, local, node)?),
+                Box::new(expr1.resolve(ft, ctx, local, node)?),
+                Box::new(expr2.resolve(ft, ctx, local, node)?),
             )),
         }
     }
@@ -714,11 +724,12 @@ impl Expression {
         &self,
         ft: &FunctionType,
         ctx: &TaskContext,
+        local: Option<&AttrMap>,
         node: Option<&Node>,
     ) -> Result<Option<Attribute>, EvalError> {
         match self {
-            Self::Function(fc) => fc.eval(ft, ctx, node),
-            e => e.eval_value(ft, ctx, node).map(Some),
+            Self::Function(fc) => fc.eval(ft, ctx, local, node),
+            e => e.eval_value(ft, ctx, local, node).map(Some),
         }
     }
 
@@ -727,11 +738,12 @@ impl Expression {
         &self,
         ft: &FunctionType,
         ctx: &mut TaskContext,
+        local: Option<&AttrMap>,
         node: Option<&Node>,
     ) -> Result<Option<Attribute>, EvalError> {
         match self {
-            Self::Function(fc) => fc.eval_mut(ft, ctx, node),
-            e => e.eval_value(ft, ctx, node).map(Some),
+            Self::Function(fc) => fc.eval_mut(ft, ctx, local, node),
+            e => e.eval_value(ft, ctx, local, node).map(Some),
         }
     }
 
@@ -745,6 +757,7 @@ impl Expression {
         &self,
         ft: &FunctionType,
         ctx: &TaskContext,
+        local: Option<&AttrMap>,
         node: Option<&Node>,
     ) -> Result<Attribute, EvalError> {
         match self {
@@ -753,7 +766,7 @@ impl Expression {
             // Resolve should have converted Render to Lit(String)
             Self::Render(_) => Err(EvalErrorType::UnresolvedVariable.no_pos()),
             Self::ResolveError(e) => Err(e.clone()),
-            Self::Function(fc) => match fc.eval(ft, ctx, node) {
+            Self::Function(fc) => match fc.eval(ft, ctx, local, node) {
                 Ok(None) => {
                     Err(EvalErrorType::NoReturnValue(fc.name.to_string()).pos(fc.position()))
                 }
@@ -762,7 +775,7 @@ impl Expression {
             },
             Self::MultiFunction(fcs) => fcs
                 .into_iter()
-                .map(|fc| match fc.eval(ft, ctx, node) {
+                .map(|fc| match fc.eval(ft, ctx, local, node) {
                     Ok(None) => {
                         Err(EvalErrorType::NoReturnValue(fc.name.to_string()).pos(fc.position()))
                     }
@@ -771,24 +784,24 @@ impl Expression {
                 })
                 .collect::<Result<Vec<Attribute>, EvalError>>()
                 .map(|ar| Attribute::Array(ar.into())),
-            Self::UniOp(op, expr) => op.eval(expr.eval_value(ft, ctx, node)?),
+            Self::UniOp(op, expr) => op.eval(expr.eval_value(ft, ctx, local, node)?),
             Self::BiOp(op, expr1, expr2) => {
-                let first = expr1.eval_value(ft, ctx, node)?;
+                let first = expr1.eval_value(ft, ctx, local, node)?;
                 // short circuit logical operations to prevent eval error
                 match (op, &first) {
                     (BiOperator::And, Attribute::Bool(false)) => return Ok(false.into()),
                     (BiOperator::Or, Attribute::Bool(true)) => return Ok(true.into()),
                     _ => (),
                 }
-                op.eval(first, expr2.eval_value(ft, ctx, node)?)
+                op.eval(first, expr2.eval_value(ft, ctx, local, node)?)
             }
             Self::IfElse(cond, expr1, expr2) => {
-                let cond = cond.eval_value(ft, ctx, node)?;
+                let cond = cond.eval_value(ft, ctx, local, node)?;
                 let cond = bool::from_attr(&cond).ok_or(EvalErrorType::NotABool.no_pos())?;
                 if cond {
-                    expr1.eval_value(ft, ctx, node)
+                    expr1.eval_value(ft, ctx, local, node)
                 } else {
-                    expr2.eval_value(ft, ctx, node)
+                    expr2.eval_value(ft, ctx, local, node)
                 }
             }
         }
@@ -966,6 +979,8 @@ impl InputVar {
 /// Type of variable
 #[derive(PartialEq, Debug, Clone)]
 pub enum VarType {
+    /// Contextual Variables
+    Context,
     /// Environmen Variable
     Env,
     /// Node variable (only valid in a node function)
@@ -987,6 +1002,7 @@ impl VarType {
             TaskKeyword::Node => Some(VarType::Node),
             TaskKeyword::Network => Some(VarType::Network),
             TaskKeyword::Env => Some(VarType::Env),
+            TaskKeyword::Context => Some(VarType::Context),
             TaskKeyword::Inputs => Some(VarType::Inputs),
             TaskKeyword::Output => Some(VarType::Output),
             TaskKeyword::Nodes => Some(VarType::Nodes),
@@ -999,10 +1015,8 @@ impl VarType {
         match self {
             VarType::Node => &FunctionType::Node,
             VarType::Network => &FunctionType::Network,
-            VarType::Env => &FunctionType::Env,
-            VarType::Inputs => &FunctionType::Node,
-            VarType::Output => &FunctionType::Node,
-            VarType::Nodes => &FunctionType::Node,
+            VarType::Env | VarType::Context => &FunctionType::Env,
+            VarType::Inputs | VarType::Output | VarType::Nodes => &FunctionType::Node,
         }
     }
 }
@@ -1013,6 +1027,7 @@ impl std::fmt::Display for VarType {
             VarType::Node => "node",
             VarType::Network => "network",
             VarType::Env => "env",
+            VarType::Context => "context",
             VarType::Inputs => "inputs",
             VarType::Output => "output",
             VarType::Nodes => "nodes",
@@ -1139,6 +1154,7 @@ impl FunctionCall {
         &self,
         ft: &FunctionType,
         ctx: &TaskContext,
+        local: Option<&AttrMap>,
         node: Option<&Node>,
     ) -> Result<Self, EvalError> {
         let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
@@ -1146,7 +1162,7 @@ impl FunctionCall {
         let mut args = Vec::with_capacity(self.args.len());
         for a in &self.args {
             args.push(
-                a.resolve(ft, ctx, node)
+                a.resolve(ft, ctx, local, node)
                     .map_err(|e| e.pos(self.position()))?,
             );
         }
@@ -1154,7 +1170,7 @@ impl FunctionCall {
         for (k, a) in &self.kwargs {
             kwargs.insert(
                 k.clone(),
-                a.resolve(ft, ctx, node)
+                a.resolve(ft, ctx, local, node)
                     .map_err(|e| e.pos(self.position()))?,
             );
         }
@@ -1173,6 +1189,7 @@ impl FunctionCall {
         &self,
         ft: &FunctionType,
         ctx: &mut TaskContext,
+        local: Option<&AttrMap>,
         node: Option<&Node>,
     ) -> Result<Option<Attribute>, EvalError> {
         let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
@@ -1180,7 +1197,7 @@ impl FunctionCall {
         let mut args = Vec::with_capacity(self.args.len());
         for a in &self.args {
             args.push(
-                a.eval_value(ft, ctx, node)
+                a.eval_value(ft, ctx, local, node)
                     .map_err(|e| e.pos(self.position()))?,
             );
         }
@@ -1188,7 +1205,7 @@ impl FunctionCall {
         for (k, a) in &self.kwargs {
             kwargs.insert(
                 k.clone(),
-                a.eval_value(ft, ctx, node)
+                a.eval_value(ft, ctx, local, node)
                     .map_err(|e| e.pos(self.position()))?,
             );
         }
@@ -1201,6 +1218,7 @@ impl FunctionCall {
         &self,
         ft: &FunctionType,
         ctx: &TaskContext,
+        local: Option<&AttrMap>,
         node: Option<&Node>,
     ) -> Result<Option<Attribute>, EvalError> {
         let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
@@ -1208,7 +1226,7 @@ impl FunctionCall {
         let mut args = Vec::with_capacity(self.args.len());
         for a in &self.args {
             args.push(
-                a.eval_value(ft, ctx, node)
+                a.eval_value(ft, ctx, local, node)
                     .map_err(|e| e.pos(self.position()))?,
             );
         }
@@ -1216,7 +1234,7 @@ impl FunctionCall {
         for (k, a) in &self.kwargs {
             kwargs.insert(
                 k.clone(),
-                a.eval_value(ft, ctx, node)
+                a.eval_value(ft, ctx, local, node)
                     .map_err(|e| e.pos(self.position()))?,
             );
         }
