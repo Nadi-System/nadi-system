@@ -4,7 +4,7 @@ use crate::network::PropCondition;
 use crate::prelude::*;
 use crate::udf::UserFunction;
 use std::collections::HashMap;
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender, channel};
 
 /// Result of a Task when executed
 pub enum TaskResult {
@@ -81,7 +81,10 @@ pub struct TaskContext {
     /// Functions loaded from the plugins
     pub functions: NadiFunctions,
     /// User defined functions
-    pub udf: HashMap<String, UserFunction>,
+    pub udf_env: HashMap<String, UserFunction>,
+    pub udf_node: HashMap<String, UserFunction>,
+    pub udf_network: HashMap<String, UserFunction>,
+
     /// environment variables
     pub env: AttrMap,
     /// tasks to run after every assign execution
@@ -96,7 +99,9 @@ impl TaskContext {
         Self {
             network: net.unwrap_or_default(),
             functions: NadiFunctions::new(),
-            udf: HashMap::new(),
+            udf_env: HashMap::new(),
+            udf_node: HashMap::new(),
+            udf_network: HashMap::new(),
             env: AttrMap::new(),
             hook: Vec::new(),
             channel,
@@ -106,6 +111,14 @@ impl TaskContext {
     pub fn clear(&mut self) {
         self.network = Network::default();
         self.env = AttrMap::new();
+    }
+
+    pub fn udf(&self, ft: &FunctionType, name: &str) -> Option<&UserFunction> {
+        match ft {
+            FunctionType::Env => self.udf_env.get(name),
+            FunctionType::Node => self.udf_node.get(name),
+            FunctionType::Network => self.udf_network.get(name),
+        }
     }
 
     pub fn run_hooks(&mut self) {
@@ -131,7 +144,12 @@ impl TaskContext {
         match task {
             Task::Function(fdef) => {
                 if let Some(name) = fdef.name() {
-                    self.udf.insert(name.into(), fdef);
+                    match fdef.ty() {
+                        Some(FunctionType::Env) => self.udf_env.insert(name.into(), fdef),
+                        Some(FunctionType::Node) => self.udf_node.insert(name.into(), fdef),
+                        Some(FunctionType::Network) => self.udf_network.insert(name.into(), fdef),
+                        None => return Err("Unknown Function Type".into()),
+                    };
                     Ok(None)
                 } else {
                     Ok(Some("Anonymous Function".into()))

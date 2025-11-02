@@ -1184,16 +1184,13 @@ impl FunctionCall {
         })
     }
 
-    /// Eval the function in a mutable context
-    pub fn eval_mut(
+    pub fn function_ctx(
         &self,
         ft: &FunctionType,
-        ctx: &mut TaskContext,
+        ctx: &TaskContext,
         local: Option<&AttrMap>,
         node: Option<&Node>,
-    ) -> Result<Option<Attribute>, EvalError> {
-        let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
-        let node = self.node.as_ref().or(node);
+    ) -> Result<FunctionCtx, EvalError> {
         let mut args = Vec::with_capacity(self.args.len());
         for a in &self.args {
             args.push(
@@ -1209,8 +1206,25 @@ impl FunctionCall {
                     .map_err(|e| e.pos(self.position()))?,
             );
         }
-        let fctx = FunctionCtx::from_arg_kwarg(args, kwargs);
-        self.run_w_ctx_mut(ft, ctx, fctx, node, None)
+        Ok(FunctionCtx::from_arg_kwarg(args, kwargs))
+    }
+
+    /// Eval the function in a mutable context
+    pub fn eval_mut(
+        &self,
+        ft: &FunctionType,
+        ctx: &mut TaskContext,
+        local: Option<&AttrMap>,
+        node: Option<&Node>,
+    ) -> Result<Option<Attribute>, EvalError> {
+        let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
+        let node = self.node.as_ref().or(node);
+        let fctx = self.function_ctx(ft, ctx, local, node)?;
+        let func = ctx.udf(&ft, &self.name).cloned();
+        match func {
+            Some(func) => func.eval_val(ctx, fctx).map(Some),
+            None => self.run_w_ctx_mut(ft, ctx, fctx, node, None),
+        }
     }
 
     /// Eval the function in immutable context
@@ -1223,23 +1237,12 @@ impl FunctionCall {
     ) -> Result<Option<Attribute>, EvalError> {
         let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
         let node = self.node.as_ref().or(node);
-        let mut args = Vec::with_capacity(self.args.len());
-        for a in &self.args {
-            args.push(
-                a.eval_value(ft, ctx, local, node)
-                    .map_err(|e| e.pos(self.position()))?,
-            );
+        let fctx = self.function_ctx(ft, ctx, local, node)?;
+        let func = ctx.udf(&ft, &self.name).cloned();
+        match func {
+            Some(func) => func.eval_val(ctx, fctx).map(Some),
+            None => self.run_w_ctx(ft, ctx, fctx, node, None),
         }
-        let mut kwargs = HashMap::with_capacity(self.kwargs.len());
-        for (k, a) in &self.kwargs {
-            kwargs.insert(
-                k.clone(),
-                a.eval_value(ft, ctx, local, node)
-                    .map_err(|e| e.pos(self.position()))?,
-            );
-        }
-        let fctx = FunctionCtx::from_arg_kwarg(args, kwargs);
-        self.run_w_ctx(ft, ctx, fctx, node, None)
     }
 
     /// Run the function with given context
