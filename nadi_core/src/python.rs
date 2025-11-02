@@ -3,7 +3,7 @@ use crate::expressions::{EvalError, EvalErrorType};
 use crate::parser::ParseError;
 use crate::template::TemplateError;
 pub use pyo3;
-use pyo3::{exceptions::*, IntoPyObject, PyErr, PyErrArguments, PyObject, Python};
+use pyo3::{IntoPyObject, PyErr, PyErrArguments, PyObject, Python, exceptions::*};
 
 impl PyErrArguments for EvalError {
     fn arguments(self, py: Python<'_>) -> PyObject {
@@ -26,6 +26,7 @@ impl From<EvalError> for PyErr {
             EvalErrorType::NodeNotFound(_) => PyKeyError::new_err(err),
 
             EvalErrorType::FunctionError(_, _) => PyRuntimeError::new_err(err),
+            EvalErrorType::UnknownFunctionType => PyKeyError::new_err(err),
             EvalErrorType::NoReturnValue(_) => PyRuntimeError::new_err(err),
             EvalErrorType::InvalidReturn => PyRuntimeError::new_err(err),
             EvalErrorType::PathNotFound(_, _, _) => PyRuntimeError::new_err(err),

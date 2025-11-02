@@ -104,9 +104,11 @@ pub enum EvalErrorType {
     /// Varible doesn't exist in given context
     UnresolvedVariable,
     /// Function doesn't exist in given context
-    FunctionNotFound(FunctionType, String),
+    FunctionNotFound(Option<FunctionType>, String),
     /// Error in Function Evaluation
     FunctionError(String, String),
+    /// Unknown Function Type
+    UnknownFunctionType,
     /// Function didn't return a value to be used in expression
     NoReturnValue(String),
     /// Return Statement is outside function context
@@ -165,8 +167,14 @@ impl EvalErrorType {
     pub fn message(&self) -> String {
         match self {
             Self::UnresolvedVariable => "Unresolved variable in expression",
-            Self::FunctionNotFound(t, n) => return format!("{} function: {n:?} not found", t),
+            Self::FunctionNotFound(t, n) => {
+                return format!(
+                    "{} function named {n:?} not found",
+                    t.as_ref().map(|t| t.name()).unwrap_or("Any")
+                );
+            }
             Self::FunctionError(n, s) => return format!("Error in function {n}: {s}"),
+            Self::UnknownFunctionType => "Unknown function type",
             Self::NoReturnValue(n) => return format!("Function {n} did not return a value"),
             Self::InvalidReturn => "Return statement outside of function",
             Self::NodeNotFound(n) => return format!("Node: {n:?} not found"),
@@ -1262,7 +1270,7 @@ impl FunctionCall {
                     EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
                 }),
                 None => Err(EvalErrorType::FunctionNotFound(
-                    original.unwrap_or_else(|| ft.clone()),
+                    Some(original.unwrap_or_else(|| ft.clone())),
                     self.name.to_string(),
                 )
                 .pos(self.position())),
@@ -1309,7 +1317,7 @@ impl FunctionCall {
                     EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
                 }),
                 None => Err(EvalErrorType::FunctionNotFound(
-                    original.unwrap_or_else(|| ft.clone()),
+                    Some(original.unwrap_or_else(|| ft.clone())),
                     self.name.to_string(),
                 )
                 .pos(self.position())),

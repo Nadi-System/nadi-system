@@ -61,9 +61,11 @@ impl UserFunction {
     pub fn eval_val(&self, ctx: &TaskContext, fctx: FunctionCtx) -> Result<Attribute, EvalError> {
         let locals = self.resolve_locals(ctx, fctx.args, fctx.kwargs)?;
         // For this to work, tasks should start returning values
-        // for task in self.tasks.clone() {
-        //     _ = ctx.execute(task)?;
-        // }
+        // but for now let's just return things
+        for task in self.tasks.clone() {
+            // might have to have different ways to call mut vs immutable tasks
+            // _ = ctx.execute(task)?;
+        }
         Ok(locals.into())
     }
     pub fn resolve_locals(

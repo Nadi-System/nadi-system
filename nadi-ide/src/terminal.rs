@@ -67,7 +67,7 @@ fn spawn_task_context() -> (Sender<TaskCtxRequest>, Receiver<TaskCtxMessage>) {
                         // result to show somewhere else (like here)
                         let mut buf = gag::BufferRedirect::stdout().unwrap();
                         let mut output = String::new();
-                        let res = task_ctx.execute(task);
+                        let res = task_ctx.execute(task).map_err(|e| e.to_string());
                         // print the stdout output to the terminal
                         buf.read_to_string(&mut output).unwrap();
                         output.push('\n');

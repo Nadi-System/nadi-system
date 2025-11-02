@@ -51,7 +51,7 @@ impl TaskContextWrap {
 }
 
 impl TaskContextWrap {
-    pub fn execute(&mut self, task: Task) -> Result<Option<String>, String> {
+    pub fn execute(&mut self, task: Task) -> Result<Option<String>, EvalError> {
         let msg: Vec<String> = self
             .receiver
             .try_recv()
@@ -128,7 +128,7 @@ impl TaskContext {
     }
 
     /// execute a task in the task context, possible with hook
-    pub fn execute(&mut self, task: Task) -> Result<Option<String>, String> {
+    pub fn execute(&mut self, task: Task) -> Result<Option<String>, EvalError> {
         match task {
             Task::Eval(_) => {
                 let val = self.execute_single(task)?;
@@ -140,7 +140,7 @@ impl TaskContext {
     }
 
     /// execute a task in the task context
-    pub fn execute_single(&mut self, task: Task) -> Result<Option<String>, String> {
+    pub fn execute_single(&mut self, task: Task) -> Result<Option<String>, EvalError> {
         match task {
             Task::Function(fdef) => {
                 if let Some(name) = fdef.name() {
@@ -148,14 +148,14 @@ impl TaskContext {
                         Some(FunctionType::Env) => self.udf_env.insert(name.into(), fdef),
                         Some(FunctionType::Node) => self.udf_node.insert(name.into(), fdef),
                         Some(FunctionType::Network) => self.udf_network.insert(name.into(), fdef),
-                        None => return Err("Unknown Function Type".into()),
+                        None => return Err(EvalErrorType::UnknownFunctionType.no_pos()),
                     };
                     Ok(None)
                 } else {
                     Ok(Some("Anonymous Function".into()))
                 }
             }
-            Task::Return(_) => Err(EvalErrorType::InvalidReturn.to_string()),
+            Task::Return(_) => Err(EvalErrorType::InvalidReturn.no_pos()),
             Task::Hook(tasks) => {
                 self.hook = tasks;
                 Ok(None)
@@ -234,7 +234,7 @@ impl TaskContext {
     }
 
     /// evaluate a task and possibly get return value in terms of string.
-    pub fn eval_task(&mut self, task: EvalTask) -> Result<Option<String>, String> {
+    pub fn eval_task(&mut self, task: EvalTask) -> Result<Option<String>, EvalError> {
         match task.ty {
             FunctionType::Env => match task
                 .input
@@ -243,8 +243,10 @@ impl TaskContext {
             {
                 Some(a) => {
                     if let Some(attr) = &task.attr {
-                        if let Some(old) =
-                            self.env.set_attr_nested(&task.attr_pre, attr, a.clone())?
+                        if let Some(old) = self
+                            .env
+                            .set_attr_nested(&task.attr_pre, attr, a.clone())
+                            .map_err(|e| EvalErrorType::AttributeError(e).no_pos())?
                         {
                             if task.silent {
                                 Ok(None)
@@ -291,7 +293,9 @@ impl TaskContext {
                         total,
                     ));
                     if let Some(attr) = &task.attr {
-                        let old = n.set_attr_nested(&task.attr_pre, attr, res.clone())?;
+                        let old = n
+                            .set_attr_nested(&task.attr_pre, attr, res.clone())
+                            .map_err(|e| EvalErrorType::AttributeError(e).no_pos())?;
                         if !task.silent {
                             if let Some(o) = old {
                                 attrs.push(format!(
@@ -320,9 +324,10 @@ impl TaskContext {
                 {
                     Some(a) => {
                         if let Some(attr) = &task.attr {
-                            if let Some(old) =
-                                self.network
-                                    .set_attr_nested(&task.attr_pre, attr, a.clone())?
+                            if let Some(old) = self
+                                .network
+                                .set_attr_nested(&task.attr_pre, attr, a.clone())
+                                .map_err(|e| EvalErrorType::AttributeError(e).no_pos())?
                             {
                                 if task.silent {
                                     Ok(None)
@@ -345,16 +350,16 @@ impl TaskContext {
     }
 
     /// evaluate an attribute task
-    pub fn attr_task(&self, task: AttrTask) -> Result<String, String> {
+    pub fn attr_task(&self, task: AttrTask) -> Result<String, EvalError> {
         match task.ty {
             FunctionType::Env => self
                 .env
-                .attr_nested(&task.attr_pre, &task.attr)?
+                .attr_nested(&task.attr_pre, &task.attr)
+                .map_err(|e| EvalErrorType::AttributeError(e).pos(task.position()))?
                 .map(|a| a.to_string())
-                .ok_or(EvalErrorType::AttributeNotFound.pos(task.position()))
-                .map_err(|e| e.to_string()),
+                .ok_or(EvalErrorType::AttributeNotFound.pos(task.position())),
             FunctionType::Node => {
-                let nodes = self.propagation(task.propagation.unwrap_or_default())?;
+                let nodes = self.propagation(task.propagation.clone().unwrap_or_default())?;
                 let attrs = nodes
                     .iter()
                     .map(|n| {
@@ -362,9 +367,11 @@ impl TaskContext {
                         Ok(format!(
                             "  {} = {}",
                             n.name(),
-                            if let Some(a) = n
-                                .attr_nested(&task.attr_pre, &task.attr)
-                                .map_err(|e| format!("Node {}: {e}", n.name()))?
+                            if let Some(a) =
+                                n.attr_nested(&task.attr_pre, &task.attr).map_err(|e| {
+                                    EvalErrorType::AttributeError(format!("Node {}: {e}", n.name()))
+                                        .pos(task.position())
+                                })?
                             {
                                 a.to_string()
                             } else {
@@ -372,15 +379,15 @@ impl TaskContext {
                             }
                         ))
                     })
-                    .collect::<Result<Vec<String>, String>>()?;
+                    .collect::<Result<Vec<String>, EvalError>>()?;
                 Ok(format!("{{\n{}\n}}", attrs.join(",\n")))
             }
             FunctionType::Network => self
                 .network
-                .attr_nested(&task.attr_pre, &task.attr)?
+                .attr_nested(&task.attr_pre, &task.attr)
+                .map_err(|e| EvalErrorType::AttributeError(e).pos(task.position()))?
                 .map(|a| a.to_string())
-                .ok_or(EvalErrorType::AttributeNotFound.pos(task.position()))
-                .map_err(|e| e.to_string()),
+                .ok_or(EvalErrorType::AttributeNotFound.pos(task.position())),
         }
     }
 
@@ -389,7 +396,7 @@ impl TaskContext {
         &self,
         kw: Option<TaskKeyword>,
         var: Option<String>,
-    ) -> Result<Option<String>, String> {
+    ) -> Result<Option<String>, EvalError> {
         match (kw, var) {
             (None, Some(var)) => {
                 let mut helpstr = String::new();
@@ -408,7 +415,7 @@ impl TaskContext {
                 if !helpstr.is_empty() {
                     Ok(Some(helpstr))
                 } else {
-                    Err(format!("Function {} not found", var))
+                    Err(EvalErrorType::FunctionNotFound(None, var).no_pos())
                 }
             }
             (Some(TaskKeyword::Node), Some(var)) => {
@@ -421,7 +428,7 @@ impl TaskContext {
                         &f.help(),
                     )))
                 } else {
-                    Err(format!("Node Function {} not found", var))
+                    Err(EvalErrorType::FunctionNotFound(Some(FunctionType::Node), var).no_pos())
                 }
             }
             (Some(TaskKeyword::Network), Some(var)) => {
@@ -434,15 +441,13 @@ impl TaskContext {
                         &f.help(),
                     )))
                 } else {
-                    Err(format!("Network Function {} not found", var))
+                    Err(EvalErrorType::FunctionNotFound(Some(FunctionType::Network), var).no_pos())
                 }
             }
             (Some(kw), None) => Ok(Some(kw.help())),
-            (Some(kw), Some(x)) => Err(format!(
-                "Keyword {} does not have help for {}",
-                kw.to_string(),
-                x
-            )),
+            (Some(kw), Some(x)) => {
+                Err(EvalErrorType::FunctionNotFound(FunctionType::from_keyword(&kw), x).no_pos())
+            }
             (None, None) => Ok(Some("Usage: help <keyword> [function]".into())),
         }
     }
