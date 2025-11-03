@@ -4,7 +4,6 @@ use crate::expressions::{
 use crate::parser::{
     components::*,
     errors::{MatchErr, ParseErrorType},
-    tasks::{function_type, tasks_block},
     tokenizer::Token,
 };
 use crate::udf::UserFunction;
@@ -298,16 +297,17 @@ pub fn function_call<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionC
 }
 
 pub fn function_def<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, UserFunction> {
-    let (rest, (_, ty, name, (args, kwargs), tasks)) = tuple((
+    let (rest, (_, name, (args, kwargs), expr)) = tuple((
         kw_func,
-        maybe_space(opt(terminated(function_type, dot))),
+        // maybe_space(opt(terminated(function_type, dot))),
         maybe_space(opt(function)),
         maybe_space(cut(funcdef_args)),
-        maybe_newline(tasks_block),
+        // maybe_newline(tasks_block),
+        maybe_newline(expression_block),
     ))(inp)?;
     Ok((
         rest,
-        UserFunction::new(ty, name.map(|n| n.content.to_string()), args, kwargs, tasks),
+        UserFunction::new(name.map(|n| n.content.to_string()), args, kwargs, expr),
     ))
 }
 
@@ -322,6 +322,7 @@ mod tests {
     use crate::tasks::FunctionType;
     use crate::tasks::TaskContext;
     use rstest::{fixture, rstest};
+    use std::collections::HashMap;
     use std::sync::OnceLock;
 
     static mut NADI_FUNCS: OnceLock<NadiFunctions> = OnceLock::new();
@@ -339,6 +340,7 @@ mod tests {
         let mut ctx = TaskContext {
             network: Network::default(),
             functions,
+            udf: HashMap::new(),
             env: AttrMap::new(),
             hook: Vec::new(),
             channel: sender,
@@ -424,9 +426,9 @@ mod tests {
         let (rest, expr) = complete_expression(&tokens).unwrap();
         assert_eq!(rest, vec![]);
         let res = expr
-            .resolve(&FunctionType::Env, &context, None)
+            .resolve(&FunctionType::Env, &context, None, None)
             .unwrap()
-            .eval(&FunctionType::Env, &context, None)
+            .eval(&FunctionType::Env, &context, None, None)
             .unwrap()
             .unwrap();
         assert_eq!(res, val);

@@ -6,15 +6,16 @@ use crate::udf::UserFunction;
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
-/// Result of a Task when executed
-pub enum TaskResult {
-    None,
-    Value(Attribute),
-    Update(Attribute, Attribute),
-    Help(String),
-    Error(EvalError),
-    OrderedTable(AttrMap, Vec<String>),
-}
+// /// Result of a Task when executed
+// pub enum TaskResult {
+//     None,
+//     Value(Attribute),
+//     Update(Attribute, Attribute),
+//     Return(Attribute),
+//     Help(String),
+//     Error(EvalError),
+//     OrderedTable(AttrMap, Vec<String>),
+// }
 
 /// Message that can be send from the task
 #[derive(Debug, Clone)]
@@ -80,11 +81,8 @@ pub struct TaskContext {
     pub network: Network,
     /// Functions loaded from the plugins
     pub functions: NadiFunctions,
-    /// User defined functions
-    pub udf_env: HashMap<String, UserFunction>,
-    pub udf_node: HashMap<String, UserFunction>,
-    pub udf_network: HashMap<String, UserFunction>,
-
+    /// User defined functions (only env functions with single expression now)
+    pub udf: HashMap<String, UserFunction>,
     /// environment variables
     pub env: AttrMap,
     /// tasks to run after every assign execution
@@ -99,9 +97,7 @@ impl TaskContext {
         Self {
             network: net.unwrap_or_default(),
             functions: NadiFunctions::new(),
-            udf_env: HashMap::new(),
-            udf_node: HashMap::new(),
-            udf_network: HashMap::new(),
+            udf: HashMap::new(),
             env: AttrMap::new(),
             hook: Vec::new(),
             channel,
@@ -113,12 +109,8 @@ impl TaskContext {
         self.env = AttrMap::new();
     }
 
-    pub fn udf(&self, ft: &FunctionType, name: &str) -> Option<&UserFunction> {
-        match ft {
-            FunctionType::Env => self.udf_env.get(name),
-            FunctionType::Node => self.udf_node.get(name),
-            FunctionType::Network => self.udf_network.get(name),
-        }
+    pub fn udf(&self, name: &str) -> Option<&UserFunction> {
+        self.udf.get(name)
     }
 
     pub fn run_hooks(&mut self) {
@@ -144,12 +136,7 @@ impl TaskContext {
         match task {
             Task::Function(fdef) => {
                 if let Some(name) = fdef.name() {
-                    match fdef.ty() {
-                        Some(FunctionType::Env) => self.udf_env.insert(name.into(), fdef),
-                        Some(FunctionType::Node) => self.udf_node.insert(name.into(), fdef),
-                        Some(FunctionType::Network) => self.udf_network.insert(name.into(), fdef),
-                        None => return Err(EvalErrorType::UnknownFunctionType.no_pos()),
-                    };
+                    self.udf.insert(name.into(), fdef);
                     Ok(None)
                 } else {
                     Ok(Some("Anonymous Function".into()))
@@ -620,6 +607,13 @@ pub struct CondTask {
     pub start: (usize, usize),
 }
 
+impl CondTask {
+    /// The given task has the capacity to change the task context
+    pub fn can_mutate(&self) -> bool {
+        self.iftrue.iter().any(|t| t.can_mutate()) || self.iffalse.iter().any(|t| t.can_mutate())
+    }
+}
+
 impl std::fmt::Display for CondTask {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let tasks = self
@@ -655,6 +649,13 @@ pub struct WhileTask {
     pub tasks: Vec<Task>,
     /// start position of the task
     pub start: (usize, usize),
+}
+
+impl WhileTask {
+    /// The given task has the capacity to change the task context
+    pub fn can_mutate(&self) -> bool {
+        self.tasks.iter().any(|t| t.can_mutate())
+    }
 }
 
 impl std::fmt::Display for WhileTask {
@@ -701,9 +702,9 @@ impl Task {
         match self {
             Task::Eval(_) => true,
             Task::Attr(_) => false,
-            Task::Conditional(_) => true,
-            Task::WhileLoop(_) => true,
-            Task::Hook(_) => true,
+            Task::Conditional(c) => c.can_mutate(),
+            Task::WhileLoop(w) => w.can_mutate(),
+            Task::Hook(ht) => ht.iter().any(|t| t.can_mutate()),
             Task::Help(_, _) => false,
             Task::Function(_) => false,
             Task::Return(_) => false,

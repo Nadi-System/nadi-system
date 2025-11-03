@@ -593,8 +593,9 @@ impl Expression {
                         }
                     },
                     None => match ft {
-                        FunctionType::Env => ctx
-                            .env
+                        // since function expressions are only evaluated as env functions now
+                        FunctionType::Env => local
+                            .unwrap_or(&ctx.env)
                             .attr_nested(&vt.prefix, &vt.name)
                             .map(|a| a.cloned()),
                         FunctionType::Network => ctx
@@ -1228,9 +1229,9 @@ impl FunctionCall {
         let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
         let node = self.node.as_ref().or(node);
         let fctx = self.function_ctx(ft, ctx, local, node)?;
-        let func = ctx.udf(&ft, &self.name).cloned();
-        match func {
-            Some(func) => func.eval_val(ctx, fctx).map(Some),
+        match ctx.udf(&self.name).cloned() {
+            // priority for the locally defined function
+            Some(func) => func.eval_val(ft, ctx, fctx, node).map(Some),
             None => self.run_w_ctx_mut(ft, ctx, fctx, node, None),
         }
     }
@@ -1246,9 +1247,10 @@ impl FunctionCall {
         let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
         let node = self.node.as_ref().or(node);
         let fctx = self.function_ctx(ft, ctx, local, node)?;
-        let func = ctx.udf(&ft, &self.name).cloned();
+        let func = ctx.udf(&self.name).cloned();
         match func {
-            Some(func) => func.eval_val(ctx, fctx).map(Some),
+            // priority for the locally defined function
+            Some(func) => func.eval_val(ft, ctx, fctx, node).map(Some),
             None => self.run_w_ctx(ft, ctx, fctx, node, None),
         }
     }

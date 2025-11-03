@@ -1,16 +1,16 @@
 use crate::attrs::{AttrMap, Attribute};
 use crate::expressions::{EvalError, EvalErrorType, Expression};
 use crate::functions::FunctionCtx;
-use crate::tasks::{FunctionType, Task, TaskContext};
+use crate::node::Node;
+use crate::tasks::{FunctionType, TaskContext};
 use abi_stable::std_types::{RNone, RSome, RVec};
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct UserFunction {
-    ty: Option<FunctionType>,
     name: Option<String>,
     args: Vec<String>,
     kwargs: Vec<(String, Expression)>,
-    tasks: Vec<Task>,
+    expr: Expression,
 }
 
 impl std::fmt::Display for UserFunction {
@@ -26,11 +26,7 @@ impl std::fmt::Display for UserFunction {
             "function {}({}) {{\n\t{}\n}}",
             self.name.as_deref().unwrap_or_default(),
             args.join(","),
-            self.tasks
-                .iter()
-                .map(|p| p.to_string())
-                .collect::<Vec<String>>()
-                .join("\n"),
+            self.expr
         )
     }
 }
@@ -39,34 +35,41 @@ impl UserFunction {
     pub fn name(&self) -> Option<&str> {
         self.name.as_deref()
     }
-    pub fn ty(&self) -> &Option<FunctionType> {
-        &self.ty
+
+    pub fn name_or_unknown(&self) -> &str {
+        self.name.as_deref().unwrap_or("Unknown")
     }
+
     pub fn new(
-        ty: Option<FunctionType>,
         name: Option<String>,
         args: Vec<String>,
         kwargs: Vec<(String, Expression)>,
-        tasks: Vec<Task>,
+        expr: Expression,
     ) -> Self {
         Self {
-            ty,
             name,
             args,
             kwargs,
-            tasks,
+            expr,
         }
     }
 
-    pub fn eval_val(&self, ctx: &TaskContext, fctx: FunctionCtx) -> Result<Attribute, EvalError> {
+    pub fn eval_val(
+        &self,
+        ft: &FunctionType,
+        ctx: &TaskContext,
+        fctx: FunctionCtx,
+        node: Option<&Node>,
+    ) -> Result<Attribute, EvalError> {
         let locals = self.resolve_locals(ctx, fctx.args, fctx.kwargs)?;
-        // For this to work, tasks should start returning values
-        // but for now let's just return things
-        for task in self.tasks.clone() {
-            // might have to have different ways to call mut vs immutable tasks
-            // _ = ctx.execute(task)?;
+        match self.expr.resolve_eval(ft, ctx, Some(&locals), node) {
+            Ok(Some(val)) => Ok(val),
+            Ok(None) => Err(EvalErrorType::NoReturnValue(
+                self.name.as_deref().unwrap_or("Annonymus").to_string(),
+            )
+            .no_pos()),
+            Err(e) => Err(e),
         }
-        Ok(locals.into())
     }
     pub fn resolve_locals(
         &self,
@@ -76,6 +79,13 @@ impl UserFunction {
     ) -> Result<AttrMap, EvalError> {
         let mut locals = AttrMap::new();
         let args_len = args.len();
+        if (args_len + kwargs.len()) > (self.args.len() + self.kwargs.len()) {
+            return Err(EvalErrorType::FunctionError(
+                self.name_or_unknown().to_string(),
+                "Too many arguments".into(),
+            )
+            .no_pos());
+        }
         if args_len >= self.args.len() {
             // When more positional parameters are provided than in
             // function definition: we need to use those values for
@@ -94,12 +104,7 @@ impl UserFunction {
                     RSome(v) => locals.insert(k.to_string().into(), v),
                     RNone => locals.insert(
                         k.to_string().into(),
-                        expr.eval_value(
-                            self.ty.as_ref().unwrap_or(&FunctionType::Env),
-                            ctx,
-                            None,
-                            None,
-                        )?,
+                        expr.eval_value(&FunctionType::Env, ctx, None, None)?,
                     ),
                 };
             }
@@ -111,14 +116,14 @@ impl UserFunction {
             self.args.iter().zip(args.into_iter()).for_each(|(k, v)| {
                 locals.insert(k.to_string().into(), v);
             });
-            for arg in self.args.iter().skip(self.args.len() - args_len) {
+            for arg in self.args.iter().skip(args_len) {
                 match kwargs.remove(arg.as_str()) {
                     RSome(v) => {
                         locals.insert(arg.to_string().into(), v);
                     }
                     RNone => {
                         return Err(EvalErrorType::FunctionError(
-                            self.name.clone().unwrap_or("Unknown".into()),
+                            self.name_or_unknown().to_string(),
                             format!("Parameter {arg:?} not provided"),
                         )
                         .no_pos());
@@ -130,12 +135,7 @@ impl UserFunction {
                     RSome(v) => locals.insert(k.to_string().into(), v),
                     RNone => locals.insert(
                         k.to_string().into(),
-                        expr.eval_value(
-                            self.ty.as_ref().unwrap_or(&FunctionType::Env),
-                            ctx,
-                            None,
-                            None,
-                        )?,
+                        expr.eval_value(&FunctionType::Env, ctx, None, None)?,
                     ),
                 };
             }
@@ -145,7 +145,7 @@ impl UserFunction {
         // Write tests
         if !kwargs.is_empty() {
             return Err(EvalErrorType::FunctionError(
-                self.name.clone().unwrap_or("Unknown".into()),
+                self.name_or_unknown().to_string(),
                 format!(
                     "Unused Arguments {:?}",
                     kwargs.keys().map(|s| s.as_str()).collect::<Vec<&str>>()
