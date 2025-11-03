@@ -391,6 +391,18 @@ impl Expression {
             .and_then(|e| e.eval(ft, ctx, local, node))
     }
 
+    /// Call [`Self::resolve`] then [`Self::eval_value`]
+    pub fn resolve_eval_value(
+        &self,
+        ft: &FunctionType,
+        ctx: &TaskContext,
+        local: Option<&AttrMap>,
+        node: Option<&Node>,
+    ) -> Result<Attribute, EvalError> {
+        self.resolve(ft, ctx, local, node)
+            .and_then(|e| e.eval_value(ft, ctx, local, node))
+    }
+
     /// Call [`Self::resolve`] then [`Self::eval_mut`]
     pub fn resolve_eval_mut(
         &self,
@@ -1231,7 +1243,7 @@ impl FunctionCall {
         let fctx = self.function_ctx(ft, ctx, local, node)?;
         match ctx.udf(&self.name).cloned() {
             // priority for the locally defined function
-            Some(func) => func.eval_val(ft, ctx, fctx, node).map(Some),
+            Some(func) => func.eval_val(ctx, fctx).map(Some),
             None => self.run_w_ctx_mut(ft, ctx, fctx, node, None),
         }
     }
@@ -1249,8 +1261,8 @@ impl FunctionCall {
         let fctx = self.function_ctx(ft, ctx, local, node)?;
         let func = ctx.udf(&self.name).cloned();
         match func {
-            // priority for the locally defined function
-            Some(func) => func.eval_val(ft, ctx, fctx, node).map(Some),
+            // priority for the locally defined function: this overrides node/network function (should we?)
+            Some(func) => func.eval_val(ctx, fctx).map(Some),
             None => self.run_w_ctx(ft, ctx, fctx, node, None),
         }
     }

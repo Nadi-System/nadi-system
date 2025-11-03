@@ -54,15 +54,12 @@ impl UserFunction {
         }
     }
 
-    pub fn eval_val(
-        &self,
-        ft: &FunctionType,
-        ctx: &TaskContext,
-        fctx: FunctionCtx,
-        node: Option<&Node>,
-    ) -> Result<Attribute, EvalError> {
+    pub fn eval_val(&self, ctx: &TaskContext, fctx: FunctionCtx) -> Result<Attribute, EvalError> {
         let locals = self.resolve_locals(ctx, fctx.args, fctx.kwargs)?;
-        match self.expr.resolve_eval(ft, ctx, Some(&locals), node) {
+        match self
+            .expr
+            .resolve_eval(&FunctionType::Env, ctx, Some(&locals), None)
+        {
             Ok(Some(val)) => Ok(val),
             Ok(None) => Err(EvalErrorType::NoReturnValue(
                 self.name.as_deref().unwrap_or("Annonymus").to_string(),
@@ -71,6 +68,14 @@ impl UserFunction {
             Err(e) => Err(e),
         }
     }
+
+    /// Resolve the local variables available inside the function.
+    ///
+    /// This resolves the positional and keyword argument values based
+    /// on the function call and the function definition. The keyword
+    /// arguments in the function definition is evaluated each time
+    /// the function is called, so that you can put environmental
+    /// variables there that can change.
     pub fn resolve_locals(
         &self,
         ctx: &TaskContext,
@@ -104,7 +109,7 @@ impl UserFunction {
                     RSome(v) => locals.insert(k.to_string().into(), v),
                     RNone => locals.insert(
                         k.to_string().into(),
-                        expr.eval_value(&FunctionType::Env, ctx, None, None)?,
+                        expr.resolve_eval_value(&FunctionType::Env, ctx, Some(&locals), None)?,
                     ),
                 };
             }
@@ -135,7 +140,7 @@ impl UserFunction {
                     RSome(v) => locals.insert(k.to_string().into(), v),
                     RNone => locals.insert(
                         k.to_string().into(),
-                        expr.eval_value(&FunctionType::Env, ctx, None, None)?,
+                        expr.resolve_eval_value(&FunctionType::Env, ctx, Some(&locals), None)?,
                     ),
                 };
             }
