@@ -122,6 +122,8 @@ pub enum EvalErrorType {
     // AttributeNotFound(Option<String>, String),
     /// The node doesn't have output node
     NoOutputNode,
+    /// The network doesn't have a root node
+    NoRootNode,
     /// The node, doesn't have attribute with the given name
     NodeAttributeError(String, String),
     /// Generic error while accessing attribute (type, nesting, etc)
@@ -187,6 +189,7 @@ impl EvalErrorType {
             // }
             // Self::AttributeNotFound(None, var) => return format!("Attribute {var:?} not found"),
             Self::NoOutputNode => "Node doesn't have a output node",
+            Self::NoRootNode => "Network doesn't have a root node",
             Self::AttributeError(s) => return format!("Attribute Error: {s}"),
             Self::NodeAttributeError(n, s) => return format!("Node {n:?} Attribute Error: {s}"),
             Self::InvalidOperation => "Operation not Allowed",
@@ -435,7 +438,7 @@ impl Expression {
             Self::Variable(vt) => {
                 let attr = match &vt.ty {
                     Some(ty) => match ty {
-                        VarType::Context => local
+                        VarType::Local => local
                             .unwrap_or(&ctx.env)
                             .attr_nested(&vt.prefix, &vt.name)
                             .map(|a| a.cloned()),
@@ -445,6 +448,15 @@ impl Expression {
                             .map(|a| a.cloned()),
                         VarType::Network => ctx
                             .network
+                            .attr_nested(&vt.prefix, &vt.name)
+                            .map(|a| a.cloned()),
+                        VarType::Root => ctx
+                            .network
+                            .outlet()
+                            .ok_or(EvalErrorType::NoRootNode.pos(vt.position()))?
+                            .try_lock()
+                            .into_option()
+                            .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(vt.position()))?
                             .attr_nested(&vt.prefix, &vt.name)
                             .map(|a| a.cloned()),
                         VarType::Node => match node {
@@ -712,6 +724,15 @@ impl Expression {
                         Some(o) => Self::Function(fc.resolve(ft, ctx, local, Some(o))?),
                         None => {
                             Expression::ResolveError(EvalErrorType::NoOutputNode.pos(fc.position()))
+                        }
+                    };
+                    Ok(v)
+                }
+                Some(VarType::Root) => {
+                    let v = match ctx.network.outlet() {
+                        Some(o) => Self::Function(fc.resolve(ft, ctx, local, Some(o))?),
+                        None => {
+                            Expression::ResolveError(EvalErrorType::NoRootNode.pos(fc.position()))
                         }
                     };
                     Ok(v)
@@ -1000,8 +1021,8 @@ impl InputVar {
 /// Type of variable
 #[derive(PartialEq, Debug, Clone)]
 pub enum VarType {
-    /// Contextual Variables
-    Context,
+    /// Local Variables
+    Local,
     /// Environmen Variable
     Env,
     /// Node variable (only valid in a node function)
@@ -1014,6 +1035,8 @@ pub enum VarType {
     Output,
     /// Nodes variable (array of variable from each node)
     Nodes,
+    /// variable for the Root node of the network
+    Root,
 }
 
 impl VarType {
@@ -1023,10 +1046,11 @@ impl VarType {
             TaskKeyword::Node => Some(VarType::Node),
             TaskKeyword::Network => Some(VarType::Network),
             TaskKeyword::Env => Some(VarType::Env),
-            TaskKeyword::Context => Some(VarType::Context),
+            TaskKeyword::Local => Some(VarType::Local),
             TaskKeyword::Inputs => Some(VarType::Inputs),
             TaskKeyword::Output => Some(VarType::Output),
             TaskKeyword::Nodes => Some(VarType::Nodes),
+            TaskKeyword::Root => Some(VarType::Root),
             _ => None,
         }
     }
@@ -1036,8 +1060,10 @@ impl VarType {
         match self {
             VarType::Node => &FunctionType::Node,
             VarType::Network => &FunctionType::Network,
-            VarType::Env | VarType::Context => &FunctionType::Env,
-            VarType::Inputs | VarType::Output | VarType::Nodes => &FunctionType::Node,
+            VarType::Env | VarType::Local => &FunctionType::Env,
+            VarType::Inputs | VarType::Output | VarType::Nodes | VarType::Root => {
+                &FunctionType::Node
+            }
         }
     }
 }
@@ -1048,10 +1074,11 @@ impl std::fmt::Display for VarType {
             VarType::Node => "node",
             VarType::Network => "network",
             VarType::Env => "env",
-            VarType::Context => "context",
+            VarType::Local => "local",
             VarType::Inputs => "inputs",
             VarType::Output => "output",
             VarType::Nodes => "nodes",
+            VarType::Root => "root",
         };
         write!(f, "{ty}")
     }
@@ -1241,11 +1268,7 @@ impl FunctionCall {
         let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
         let node = self.node.as_ref().or(node);
         let fctx = self.function_ctx(ft, ctx, local, node)?;
-        match ctx.udf(&self.name).cloned() {
-            // priority for the locally defined function
-            Some(func) => func.eval_val(ctx, fctx).map(Some),
-            None => self.run_w_ctx_mut(ft, ctx, fctx, node, None),
-        }
+        self.run_w_ctx_mut(ft, ctx, fctx, node, None)
     }
 
     /// Eval the function in immutable context
@@ -1259,12 +1282,7 @@ impl FunctionCall {
         let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
         let node = self.node.as_ref().or(node);
         let fctx = self.function_ctx(ft, ctx, local, node)?;
-        let func = ctx.udf(&self.name).cloned();
-        match func {
-            // priority for the locally defined function: this overrides node/network function (should we?)
-            Some(func) => func.eval_val(ctx, fctx).map(Some),
-            None => self.run_w_ctx(ft, ctx, fctx, node, None),
-        }
+        self.run_w_ctx(ft, ctx, fctx, node, None)
     }
 
     /// Run the function with given context
@@ -1279,16 +1297,23 @@ impl FunctionCall {
         let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
         let node = self.node.as_ref().or(node);
         match ft {
-            FunctionType::Env => match tctx.functions.env(&self.name) {
-                Some(f) => f.call(&fctx).res().map_err(|s| {
-                    EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
-                }),
-                None => Err(EvalErrorType::FunctionNotFound(
-                    Some(original.unwrap_or_else(|| ft.clone())),
-                    self.name.to_string(),
-                )
-                .pos(self.position())),
-            },
+            FunctionType::Env => {
+                match tctx.udf(&self.name).cloned() {
+                    // priority for the locally defined function
+                    Some(func) if ft == &FunctionType::Env => func.eval_val(tctx, fctx).map(Some),
+                    _ => match tctx.functions.env(&self.name) {
+                        Some(f) => f.call(&fctx).res().map_err(|s| {
+                            EvalErrorType::FunctionError(self.name.to_string(), s)
+                                .pos(self.position())
+                        }),
+                        None => Err(EvalErrorType::FunctionNotFound(
+                            Some(original.unwrap_or_else(|| ft.clone())),
+                            self.name.to_string(),
+                        )
+                        .pos(self.position())),
+                    },
+                }
+            }
             FunctionType::Node => match tctx.functions.node(&self.name) {
                 Some(f) => {
                     let n = node
@@ -1303,13 +1328,29 @@ impl FunctionCall {
                         EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
                     })
                 }
-                None => self.run_w_ctx(&FunctionType::Env, tctx, fctx, node, Some(ft.clone())),
+                // if the function is not called by explicit type then also test environment function
+                None if self.ty.is_none() => {
+                    self.run_w_ctx(&FunctionType::Env, tctx, fctx, node, Some(ft.clone()))
+                }
+                None => Err(EvalErrorType::FunctionNotFound(
+                    Some(original.unwrap_or_else(|| ft.clone())),
+                    self.name.to_string(),
+                )
+                .pos(self.position())),
             },
             FunctionType::Network => match tctx.functions.network(&self.name) {
                 Some(f) => f.call(&tctx.network, &fctx).res().map_err(|s| {
                     EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
                 }),
-                None => self.run_w_ctx(&FunctionType::Env, tctx, fctx, node, Some(ft.clone())),
+                // if the function is not called by explicit type then also test environment function
+                None if self.ty.is_none() => {
+                    self.run_w_ctx(&FunctionType::Env, tctx, fctx, node, Some(ft.clone()))
+                }
+                None => Err(EvalErrorType::FunctionNotFound(
+                    Some(original.unwrap_or_else(|| ft.clone())),
+                    self.name.to_string(),
+                )
+                .pos(self.position())),
             },
         }
     }
@@ -1326,15 +1367,19 @@ impl FunctionCall {
         let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
         let node = self.node.as_ref().or(node);
         match ft {
-            FunctionType::Env => match tctx.functions.env(&self.name) {
-                Some(f) => f.call(&fctx).res().map_err(|s| {
-                    EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
-                }),
-                None => Err(EvalErrorType::FunctionNotFound(
-                    Some(original.unwrap_or_else(|| ft.clone())),
-                    self.name.to_string(),
-                )
-                .pos(self.position())),
+            FunctionType::Env => match tctx.udf(&self.name).cloned() {
+                // priority for the locally defined function
+                Some(func) if ft == &FunctionType::Env => func.eval_val(tctx, fctx).map(Some),
+                _ => match tctx.functions.env(&self.name) {
+                    Some(f) => f.call(&fctx).res().map_err(|s| {
+                        EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
+                    }),
+                    None => Err(EvalErrorType::FunctionNotFound(
+                        Some(original.unwrap_or_else(|| ft.clone())),
+                        self.name.to_string(),
+                    )
+                    .pos(self.position())),
+                },
             },
             FunctionType::Node => match tctx.functions.node(&self.name) {
                 Some(f) => {
@@ -1350,13 +1395,29 @@ impl FunctionCall {
                         EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
                     })
                 }
-                None => self.run_w_ctx(&FunctionType::Env, tctx, fctx, node, Some(ft.clone())),
+                // if the function is not called by explicit type then also test environment function
+                None if self.ty.is_none() => {
+                    self.run_w_ctx(&FunctionType::Env, tctx, fctx, node, Some(ft.clone()))
+                }
+                None => Err(EvalErrorType::FunctionNotFound(
+                    Some(original.unwrap_or_else(|| ft.clone())),
+                    self.name.to_string(),
+                )
+                .pos(self.position())),
             },
             FunctionType::Network => match tctx.functions.network(&self.name) {
                 Some(f) => f.call_mut(&mut tctx.network, &fctx).res().map_err(|s| {
                     EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
                 }),
-                None => self.run_w_ctx(&FunctionType::Env, tctx, fctx, node, Some(ft.clone())),
+                // if the function is not called by explicit type then also test environment function
+                None if self.ty.is_none() => {
+                    self.run_w_ctx(&FunctionType::Env, tctx, fctx, node, Some(ft.clone()))
+                }
+                None => Err(EvalErrorType::FunctionNotFound(
+                    Some(original.unwrap_or_else(|| ft.clone())),
+                    self.name.to_string(),
+                )
+                .pos(self.position())),
             },
         }
     }

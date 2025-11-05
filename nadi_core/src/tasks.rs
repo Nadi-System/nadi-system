@@ -752,13 +752,14 @@ pub enum TaskKeyword {
     Inputs,
     Output,
     Nodes,
+    Root,
     If,
     Else,
     While,
     In,
     Match,
     Hook,
-    Context,
+    Local,
     Function,
     Return,
     // reserved
@@ -781,13 +782,14 @@ impl std::str::FromStr for TaskKeyword {
             "inputs" => TaskKeyword::Inputs,
             "output" => TaskKeyword::Output,
             "nodes" => TaskKeyword::Nodes,
+            "root" => TaskKeyword::Root,
             "if" => TaskKeyword::If,
             "else" => TaskKeyword::Else,
             "while" => TaskKeyword::While,
             "in" => TaskKeyword::In,
             "match" => TaskKeyword::Match,
             "hook" => TaskKeyword::Hook,
-            "ctx" | "context" => TaskKeyword::Context,
+            "loc" | "local" => TaskKeyword::Local,
             "function" | "func" => TaskKeyword::Function,
             "return" => TaskKeyword::Return,
             "map" => TaskKeyword::Map,
@@ -814,13 +816,14 @@ impl std::fmt::Display for TaskKeyword {
                 TaskKeyword::Inputs => "inputs",
                 TaskKeyword::Output => "output",
                 TaskKeyword::Nodes => "nodes",
+                TaskKeyword::Root => "root",
                 TaskKeyword::If => "if",
                 TaskKeyword::Else => "else",
                 TaskKeyword::While => "while",
                 TaskKeyword::In => "in",
                 TaskKeyword::Match => "match",
                 TaskKeyword::Hook => "hook",
-                TaskKeyword::Context => "context",
+                TaskKeyword::Local => "local",
                 TaskKeyword::Function => "function",
                 TaskKeyword::Return => "return",
                 TaskKeyword::Map => "map",
@@ -845,13 +848,14 @@ impl TaskKeyword {
             TaskKeyword::Inputs => "inputs of the current node",
             TaskKeyword::Output => "output of the current node",
             TaskKeyword::Nodes => "all the nodes in the network",
+            TaskKeyword::Root => "root node of the network",
             TaskKeyword::If => "if part of if-else block",
             TaskKeyword::Else => "else part of if-else block",
             TaskKeyword::While => "while loop",
             TaskKeyword::In => "Check if value is in an array/table",
             TaskKeyword::Match => "match regex pattern with strings",
             TaskKeyword::Hook => "hook tasks to run at each execution",
-            TaskKeyword::Context => "Current context; similar to environment",
+            TaskKeyword::Local => "Local; similar to environment but within current locale",
             TaskKeyword::Function => "function definition",
             TaskKeyword::Return => "return statement inside function",
             TaskKeyword::Map => "map array to a function",
@@ -896,8 +900,9 @@ mod tests {
     #[rstest]
     fn test_keyword(
         #[values(
-            "node", "network", "env", "exit", "end", "help", "inputs", "output", "nodes", "if",
-            "else", "while", "in", "match", "function", "map", "attrs", "loop", "for"
+            "node", "network", "env", "exit", "end", "help", "inputs", "output", "nodes", "root",
+            "local", "if", "else", "while", "in", "match", "function", "map", "attrs", "loop",
+            "for"
         )]
         tk: &str,
     ) {
@@ -905,6 +910,7 @@ mod tests {
     }
 
     #[rstest]
+    #[case("loc", "local")]
     #[case("net", "network")]
     #[case("func", "function")]
     fn test_keyword_equivalent(#[case] tk: &str, #[case] eqvl: &str) {

@@ -21,6 +21,7 @@ impl From<EvalError> for PyErr {
             EvalErrorType::UnresolvedVariable => PyAttributeError::new_err(err),
             EvalErrorType::AttributeNotFound => PyAttributeError::new_err(err),
             EvalErrorType::NoOutputNode => PyAttributeError::new_err(err),
+            EvalErrorType::NoRootNode => PyAttributeError::new_err(err),
 
             EvalErrorType::FunctionNotFound(_, _) => PyKeyError::new_err(err),
             EvalErrorType::NodeNotFound(_) => PyKeyError::new_err(err),
