@@ -49,6 +49,53 @@ mod command {
         std::env::set_var(var, val)
     }
 
+    /// Runs a command in terminal and returns attribute map
+    ///
+    /// The returned AttrMap contains any key=value pair that were
+    /// output from the command if they are prefixed with `nadi:var:`
+    ///
+    /// ```task
+    /// env.outputs = command("echo nadi:var:test=12");
+    /// env assert_eq(outputs.test, 12)
+    /// ```
+    #[env_func(verbose = true, echo = false)]
+    fn command(
+        /// String Command to run
+        cmd: &str,
+        /// Show the rendered version of command, and other messages
+        verbose: bool,
+        /// Echo the stdout from the command
+        echo: bool,
+    ) -> anyhow::Result<AttrMap> {
+        if verbose {
+            println!("$ {cmd}");
+        }
+        let mut outvars = AttrMap::new();
+        let output = Exec::shell(cmd).stream_stdout()?;
+        let buf = std::io::BufReader::new(output);
+        for line in buf.lines() {
+            let l = line?;
+            if echo {
+                println!("{}", l);
+            }
+            if let Some(line) = l.strip_prefix("nadi:var:") {
+                let (k, v) = key_val(line)?;
+                if verbose {
+                    match outvars.attr(&k) {
+                        Some(vold) => {
+                            if !(vold == &v) {
+                                println!("{k}={} -> {}", vold.to_string(), v.to_string())
+                            }
+                        }
+                        None => println!("{k}={}", v.to_string()),
+                    };
+                }
+                outvars.set_attr(&k, v);
+            }
+        }
+        Ok(outvars)
+    }
+
     /** Run the given template as a shell command.
 
     Run any command in the shell. The standard output of the command

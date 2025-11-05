@@ -4,7 +4,7 @@ use crate::network::PropCondition;
 use crate::prelude::*;
 use crate::udf::UserFunction;
 use std::collections::HashMap;
-use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::mpsc::{channel, Receiver, Sender};
 
 // /// Result of a Task when executed
 // pub enum TaskResult {
@@ -756,6 +756,8 @@ pub enum TaskKeyword {
     If,
     Else,
     While,
+    Try,
+    Catch,
     In,
     Match,
     Hook,
@@ -786,6 +788,8 @@ impl std::str::FromStr for TaskKeyword {
             "if" => TaskKeyword::If,
             "else" => TaskKeyword::Else,
             "while" => TaskKeyword::While,
+            "try" => TaskKeyword::Try,
+            "catch" => TaskKeyword::Catch,
             "in" => TaskKeyword::In,
             "match" => TaskKeyword::Match,
             "hook" => TaskKeyword::Hook,
@@ -820,6 +824,8 @@ impl std::fmt::Display for TaskKeyword {
                 TaskKeyword::If => "if",
                 TaskKeyword::Else => "else",
                 TaskKeyword::While => "while",
+                TaskKeyword::Try => "try",
+                TaskKeyword::Catch => "catch",
                 TaskKeyword::In => "in",
                 TaskKeyword::Match => "match",
                 TaskKeyword::Hook => "hook",
@@ -852,6 +858,8 @@ impl TaskKeyword {
             TaskKeyword::If => "if part of if-else block",
             TaskKeyword::Else => "else part of if-else block",
             TaskKeyword::While => "while loop",
+            TaskKeyword::Try => "try statement to contain tasks",
+            TaskKeyword::Catch => "catch statement when error occurs on try block",
             TaskKeyword::In => "Check if value is in an array/table",
             TaskKeyword::Match => "match regex pattern with strings",
             TaskKeyword::Hook => "hook tasks to run at each execution",

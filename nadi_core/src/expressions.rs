@@ -237,6 +237,8 @@ pub enum Expression {
     BiOp(BiOperator, Box<Expression>, Box<Expression>),
     /// if-else statement
     IfElse(Box<Expression>, Box<Expression>, Box<Expression>),
+    /// try-catch blocks
+    TryCatch(Box<Expression>, Box<Expression>),
 }
 
 impl std::fmt::Display for Expression {
@@ -290,6 +292,12 @@ impl std::fmt::Display for Expression {
                 expr1.to_string(),
                 expr2.to_string()
             ),
+            Self::TryCatch(expr1, expr2) => write!(
+                f,
+                "try {{{}}} catch {{{}}}",
+                expr1.to_string(),
+                expr2.to_string()
+            ),
         }
     }
 }
@@ -307,6 +315,7 @@ impl Expression {
             Self::UniOp(_, _) => true,
             Self::BiOp(_, _, _) => true,
             Self::IfElse(_, _, _) => true,
+            Self::TryCatch(_, _) => true,
         }
     }
 
@@ -331,6 +340,7 @@ impl Expression {
             Self::IfElse(c, e1, e2) => {
                 c.has_variables() || e1.has_variables() || e2.has_variables()
             }
+            Self::TryCatch(e1, e2) => e1.has_variables() || e2.has_variables(),
         }
     }
 
@@ -379,6 +389,13 @@ impl Expression {
                 Box::new(expr1.simplify(ft, ctx)?),
                 Box::new(expr2.simplify(ft, ctx)?),
             )),
+            Self::TryCatch(expr1, expr2) => match expr1.simplify(ft, ctx) {
+                Ok(blk) => Ok(Self::TryCatch(
+                    Box::new(blk),
+                    Box::new(expr2.simplify(ft, ctx)?),
+                )),
+                _ => expr2.simplify(ft, ctx),
+            },
         }
     }
 
@@ -758,6 +775,13 @@ impl Expression {
                 Box::new(expr1.resolve(ft, ctx, local, node)?),
                 Box::new(expr2.resolve(ft, ctx, local, node)?),
             )),
+            Self::TryCatch(expr1, expr2) => match expr1.resolve(ft, ctx, local, node) {
+                Ok(blk) => Ok(Self::TryCatch(
+                    Box::new(blk),
+                    Box::new(expr2.resolve(ft, ctx, local, node)?),
+                )),
+                _ => expr2.resolve(ft, ctx, local, node),
+            },
         }
     }
 
@@ -846,6 +870,10 @@ impl Expression {
                     expr2.eval_value(ft, ctx, local, node)
                 }
             }
+            Self::TryCatch(expr1, expr2) => match expr1.eval_value(ft, ctx, local, node) {
+                Ok(val) => Ok(val),
+                _ => expr2.eval_value(ft, ctx, local, node),
+            },
         }
     }
 }

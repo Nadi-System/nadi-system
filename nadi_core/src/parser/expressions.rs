@@ -24,6 +24,7 @@ pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> 
         map(function_call, Expression::Function),
         uni_operator_expr,
         if_else_expr,
+        try_catch_expr,
     ))(inp)
 }
 
@@ -120,6 +121,19 @@ pub fn if_else_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression
     Ok((
         rest,
         Expression::IfElse(Box::new(cond), Box::new(iftrue), Box::new(iffalse)),
+    ))
+}
+
+pub fn try_catch_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+    let (rest, (_, try_blk, _, catch_blk)) = tuple((
+        kw_try,
+        maybe_newline(expression_block),
+        maybe_newline(kw_catch),
+        maybe_newline(expression_block),
+    ))(inp)?;
+    Ok((
+        rest,
+        Expression::TryCatch(Box::new(try_blk), Box::new(catch_blk)),
     ))
 }
 
