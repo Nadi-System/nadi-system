@@ -1,7 +1,6 @@
 use crate::attrs::{AttrMap, Attribute};
 use crate::expressions::{EvalError, EvalErrorType, Expression};
 use crate::functions::FunctionCtx;
-use crate::node::Node;
 use crate::tasks::{FunctionType, TaskContext};
 use abi_stable::std_types::{RNone, RSome, RVec};
 

@@ -143,6 +143,9 @@ impl TaskContext {
                 }
             }
             Task::Return(_) => Err(EvalErrorType::InvalidReturn.no_pos()),
+            Task::Expr(expr) => expr
+                .resolve_eval(&FunctionType::Env, self, None, None)
+                .map(|a| a.map(|a| a.to_string())),
             Task::Hook(tasks) => {
                 self.hook = tasks;
                 Ok(None)
@@ -692,6 +695,8 @@ pub enum Task {
     Function(UserFunction),
     /// Return the value if inside a function
     Return(Expression),
+    /// Evaluate the expression
+    Expr(Expression),
     /// exit the task system/process
     Exit,
 }
@@ -708,6 +713,7 @@ impl Task {
             Task::Help(_, _) => false,
             Task::Function(_) => false,
             Task::Return(_) => false,
+            Task::Expr(_) => false,
             Task::Exit => false,
         }
     }
@@ -735,6 +741,7 @@ impl std::fmt::Display for Task {
             Self::Help(Some(kw), Some(s)) => write!(f, "help {kw} {s}"),
             Task::Function(fdef) => write!(f, "{fdef}"),
             Task::Return(expr) => write!(f, "return({expr})"),
+            Task::Expr(expr) => write!(f, "{expr}"),
             Self::Exit => write!(f, "exit"),
         }
     }

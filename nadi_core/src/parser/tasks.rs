@@ -213,6 +213,7 @@ pub fn while_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, WhileTask> {
 
 pub fn task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
     alt((
+        map(complete_expression, Task::Expr),
         map(eval_task, Task::Eval),
         map(attr_task, Task::Attr),
         map(cond_task, Task::Conditional),
