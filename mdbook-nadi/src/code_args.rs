@@ -40,7 +40,7 @@ fn execute_task(task: Task) -> Result<Option<String>, String> {
     #[allow(static_mut_refs)]
     let ctx: &mut TaskContextWrap =
         unsafe { &mut NADI_CTX.lock().expect("Couldn't lock the task context") };
-    ctx.execute(task)
+    ctx.execute(task).map_err(|e| e.to_string())
 }
 
 pub fn run_task(task: &str, args: &str, pwd: &Path) -> anyhow::Result<Vec<Event<'static>>> {

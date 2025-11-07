@@ -47,6 +47,7 @@ mod tests {
     use crate::tasks::TaskContext;
     use abi_stable::std_types::Tuple2;
     use pulldown_cmark::{CodeBlockKind, CowStr, Event, Options, Parser, Tag, TagEnd};
+    use std::collections::HashMap;
 
     fn test_plugin_function(txt: &str, ctx: &mut TaskContext) -> Result<(), String> {
         let tokens = nadi_core::parser::tokenizer::get_tokens(txt);
@@ -92,6 +93,7 @@ mod tests {
             functions: functions.clone(),
             env: AttrMap::new(),
             hook: Vec::new(),
+            udf: HashMap::new(),
             channel: sender,
         };
         let mut tests = 0;

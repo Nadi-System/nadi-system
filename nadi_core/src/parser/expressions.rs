@@ -516,9 +516,9 @@ mod tests {
         let (rest, expr) = complete_expression(&tokens).unwrap();
         assert_eq!(rest, vec![]);
         let res = expr
-            .resolve(&FunctionType::Env, &context, None)
+            .resolve(&FunctionType::Env, &context, None, None)
             .unwrap()
-            .eval(&FunctionType::Env, &context, None)
+            .eval(&FunctionType::Env, &context, None, None)
             .unwrap()
             .unwrap();
         assert_eq!(res, val);

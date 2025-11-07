@@ -99,10 +99,10 @@ pub enum TaskToken {
     WhiteSpace,
     Comment,
     Keyword(TaskKeyword),
-    AngleStart,   // <>
-    ParenStart,   // ()
-    BraceStart,   // {}
-    BracketStart, // []
+    AngleStart,   // <
+    ParenStart,   // (
+    BraceStart,   // {
+    BracketStart, // [
     PathSep,      // ->
     Comma,        // ,
     Caret,        // ^
@@ -117,10 +117,12 @@ pub enum TaskToken {
     And,          // &
     Or,           // |
     Not,          // !
-    AngleEnd,
-    ParenEnd,
-    BraceEnd,
-    BracketEnd,
+    AngleEnd,     // >
+    ParenEnd,     // )
+    BraceEnd,     // }
+    BracketEnd,   // ]
+    At,           // @
+    Dollar,       // $
     Variable,
     Function,
     Assignment,
@@ -268,6 +270,8 @@ fn symbols(i: &str) -> TokenRes<'_> {
         map(tag(","), |s| RawToken::new(TaskToken::Comma, s)),
         map(tag("?"), |s| RawToken::new(TaskToken::Question, s)),
         map(tag(";"), |s| RawToken::new(TaskToken::Semicolon, s)),
+        map(tag("@"), |s| RawToken::new(TaskToken::At, s)),
+        map(tag("$"), |s| RawToken::new(TaskToken::Dollar, s)),
     ))(i)
 }
 
@@ -558,7 +562,7 @@ mod tests {
     #[rstest]
     #[case("~", TaskToken::Invalid('~'), "")]
     #[case("~12", TaskToken::Invalid('~'), "12")]
-    #[case("@~", TaskToken::Invalid('@'), "~")]
+    #[case("~", TaskToken::Invalid('~'), "")]
     fn invalid_test(#[case] txt: &str, #[case] value: TaskToken, #[case] reminder: &str) {
         let (rest, n) = invalid(txt).unwrap();
         assert_eq!(rest, reminder);
@@ -605,7 +609,8 @@ mod tests {
     #[case("1990-12-21T14:30:32", TaskToken::DateTime, "")]
     #[case("~", TaskToken::Invalid('~'), "")]
     #[case("~12", TaskToken::Invalid('~'), "12")]
-    #[case("@~", TaskToken::Invalid('@'), "~")]
+    #[case("@~", TaskToken::At, "~")]
+    #[case("~@", TaskToken::Invalid('~'), "@")]
     fn task_token_test(#[case] txt: &str, #[case] value: TaskToken, #[case] reminder: &str) {
         let (rest, n) = task_token(txt).unwrap();
         assert_eq!(rest, reminder);

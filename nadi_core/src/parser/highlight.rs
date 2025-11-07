@@ -172,6 +172,7 @@ impl Highlight {
                 TaskToken::ParenEnd => Self::Paren,
                 TaskToken::BraceEnd => Self::Paren,
                 TaskToken::BracketEnd => Self::Paren,
+                TaskToken::At | TaskToken::Dollar => Self::Symbol,
                 TaskToken::Variable => Self::Variable,
                 TaskToken::Function => Self::Function,
                 TaskToken::Assignment => Self::Operator,

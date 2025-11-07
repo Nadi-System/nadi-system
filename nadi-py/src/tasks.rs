@@ -1,7 +1,8 @@
 use crate::network::PyNetwork;
 use nadi_core::parser::{tasks, tokenizer};
+use nadi_core::prelude::EvalError;
 use nadi_core::tasks::{TaskContext, TaskMessage};
-use pyo3::{exceptions::PyRuntimeError, prelude::*};
+use pyo3::prelude::*;
 use std::sync::mpsc::channel;
 use std::thread;
 
@@ -40,7 +41,7 @@ impl PyTaskContext {
     fn execute(&mut self, tasks: String) -> PyResult<Option<String>> {
         let tokens = tokenizer::get_tokens(&tasks);
         let tasks = tasks::parse(tokens)?;
-        let responses: Result<Vec<Option<String>>, String> =
+        let responses: Result<Vec<Option<String>>, EvalError> =
             tasks.into_iter().map(|t| self.0.execute(t)).collect();
         match responses {
             Ok(v) => {
@@ -53,7 +54,7 @@ impl PyTaskContext {
                     Ok(Some(vals.join("\n")))
                 }
             }
-            Err(e) => Err(PyRuntimeError::new_err(e)),
+            Err(e) => Err(e.into()),
         }
     }
 }

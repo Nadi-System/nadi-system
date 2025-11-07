@@ -213,13 +213,13 @@ pub fn while_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, WhileTask> {
 
 pub fn task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
     alt((
-        map(complete_expression, Task::Expr),
         map(eval_task, Task::Eval),
         map(attr_task, Task::Attr),
         map(cond_task, Task::Conditional),
         map(while_task, Task::WhileLoop),
         map(hook_task, Task::Hook),
         map(function_def, Task::Function),
+        map(complete_expression, Task::Expr),
         help_task,
         value(Task::Exit, kw_exit),
     ))(inp)
@@ -268,7 +268,6 @@ mod tests {
     #[case("env.x")]
     #[case("node.x")]
     #[case("network.x")]
-    #[should_panic]
     #[case("inputs.x")]
     #[case("env (x + 1) != 5")]
     #[case("env \"val\" in selected_vals")]

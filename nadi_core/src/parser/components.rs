@@ -120,6 +120,8 @@ one_token!(paren_end, TaskToken::ParenEnd);
 one_token!(brace_end, TaskToken::BraceEnd);
 one_token!(bracket_end, TaskToken::BracketEnd);
 one_token!(assignment, TaskToken::Assignment);
+one_token!(at, TaskToken::At);
+one_token!(dollar, TaskToken::Dollar);
 one_token!(invalid, TaskToken::Invalid(_));
 
 one_token!(kw_if, TaskToken::Keyword(TaskKeyword::If));
