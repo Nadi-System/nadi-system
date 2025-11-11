@@ -11,7 +11,7 @@ use nom::{
     branch::alt,
     combinator::{cut, map, opt, value},
     multi::{many1, separated_list1},
-    sequence::{delimited, pair, separated_pair, terminated, tuple},
+    sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
 };
 
 // TODO: Add try-catch expression
@@ -25,6 +25,10 @@ pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> 
         uni_operator_expr,
         if_else_expr,
         try_catch_expr,
+        map(
+            preceded(kw_error, after_space(string_val)),
+            Expression::UserError,
+        ),
     ))(inp)
 }
 

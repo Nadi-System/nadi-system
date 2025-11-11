@@ -101,6 +101,8 @@ impl EvalErrorType {
 /// Collection of Errors that can happen during expression evaluation
 #[derive(Debug, PartialEq, Clone)]
 pub enum EvalErrorType {
+    /// User raised error
+    UserError(String),
     /// Varible doesn't exist in given context
     UnresolvedVariable,
     /// Function doesn't exist in given context
@@ -168,6 +170,7 @@ impl EvalErrorType {
     /// Format the error into a message using the values
     pub fn message(&self) -> String {
         match self {
+            Self::UserError(s) => return format!("Error: {s}"),
             Self::UnresolvedVariable => "Unresolved variable in expression",
             Self::FunctionNotFound(t, n) => {
                 return format!(
@@ -227,6 +230,8 @@ pub enum Expression {
     /// but raised during eval step. That way the error can be ignored
     /// if the evaluation doesn't hit it,
     ResolveError(EvalError),
+    /// User raised errors
+    UserError(String),
     /// Function call
     Function(FunctionCall),
     /// Multiple function calls after resolving `nodes` and `inputs` type context
@@ -247,9 +252,10 @@ impl std::fmt::Display for Expression {
             Self::Literal(a) => std::fmt::Display::fmt(a, f),
             Self::Variable(v) => std::fmt::Display::fmt(v, f),
             Self::Render(v) => write!(f, "r{v:?}"),
-            Self::ResolveError(e) => write!(f, "ResolveError: {}", e),
+            Self::ResolveError(e) => write!(f, "error {:?}", e.to_string()),
+            Self::UserError(e) => write!(f, "error {:?}", e),
             Self::Function(fc) => std::fmt::Display::fmt(fc, f),
-            // multifunction is only generated after resolving
+            // multifunction is only generated after resolvingg
             // function; so this shouldn't be used much, but I'm
             // representing it as array of function, even though it
             // cann't be loaded with this syntax from tasks file
@@ -308,6 +314,7 @@ impl Expression {
         match self {
             Self::Literal(_) => false,
             Self::ResolveError(_) => false,
+            Self::UserError(_) => false,
             Self::Variable(_) => false,
             Self::Render(_) => false,
             Self::Function(_) => false,
@@ -324,6 +331,7 @@ impl Expression {
         match self {
             Self::Literal(_) => false,
             Self::ResolveError(_) => false,
+            Self::UserError(_) => false,
             Self::Variable(_) => true,
             // Could also do true here, as render stirng without variable is converted to a string
             Self::Render(templ) => templ.has_variables(),
@@ -366,6 +374,7 @@ impl Expression {
             },
             // this should also be handled on has_variables()
             Self::ResolveError(e) => Err(e),
+            Self::UserError(s) => Err(EvalErrorType::UserError(s).no_pos()),
             Self::Function(mut fc) => {
                 fc.simplify(ft, ctx)?;
                 Ok(Self::Function(fc))
@@ -451,6 +460,7 @@ impl Expression {
     ) -> Result<Expression, EvalError> {
         match self {
             Self::ResolveError(_) => Ok(self.clone()),
+            Self::UserError(_) => Ok(self.clone()),
             Self::Literal(_) => Ok(self.clone()),
             Self::Variable(vt) => {
                 let attr = match &vt.ty {
@@ -832,6 +842,7 @@ impl Expression {
             // Resolve should have converted Render to Lit(String)
             Self::Render(_) => Err(EvalErrorType::UnresolvedVariable.no_pos()),
             Self::ResolveError(e) => Err(e.clone()),
+            Self::UserError(s) => Err(EvalErrorType::UserError(s.clone()).no_pos()),
             Self::Function(fc) => match fc.eval(ft, ctx, local, node) {
                 Ok(None) => {
                     Err(EvalErrorType::NoReturnValue(fc.name.to_string()).pos(fc.position()))

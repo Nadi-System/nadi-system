@@ -130,6 +130,7 @@ one_token!(kw_while, TaskToken::Keyword(TaskKeyword::While));
 one_token!(kw_try, TaskToken::Keyword(TaskKeyword::Try));
 one_token!(kw_catch, TaskToken::Keyword(TaskKeyword::Catch));
 one_token!(kw_func, TaskToken::Keyword(TaskKeyword::Function));
+one_token!(kw_error, TaskToken::Keyword(TaskKeyword::Error));
 one_token!(kw_in, TaskToken::Keyword(TaskKeyword::In));
 one_token!(kw_match, TaskToken::Keyword(TaskKeyword::Match));
 one_token!(kw_hook, TaskToken::Keyword(TaskKeyword::Hook));
