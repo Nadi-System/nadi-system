@@ -16,6 +16,7 @@ use nadi_core::{
     },
     tasks::FunctionType,
 };
+
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -178,6 +179,7 @@ pub enum Message {
     ThemeChange(highlighter::Theme),
     NewFile,
     OpenFile,
+    OpenFilePath(PathBuf),
     FileOpened(Result<(PathBuf, Arc<String>), Error>),
     SaveFile,
     FileSaved(Result<PathBuf, Error>),
@@ -291,6 +293,7 @@ impl Editor {
                     Task::perform(open_file(), Message::FileOpened)
                 }
             }
+            Message::OpenFilePath(path) => Task::perform(load_file(path), Message::FileOpened),
             Message::FileOpened(result) => {
                 self.is_loading = false;
                 self.is_dirty = false;

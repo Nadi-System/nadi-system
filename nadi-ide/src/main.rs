@@ -1,3 +1,4 @@
+use clap::Parser;
 use iced::widget::pane_grid::{self, PaneGrid};
 use iced::widget::{
     Row, button, center, column, container, horizontal_space, pick_list, row, text, text_editor,
@@ -12,13 +13,49 @@ use nadi_ide::icons;
 use nadi_ide::style;
 use nadi_ide::svg::SvgView;
 use nadi_ide::terminal::{self, Terminal};
+use std::path::PathBuf;
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct NadiIdeOptions {
+    /// Start NADI IDE in light theme
+    #[arg(short, long, action)]
+    light_theme: bool,
+    /// Tasks file to open during startup
+    #[arg(value_name = "TASK_FILE")]
+    task_file: Option<PathBuf>,
+}
 
 pub fn main() -> iced::Result {
     iced::application("NADI", MainWindow::update, MainWindow::view)
         .font(icons::FONT)
         .theme(MainWindow::theme)
         .subscription(MainWindow::subscription)
-        .run()
+        .run_with(|| {
+            let options = NadiIdeOptions::parse();
+            let mut ide = MainWindow::default();
+            ide.light_theme = options.light_theme;
+            let task = if let Some(t) = options.task_file {
+                // if a File is given start with the ENT configuration
+                ide.panes = pane_grid::State::<Pane>::with_configuration(panety_2_pane(
+                    &pane_grid::Configuration::Split {
+                        axis: pane_grid::Axis::Vertical,
+                        ratio: 0.5,
+                        a: Box::new(pane_grid::Configuration::Pane(&PaneType::TextEditor)),
+                        b: Box::new(pane_grid::Configuration::Split {
+                            axis: pane_grid::Axis::Horizontal,
+                            ratio: 0.5,
+                            a: Box::new(pane_grid::Configuration::Pane(&PaneType::NetworkView)),
+                            b: Box::new(pane_grid::Configuration::Pane(&PaneType::Terminal)),
+                        }),
+                    },
+                ));
+                Task::perform(async { editor::Message::OpenFilePath(t) }, Message::Editor)
+            } else {
+                Task::none()
+            };
+            (ide, task)
+        })
 }
 
 struct MainWindow {
