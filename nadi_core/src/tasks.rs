@@ -4,7 +4,7 @@ use crate::network::PropCondition;
 use crate::prelude::*;
 use crate::udf::UserFunction;
 use std::collections::HashMap;
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender, channel};
 
 // /// Result of a Task when executed
 // pub enum TaskResult {
@@ -136,6 +136,9 @@ impl TaskContext {
         match task {
             Task::Function(fdef) => {
                 if let Some(name) = fdef.name() {
+                    // TODO: check the function doesn't have
+                    // node/inputs/ and output variable types (those
+                    // that can't be calculated in env context)
                     self.udf.insert(name.into(), fdef);
                     Ok(None)
                 } else {
@@ -700,6 +703,9 @@ pub enum Task {
     /// exit the task system/process
     Exit,
 }
+// TODO: add import task that loads a file; to be used to import function definitions from the file. We can make it only import the functions and not run anything. Alternatively use load keyword that will run everything in the current task context
+
+// While working on this, also define a syntax to alias a function. Can either do single function or whole plugin
 
 impl Task {
     /// The given task has the capacity to change the task context

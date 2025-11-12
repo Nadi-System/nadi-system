@@ -14,14 +14,12 @@ use nom::{
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
 };
 
-// TODO: Add try-catch expression
-
 pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
     alt((
         input_variable,
-        map(template_val, Expression::Render),
         map(attribute, Expression::Literal),
         map(function_call, Expression::Function),
+        map(template_val, Expression::Render),
         uni_operator_expr,
         if_else_expr,
         try_catch_expr,
@@ -65,54 +63,105 @@ pub fn uni_operator_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expre
     Ok((rest, Expression::UniOp(op, Box::new(expr))))
 }
 
-macro_rules! bi_op_pred {
-    ($name:ident, $inner:expr, $($itself:expr)?, $($kw: expr => $op: expr),*) => {
-	fn $name<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
-	    map(
-		tuple((
-		    alt(($inner, expression_group)),
-		    maybe_newline(alt((
-			$(value($op, $kw),)*
-		    ))),
-		    maybe_newline(cut(err_ctx(
-			&ParseErrorType::IncompleteExpression,
-			alt((expression_group, $($itself,)? $inner))
-		    )))
-		)),
-		|(lhs, op, rhs)| Expression::BiOp(op, Box::new(lhs), Box::new(rhs)),
-	    )(inp)
-	}
+/// Helper structure that contains a *flat* representation of a binary operator
+/// expression.  It is produced by the lexer / parser before the tree is
+/// actually built.
+///
+/// `first`: the left-most operand  
+/// `args` : a vector of `(operator, right-hand-side)` pairs.
+///
+/// Example: `a + b * c - d`  ->  `first = a` and
+/// `args = [(Add, b), (Multiply, c), (Substract, d)]`
+struct BiOpExpr {
+    first: Expression,
+    args: Vec<(BiOperator, Expression)>,
+}
+
+impl BiOpExpr {
+    /// Parse the given BiOpExpr into a proper Expression
+    ///
+    /// The precedance order
+    /// - Airthmatic
+    ///   - Divide/Multiply
+    ///   - plus/minus
+    /// - Comparision operations
+    ///   - greater than, less than, equal, etc
+    ///   - Match statement
+    /// - Logical operations
+    ///   - or
+    ///   - and
+    ///
+    fn parse(self) -> Option<Expression> {
+        // Two stacks used by the shunting-yard algorithm.
+        let mut operand_stack: Vec<Expression> = Vec::new();
+        let mut operator_stack: Vec<BiOperator> = Vec::new();
+
+        operand_stack.push(self.first);
+        for (op, expr) in self.args {
+            // While the top of the operator stack has higher or equal
+            // precedence, pop it and apply it.
+            while let Some(top_op) = operator_stack.last() {
+                if top_op.precedence() >= op.precedence() {
+                    let top = operator_stack.pop()?;
+                    let res = top.expr_from_stack(&mut operand_stack)?;
+                    operand_stack.push(res);
+                } else {
+                    break;
+                }
+            }
+
+            // Push the current operator and the following operand.
+            operator_stack.push(op);
+            operand_stack.push(expr);
+        }
+        // Drain the remaining operators.
+        while let Some(op) = operator_stack.pop() {
+            let res = op.expr_from_stack(&mut operand_stack)?;
+            operand_stack.push(res);
+        }
+
+        operand_stack.pop()
     }
 }
 
-bi_op_pred!(bi_op_in_match, expression,,
-            kw_in => BiOperator::In,
-            kw_match => BiOperator::Match
-);
-bi_op_pred!(bi_op_mult, expression, bi_op_mult,
-            star => BiOperator::Multiply,
-            pair(slash, slash) => BiOperator::IntDivide,
-            slash => BiOperator::Divide,
-            percentage => BiOperator::Modulus
-);
-bi_op_pred!(bi_op_plusminus, alt((bi_op_mult, expression)), bi_op_plusminus,
-            plus => BiOperator::Add,
-            dash => BiOperator::Substract
-);
-bi_op_pred!(bi_op_and, alt((bi_op_in_match, bi_op_compare, expression)), bi_op_and,
-            and => BiOperator::And
-);
-bi_op_pred!(bi_op_or, alt((bi_op_and, bi_op_in_match, bi_op_compare, expression)), bi_op_or,
-            or => BiOperator::Or
-);
-bi_op_pred!(bi_op_compare, expression,,
-            pair(assignment, assignment) => BiOperator::Equal,
-            pair(not, assignment) => BiOperator::NotEqual,
-            pair(angle_start, assignment) => BiOperator::LessThanEqual,
-            pair(angle_end, assignment) => BiOperator::GreaterThanEqual,
-            angle_start => BiOperator::LessThan,
-            angle_end => BiOperator::GreaterThan
-);
+fn bi_operator_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+    let (rest, (first, args)) = pair(
+        alt((expression, expression_group)),
+        many1(pair(
+            maybe_space(bi_operator),
+            maybe_newline(cut(err_ctx(
+                &ParseErrorType::IncompleteExpression,
+                alt((expression, expression_group)),
+            ))),
+        )),
+    )(inp)?;
+    let expr = BiOpExpr { first, args };
+    let expr = expr.parse().ok_or(nom::Err::Error(
+        MatchErr::new(inp).ty(&ParseErrorType::IncompleteExpression),
+    ))?;
+    Ok((rest, expr))
+}
+
+pub fn bi_operator<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, BiOperator> {
+    alt((
+        value(BiOperator::In, kw_in),
+        value(BiOperator::Match, kw_match),
+        value(BiOperator::Multiply, star),
+        value(BiOperator::IntDivide, pair(slash, slash)),
+        value(BiOperator::Divide, slash),
+        value(BiOperator::Modulus, percentage),
+        value(BiOperator::Add, plus),
+        value(BiOperator::Substract, dash),
+        value(BiOperator::And, and),
+        value(BiOperator::Or, or),
+        value(BiOperator::Equal, pair(assignment, assignment)),
+        value(BiOperator::NotEqual, pair(not, assignment)),
+        value(BiOperator::LessThanEqual, pair(angle_start, assignment)),
+        value(BiOperator::GreaterThanEqual, pair(angle_end, assignment)),
+        value(BiOperator::LessThan, angle_start),
+        value(BiOperator::GreaterThan, angle_end),
+    ))(inp)
+}
 
 pub fn if_else_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
     let (rest, (_, cond, iftrue, _, iffalse)) = tuple((
@@ -142,16 +191,7 @@ pub fn try_catch_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expressi
 }
 
 pub fn complete_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
-    alt((
-        bi_op_or,
-        bi_op_and,
-        bi_op_in_match,
-        bi_op_compare,
-        bi_op_plusminus,
-        bi_op_mult,
-        expression_group,
-        expression,
-    ))(inp)
+    alt((bi_operator_expr, expression_group, expression))(inp)
 }
 
 pub fn variable_type<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, VarType> {

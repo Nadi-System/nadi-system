@@ -955,6 +955,36 @@ pub enum BiOperator {
 }
 
 impl BiOperator {
+    /// Precedence of each binary operator.
+    pub fn precedence(&self) -> i32 {
+        match self {
+            // arithmetic – highest
+            Self::Divide | Self::Multiply | Self::IntDivide | Self::Modulus => 5,
+            Self::Add | Self::Substract => 4,
+
+            // comparisons
+            Self::GreaterThan
+            | Self::LessThan
+            | Self::GreaterThanEqual
+            | Self::LessThanEqual
+            | Self::Equal
+            | Self::NotEqual
+            | Self::In
+            | Self::Match => 3,
+
+            // logical
+            Self::And => 2,
+            Self::Or => 1,
+        }
+    }
+
+    /// Generate Expression using a stackof expressions
+    pub fn expr_from_stack(self, stack: &mut Vec<Expression>) -> Option<Expression> {
+        let right = stack.pop()?;
+        let left = stack.pop()?;
+        Some(Expression::BiOp(self, Box::new(left), Box::new(right)))
+    }
+
     /// Evaluate the expression
     pub fn eval(&self, val1: Attribute, val2: Attribute) -> Result<Attribute, EvalError> {
         match self {

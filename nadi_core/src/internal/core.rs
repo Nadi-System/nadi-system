@@ -393,6 +393,32 @@ mod core {
         Attribute::Array(a.into())
     }
 
+    /// flatten the given list of arrays into a single one
+    ///
+    /// If any argument is not an array, then it will treat them as
+    /// single element array
+    ///
+    /// ```task
+    /// env assert_eq(flatten([[4], [5, 6]]), [4, 5, 6])
+    /// ```
+    #[env_func]
+    fn flatten(
+        /// List of attributes
+        array: Vec<Attribute>,
+    ) -> Attribute {
+        let mut attr_list = Vec::new();
+        for attr in array {
+            if let Attribute::Array(a) = attr {
+                a.into_iter().for_each(|v| {
+                    attr_list.push(v);
+                });
+            } else {
+                attr_list.push(attr);
+            }
+        }
+        Attribute::Array(attr_list.into())
+    }
+
     /// length of an array or hashmap
     ///
     /// ```task
