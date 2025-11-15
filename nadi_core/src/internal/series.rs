@@ -128,6 +128,66 @@ mod series {
         node.del_series(name).is_some()
     }
 
+    /// Sort an series
+    #[node_func]
+    fn sr_sort(
+        node: &mut NodeInner,
+        /// Name of the series
+        name: &str,
+    ) -> Result<(), String> {
+        let sr = node.try_series_mut(name)?;
+        match sr {
+            Series::Complete(CompleteSeries::Floats(ref mut vals)) => {
+                Ok(vals.sort_by(f64::total_cmp))
+            }
+            Series::Complete(CompleteSeries::Integers(ref mut vals)) => Ok(vals.sort()),
+            Series::Complete(CompleteSeries::Booleans(ref mut vals)) => Ok(vals.sort()),
+            Series::Complete(CompleteSeries::Strings(ref mut vals)) => Ok(vals.sort()),
+            Series::Complete(CompleteSeries::Dates(ref mut vals)) => Ok(vals.sort()),
+            Series::Complete(CompleteSeries::Times(ref mut vals)) => Ok(vals.sort()),
+            s => Err(format!(
+                "Incorrect Type: Mean cannot be calculated for series of type `{}`",
+                s.type_name(),
+            )),
+        }
+    }
+
+    /// get nth member of a series
+    #[node_func]
+    fn sr_get(
+        node: &NodeInner,
+        /// Name of the series
+        name: &str,
+        /// index to get
+        ind: usize,
+    ) -> Result<Option<Attribute>, String> {
+        let sr = node.try_series(name)?;
+        match sr {
+            Series::Complete(CompleteSeries::Floats(ref vals)) => {
+                Ok(vals.get(ind).cloned().map(Attribute::Float))
+            }
+            Series::Complete(CompleteSeries::Integers(ref vals)) => {
+                Ok(vals.get(ind).cloned().map(Attribute::Integer))
+            }
+            Series::Complete(CompleteSeries::Strings(ref vals)) => {
+                Ok(vals.get(ind).cloned().map(Attribute::String))
+            }
+            Series::Complete(CompleteSeries::Dates(ref vals)) => {
+                Ok(vals.get(ind).cloned().map(Attribute::Date))
+            }
+            Series::Complete(CompleteSeries::Times(ref vals)) => {
+                Ok(vals.get(ind).cloned().map(Attribute::Time))
+            }
+            Series::Complete(CompleteSeries::DateTimes(ref vals)) => {
+                Ok(vals.get(ind).cloned().map(Attribute::DateTime))
+            }
+            Series::Complete(CompleteSeries::Attributes(ref vals)) => Ok(vals.get(ind).cloned()),
+            _ => Err(format!(
+                "Incorrect Type: Masked Series not supported for Nth",
+            )),
+        }
+    }
+
     /// Make an array from the series if it's complete
     #[node_func(safe = false)]
     fn sr_to_array(
