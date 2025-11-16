@@ -419,6 +419,25 @@ mod core {
         Attribute::Array(attr_list.into())
     }
 
+    /// append a value to an array
+    ///
+    /// ```task
+    /// env assert_eq(append([4], 5), [4, 5])
+    /// ```
+    #[env_func]
+    fn drop_nan(
+        /// List of attributes
+        array: Vec<Attribute>,
+    ) -> Attribute {
+        Attribute::Array(
+            array
+                .into_iter()
+                .filter(|f| !f.is_nan())
+                .collect::<Vec<Attribute>>()
+                .into(),
+        )
+    }
+
     /// length of an array or hashmap
     ///
     /// ```task

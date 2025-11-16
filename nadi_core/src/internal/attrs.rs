@@ -24,14 +24,29 @@ impl NadiPlugin for AttrsMod {
             "ATTRS",
             NodeFunction_TO::from_value(LoadAttrs, TD_CanDowncast),
         );
+        nf.register_alias(
+            "ATTRS.load_attrs".to_string(),
+            "load_attrs".to_string(),
+            ::nadi_core::tasks::FunctionType::Node,
+        );
         nf.register_node_function(
             "ATTRS",
             NodeFunction_TO::from_value(PrintAllAttrs, TD_CanDowncast),
+        );
+        nf.register_alias(
+            "ATTRS.print_all_attrs".to_string(),
+            "print_all_attrs".to_string(),
+            ::nadi_core::tasks::FunctionType::Node,
         );
         // #[node_func] makes struct from function_name to  FunctionNameNode:
         nf.register_node_function(
             "ATTRS",
             NodeFunction_TO::from_value(PrintAttrsNode, TD_CanDowncast),
+        );
+        nf.register_alias(
+            "ATTRS.print_attrs".to_string(),
+            "print_attrs".to_string(),
+            ::nadi_core::tasks::FunctionType::Node,
         );
     }
 }
@@ -156,10 +171,12 @@ The attributes will be printed in `key=val` format.
 */
 #[node_func(name = false)]
 fn print_attrs(node: &NodeInner, #[args] attrs: AttrSlice, name: bool) -> FunctionRet {
-    let attrs = return_on_err!(attrs
-        .iter()
-        .map(String::try_from_attr)
-        .collect::<Result<Vec<String>, String>>());
+    let attrs = return_on_err!(
+        attrs
+            .iter()
+            .map(String::try_from_attr)
+            .collect::<Result<Vec<String>, String>>()
+    );
 
     for a in attrs {
         if let Some(v) = node.attr(&a) {

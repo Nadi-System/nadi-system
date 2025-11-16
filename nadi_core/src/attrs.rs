@@ -738,6 +738,14 @@ impl Attribute {
         }
     }
 
+    /// Attribute is NaN
+    pub fn is_nan(&self) -> bool {
+        match self {
+            Self::Float(f) => f.is_nan(),
+            _ => false,
+        }
+    }
+
     /// Check if the value contains other
     ///
     /// Only valid for String, Array and Table,
