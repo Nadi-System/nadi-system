@@ -4,7 +4,8 @@ use crate::network::PropCondition;
 use crate::prelude::*;
 use crate::udf::UserFunction;
 use std::collections::HashMap;
-use std::sync::mpsc::{Receiver, Sender, channel};
+use std::path::PathBuf;
+use std::sync::mpsc::{channel, Receiver, Sender};
 
 // /// Result of a Task when executed
 // pub enum TaskResult {
@@ -144,6 +145,37 @@ impl TaskContext {
                 } else {
                     Ok(Some("Anonymous Function".into()))
                 }
+            }
+            Task::Import(imp) => {
+                if let Some(path) = imp.path() {
+                    let txt = std::fs::read_to_string(path).unwrap();
+                    let tokens = crate::parser::tokenizer::get_tokens(&txt);
+                    let tasks = crate::parser::tasks::parse(tokens)
+                        .map_err(|e| EvalErrorType::ParseError(e.to_string()).no_pos())?;
+                    if imp.tasks {
+                        for fc in tasks {
+                            self.execute(fc)?;
+                        }
+                    } else {
+                        for mut fc in tasks {
+                            let mut exec = false;
+                            if let Task::Function(fc) = &mut fc {
+                                if let Some(name) = &mut fc.name {
+                                    *name = format!("{}.{}", imp.name, name);
+                                    exec = true;
+                                }
+                            }
+                            if exec {
+                                self.execute(fc)?;
+                            }
+                        }
+                    }
+                } else {
+                    // In this case look at the available plugins and
+                    // load the functions from there to this context.
+                    todo!()
+                }
+                Ok(None)
             }
             Task::Return(_) => Err(EvalErrorType::InvalidReturn.no_pos()),
             Task::Expr(expr) => expr
@@ -679,6 +711,56 @@ impl std::fmt::Display for WhileTask {
     }
 }
 
+// /// Functions to import
+// ///
+// /// None will import the plugin but functions need dot syntax
+// /// All will import all functions to be used directly
+// /// Some will only import the listed functions to be used directly
+// #[derive(Clone, PartialEq, Debug)]
+// pub enum ImportFunctions {
+//     None,
+//     All,
+//     Some(Vec<String>),
+// }
+
+/// Task that is an import statement
+#[derive(Clone, PartialEq, Debug)]
+pub struct ImportTask {
+    /// name of the plugin/nadi file
+    pub name: String,
+    /// path to the plugin/nadi code
+    pub path: Option<PathBuf>,
+    // /// Functions to import
+    // functions: ImportFunctions,
+    /// Execute tasks while importing functions
+    pub tasks: bool,
+}
+
+impl std::fmt::Display for ImportTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let key = if self.tasks { "exec" } else { "import" };
+        if let Some(p) = &self.path {
+            write!(f, "{key} {} from {p:?}", self.name)
+        } else {
+            write!(f, "{key} {}", self.name)
+        }
+    }
+}
+
+impl ImportTask {
+    pub fn path(&self) -> Option<PathBuf> {
+        if let Some(p) = &self.path {
+            return Some(p.clone());
+        }
+        let name = &self.name;
+        let path = PathBuf::from(format!("{name}.tasks"));
+        if path.exists() {
+            return Some(path);
+        }
+        None
+    }
+}
+
 /// Execution body of the Task System
 #[derive(Clone, PartialEq, Debug)]
 pub enum Task {
@@ -700,6 +782,8 @@ pub enum Task {
     Return(Expression),
     /// Evaluate the expression
     Expr(Expression),
+    /// Import functions from a tasks file
+    Import(ImportTask),
     /// exit the task system/process
     Exit,
 }
@@ -720,6 +804,7 @@ impl Task {
             Task::Function(_) => false,
             Task::Return(_) => false,
             Task::Expr(_) => false,
+            Task::Import(_) => true,
             Task::Exit => false,
         }
     }
@@ -748,6 +833,7 @@ impl std::fmt::Display for Task {
             Task::Function(fdef) => write!(f, "{fdef}"),
             Task::Return(expr) => write!(f, "return({expr})"),
             Task::Expr(expr) => write!(f, "{expr}"),
+            Task::Import(imp) => write!(f, "{imp}"),
             Self::Exit => write!(f, "exit"),
         }
     }
@@ -756,6 +842,9 @@ impl std::fmt::Display for Task {
 /// Keywords in the task system
 #[derive(Clone, PartialEq, Debug)]
 pub enum TaskKeyword {
+    Import,
+    Exec,
+    From,
     Node,
     Network,
     Env,
@@ -789,6 +878,9 @@ impl std::str::FromStr for TaskKeyword {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
+            "import" => TaskKeyword::Import,
+            "exec" => TaskKeyword::Exec,
+            "from" => TaskKeyword::From,
             "node" => TaskKeyword::Node,
             "network" | "net" => TaskKeyword::Network,
             "env" => TaskKeyword::Env,
@@ -826,6 +918,9 @@ impl std::fmt::Display for TaskKeyword {
             f,
             "{}",
             match self {
+                TaskKeyword::Import => "import",
+                TaskKeyword::Exec => "exec",
+                TaskKeyword::From => "from",
                 TaskKeyword::Node => "node",
                 TaskKeyword::Network => "network",
                 TaskKeyword::Env => "env",
@@ -861,6 +956,9 @@ impl TaskKeyword {
     #[cfg(not(tarpaulin_include))]
     pub fn help(&self) -> String {
         match self {
+            TaskKeyword::Import => "import a plugin or tasks file",
+            TaskKeyword::Exec => "exec a tasks file",
+            TaskKeyword::From => "import/exec from a path",
             TaskKeyword::Node => "node function",
             TaskKeyword::Network => "network function",
             TaskKeyword::Env => "environmental variables",

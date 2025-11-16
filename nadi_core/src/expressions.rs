@@ -146,6 +146,8 @@ pub enum EvalErrorType {
     RenderError(String),
     /// Regex compilation failed (invalid pattern)
     RegexError(regex::Error),
+    /// Parse Error from import or other operations
+    ParseError(String),
     /// Logical error by the developer
     LogicalError(&'static str),
     /// Lock on mutex failed
@@ -205,6 +207,7 @@ impl EvalErrorType {
             Self::DivideByZero => "Division by Zero",
             Self::RenderError(e) => return format!("Rendering Failed: {e}"),
             Self::RegexError(e) => return format!("Error in regex: {e}"),
+            Self::ParseError(e) => return format!("Error parsing: {e}"),
             Self::LogicalError(s) => return format!("Logical Error: {s}, contact developer"),
             Self::MutexError(f, l) => {
                 return format!("Mutex Error on file: {f}::{l}, contact developer");

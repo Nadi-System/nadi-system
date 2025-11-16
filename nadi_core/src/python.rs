@@ -42,6 +42,7 @@ impl From<EvalError> for PyErr {
 
             EvalErrorType::RenderError(_) => PyNameError::new_err(err),
             EvalErrorType::RegexError(_) => PyValueError::new_err(err),
+            EvalErrorType::ParseError(_) => PyValueError::new_err(err),
             EvalErrorType::DifferentLength(_, _) => PyAssertionError::new_err(err),
             EvalErrorType::DivideByZero => PyZeroDivisionError::new_err(err),
             EvalErrorType::LogicalError(_) => PyAssertionError::new_err(err),

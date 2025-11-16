@@ -9,7 +9,7 @@ use crate::parser::{
 use crate::{
     expressions::TaskPosition,
     network::{PropCondition, PropNodes, PropOrder, Propagation},
-    tasks::{AttrTask, CondTask, EvalTask, FunctionType, Task, WhileTask},
+    tasks::{AttrTask, CondTask, EvalTask, FunctionType, ImportTask, Task, WhileTask},
 };
 use abi_stable::std_types::{RString, RVec};
 use nom::{
@@ -19,6 +19,7 @@ use nom::{
     sequence::{delimited, preceded, tuple},
     Finish,
 };
+use std::path::PathBuf;
 
 pub fn prop_order<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, PropOrder> {
     let (rest, var) = delimited(
@@ -211,6 +212,25 @@ pub fn while_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, WhileTask> {
     ))
 }
 
+pub fn import_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ImportTask> {
+    let (rest, (tasks, name, path)) = tuple((
+        alt((value(true, kw_exec), value(false, kw_import))),
+        after_space(variable),
+        opt(preceded(
+            after_space(kw_from),
+            after_space(map(string_val, PathBuf::from)),
+        )),
+    ))(inp)?;
+    Ok((
+        rest,
+        ImportTask {
+            name: name.content.to_string(),
+            path,
+            tasks,
+        },
+    ))
+}
+
 pub fn task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
     alt((
         map(eval_task, Task::Eval),
@@ -219,6 +239,7 @@ pub fn task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
         map(while_task, Task::WhileLoop),
         map(hook_task, Task::Hook),
         map(function_def, Task::Function),
+        map(import_task, Task::Import),
         map(complete_expression, Task::Expr),
         help_task,
         value(Task::Exit, kw_exit),

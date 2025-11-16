@@ -6,7 +6,7 @@ use abi_stable::std_types::{RNone, RSome, RVec};
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct UserFunction {
-    name: Option<String>,
+    pub(crate) name: Option<String>,
     args: Vec<String>,
     kwargs: Vec<(String, Expression)>,
     expr: Expression,

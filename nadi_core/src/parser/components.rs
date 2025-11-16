@@ -124,6 +124,9 @@ one_token!(at, TaskToken::At);
 one_token!(dollar, TaskToken::Dollar);
 one_token!(invalid, TaskToken::Invalid(_));
 
+one_token!(kw_import, TaskToken::Keyword(TaskKeyword::Import));
+one_token!(kw_exec, TaskToken::Keyword(TaskKeyword::Exec));
+one_token!(kw_from, TaskToken::Keyword(TaskKeyword::From));
 one_token!(kw_if, TaskToken::Keyword(TaskKeyword::If));
 one_token!(kw_else, TaskToken::Keyword(TaskKeyword::Else));
 one_token!(kw_while, TaskToken::Keyword(TaskKeyword::While));
