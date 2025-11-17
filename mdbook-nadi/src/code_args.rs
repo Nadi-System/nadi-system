@@ -14,6 +14,10 @@ use std::sync::{LazyLock, Mutex};
 
 pub type CodeHandler = fn(&str, &str, &Path) -> Result<Vec<Event<'static>>, anyhow::Error>;
 
+// TODO: remove table and stp, only keep task and then have better
+// arguments like from org mode so everything can be done through the
+// task, maybe this can be done after the taskreturn has options like
+// image/file, etc so that we can take that information.
 pub fn nadi_code_args(mark: &str) -> Option<(CodeHandler, String)> {
     // only run for ones with "run" in it
     mark.split_once(" run").and_then(|(p, a)| match p.trim() {
@@ -104,7 +108,17 @@ pub fn run_task(task: &str, args: &str, pwd: &Path) -> anyhow::Result<Vec<Event<
 }
 
 pub fn run_template(templ: &str, args: &str, pwd: &Path) -> anyhow::Result<Vec<Event<'static>>> {
-    let templ = Template::from_str(templ)?;
+    let templ = match Template::from_str(templ) {
+        Ok(t) => t,
+        Err(e) => {
+            return Ok(output_verbose(
+                vec![Event::Text("*Error*:".into())],
+                e.to_string(),
+                "error",
+                pwd,
+            ));
+        }
+    };
     let mut op = AttrMap::default();
     for kv in args.split(';') {
         if kv.is_empty() {

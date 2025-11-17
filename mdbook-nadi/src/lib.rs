@@ -67,6 +67,8 @@ impl Preprocessor for Nadi {
 
 fn process_book_item(item: &mut BookItem, pwd: &Path) -> anyhow::Result<()> {
     if let BookItem::Chapter(ref mut chapter) = item {
+        // if I need to figure out an obscure error
+        // eprintln!("Parsing: {} ({:?})", chapter.name, chapter.path);
         chapter.content = run_chapter(&chapter.content, pwd)?;
     }
     Ok(())

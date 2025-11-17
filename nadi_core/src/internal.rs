@@ -8,6 +8,7 @@ mod core;
 mod debug;
 mod files;
 mod logic;
+mod math;
 mod regex;
 mod render;
 mod series;
@@ -31,6 +32,7 @@ pub(crate) fn register_internal(funcs: &mut NadiFunctions) {
     debug::DebugMod {}.register(funcs);
     files::FilesMod {}.register(funcs);
     logic::LogicMod {}.register(funcs);
+    math::MathMod {}.register(funcs);
     regex::RegexMod {}.register(funcs);
     render::RenderMod {}.register(funcs);
     series::SeriesMod {}.register(funcs);

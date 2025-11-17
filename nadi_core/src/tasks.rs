@@ -13,12 +13,15 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 //     Value(Attribute),
 //     Update(Attribute, Attribute),
 //     Return(Attribute),
-//     Help(String),
-//     Error(EvalError),
 //     OrderedTable(AttrMap, Vec<String>),
+//     Help(String),  // this can be formatted text
+//     Error(EvalError),
+//     Image(PathBuf),
+//     File(PathBuf),
+//     FormattedText(String),
 // }
 
-/// Message that can be send from the task
+/// Message that can be sent from the task
 #[derive(Debug, Clone)]
 pub enum TaskMessage {
     Progress(String, usize, usize),
