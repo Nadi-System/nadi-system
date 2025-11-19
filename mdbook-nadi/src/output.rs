@@ -41,27 +41,25 @@ pub fn output_image(
         args.to_string()
     };
     let img = Tag::Image {
-        link_type: pulldown_cmark::LinkType::Reference,
+        link_type: pulldown_cmark::LinkType::Inline,
         dest_url: link.into(),
         title: String::new().into(),
         id: String::new().into(),
     };
     pre.extend(vec![
         Event::HardBreak,
-        Event::Start(Tag::HtmlBlock),
-        Event::Html("<center>".into()),
-        Event::End(TagEnd::HtmlBlock),
-        Event::HardBreak,
+        Event::Start(Tag::Paragraph),
         Event::Start(img),
+        Event::Text("Output Image".into()),
         Event::End(TagEnd::Image),
-        Event::HardBreak,
-        Event::Start(Tag::HtmlBlock),
-        Event::Html("</center>".into()),
-        Event::End(TagEnd::HtmlBlock),
+        Event::End(TagEnd::Paragraph),
         Event::HardBreak,
     ]);
     pre
 }
+
+// Start(Paragraph), Start(Image { link_type: Inline, dest_url: Borrowed("./images/ide-help.png"), title: Borrowed(""), id: Borrowed("") }), Text(Borrowed("IDE Help")), End(Image), End(Paragraph),
+// Start(HtmlBlock), Html(Borrowed("<center>")), End(HtmlBlock), HardBreak, Start(Image { link_type: Reference, dest_url: Boxed("../output/svg-funcs.svg"), title: Boxed(""), id: Boxed("") }), End(Image), HardBreak, Start(HtmlBlock), Html(Borrowed("</center>")), End(HtmlBlock)
 
 pub fn output_file(
     mut pre: Vec<Event<'static>>,
