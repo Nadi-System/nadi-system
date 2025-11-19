@@ -1,8 +1,8 @@
 use anyhow::Error;
-use mdbook::book::{Book, BookItem};
-use mdbook::preprocess::{Preprocessor, PreprocessorContext};
+use mdbook_preprocessor::book::{Book, BookItem};
+use mdbook_preprocessor::{Preprocessor, PreprocessorContext};
 
-use pulldown_cmark::{CodeBlockKind, CowStr, Event, Tag, TagEnd};
+use mdbook_markdown::pulldown_cmark::{CodeBlockKind, CowStr, Event, Tag, TagEnd};
 use pulldown_cmark_to_cmark::cmark;
 
 use std::path::Path;
@@ -60,8 +60,8 @@ impl Preprocessor for Nadi {
         Ok(book)
     }
 
-    fn supports_renderer(&self, renderer: &str) -> bool {
-        renderer != "not-supported"
+    fn supports_renderer(&self, renderer: &str) -> anyhow::Result<bool> {
+        Ok(renderer != "not-supported")
     }
 }
 
@@ -83,7 +83,8 @@ fn run_chapter(chap: &str, pwd: &Path) -> anyhow::Result<String> {
 
     let mut state = State::None;
     let mut buf = String::with_capacity(chap.len() * 2);
-    let mut parser = mdbook::utils::new_cmark_parser(chap, false);
+    let options = mdbook_markdown::MarkdownOptions::default();
+    let mut parser = mdbook_markdown::new_cmark_parser(chap, &options);
     let mut args = String::new();
     let mut handler: CodeHandler = run_task;
 

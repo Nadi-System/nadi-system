@@ -1,7 +1,6 @@
 use clap::{Arg, ArgMatches, Command};
-use mdbook::errors::Error;
-use mdbook::preprocess::CmdPreprocessor;
-use mdbook::preprocess::Preprocessor;
+use mdbook_preprocessor::Preprocessor;
+use mdbook_preprocessor::errors::Error;
 
 use mdbook_nadi::Nadi;
 use std::io;
@@ -31,13 +30,13 @@ fn make_app() -> Command {
 }
 
 fn handle_preprocessing() -> Result<(), Error> {
-    let (ctx, book) = CmdPreprocessor::parse_input(io::stdin())?;
+    let (ctx, book) = mdbook_preprocessor::parse_input(io::stdin())?;
 
-    if ctx.mdbook_version != mdbook::MDBOOK_VERSION {
+    if ctx.mdbook_version != mdbook_preprocessor::MDBOOK_VERSION {
         eprintln!(
             "Warning: The mdbook-nadi preprocessor was built against version \
              {} of mdbook, but we're being called from version {}",
-            mdbook::MDBOOK_VERSION,
+            mdbook_preprocessor::MDBOOK_VERSION,
             ctx.mdbook_version
         );
     }
@@ -54,7 +53,7 @@ fn handle_supports(sub_args: &ArgMatches) -> ! {
     let supported = Nadi.supports_renderer(renderer);
 
     // Signal whether the renderer is supported by exiting with 1 or 0.
-    if supported {
+    if let Ok(true) = supported {
         process::exit(0);
     } else {
         process::exit(1);

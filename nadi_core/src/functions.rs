@@ -547,7 +547,7 @@ impl NadiFunctions {
                     let (s, h) = func_sig(func_obj.args());
                     writeln!(doc, "env {}.{}{}", plug, func, s)?;
                     writeln!(doc, "```\n")?;
-                    writeln!(doc, "### Arguments\n{}\n", h)?;
+                    writeln!(doc, "**Arguments:**\n{}\n", h)?;
                     writeln!(doc, "{}", func_obj.help().replace("\n#", "\n###"))?;
                 }
             }
@@ -561,7 +561,7 @@ impl NadiFunctions {
                     let (s, h) = func_sig(func_obj.args());
                     writeln!(doc, "node {}.{}{}", plug, func, s)?;
                     writeln!(doc, "```\n")?;
-                    writeln!(doc, "### Arguments\n{}\n", h)?;
+                    writeln!(doc, "**Arguments:**\n{}\n", h)?;
                     writeln!(doc, "{}", func_obj.help().replace("\n#", "\n###"))?;
                 }
             }
@@ -575,7 +575,7 @@ impl NadiFunctions {
                     let (s, h) = func_sig(func_obj.args());
                     writeln!(doc, "network {}.{}{}", plug, func, s)?;
                     writeln!(doc, "```\n")?;
-                    writeln!(doc, "### Arguments\n{}\n", h)?;
+                    writeln!(doc, "**Arguments:**\n{}\n", h)?;
                     writeln!(doc, "{}", func_obj.help().replace("\n#", "\n###"))?;
                 }
             }

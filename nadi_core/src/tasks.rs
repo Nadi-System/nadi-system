@@ -149,6 +149,7 @@ impl TaskContext {
                     Ok(Some("Anonymous Function".into()))
                 }
             }
+            #[cfg(feature = "parser")]
             Task::Import(imp) => {
                 if let Some(path) = imp.path() {
                     let txt = std::fs::read_to_string(path).unwrap();
@@ -726,6 +727,7 @@ impl std::fmt::Display for WhileTask {
 //     Some(Vec<String>),
 // }
 
+#[cfg(feature = "parser")]
 /// Task that is an import statement
 #[derive(Clone, PartialEq, Debug)]
 pub struct ImportTask {
@@ -739,6 +741,7 @@ pub struct ImportTask {
     pub tasks: bool,
 }
 
+#[cfg(feature = "parser")]
 impl std::fmt::Display for ImportTask {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let key = if self.tasks { "exec" } else { "import" };
@@ -750,6 +753,7 @@ impl std::fmt::Display for ImportTask {
     }
 }
 
+#[cfg(feature = "parser")]
 impl ImportTask {
     pub fn path(&self) -> Option<PathBuf> {
         if let Some(p) = &self.path {
@@ -785,6 +789,7 @@ pub enum Task {
     Return(Expression),
     /// Evaluate the expression
     Expr(Expression),
+    #[cfg(feature = "parser")]
     /// Import functions from a tasks file
     Import(ImportTask),
     /// exit the task system/process
@@ -807,6 +812,7 @@ impl Task {
             Task::Function(_) => false,
             Task::Return(_) => false,
             Task::Expr(_) => false,
+            #[cfg(feature = "parser")]
             Task::Import(_) => true,
             Task::Exit => false,
         }
@@ -836,6 +842,7 @@ impl std::fmt::Display for Task {
             Task::Function(fdef) => write!(f, "{fdef}"),
             Task::Return(expr) => write!(f, "return({expr})"),
             Task::Expr(expr) => write!(f, "{expr}"),
+            #[cfg(feature = "parser")]
             Task::Import(imp) => write!(f, "{imp}"),
             Self::Exit => write!(f, "exit"),
         }

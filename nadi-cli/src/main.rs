@@ -63,6 +63,9 @@ struct CliArgs {
     /// print tasks before running
     #[arg(short, long)]
     print_tasks: bool,
+    /// Install the given nadi plugin
+    #[arg(short, long)]
+    install_plugin: Option<PathBuf>,
     /// Create the files for a new nadi_plugin
     #[arg(short = 'P', long)]
     new_plugin: Option<String>,
@@ -91,8 +94,25 @@ struct CliArgs {
 
 fn main() -> anyhow::Result<()> {
     let args = CliArgs::parse();
-    let functions = NadiFunctions::new();
 
+    if let Some(p) = &args.new_plugin {
+        init_plugin(p, &args.nadi_core)?;
+        return Ok(());
+    } else if let Some(p) = &args.install_plugin {
+        // this has to be done before loading NadiFunctions because
+        // otherwise the plugin might be loaded already and can't be
+        // replaced
+        let dirs = std::env::var("NADI_PLUGIN_DIRS")?;
+        let dir = PathBuf::from(dirs.split(":").next().unwrap_or_default());
+        let pdir = dir.join(nadi_core::NADI_CORE_VERSION);
+        std::fs::copy(
+            p,
+            pdir.join(p.file_name().expect("plugin does not have filename")),
+        )?;
+        return Ok(());
+    }
+
+    let functions = NadiFunctions::new();
     if args.show {
         show_tasks(&args.tasks.unwrap());
     } else if let Some(dir) = args.generate_doc {
@@ -109,8 +129,6 @@ fn main() -> anyhow::Result<()> {
             _ => comp.print_functions(&functions),
         }
         FunctionType::Env.print_functions(&functions);
-    } else if let Some(p) = &args.new_plugin {
-        init_plugin(p, &args.nadi_core)?;
     } else {
         let net = if let Some(ref net) = args.network {
             Some(Network::from_file(net)?)

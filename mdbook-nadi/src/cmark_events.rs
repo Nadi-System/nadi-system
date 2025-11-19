@@ -17,6 +17,8 @@ pub fn event_to_static(event: Event<'_>) -> Event<'static> {
         Event::HardBreak => Event::HardBreak,
         Event::Rule => Event::Rule,
         Event::TaskListMarker(b) => Event::TaskListMarker(b),
+        Event::InlineMath(v) => Event::InlineMath(v.to_string().into()),
+        Event::DisplayMath(v) => Event::DisplayMath(v.to_string().into()),
     }
 }
 
@@ -71,7 +73,7 @@ fn tag_to_static(tag: Tag<'_>) -> Tag<'static> {
         },
         // without lifetime
         Tag::Paragraph => Tag::Paragraph,
-        Tag::BlockQuote => Tag::BlockQuote,
+        Tag::BlockQuote(q) => Tag::BlockQuote(q),
         Tag::HtmlBlock => Tag::HtmlBlock,
         Tag::List(v) => Tag::List(v),
         Tag::Item => Tag::Item,
@@ -83,6 +85,11 @@ fn tag_to_static(tag: Tag<'_>) -> Tag<'static> {
         Tag::Strong => Tag::Strong,
         Tag::Strikethrough => Tag::Strikethrough,
         Tag::MetadataBlock(v) => Tag::MetadataBlock(v),
+        Tag::DefinitionList => Tag::DefinitionList,
+        Tag::DefinitionListTitle => Tag::DefinitionListTitle,
+        Tag::DefinitionListDefinition => Tag::DefinitionListDefinition,
+        Tag::Superscript => Tag::Superscript,
+        Tag::Subscript => Tag::Subscript,
     }
 }
 
