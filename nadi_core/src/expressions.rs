@@ -134,6 +134,8 @@ pub enum EvalErrorType {
     InvalidOperation,
     /// Variable is not of correct type (e.g. node variable in network function)
     InvalidVariableType,
+    /// Array required for operation
+    NotAnArray,
     /// Number required for operation
     NotANumber,
     /// Boolean required for operation
@@ -199,6 +201,7 @@ impl EvalErrorType {
             Self::NodeAttributeError(n, s) => return format!("Node {n:?} Attribute Error: {s}"),
             Self::InvalidOperation => "Operation not Allowed",
             Self::InvalidVariableType => "Variable type invalid in this context",
+            Self::NotAnArray => "Array required Non-Array found",
             Self::NotANumber => "Numerical Operation on Non Number",
             Self::NotABool => "Boolean Operation on Non Boolean",
             Self::DifferentLength(a, b) => {
@@ -247,6 +250,13 @@ pub enum Expression {
     IfElse(Box<Expression>, Box<Expression>, Box<Expression>),
     /// try-catch blocks
     TryCatch(Box<Expression>, Box<Expression>),
+    /// for loop blocks that filters and runs through an expression
+    ForEachIf(
+        String,
+        Box<Expression>,
+        Box<Expression>,
+        Option<Box<Expression>>,
+    ),
 }
 
 impl std::fmt::Display for Expression {
@@ -283,30 +293,42 @@ impl std::fmt::Display for Expression {
                 f,
                 "{} {} {}",
                 if expr1.nested() {
-                    format!("({})", expr1.to_string())
+                    format!("({})", expr1)
                 } else {
                     expr1.to_string()
                 },
                 op.to_string(),
                 if expr2.nested() {
-                    format!("({})", expr2.to_string())
+                    format!("({})", expr2)
                 } else {
                     expr2.to_string()
                 },
             ),
-            Self::IfElse(cond, expr1, expr2) => write!(
-                f,
-                "if ({}) {{{}}} else {{{}}}",
-                cond.to_string(),
-                expr1.to_string(),
-                expr2.to_string()
-            ),
-            Self::TryCatch(expr1, expr2) => write!(
-                f,
-                "try {{{}}} catch {{{}}}",
-                expr1.to_string(),
-                expr2.to_string()
-            ),
+            Self::IfElse(cond, expr1, expr2) => {
+                write!(f, "if ({}) {{{}}} else {{{}}}", cond, expr1, expr2)
+            }
+            Self::TryCatch(expr1, expr2) => write!(f, "try {{{}}} catch {{{}}}", expr1, expr2),
+            Self::ForEachIf(var, expr1, expr2, cond) => {
+                write!(
+                    f,
+                    "for {var} in {} {{{}}}",
+                    if expr1.nested() {
+                        format!("({})", expr1)
+                    } else {
+                        expr1.to_string()
+                    },
+                    expr2
+                )?;
+                if let Some(c) = cond {
+                    if c.nested() {
+                        write!(f, "if ({})", c)
+                    } else {
+                        write!(f, "if {}", c)
+                    }
+                } else {
+                    Ok(())
+                }
+            }
         }
     }
 }
@@ -326,6 +348,7 @@ impl Expression {
             Self::BiOp(_, _, _) => true,
             Self::IfElse(_, _, _) => true,
             Self::TryCatch(_, _) => true,
+            Self::ForEachIf(..) => true,
         }
     }
 
@@ -352,6 +375,7 @@ impl Expression {
                 c.has_variables() || e1.has_variables() || e2.has_variables()
             }
             Self::TryCatch(e1, e2) => e1.has_variables() || e2.has_variables(),
+            Self::ForEachIf(..) => true, // TODO: it will have local var, so we need to test if it has var by getting a list of variables.
         }
     }
 
@@ -408,6 +432,16 @@ impl Expression {
                 )),
                 _ => expr2.simplify(ft, ctx),
             },
+            Self::ForEachIf(var, expr1, expr2, cond) => Ok(Self::ForEachIf(
+                var,
+                Box::new(expr1.simplify(ft, ctx)?),
+                Box::new(expr2.simplify(ft, ctx)?),
+                if let Some(c) = cond {
+                    Some(Box::new(c.simplify(ft, ctx)?))
+                } else {
+                    None
+                },
+            )),
         }
     }
 
@@ -795,6 +829,13 @@ impl Expression {
                 )),
                 _ => expr2.resolve(ft, ctx, local, node),
             },
+            Self::ForEachIf(var, expr1, expr2, cond) => Ok(Self::ForEachIf(
+                var.clone(),
+                Box::new(expr1.resolve(ft, ctx, local, node)?),
+                // can't resolve these two yet since they have local variables
+                expr2.clone(),
+                cond.clone(),
+            )),
         }
     }
 
@@ -841,7 +882,18 @@ impl Expression {
     ) -> Result<Attribute, EvalError> {
         match self {
             Self::Literal(v) => Ok(v.clone()),
-            Self::Variable(vt) => Err(EvalErrorType::UnresolvedVariable.pos(vt.position())),
+            Self::Variable(vt) => {
+                // local variables might not be resolved, so let's
+                // resolve them again here
+                if vt.ty.is_none() {
+                    if let Some(loc) = local {
+                        if let Ok(Some(v)) = loc.attr_nested(&vt.prefix, &vt.name) {
+                            return Ok(v.clone());
+                        }
+                    }
+                }
+                Err(EvalErrorType::UnresolvedVariable.pos(vt.position()))
+            }
             // Resolve should have converted Render to Lit(String)
             Self::Render(_) => Err(EvalErrorType::UnresolvedVariable.no_pos()),
             Self::ResolveError(e) => Err(e.clone()),
@@ -888,6 +940,30 @@ impl Expression {
                 Ok(val) => Ok(val),
                 _ => expr2.eval_value(ft, ctx, local, node),
             },
+            Self::ForEachIf(var, expr1, expr2, cond) => {
+                let parent = match expr1.eval_value(ft, ctx, local, node)? {
+                    Attribute::Array(ar) => ar,
+                    _ => return Err(EvalErrorType::NotAnArray.no_pos()),
+                };
+                let mut results = Vec::with_capacity(parent.len());
+                for val in parent {
+                    // I think in future we want a data type that
+                    // saved reference of parent locales
+                    let mut loc = local.cloned().unwrap_or_default();
+                    loc.insert(var.to_string().into(), val.clone());
+                    if let Some(c) = cond {
+                        let var = c.resolve_eval_value(ft, ctx, Some(&loc), node)?;
+                        match var {
+                            Attribute::Bool(true) => (),
+                            Attribute::Bool(false) => continue,
+                            _ => return Err(EvalErrorType::NotABool.no_pos()),
+                        }
+                    }
+                    let val = expr2.resolve_eval_value(ft, ctx, Some(&loc), node)?;
+                    results.push(val);
+                }
+                Ok(Attribute::Array(results.into()))
+            }
         }
     }
 }

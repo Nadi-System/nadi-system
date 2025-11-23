@@ -23,6 +23,7 @@ pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> 
         uni_operator_expr,
         if_else_expr,
         try_catch_expr,
+        for_each_if_expr,
         map(
             preceded(kw_error, after_space(string_val)),
             Expression::UserError,
@@ -187,6 +188,26 @@ pub fn try_catch_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expressi
     Ok((
         rest,
         Expression::TryCatch(Box::new(try_blk), Box::new(catch_blk)),
+    ))
+}
+
+pub fn for_each_if_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+    let (rest, (var, expr1, expr2, cond)) = tuple((
+        delimited(
+            kw_for,
+            after_space(map(variable, |v| v.content.to_string())),
+            after_space(kw_in),
+        ),
+        after_space(expression),
+        maybe_newline(expression_block),
+        maybe_newline(opt(preceded(
+            kw_if,
+            after_space(alt((expression_block, expression_group))),
+        ))),
+    ))(inp)?;
+    Ok((
+        rest,
+        Expression::ForEachIf(var, Box::new(expr1), Box::new(expr2), cond.map(Box::new)),
     ))
 }
 

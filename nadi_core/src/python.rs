@@ -37,6 +37,7 @@ impl From<EvalError> for PyErr {
 
             EvalErrorType::InvalidOperation => PyValueError::new_err(err),
             EvalErrorType::InvalidVariableType => PyTypeError::new_err(err),
+            EvalErrorType::NotAnArray => PyTypeError::new_err(err),
             EvalErrorType::NotANumber => PyTypeError::new_err(err),
             EvalErrorType::NotABool => PyTypeError::new_err(err),
 
