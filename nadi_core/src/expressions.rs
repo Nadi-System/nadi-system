@@ -276,14 +276,14 @@ impl std::fmt::Display for Expression {
             // representing it as array of function, even though it
             // cann't be loaded with this syntax from tasks file
             Self::MultiFunction(fcs) => {
-                write!(f, "[")?;
+                write!(f, "array(")?;
                 for (i, fc) in fcs.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
                     std::fmt::Display::fmt(fc, f)?;
                 }
-                write!(f, "[")
+                write!(f, ")")
             }
             Self::UniOp(op, expr) => {
                 if expr.nested() {
@@ -916,7 +916,7 @@ impl InputVarIndex {
     pub fn type_name(&self) -> &'static str {
         match self {
             Self::Str(_) => "string",
-            Self::Int(_) => "index",
+            Self::Int(_) => "integer",
         }
     }
 }

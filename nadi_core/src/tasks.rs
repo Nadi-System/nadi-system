@@ -21,6 +21,8 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 //     FormattedText(String),
 // }
 
+pub const MAX_NODES_LENGTH: usize = 50;
+
 /// Message that can be sent from the task
 #[derive(Debug, Clone)]
 pub enum TaskMessage {
@@ -296,6 +298,7 @@ impl TaskContext {
             FunctionType::Node => {
                 let nodes = self.propagation(task.propagation.unwrap_or_default())?;
                 let total = nodes.len();
+                let trunc = total > MAX_NODES_LENGTH;
                 let mut progress = 0;
                 let mut attrs = Vec::with_capacity(total);
                 for n in nodes {
@@ -321,11 +324,12 @@ impl TaskContext {
                         progress,
                         total,
                     ));
+                    let update = !task.silent & (progress < MAX_NODES_LENGTH);
                     if let Some(attr) = &task.attr {
                         let old = n
                             .set_attr_nested(&task.attr_pre, attr, res.clone())
                             .map_err(|e| EvalErrorType::AttributeError(e).no_pos())?;
-                        if !task.silent {
+                        if update {
                             if let Some(o) = old {
                                 attrs.push(format!(
                                     "  {} = {} -> {}",
@@ -335,14 +339,18 @@ impl TaskContext {
                                 ));
                             }
                         }
-                    } else if !task.silent {
+                    } else if update {
                         attrs.push(format!("  {} = {}", n.name(), res.to_string()));
                     }
                 }
                 if task.silent || attrs.is_empty() {
                     Ok(None)
                 } else {
-                    Ok(Some(format!("{{\n{}\n}}", attrs.join(",\n"))))
+                    Ok(Some(format!(
+                        "{{\n{}\n{}}}",
+                        attrs.join(",\n"),
+                        if trunc { "...truncated\n" } else { "" }
+                    )))
                 }
             }
             FunctionType::Network => {
@@ -389,8 +397,10 @@ impl TaskContext {
                 .ok_or(EvalErrorType::AttributeNotFound.pos(task.position())),
             FunctionType::Node => {
                 let nodes = self.propagation(task.propagation.clone().unwrap_or_default())?;
+                let trunc = nodes.len() > MAX_NODES_LENGTH;
                 let attrs = nodes
                     .iter()
+                    .take(MAX_NODES_LENGTH)
                     .map(|n| {
                         let n = n.lock();
                         Ok(format!(
@@ -409,7 +419,11 @@ impl TaskContext {
                         ))
                     })
                     .collect::<Result<Vec<String>, EvalError>>()?;
-                Ok(format!("{{\n{}\n}}", attrs.join(",\n")))
+                Ok(format!(
+                    "{{\n{}\n{}}}",
+                    attrs.join(",\n"),
+                    if trunc { "...truncated\n" } else { "" }
+                ))
             }
             FunctionType::Network => self
                 .network
