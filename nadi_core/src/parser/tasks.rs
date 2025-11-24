@@ -261,10 +261,12 @@ pub fn parse(tokens: Vec<RawToken>) -> Result<Vec<Task>, ParseError> {
             if rest.is_empty() {
                 Ok(tasks)
             } else {
-                let err = maybe_newline(task)(rest) // need this to fail
-                    .finish()
-                    .expect_err("Rest should be empty if tasks parse is complete");
-                Err(ParseError::new(&tokens, err.internal.input, err.ty))
+                match trailing_newlines(maybe_newline(task))(rest).finish() {
+                    Ok((rest, _)) => {
+                        Err(ParseError::new(&tokens, rest, ParseErrorType::SyntaxError))
+                    }
+                    Err(err) => Err(ParseError::new(&tokens, err.internal.input, err.ty)),
+                }
             }
         }
         Err(e) => Err(ParseError::new(&tokens, e.internal.input, e.ty)),

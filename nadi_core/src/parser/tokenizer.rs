@@ -301,6 +301,16 @@ fn variable(i: &str) -> TokenRes<'_> {
                 // .var or ."var" is supported
                 if re.trim_start().starts_with('"') {
                     TaskToken::Variable
+                }
+                // .0 etc are supported for array indexing
+                else if re
+                    .trim_start()
+                    .chars()
+                    .next()
+                    .map(|c| c.is_numeric())
+                    .unwrap_or_default()
+                {
+                    TaskToken::Variable
                 } else {
                     let (r, _) = get_var(re)?;
                     if r.trim_start().starts_with('(') {

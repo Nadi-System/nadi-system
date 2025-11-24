@@ -1,7 +1,7 @@
 use crate::attrs::{AttrMap, Attribute, HasAttributes};
 use crate::parser::{
     components::*,
-    errors::ParseError,
+    errors::{ParseError, ParseErrorType},
     tokenizer::{RawToken, Token},
 };
 use nom::{branch::alt, combinator::map, sequence::delimited, Finish};
@@ -34,11 +34,12 @@ pub fn parse(tokens: Vec<RawToken>) -> Result<AttrMap, ParseError> {
             if rest.is_empty() {
                 lines
             } else {
-                let err = maybe_newline(attr_file_line)(rest)
-                    .finish()
-                    .err()
-                    .expect("Rest should be empty if network parse is complete");
-                return Err(ParseError::new(&tokens, err.internal.input, err.ty));
+                return match maybe_newline(attr_file_line)(rest).finish() {
+                    Ok((rest, _)) => {
+                        Err(ParseError::new(&tokens, rest, ParseErrorType::SyntaxError))
+                    }
+                    Err(err) => Err(ParseError::new(&tokens, err.internal.input, err.ty)),
+                };
             }
         }
         Err(e) => return Err(ParseError::new(&tokens, e.internal.input, e.ty)),

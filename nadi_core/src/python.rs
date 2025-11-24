@@ -23,6 +23,8 @@ impl From<EvalError> for PyErr {
             EvalErrorType::NoOutputNode => PyAttributeError::new_err(err),
             EvalErrorType::NoRootNode => PyAttributeError::new_err(err),
 
+            EvalErrorType::IndexError => PyIndexError::new_err(err),
+
             EvalErrorType::FunctionNotFound(_, _) => PyKeyError::new_err(err),
             EvalErrorType::NodeNotFound(_) => PyKeyError::new_err(err),
 

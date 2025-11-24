@@ -230,31 +230,35 @@ pub fn input_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expressi
     map(
         tuple((
             opt(terminated(variable_type, dot)),
-            dot_variable,
+            task_dot_variable,
             opt(maybe_space(pair(
                 question,
                 opt(maybe_space(alt((expression, expression_group)))),
             ))),
         )),
-        |(vt, mut v, q)| {
-            let name = v.pop().expect("There should be at least one var");
+        |(vt, (var, indices), q)| {
             if let Some((_, val)) = q {
                 if let Some(val) = val {
                     let cond = Expression::Variable(InputVar::new(
                         vt.clone(),
-                        v.clone(),
-                        name.clone(),
+                        var.clone(),
+                        indices.clone(),
                         true,
                         inp.position(),
                     ));
-                    let var =
-                        Expression::Variable(InputVar::new(vt, v, name, false, inp.position()));
+                    let var = Expression::Variable(InputVar::new(
+                        vt,
+                        var,
+                        indices,
+                        false,
+                        inp.position(),
+                    ));
                     Expression::IfElse(Box::new(cond), Box::new(var), Box::new(val))
                 } else {
-                    Expression::Variable(InputVar::new(vt, v, name, true, inp.position()))
+                    Expression::Variable(InputVar::new(vt, var, indices, true, inp.position()))
                 }
             } else {
-                Expression::Variable(InputVar::new(vt, v, name, false, inp.position()))
+                Expression::Variable(InputVar::new(vt, var, indices, false, inp.position()))
             }
         },
     )(inp)

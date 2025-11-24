@@ -38,10 +38,12 @@ pub fn parse(tokens: Vec<RawToken>) -> Result<Vec<StrPath>, ParseError> {
             if rest.is_empty() {
                 Ok(paths)
             } else {
-                let err = maybe_newline(str_path)(rest)
-                    .finish()
-                    .expect_err("Rest should be empty if network parse is complete");
-                Err(ParseError::new(&tokens, err.internal.input, err.ty))
+                match maybe_newline(str_path)(rest).finish() {
+                    Ok((rest, _)) => {
+                        Err(ParseError::new(&tokens, rest, ParseErrorType::SyntaxError))
+                    }
+                    Err(err) => Err(ParseError::new(&tokens, err.internal.input, err.ty)),
+                }
             }
         }
         Err(e) => Err(ParseError::new(&tokens, e.internal.input, e.ty)),

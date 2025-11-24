@@ -1,3 +1,4 @@
+use crate::expressions::InputVarIndex;
 use crate::parser::{
     errors::{MatchErr, ParseErrorType},
     tokenizer::{TaskToken, Token},
@@ -217,6 +218,27 @@ pub fn dash_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, String> {
     )(inp)
 }
 
+pub fn task_dot_variable<'a, 'b>(
+    inp: &'a [Token<'b>],
+) -> MatchRes<'a, 'b, (String, Vec<InputVarIndex>)> {
+    alt((
+        // to avoid it taking literal string as variable unless followed by a dot
+        separated_pair(
+            alt((map(variable, |v| v.content.to_string()), string_val)),
+            dot,
+            separated_list1(
+                dot,
+                alt((
+                    map(variable, |v| InputVarIndex::Str(v.content.to_string())),
+                    map(string_val, InputVarIndex::Str),
+                    map(integer_usize, InputVarIndex::Int),
+                )),
+            ),
+        ),
+        map(variable, |v| (v.content.to_string(), vec![])),
+    ))(inp)
+}
+
 pub fn dot_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<String>> {
     alt((
         // to avoid it taking literal string as variable unless followed by a dot
@@ -248,6 +270,19 @@ pub fn attr_bool<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
         }
     }
     .into();
+    Ok((rest, val))
+}
+
+pub fn integer_usize<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, usize> {
+    let (rest, val) = integer(inp)?;
+    let val = match val.content.replace('_', "").parse::<usize>() {
+        Ok(v) => v,
+        _ => {
+            return Err(nom::Err::Error(
+                MatchErr::new(inp).ty(&ParseErrorType::ValueError("Error while parsing Integer")),
+            ));
+        }
+    };
     Ok((rest, val))
 }
 

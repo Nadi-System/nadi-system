@@ -1,6 +1,6 @@
 use clap::{Arg, ArgMatches, Command};
-use mdbook_preprocessor::Preprocessor;
 use mdbook_preprocessor::errors::Error;
+use mdbook_preprocessor::Preprocessor;
 
 use mdbook_nadi::Nadi;
 use std::io;
