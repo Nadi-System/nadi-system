@@ -654,9 +654,9 @@ impl Expression {
                                 });
                             }
                         },
-                        VarType::Nodes => {
+                        VarType::Nodes(prop) => {
                             let mut vars = Vec::new();
-                            for n in ctx.network.nodes() {
+                            for n in ctx.propagation(*prop.clone())? {
                                 let a = n
                                     .try_lock()
                                     .into_option()
@@ -749,11 +749,11 @@ impl Expression {
                     )),
                 }
             }
-            Self::Function(fc) => match fc.ty {
-                Some(VarType::Nodes) => {
+            Self::Function(fc) => match &fc.ty {
+                Some(VarType::Nodes(prop)) => {
                     let fcs = ctx
-                        .network
-                        .nodes()
+                        .propagation(*prop.clone())?
+                        .iter()
                         .map(|n| fc.resolve(ft, ctx, local, Some(n)))
                         .collect::<Result<Vec<FunctionCall>, EvalError>>()?;
                     Ok(Self::MultiFunction(fcs))
@@ -1182,14 +1182,14 @@ pub enum VarType {
     /// Output variable (only valid in a node function)
     Output,
     /// Nodes variable (array of variable from each node)
-    Nodes,
+    Nodes(Box<Propagation>),
     /// variable for the Root node of the network
     Root,
 }
 
 impl VarType {
     /// Build a VarType from [`TaskKeyword`] if valid
-    pub fn from_keyword(kw: &TaskKeyword) -> Option<Self> {
+    pub fn from_keyword(kw: &TaskKeyword, prop: Option<Propagation>) -> Option<Self> {
         match kw {
             TaskKeyword::Node => Some(VarType::Node),
             TaskKeyword::Network => Some(VarType::Network),
@@ -1197,7 +1197,7 @@ impl VarType {
             TaskKeyword::Local => Some(VarType::Local),
             TaskKeyword::Inputs => Some(VarType::Inputs),
             TaskKeyword::Output => Some(VarType::Output),
-            TaskKeyword::Nodes => Some(VarType::Nodes),
+            TaskKeyword::Nodes => Some(VarType::Nodes(Box::new(prop.unwrap_or_default()))),
             TaskKeyword::Root => Some(VarType::Root),
             _ => None,
         }
@@ -1209,7 +1209,7 @@ impl VarType {
             VarType::Node => &FunctionType::Node,
             VarType::Network => &FunctionType::Network,
             VarType::Env | VarType::Local => &FunctionType::Env,
-            VarType::Inputs | VarType::Output | VarType::Nodes | VarType::Root => {
+            VarType::Inputs | VarType::Output | VarType::Nodes(_) | VarType::Root => {
                 &FunctionType::Node
             }
         }
@@ -1225,7 +1225,10 @@ impl std::fmt::Display for VarType {
             VarType::Local => "local",
             VarType::Inputs => "inputs",
             VarType::Output => "output",
-            VarType::Nodes => "nodes",
+            VarType::Nodes(p) => {
+                write!(f, "nodes{p}");
+                return Ok(());
+            }
             VarType::Root => "root",
         };
         write!(f, "{ty}")

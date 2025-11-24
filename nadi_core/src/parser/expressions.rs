@@ -4,6 +4,7 @@ use crate::expressions::{
 use crate::parser::{
     components::*,
     errors::{MatchErr, ParseErrorType},
+    tasks::propagation,
     tokenizer::Token,
 };
 use crate::udf::UserFunction;
@@ -216,8 +217,8 @@ pub fn complete_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Exp
 }
 
 pub fn variable_type<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, VarType> {
-    let (rest, kw) = keyword_val(inp)?;
-    match VarType::from_keyword(&kw) {
+    let (rest, (kw, prop)) = pair(keyword_val, propagation)(inp)?;
+    match VarType::from_keyword(&kw, prop) {
         Some(v) => Ok((rest, v)),
         None => Err(nom::Err::Error(
             MatchErr::new(inp).ty(&ParseErrorType::InvalidKeyword),

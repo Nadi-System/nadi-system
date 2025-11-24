@@ -79,6 +79,27 @@ mod attrs {
         node.attr(attr).cloned().or(default)
     }
 
+    /// Retrive multiple attributes
+    ///
+    /// ```task
+    /// network load_str("A -> B\n B -> D");
+    /// node assert_eq(get_attrs("NAME"), array(NAME));
+    /// node assert_eq(get_attrs("NAME", "ORDER"), array(NAME, ORDER));
+    /// ```
+    #[node_func]
+    fn get_attrs(
+        node: &NodeInner,
+        /// Name of the attribute to get
+        #[args]
+        attr_names: AttrSlice,
+    ) -> Option<Vec<Attribute>> {
+        let attr_names: Vec<&str> = attr_names
+            .iter()
+            .map(|a| a.get_string().map(|s| s.as_str()))
+            .collect::<Option<_>>()?;
+        attr_names.iter().map(|a| node.attr(a).cloned()).collect()
+    }
+
     /// Check if the attribute is present
     ///
     /// ```task
