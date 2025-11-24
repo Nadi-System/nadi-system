@@ -1027,13 +1027,30 @@ impl InputVar {
                             )?,
                     )
                     .cloned(),
-                VarType::Node => match node {
-                    Some(n) => self
+                VarType::Node(n) => match (n, node) {
+                    // Node name explicitly given
+                    (Some(n), _) => self
+                        .attr_nested(
+                            &ctx.network
+                                .node_by_name(n)
+                                .ok_or(
+                                    EvalErrorType::NodeNotFound(n.to_string()).pos(self.position()),
+                                )?
+                                .try_lock()
+                                .into_option()
+                                .ok_or(
+                                    EvalErrorType::MutexError(file!(), line!())
+                                        .pos(self.position()),
+                                )?,
+                        )
+                        .cloned(),
+                    // take node from the context (while running node functions)
+                    (None, Some(n)) => self
                         .attr_nested(&n.try_lock().into_option().ok_or(
                             EvalErrorType::MutexError(file!(), line!()).pos(self.position()),
                         )?)
                         .cloned(),
-                    None => {
+                    (None, None) => {
                         return Err(match ft {
                             FunctionType::Node => EvalErrorType::LogicalError(
                                 "Node variable tried without Node value",
@@ -1199,8 +1216,8 @@ pub enum VarType {
     Local,
     /// Environmen Variable
     Env,
-    /// Node variable (only valid in a node function)
-    Node,
+    /// Node variable (only valid in a node function without explicit name)
+    Node(Option<String>),
     /// Network variable
     Network,
     /// Inputs variable (only valid in a node function)
@@ -1215,9 +1232,13 @@ pub enum VarType {
 
 impl VarType {
     /// Build a VarType from [`TaskKeyword`] if valid
-    pub fn from_keyword(kw: &TaskKeyword, prop: Option<Propagation>) -> Option<Self> {
+    pub fn from_keyword(
+        kw: &TaskKeyword,
+        prop: Option<Propagation>,
+        node: Option<String>,
+    ) -> Option<Self> {
         match kw {
-            TaskKeyword::Node => Some(VarType::Node),
+            TaskKeyword::Node => Some(VarType::Node(node)),
             TaskKeyword::Network => Some(VarType::Network),
             TaskKeyword::Env => Some(VarType::Env),
             TaskKeyword::Local => Some(VarType::Local),
@@ -1232,7 +1253,7 @@ impl VarType {
     /// Convert to [`FunctionType`]
     pub fn to_functiontype(&self) -> &'static FunctionType {
         match self {
-            VarType::Node => &FunctionType::Node,
+            VarType::Node(_) => &FunctionType::Node,
             VarType::Network => &FunctionType::Network,
             VarType::Env | VarType::Local => &FunctionType::Env,
             VarType::Inputs | VarType::Output | VarType::Nodes(_) | VarType::Root => {
@@ -1245,7 +1266,11 @@ impl VarType {
 impl std::fmt::Display for VarType {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let ty = match self {
-            VarType::Node => "node",
+            VarType::Node(None) => "node",
+            VarType::Node(Some(n)) => {
+                write!(f, "node[{n:?}]");
+                return Ok(());
+            }
             VarType::Network => "network",
             VarType::Env => "env",
             VarType::Local => "local",

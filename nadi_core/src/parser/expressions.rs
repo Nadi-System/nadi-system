@@ -1,12 +1,14 @@
 use crate::expressions::{
     BiOperator, Expression, FunctionCall, InputVar, TaskPosition, UniOperator, VarType,
 };
+use crate::network::PropNodes;
 use crate::parser::{
     components::*,
     errors::{MatchErr, ParseErrorType},
     tasks::propagation,
     tokenizer::Token,
 };
+use crate::tasks::TaskKeyword;
 use crate::udf::UserFunction;
 use nom::{
     branch::alt,
@@ -218,7 +220,29 @@ pub fn complete_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Exp
 
 pub fn variable_type<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, VarType> {
     let (rest, (kw, prop)) = pair(keyword_val, propagation)(inp)?;
-    match VarType::from_keyword(&kw, prop) {
+    let node = match (&kw, &prop) {
+        // make sure node variable type has only one node name instead
+        // of any other propagation
+        (TaskKeyword::Node, Some(p)) => match &p.nodes {
+            PropNodes::All => None,
+            PropNodes::List(lst) => {
+                if let [n] = lst.as_slice() {
+                    Some(n.to_string())
+                } else {
+                    return Err(nom::Err::Error(
+                        MatchErr::new(inp).ty(&ParseErrorType::InvalidPropagation),
+                    ));
+                }
+            }
+            PropNodes::Path(_) => {
+                return Err(nom::Err::Error(
+                    MatchErr::new(inp).ty(&ParseErrorType::InvalidPropagation),
+                ));
+            }
+        },
+        _ => None,
+    };
+    match VarType::from_keyword(&kw, prop, node) {
         Some(v) => Ok((rest, v)),
         None => Err(nom::Err::Error(
             MatchErr::new(inp).ty(&ParseErrorType::InvalidKeyword),
