@@ -1330,6 +1330,15 @@ pub struct DateTime {
     pub offset: ROption<Offset>,
 }
 
+impl Ord for DateTime {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // TODO don't ignore offset
+        self.date.cmp(&other.date).then(self.time.cmp(&other.time))
+    }
+}
+
+impl Eq for DateTime {}
+
 impl PartialOrd for DateTime {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         // TODO don't ignore offset

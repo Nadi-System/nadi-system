@@ -1,5 +1,6 @@
 use crate::attrs::{type_name, Attribute, Date, DateTime, FromAttribute, Time};
 use crate::datafill::DataImputeError;
+use crate::expressions::EvalErrorType;
 
 use abi_stable::{
     external_types::RMutex,
@@ -284,7 +285,9 @@ macro_rules! forward_funcs {
 forward_funcs! {
     len -> usize,
     is_empty -> bool,
-    type_name -> &str
+    type_name -> &str,
+    minimum -> Result<Option<Attribute>, EvalErrorType>,
+    maximum -> Result<Option<Attribute>, EvalErrorType>
 }
 
 impl Series {
@@ -333,8 +336,6 @@ impl Series {
             Self::Masked(ms, _) => ms.fill_gaps(value).map(Self::Complete),
         }
     }
-
-    // pub fn minimum(&self) -> Attribute {}
 }
 
 #[repr(C)]
@@ -348,27 +349,6 @@ pub enum MaskedSeries {
     Times(RVec<ROption<Time>>),
     DateTimes(RVec<ROption<DateTime>>),
     Attributes(RVec<ROption<Attribute>>),
-}
-
-fn has_gaps<T>(vals: &RVec<ROption<T>>) -> bool {
-    vals.iter().find(|v| v.is_none()).is_some()
-}
-
-fn to_complete<T>(vals: RVec<ROption<T>>) -> RVec<T> {
-    vals.into_iter().map(|v| v.unwrap()).collect()
-}
-
-fn minimum<T>(vals: RVec<ROption<T>>) -> T {
-    // Just to make it compile for now
-    vals.into_iter().map(|v| v.unwrap()).next().unwrap()
-}
-
-fn get_nulls<T>(vals: &RVec<ROption<T>>) -> Vec<bool> {
-    vals.into_iter().map(|v| v.is_none()).collect()
-}
-
-fn get_valids<T>(vals: &RVec<ROption<T>>) -> Vec<bool> {
-    vals.into_iter().map(|v| v.is_some()).collect()
 }
 
 impl MaskedSeries {
@@ -538,6 +518,40 @@ impl MaskedSeries {
             .collect()
     }
 
+    pub fn minimum(&self) -> Result<Option<Attribute>, EvalErrorType> {
+        Ok(match self {
+            Self::Floats(v) => v
+                .iter()
+                .filter_map(|v| v.into_option().clone())
+                .reduce(f64::min)
+                .map(Attribute::Float),
+            Self::Integers(v) => minimum_masked(v).map(Attribute::Integer),
+            Self::Strings(v) => minimum_masked(v).map(Attribute::String),
+            Self::Booleans(v) => minimum_masked(v).map(Attribute::Bool),
+            Self::Dates(v) => minimum_masked(v).map(Attribute::Date),
+            Self::Times(v) => minimum_masked(v).map(Attribute::Time),
+            Self::DateTimes(v) => minimum_masked(v).map(Attribute::DateTime),
+            Self::Attributes(_) => return Err(EvalErrorType::InvalidOperation),
+        })
+    }
+
+    pub fn maximum(&self) -> Result<Option<Attribute>, EvalErrorType> {
+        Ok(match self {
+            Self::Floats(v) => v
+                .iter()
+                .filter_map(|v| v.into_option().clone())
+                .reduce(f64::max)
+                .map(Attribute::Float),
+            Self::Integers(v) => maximum_masked(v).map(Attribute::Integer),
+            Self::Strings(v) => maximum_masked(v).map(Attribute::String),
+            Self::Booleans(v) => maximum_masked(v).map(Attribute::Bool),
+            Self::Dates(v) => maximum_masked(v).map(Attribute::Date),
+            Self::Times(v) => maximum_masked(v).map(Attribute::Time),
+            Self::DateTimes(v) => maximum_masked(v).map(Attribute::DateTime),
+            Self::Attributes(_) => return Err(EvalErrorType::InvalidOperation),
+        })
+    }
+
     pub fn complete(self) -> Option<CompleteSeries> {
         if self.has_gaps() {
             return None;
@@ -689,6 +703,32 @@ impl CompleteSeries {
         }
     }
 
+    pub fn minimum(&self) -> Result<Option<Attribute>, EvalErrorType> {
+        Ok(match self {
+            Self::Floats(v) => v.iter().map(|&v| v).reduce(f64::min).map(Attribute::Float),
+            Self::Integers(v) => minimum(v).map(Attribute::Integer),
+            Self::Strings(v) => minimum(v).map(Attribute::String),
+            Self::Booleans(v) => minimum(v).map(Attribute::Bool),
+            Self::Dates(v) => minimum(v).map(Attribute::Date),
+            Self::Times(v) => minimum(v).map(Attribute::Time),
+            Self::DateTimes(v) => minimum(v).map(Attribute::DateTime),
+            Self::Attributes(_) => return Err(EvalErrorType::InvalidOperation),
+        })
+    }
+
+    pub fn maximum(&self) -> Result<Option<Attribute>, EvalErrorType> {
+        Ok(match self {
+            Self::Floats(v) => v.iter().map(|&v| v).reduce(f64::max).map(Attribute::Float),
+            Self::Integers(v) => maximum(v).map(Attribute::Integer),
+            Self::Strings(v) => maximum(v).map(Attribute::String),
+            Self::Booleans(v) => maximum(v).map(Attribute::Bool),
+            Self::Dates(v) => maximum(v).map(Attribute::Date),
+            Self::Times(v) => maximum(v).map(Attribute::Time),
+            Self::DateTimes(v) => maximum(v).map(Attribute::DateTime),
+            Self::Attributes(_) => return Err(EvalErrorType::InvalidOperation),
+        })
+    }
+
     pub fn type_name(&self) -> &str {
         match self {
             Self::Floats(_) => "Floats",
@@ -767,3 +807,43 @@ impl_from_series!(Date, Dates);
 impl_from_series!(Time, Times);
 impl_from_series!(DateTime, DateTimes);
 impl_from_series!(Attribute, Attributes);
+
+// Generic functions to apply to all types of series
+
+fn has_gaps<T>(vals: &RVec<ROption<T>>) -> bool {
+    vals.iter().find(|v| v.is_none()).is_some()
+}
+
+/// To convert a pre-checked not-null series to a complete series
+fn to_complete<T>(vals: RVec<ROption<T>>) -> RVec<T> {
+    vals.into_iter().map(|v| v.unwrap()).collect()
+}
+
+fn minimum<T: Clone + Ord>(vals: &RVec<T>) -> Option<T> {
+    vals.iter().min().cloned()
+}
+
+fn minimum_masked<T: Clone + Ord>(vals: &RVec<ROption<T>>) -> Option<T> {
+    vals.iter()
+        .filter_map(|v| v.as_ref().into_option())
+        .min()
+        .cloned()
+}
+fn maximum<T: Clone + Ord>(vals: &RVec<T>) -> Option<T> {
+    vals.iter().max().cloned()
+}
+
+fn maximum_masked<T: Clone + Ord>(vals: &RVec<ROption<T>>) -> Option<T> {
+    vals.iter()
+        .filter_map(|v| v.as_ref().into_option())
+        .max()
+        .cloned()
+}
+
+fn get_nulls<T>(vals: &RVec<ROption<T>>) -> Vec<bool> {
+    vals.into_iter().map(|v| v.is_none()).collect()
+}
+
+fn get_valids<T>(vals: &RVec<ROption<T>>) -> Vec<bool> {
+    vals.into_iter().map(|v| v.is_some()).collect()
+}

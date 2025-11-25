@@ -233,4 +233,24 @@ mod series {
             Ok(())
         }
     }
+
+    /// Get maximum value of the series
+    #[node_func]
+    fn sr_max(
+        node: &mut NodeInner,
+        /// Name of the series
+        name: &str,
+    ) -> Result<Option<Attribute>, String> {
+        Ok(node.try_series(name)?.maximum()?)
+    }
+
+    /// Get minimum value of the series
+    #[node_func]
+    fn sr_min(
+        node: &mut NodeInner,
+        /// Name of the series
+        name: &str,
+    ) -> Result<Option<Attribute>, String> {
+        Ok(node.try_series(name)?.minimum()?)
+    }
 }
