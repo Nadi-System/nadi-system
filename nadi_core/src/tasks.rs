@@ -113,6 +113,8 @@ impl TaskContext {
     pub fn clear(&mut self) {
         self.network = Network::default();
         self.env = AttrMap::new();
+        self.udf = HashMap::new();
+        self.hook = Vec::new();
     }
 
     pub fn udf(&self, name: &str) -> Option<&UserFunction> {
@@ -260,6 +262,10 @@ impl TaskContext {
                 Ok(None)
             }
             Task::Help(kw, var) => self.help(kw, var),
+            Task::Clear => {
+                self.clear();
+                Ok(None)
+            }
             Task::Exit => std::process::exit(0),
         }
     }
@@ -806,7 +812,9 @@ pub enum Task {
     #[cfg(feature = "parser")]
     /// Import functions from a tasks file
     Import(ImportTask),
-    /// exit the task system/process
+    /// Clear the task context
+    Clear,
+    /// exit the task system/process,
     Exit,
 }
 // TODO: add import task that loads a file; to be used to import function definitions from the file. We can make it only import the functions and not run anything. Alternatively use load keyword that will run everything in the current task context
@@ -828,6 +836,7 @@ impl Task {
             Task::Expr(_) => false,
             #[cfg(feature = "parser")]
             Task::Import(_) => true,
+            Task::Clear => false,
             Task::Exit => false,
         }
     }
@@ -858,6 +867,7 @@ impl std::fmt::Display for Task {
             Task::Expr(expr) => write!(f, "{expr}"),
             #[cfg(feature = "parser")]
             Task::Import(imp) => write!(f, "{imp}"),
+            Self::Clear => write!(f, "clear"),
             Self::Exit => write!(f, "exit"),
         }
     }
@@ -866,6 +876,7 @@ impl std::fmt::Display for Task {
 /// Keywords in the task system
 #[derive(Clone, PartialEq, Debug)]
 pub enum TaskKeyword {
+    Clear,
     Import,
     Exec,
     From,
@@ -891,17 +902,18 @@ pub enum TaskKeyword {
     Function,
     Return,
     Error,
+    For,
     // reserved
     Map,
     Attrs,
     Loop,
-    For,
 }
 
 impl std::str::FromStr for TaskKeyword {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
+            "clear" => TaskKeyword::Clear,
             "import" => TaskKeyword::Import,
             "exec" => TaskKeyword::Exec,
             "from" => TaskKeyword::From,
@@ -942,6 +954,7 @@ impl std::fmt::Display for TaskKeyword {
             f,
             "{}",
             match self {
+                TaskKeyword::Clear => "clear",
                 TaskKeyword::Import => "import",
                 TaskKeyword::Exec => "exec",
                 TaskKeyword::From => "from",
@@ -980,6 +993,7 @@ impl TaskKeyword {
     #[cfg(not(tarpaulin_include))]
     pub fn help(&self) -> String {
         match self {
+            TaskKeyword::Clear => "clear the context",
             TaskKeyword::Import => "import a plugin or tasks file",
             TaskKeyword::Exec => "exec a tasks file",
             TaskKeyword::From => "import/exec from a path",

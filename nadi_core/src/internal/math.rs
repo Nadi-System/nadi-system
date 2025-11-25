@@ -2,10 +2,7 @@ use nadi_plugin::nadi_internal_plugin;
 
 #[nadi_internal_plugin]
 mod math {
-    use crate::prelude::*;
-    use abi_stable::std_types::{RNone, RSome, RString, Tuple2};
-    use nadi_plugin::{env_func, network_func, node_func};
-    use std::collections::HashMap;
+    use nadi_plugin::env_func;
 
     /// Integer power
     ///

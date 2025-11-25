@@ -141,6 +141,7 @@ one_token!(kw_match, TaskToken::Keyword(TaskKeyword::Match));
 one_token!(kw_hook, TaskToken::Keyword(TaskKeyword::Hook));
 one_token!(kw_help, TaskToken::Keyword(TaskKeyword::Help));
 one_token!(kw_end, TaskToken::Keyword(TaskKeyword::End));
+one_token!(kw_clear, TaskToken::Keyword(TaskKeyword::Clear));
 one_token!(kw_exit, TaskToken::Keyword(TaskKeyword::Exit));
 
 /// Matches the next one that might have spaces before it

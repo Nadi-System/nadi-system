@@ -745,7 +745,7 @@ impl FunctionCtx {
         Self { args, kwargs }
     }
 
-    pub fn args(&self) -> AttrSlice {
+    pub fn args<'a>(&'a self) -> AttrSlice<'a> {
         self.args.as_rslice()
     }
 

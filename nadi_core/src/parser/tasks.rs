@@ -242,6 +242,7 @@ pub fn task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
         map(import_task, Task::Import),
         map(complete_expression, Task::Expr),
         help_task,
+        value(Task::Clear, kw_clear),
         value(Task::Exit, kw_exit),
     ))(inp)
 }

@@ -261,6 +261,12 @@ impl Default for Attribute {
     }
 }
 
+// Make it read this from env variable? and also somehow changable
+// from the task context.. idk how to do the second, and a way to stop
+// the nested representation too if there is too much. We might have
+// to just make a new trait for all the value's representation.
+pub const MAX_ATTRS_LENGTH: usize = 100;
+
 impl std::fmt::Display for Attribute {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
@@ -273,20 +279,25 @@ impl std::fmt::Display for Attribute {
             Self::Time(v) => write!(f, "{v}"),
             Self::DateTime(v) => write!(f, "{v}"),
             Self::Array(v) => {
+                let trunc = v.len() > MAX_ATTRS_LENGTH;
                 write!(
                     f,
-                    "[{}]",
+                    "[{}{}]",
                     v.iter()
+                        .take(MAX_ATTRS_LENGTH)
                         .map(|a| a.to_string())
                         .collect::<Vec<String>>()
-                        .join(", ")
+                        .join(", "),
+                    if trunc { "...truncated " } else { "" }
                 )
             }
             Self::Table(v) => {
+                let trunc = v.len() > MAX_ATTRS_LENGTH;
                 write!(
                     f,
-                    "{{{}}}",
+                    "{{{}{}}}",
                     v.iter()
+                        .take(MAX_ATTRS_LENGTH)
                         .map(|a| {
                             if valid_var(a.0) {
                                 format!("{} = {}", a.0, a.1.to_string())
@@ -295,7 +306,8 @@ impl std::fmt::Display for Attribute {
                             }
                         })
                         .collect::<Vec<String>>()
-                        .join(", ")
+                        .join(", "),
+                    if trunc { "...truncated " } else { "" }
                 )
             }
         }
@@ -702,7 +714,7 @@ impl Attribute {
     }
 
     /// If it is a string get the reference
-    pub fn get_string(&self) -> Option<RStr> {
+    pub fn get_string<'a>(&'a self) -> Option<RStr<'a>> {
         match self {
             Self::String(s) => Some(s.as_rstr()),
             _ => None,

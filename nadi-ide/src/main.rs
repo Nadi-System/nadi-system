@@ -199,7 +199,7 @@ impl MainWindow {
         Task::none()
     }
 
-    fn view(&self) -> Element<Message> {
+    fn view<'a>(&'a self) -> Element<'a, Message> {
         let focus = self.focus;
         let pane_grid = PaneGrid::new(&self.panes, |id, pane, is_maximized| {
             let is_focused = focus == Some(id);
@@ -456,7 +456,7 @@ fn pane_content<'a>(
     }
 }
 
-fn initial_view(win: &MainWindow, id: pane_grid::Pane) -> Element<Message> {
+fn initial_view<'a>(win: &'a MainWindow, id: pane_grid::Pane) -> Element<'a, Message> {
     let mut col = column![center(text("Pane Type")).width(Length::Fill).height(30.0),]
         .spacing(10.0)
         .width(300.0);

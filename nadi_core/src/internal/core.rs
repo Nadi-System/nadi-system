@@ -348,6 +348,55 @@ mod core {
         Attribute::Array(attributes.to_vec().into())
     }
 
+    /// make an array combining the arrays from arguments
+    ///
+    /// ```task
+    /// env assert_eq(array(5, true), [5, true])
+    /// ```
+    #[env_func(err_diff_len = true)]
+    fn zip(
+        /// List of attributes
+        #[args]
+        attributes: &[Attribute],
+        /// error if different lengths
+        err_diff_len: bool,
+    ) -> Result<Attribute, String> {
+        if attributes.is_empty() {
+            return Ok(Attribute::Array(vec![].into()));
+        }
+        let mut attrs = Vec::with_capacity(attributes.len());
+        let mut min_len = usize::MAX;
+        for (i, attr) in attributes.iter().enumerate() {
+            if let Attribute::Array(ar) = attr {
+                if ar.len() < min_len {
+                    min_len = ar.len();
+                }
+                attrs.push(ar);
+            } else {
+                return Err(format!(
+                    "{i}th argument is {}, not an array",
+                    attr.type_name()
+                ));
+            }
+        }
+        if err_diff_len {
+            if attrs.iter().any(|a| a.len() != min_len) {
+                return Err(format!("Lengths of the arguments are not the same"));
+            }
+        }
+        let mut zipped = Vec::with_capacity(min_len);
+        for j in 0..min_len {
+            // we already made sure the min_len is valid, but using
+            // filter map just in case
+            let vals = attrs
+                .iter()
+                .filter_map(|a| a.get(j).cloned())
+                .collect::<Vec<Attribute>>();
+            zipped.push(Attribute::Array(vals.into()));
+        }
+        Ok(zipped.into())
+    }
+
     /// make an attrmap from the arguments
     ///
     /// ```task
@@ -360,6 +409,22 @@ mod core {
         attributes: &AttrMap,
     ) -> Attribute {
         Attribute::Table(attributes.clone())
+    }
+
+    /// make an attrmap from a list of (k, v)
+    ///
+    /// ```task
+    /// env assert_eq(to_attrmap([["val", 5]]), {val=5})
+    /// ```
+    #[env_func]
+    fn to_attrmap(
+        /// name and values of attributes
+        key_val: Vec<(RString, Attribute)>,
+    ) -> AttrMap {
+        key_val
+            .into_iter()
+            .collect::<HashMap<RString, Attribute>>()
+            .into()
     }
 
     /// format the attribute as a json string

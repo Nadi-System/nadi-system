@@ -432,7 +432,7 @@ fn task_script(i: &str) -> VecTokenRes<'_> {
     context("task script", many0(task_token))(i)
 }
 
-pub fn get_tokens(txt: &str) -> Vec<RawToken> {
+pub fn get_tokens<'a>(txt: &'a str) -> Vec<RawToken<'a>> {
     let (res, tokens) = task_script(txt).expect("Parser shouldn't error out");
     if !res.is_empty() {
         panic!("Logic Error on Parser, there shouldn't be anything left")

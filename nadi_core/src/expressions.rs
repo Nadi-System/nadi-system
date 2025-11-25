@@ -1268,8 +1268,7 @@ impl std::fmt::Display for VarType {
         let ty = match self {
             VarType::Node(None) => "node",
             VarType::Node(Some(n)) => {
-                write!(f, "node[{n:?}]");
-                return Ok(());
+                return write!(f, "node[{n:?}]");
             }
             VarType::Network => "network",
             VarType::Env => "env",
@@ -1277,8 +1276,7 @@ impl std::fmt::Display for VarType {
             VarType::Inputs => "inputs",
             VarType::Output => "output",
             VarType::Nodes(p) => {
-                write!(f, "nodes{p}");
-                return Ok(());
+                return write!(f, "nodes{p}");
             }
             VarType::Root => "root",
         };
