@@ -8,26 +8,25 @@ use svg::node::element::*;
 
 pub const NODE_COLOR: (&str, Color) = (
     "visual.nodecolor",
+    // orange
     Color {
         r: 255,
-        g: 255,
-        b: 255,
+        g: 165,
+        b: 0,
     },
 );
 pub const LINE_COLOR: (&str, Color) = (
     "visual.linecolor",
-    Color {
-        r: 255,
-        g: 150,
-        b: 0,
-    },
+    // green
+    Color { r: 0, g: 100, b: 0 },
 );
 pub const TEXT_COLOR: (&str, Color) = (
     "visual.textcolor",
+    // blue
     Color {
-        r: 170,
-        g: 180,
-        b: 200,
+        r: 102,
+        g: 102,
+        b: 255,
     },
 );
 pub const LINE_WIDTH: (&str, f64) = ("visual.linewidth", 1.0);
@@ -180,9 +179,8 @@ impl NodeInner {
     pub fn node_color(&self) -> Option<Color> {
         self.try_attr::<nadi_core::graphics::color::AttrColor>(NODE_COLOR.0)
             .ok()
-            .unwrap_or_default()
-            .color()
-            .ok()
+            .map(|c| c.color().ok())
+            .unwrap_or(Some(NODE_COLOR.1))
     }
 
     pub fn text_color(&self) -> Option<Color> {
@@ -195,9 +193,8 @@ impl NodeInner {
     pub fn line_color(&self) -> Option<Color> {
         self.try_attr::<nadi_core::graphics::color::AttrColor>(LINE_COLOR.0)
             .ok()
-            .unwrap_or_default()
-            .color()
-            .ok()
+            .map(|c| c.color().ok())
+            .unwrap_or(Some(LINE_COLOR.1))
     }
 
     pub fn node_shape(&self) -> NodeShape {
@@ -209,7 +206,7 @@ impl NodeInner {
             x,
             y,
             self.node_size(),
-            self.node_color().unwrap_or_default().hex(),
+            self.node_color().unwrap_or(NODE_COLOR.1).hex(),
         )
     }
 
@@ -235,7 +232,7 @@ impl NodeInner {
             .set("x2", x2)
             .set("y2", y2)
             .set("stroke-width", self.line_width())
-            .set("stroke", self.line_color().unwrap_or_default().hex())
+            .set("stroke", self.line_color().unwrap_or(LINE_COLOR.1).hex())
     }
 }
 
