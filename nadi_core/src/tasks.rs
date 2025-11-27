@@ -533,9 +533,10 @@ impl TaskContext {
 }
 
 /// Types of functions
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum FunctionType {
     /// environement function
+    #[default]
     Env,
     /// Node function
     Node,
@@ -838,6 +839,25 @@ impl Task {
             Task::Import(_) => true,
             Task::Clear => false,
             Task::Exit => false,
+        }
+    }
+
+    /// Message for the current task's functionality
+    pub fn message(&self) -> &'static str {
+        match self {
+            Task::Eval(_) => "Evaluate the expression",
+            Task::Attr(_) => "Query the variable",
+            Task::Conditional(_) => "Conditional evaluation of tasks",
+            Task::WhileLoop(_) => "Repeat the tasks while the condition is true",
+            Task::Hook(_) => "Evaluate these tasks after each eval task",
+            Task::Help(_, _) => "Show help",
+            Task::Function(_) => "Define a new user function",
+            Task::Return(_) => "Return value",
+            Task::Expr(_) => "Evaluate expression",
+            #[cfg(feature = "parser")]
+            Task::Import(_) => "Import functions from the file",
+            Task::Clear => "Clear the task context",
+            Task::Exit => "Exit the program",
         }
     }
 }

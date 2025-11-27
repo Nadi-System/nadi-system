@@ -2,6 +2,7 @@ use nadi_plugin::nadi_internal_plugin;
 
 #[nadi_internal_plugin]
 mod core {
+    use crate::attrs::{Date, DateTime};
     use crate::prelude::*;
     use abi_stable::std_types::{RNone, RSome, RString, Tuple2};
     use nadi_plugin::{env_func, network_func, node_func};
@@ -522,6 +523,117 @@ mod core {
                 value.type_name()
             )),
         }
+    }
+
+    /// get the current date time
+    #[env_func]
+    fn now() -> DateTime {
+        let now = chrono::Local::now();
+        let date: Date = now.date_naive().into();
+        date.with_time(now.time().into())
+    }
+
+    /// get the current date
+    #[env_func]
+    fn today() -> Date {
+        chrono::Local::now().date_naive().into()
+    }
+
+    /// hour from time/datetime
+    ///
+    /// ```task
+    /// env assert_eq(hour(12:14), 12)
+    /// env assert_eq(hour(1223-12-14T15:19), 15)
+    /// ```
+
+    #[env_func]
+    fn hour(
+        /// Time or DateTime
+        value: Attribute,
+    ) -> Result<Attribute, String> {
+        let val = match value {
+            Attribute::Time(t) => t.hour,
+            Attribute::DateTime(dt) => dt.time.hour,
+            _ => {
+                return Err(format!(
+                    "Got {} instead of date/datetime",
+                    value.type_name()
+                ));
+            }
+        };
+        Ok(Attribute::Integer(val.into()))
+    }
+
+    /// minute from time/datetime
+    ///
+    /// ```task
+    /// env assert_eq(minute(12:14), 14)
+    /// env assert_eq(minute(1223-12-14T15:19), 19)
+    /// ```
+    #[env_func]
+    fn minute(
+        /// Time or DateTime
+        value: Attribute,
+    ) -> Result<Attribute, String> {
+        let val = match value {
+            Attribute::Time(t) => t.min,
+            Attribute::DateTime(dt) => dt.time.min,
+            _ => {
+                return Err(format!(
+                    "Got {} instead of date/datetime",
+                    value.type_name()
+                ));
+            }
+        };
+        Ok(Attribute::Integer(val.into()))
+    }
+
+    /// second from time/datetime
+    ///
+    /// ```task
+    /// env assert_eq(second(12:14), 0)
+    /// env assert_eq(second(1223-12-14T15:19:12), 12)
+    /// ```
+    #[env_func]
+    fn second(
+        /// Time or DateTime
+        value: Attribute,
+    ) -> Result<Attribute, String> {
+        let val = match value {
+            Attribute::Time(t) => t.sec,
+            Attribute::DateTime(dt) => dt.time.sec,
+            _ => {
+                return Err(format!(
+                    "Got {} instead of date/datetime",
+                    value.type_name()
+                ));
+            }
+        };
+        Ok(Attribute::Integer(val.into()))
+    }
+
+    /// nanosecond from time/datetime
+    ///
+    /// ```task
+    /// env assert_eq(nanosecond(12:14), 0)
+    /// env assert_eq(nanosecond(1223-12-14T15:19), 0)
+    /// ```
+    #[env_func]
+    fn nanosecond(
+        /// Time or DateTime
+        value: Attribute,
+    ) -> Result<Attribute, String> {
+        let val = match value {
+            Attribute::Time(t) => t.nanosecond,
+            Attribute::DateTime(dt) => dt.time.nanosecond,
+            _ => {
+                return Err(format!(
+                    "Got {} instead of date/datetime",
+                    value.type_name()
+                ));
+            }
+        };
+        Ok(Attribute::Integer(val.into()))
     }
 
     /// year from date/datetime

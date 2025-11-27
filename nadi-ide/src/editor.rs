@@ -740,39 +740,17 @@ async fn func_at_mark(text: String, mark: (usize, usize)) -> Option<(FunctionTyp
         };
         col += tk.content.len();
 
-        // it doesn't work right now when a function call in another
-        // function argument is present, even when the functioncall is
-        // over, it keeps showing the last function instead of the
-        // original function.
-
-        // suggestions - write parser that can give you function for
-        // current context - write a more complicated algorithm that
-        // also keeps tracks of expression.
         match &tk.ty {
             TaskToken::Function => {
                 name = Some(tk.content.to_string());
             }
-            // TaskToken::Function if name.is_some() => {
-            //     // if there is a complete expression, then this
-            //     // function is not within our scope
-            //     if let Ok((rest, _)) = complete_expression(&tokens_v[ind..]) {
-            //         let col_tmp = col;
-            //         let skip = tokens_v.len() - rest.len();
-            //         for t in tokens_v[ind..skip] {
-            // 		col_tmp += t.content.len();
-            // 	    }
-            //         tokens = tokens_v[skip..].iter().peekable();
-            //     }
-            //     name = Some(tk.content.to_string());
-            // }
             TaskToken::Keyword(kw) if ty.is_none() => {
                 ty = FunctionType::from_keyword(kw);
             }
             _ => (),
         }
-        // ind += 1;
     }
-    ty.and_then(|t| name.map(|n| (t, n)))
+    name.map(|n| (ty.unwrap_or_default(), n))
 }
 
 fn toggle_comment(selection: &str) -> String {
