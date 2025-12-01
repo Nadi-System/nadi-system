@@ -1,5 +1,5 @@
 use clap::{Parser, ValueEnum};
-use nadi_core::parser::tokenizer::TaskToken;
+use nadi_core::parser::tokenizer::{ParenCheck, TaskToken, Token};
 use nadi_core::tasks::TaskContext;
 use nadi_core::{functions::NadiFunctions, network::Network};
 use std::sync::mpsc::channel;
@@ -167,14 +167,27 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn repl(mut ctx: TaskContext) {
+    let mut residue = false;
     let mut input = String::new();
     loop {
-        input.clear();
-        print!(">>> ");
+        if !residue {
+            input.clear();
+            print!(">>> ");
+        } else {
+            print!(">.. ");
+        }
+        residue = false;
         _ = std::io::stdout().flush();
         match std::io::stdin().read_line(&mut input) {
             Ok(_) => {
                 let tokens = nadi_core::parser::tokenizer::get_tokens(&input);
+                if let Ok(tkns) = Token::validate(tokens.clone()) {
+                    if let ParenCheck::Unpaired(_) = ParenCheck::scan(&tkns) {
+                        residue = true;
+                        continue;
+                    }
+                }
+
                 let tasks = match nadi_core::parser::tasks::parse(tokens) {
                     Ok(t) => t,
                     Err(e) => {

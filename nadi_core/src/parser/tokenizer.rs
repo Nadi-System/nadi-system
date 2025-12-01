@@ -77,6 +77,63 @@ impl<'a> Token<'a> {
             .collect();
         Ok(tokens)
     }
+
+    /// returns the function that is part of the current input
+    pub fn last_function<'b>(_tokens: &'b [Token<'a>]) -> Option<&'b Token<'a>> {
+        todo!()
+    }
+}
+
+/// Checks if the parens/brackets/braces are properly paired up
+pub enum ParenCheck<'a> {
+    Paired,
+    Unpaired(Vec<Token<'a>>),
+    Invalid(Token<'a>, TaskToken),
+    Extra(Token<'a>),
+}
+
+impl<'a> ParenCheck<'a> {
+    /// checks if there is any unclosed brackets
+    pub fn scan<'b>(tokens: &'b [Token<'a>]) -> Self {
+        let mut stack = Vec::new();
+        for tk in tokens {
+            match tk.ty {
+                TaskToken::ParenStart => stack.push(tk),
+                TaskToken::BraceStart => stack.push(tk),
+                TaskToken::BracketStart => stack.push(tk),
+                TaskToken::ParenEnd => match stack.pop() {
+                    Some(prev) => {
+                        if !matches!(prev.ty, TaskToken::ParenStart) {
+                            return Self::Invalid(tk.clone(), TaskToken::ParenEnd);
+                        }
+                    }
+                    None => return Self::Extra(tk.clone()),
+                },
+                TaskToken::BraceEnd => match stack.pop() {
+                    Some(prev) => {
+                        if !matches!(prev.ty, TaskToken::BraceStart) {
+                            return Self::Invalid(tk.clone(), TaskToken::BraceEnd);
+                        }
+                    }
+                    None => return Self::Extra(tk.clone()),
+                },
+                TaskToken::BracketEnd => match stack.pop() {
+                    Some(prev) => {
+                        if !matches!(prev.ty, TaskToken::BracketStart) {
+                            return Self::Invalid(tk.clone(), TaskToken::BracketEnd);
+                        }
+                    }
+                    None => return Self::Extra(tk.clone()),
+                },
+                _ => (),
+            }
+        }
+        if stack.is_empty() {
+            Self::Paired
+        } else {
+            Self::Unpaired(stack.into_iter().map(|t| t.clone()).collect())
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -444,6 +501,38 @@ pub fn get_tokens<'a>(txt: &'a str) -> Vec<RawToken<'a>> {
 mod tests {
     use super::*;
     use rstest::rstest;
+
+    #[rstest] // whitespace
+    fn parencheck_paired_test(
+        #[values(" ", "()", "{}", "[]", "[{()}]", "{[]}", "([], {})")] txt: &str,
+    ) {
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let check = ParenCheck::scan(&tokens);
+        assert!(matches!(check, ParenCheck::Paired))
+    }
+
+    #[rstest] // whitespace
+    fn parencheck_extra_test(
+        #[values(" )", "())", "{}]", "[])", "[{()}])", "{[]}}", "([], {})}")] txt: &str,
+    ) {
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let check = ParenCheck::scan(&tokens);
+        assert!(matches!(check, ParenCheck::Extra(_)))
+    }
+
+    #[rstest] // whitespace
+    fn parencheck_invalid_test(#[values(" (]", "({)", "[{}]()[}")] txt: &str) {
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let check = ParenCheck::scan(&tokens);
+        assert!(matches!(check, ParenCheck::Invalid(_, _)))
+    }
+
+    #[rstest] // whitespace
+    fn parencheck_unpaired_test(#[values(" (", "({", "[{}]()[")] txt: &str) {
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let check = ParenCheck::scan(&tokens);
+        assert!(matches!(check, ParenCheck::Unpaired(_)))
+    }
 
     #[rstest] // whitespace
     #[case(" ", TaskToken::WhiteSpace, "")]

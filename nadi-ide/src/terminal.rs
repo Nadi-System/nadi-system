@@ -277,33 +277,43 @@ impl Terminal {
                 } else {
                     format!("{}\n{}", self.residue, tasks)
                 };
-                let tasks_vec = match nadi_core::parser::tasks::parse(
-                    nadi_core::parser::tokenizer::get_tokens(&tasks),
-                ) {
-                    Ok(t) => t,
-                    Err(e) => {
-                        match e.ty {
-                            // knowing which is actual error and which
-                            // is a continuation is hard while doing
-                            // it line by line; so this works sometimes
-                            ParseErrorType::Incomplete => {
+                let tokens = nadi_core::parser::tokenizer::get_tokens(&tasks);
+                match nadi_core::parser::tokenizer::Token::validate(tokens.clone()) {
+                    Ok(tkns) => {
+                        use nadi_core::parser::tokenizer::ParenCheck;
+                        match ParenCheck::scan(&tkns) {
+                            ParenCheck::Unpaired(_) => {
                                 self.residue = tasks;
                                 self.status = "Waiting more input...".to_string();
                             }
+                            // ParenCheck::Paired
+                            // Easier to just get the error from task parsing even if we know the pairs are incorrect (for now)
                             _ => {
+                                let tasks_vec = match nadi_core::parser::tasks::parse(tokens) {
+                                    Ok(t) => t,
+                                    Err(e) => {
+                                        self.residue.clear();
+                                        self.status = e.to_string();
+                                        self.append_term(&e.user_msg(None), false, true);
+                                        return Task::none();
+                                    }
+                                };
                                 self.residue.clear();
-                                self.status = e.to_string();
-                                self.append_term(&e.user_msg(None), false, true);
+                                self.append_history(tasks);
+                                return Task::perform(
+                                    async { tasks_vec.into_iter().rev().collect() },
+                                    move |t| Message::TaskChain(0, t),
+                                );
                             }
                         }
-                        return Task::none();
                     }
-                };
-                self.residue.clear();
-                self.append_history(tasks);
-                return Task::perform(async { tasks_vec.into_iter().rev().collect() }, move |t| {
-                    Message::TaskChain(0, t)
-                });
+                    Err(e) => {
+                        self.residue.clear();
+                        self.status = e.to_string();
+                        self.append_term(&e.user_msg(None), false, true);
+                    }
+                }
+                return Task::none();
             }
             Message::NodeClicked(None) => {
                 let _ = self.sender.send(TaskCtxRequest::NetworkAttr);
