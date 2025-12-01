@@ -133,6 +133,7 @@ pub enum Message {
     EditorAction(text_editor::Action),
     SaveHistory,
     Run(String),
+    ClearContent,
     ClearCommand,
     ExecCommand,
     RunTasks(String),
@@ -253,6 +254,10 @@ impl Terminal {
                 } else {
                     self.content.perform(action);
                 }
+            }
+            Message::ClearContent => {
+                self.content = text_editor::Content::new();
+                self.last_line = 0;
             }
             Message::ClearCommand => {
                 self.residue.clear();
@@ -413,6 +418,7 @@ impl Terminal {
 
     pub fn view(&self) -> Element<'_, Message> {
         let mut controls = row![
+            icons::danger_action(icons::trash_icon(), "Clear", Some(Message::ClearContent)),
             icons::action(icons::top_icon(), "Goto Top", Some(Message::GotoTop)),
             icons::action(icons::up_icon(), "Go Up", Some(Message::GoUp)),
             icons::action(icons::down_icon(), "Go Down", Some(Message::GoDown)),
