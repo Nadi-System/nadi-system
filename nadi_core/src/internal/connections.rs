@@ -6,7 +6,7 @@ mod conn {
     use crate::parser::tokenizer::valid_variable_name;
     use crate::prelude::*;
     use anyhow::Context;
-    use nadi_plugin::{env_func, network_func};
+    use nadi_plugin::{env_func, network_func, node_func};
     use std::fs::File;
     use std::io::{BufWriter, Write};
     use std::path::PathBuf;
@@ -211,6 +211,18 @@ mod conn {
         }
         net.new_outlet(outlet.unwrap_or(node));
         Ok(())
+    }
+
+    /// Move the node to the side so that its inputs go to the output
+    #[node_func]
+    fn move_aside(node: &mut NodeInner) {
+        node.move_aside()
+    }
+
+    /// Move the node down so that it swaps the place with the output
+    #[node_func]
+    fn move_down(node: &mut NodeInner) {
+        node.move_down()
     }
 
     /// default name used for ROOT node of the network

@@ -113,8 +113,8 @@ pub enum EvalErrorType {
     UnknownFunctionType,
     /// Function didn't return a value to be used in expression
     NoReturnValue(String),
-    /// Return Statement is outside function context
-    InvalidReturn,
+    /// Return Statement that returns a value, but if it's outside function this is error
+    InvalidReturn(Attribute),
     /// Node with the name doesn't exit
     NodeNotFound(String),
     /// Given Nodes are not connected with a path
@@ -187,7 +187,8 @@ impl EvalErrorType {
             Self::FunctionError(n, s) => return format!("Error in function {n}: {s}"),
             Self::UnknownFunctionType => "Unknown function type",
             Self::NoReturnValue(n) => return format!("Function {n} did not return a value"),
-            Self::InvalidReturn => "Return statement outside of function",
+            // if return is inside a function it is caught and the value is returned
+            Self::InvalidReturn(_) => "Return statement outside of function",
             Self::NodeNotFound(n) => return format!("Node: {n:?} not found"),
             Self::PathNotFound(s, e, t) => {
                 return format!("No path found between Nodes {s:?} and {t:?}, path ends at {e:?}");
@@ -260,6 +261,8 @@ pub enum Expression {
         Box<Expression>,
         Option<Box<Expression>>,
     ),
+    /// Return the value if inside a function
+    Return(Box<Expression>),
 }
 
 impl std::fmt::Display for Expression {
@@ -332,6 +335,7 @@ impl std::fmt::Display for Expression {
                     Ok(())
                 }
             }
+            Self::Return(expr) => write!(f, "return {expr}"),
         }
     }
 }
@@ -352,6 +356,7 @@ impl Expression {
             Self::IfElse(_, _, _) => true,
             Self::TryCatch(_, _) => true,
             Self::ForEachIf(..) => true,
+            Self::Return(_) => false,
         }
     }
 
@@ -379,6 +384,7 @@ impl Expression {
             }
             Self::TryCatch(e1, e2) => e1.has_variables() || e2.has_variables(),
             Self::ForEachIf(..) => true, // TODO: it will have local var, so we need to test if it has var by getting a list of variables.
+            Self::Return(expr) => expr.has_variables(),
         }
     }
 
@@ -445,6 +451,7 @@ impl Expression {
                     None
                 },
             )),
+            Self::Return(expr) => Ok(Self::Return(Box::new(expr.simplify(ft, ctx)?))),
         }
     }
 
@@ -615,6 +622,7 @@ impl Expression {
                 expr2.clone(),
                 cond.clone(),
             )),
+            Self::Return(expr) => Ok(Self::Return(Box::new(expr.resolve(ft, ctx, local, node)?))),
         }
     }
 
@@ -742,6 +750,15 @@ impl Expression {
                     results.push(val);
                 }
                 Ok(Attribute::Array(results.into()))
+            }
+            Self::Return(expr) => {
+                let ret = expr.eval_value(ft, ctx, local, node)?;
+                // return is done through errors due to easier
+                // propagation to parent expressions. If the
+                // expression is inside a function it will be caught
+                // and returned as the result of the function
+                // evaluation
+                Err(EvalErrorType::InvalidReturn(ret).no_pos())
             }
         }
     }

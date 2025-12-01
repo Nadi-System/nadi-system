@@ -9,7 +9,7 @@ use crate::parser::{
     tokenizer::Token,
 };
 use crate::tasks::TaskKeyword;
-use crate::udf::UserFunction;
+use crate::udf::{LocalExpr, UserFunction};
 use nom::{
     branch::alt,
     combinator::{cut, map, opt, value},
@@ -31,6 +31,9 @@ pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> 
             preceded(kw_error, after_space(string_val)),
             Expression::UserError,
         ),
+        map(preceded(kw_return, after_space(complete_expression)), |e| {
+            Expression::Return(Box::new(e))
+        }),
     ))(inp)
 }
 
@@ -404,18 +407,44 @@ pub fn function_call<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionC
     ))
 }
 
+pub fn local_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, LocalExpr> {
+    let (rest, (var, expr, _)) = tuple((
+        opt(terminated(variable, maybe_space(assignment))),
+        maybe_space(complete_expression),
+        opt(semicolon),
+    ))(inp)?;
+    Ok((
+        rest,
+        match var {
+            Some(v) => LocalExpr::Assign(v.content.to_string(), expr),
+            None => LocalExpr::Expr(expr),
+        },
+    ))
+}
+
+pub fn function_body<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<LocalExpr>> {
+    delimited(
+        brace_start,
+        newline_separated(local_expr),
+        cut(err_ctx(
+            &ParseErrorType::Unclosed("}"),
+            maybe_newline(brace_end),
+        )),
+    )(inp)
+}
+
 pub fn function_def<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, UserFunction> {
-    let (rest, (_, name, (args, kwargs), expr)) = tuple((
+    let (rest, (_, name, (args, kwargs), exprs)) = tuple((
         kw_func,
         // maybe_space(opt(terminated(function_type, dot))),
         maybe_space(opt(function)),
         maybe_space(cut(funcdef_args)),
         // maybe_newline(tasks_block),
-        maybe_newline(expression_block),
+        maybe_newline(function_body),
     ))(inp)?;
     Ok((
         rest,
-        UserFunction::new(name.map(|n| n.content.to_string()), args, kwargs, expr),
+        UserFunction::new(name.map(|n| n.content.to_string()), args, kwargs, exprs),
     ))
 }
 

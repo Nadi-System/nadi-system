@@ -185,7 +185,6 @@ impl TaskContext {
                 }
                 Ok(None)
             }
-            Task::Return(_) => Err(EvalErrorType::InvalidReturn.no_pos()),
             Task::Expr(expr) => expr
                 .resolve_eval(&FunctionType::Env, self, None, None)
                 .map(|a| a.map(|a| a.to_string())),
@@ -806,8 +805,6 @@ pub enum Task {
     Help(Option<TaskKeyword>, Option<String>),
     /// Function Definition (needs to be named),
     Function(UserFunction),
-    /// Return the value if inside a function
-    Return(Expression),
     /// Evaluate the expression
     Expr(Expression),
     #[cfg(feature = "parser")]
@@ -833,7 +830,6 @@ impl Task {
             Task::Hook(ht) => ht.iter().any(|t| t.can_mutate()),
             Task::Help(_, _) => false,
             Task::Function(_) => false,
-            Task::Return(_) => false,
             Task::Expr(_) => false,
             #[cfg(feature = "parser")]
             Task::Import(_) => true,
@@ -852,7 +848,6 @@ impl Task {
             Task::Hook(_) => "Evaluate these tasks after each eval task",
             Task::Help(_, _) => "Show help",
             Task::Function(_) => "Define a new user function",
-            Task::Return(_) => "Return value",
             Task::Expr(_) => "Evaluate expression",
             #[cfg(feature = "parser")]
             Task::Import(_) => "Import functions from the file",
@@ -883,7 +878,6 @@ impl std::fmt::Display for Task {
             Self::Help(None, Some(s)) => write!(f, "help {s}"),
             Self::Help(Some(kw), Some(s)) => write!(f, "help {kw} {s}"),
             Task::Function(fdef) => write!(f, "{fdef}"),
-            Task::Return(expr) => write!(f, "return({expr})"),
             Task::Expr(expr) => write!(f, "{expr}"),
             #[cfg(feature = "parser")]
             Task::Import(imp) => write!(f, "{imp}"),

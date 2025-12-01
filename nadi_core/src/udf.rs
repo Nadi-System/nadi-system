@@ -5,11 +5,57 @@ use crate::tasks::{FunctionType, TaskContext};
 use abi_stable::std_types::{RNone, RSome, RVec};
 
 #[derive(Clone, PartialEq, Debug)]
+pub enum LocalExpr {
+    Expr(Expression),
+    Assign(String, Expression),
+}
+
+impl std::fmt::Display for LocalExpr {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Expr(e) => write!(f, "{e}"),
+            Self::Assign(v, e) => write!(f, "{v} = {e}"),
+        }
+    }
+}
+
+impl LocalExpr {
+    pub fn expr(&self) -> &Expression {
+        match self {
+            Self::Expr(expr) => &expr,
+            Self::Assign(_, expr) => &expr,
+        }
+    }
+
+    pub fn var(&self) -> Option<&str> {
+        match self {
+            Self::Expr(_) => None,
+            Self::Assign(var, _) => Some(var.as_str()),
+        }
+    }
+
+    pub fn eval(
+        &self,
+        locals: &mut AttrMap,
+        ctx: &TaskContext,
+    ) -> Result<Option<Attribute>, EvalError> {
+        match self {
+            Self::Expr(expr) => expr.resolve_eval(&FunctionType::Env, ctx, Some(&locals), None),
+            Self::Assign(var, expr) => {
+                let val = expr.resolve_eval_value(&FunctionType::Env, ctx, Some(&locals), None)?;
+                locals.insert(var.to_string().into(), val.into());
+                Ok(None)
+            }
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Debug)]
 pub struct UserFunction {
     pub(crate) name: Option<String>,
     args: Vec<String>,
     kwargs: Vec<(String, Expression)>,
-    expr: Expression,
+    exprs: Vec<LocalExpr>,
 }
 
 impl std::fmt::Display for UserFunction {
@@ -22,10 +68,14 @@ impl std::fmt::Display for UserFunction {
             .collect();
         write!(
             f,
-            "function {}({}) {{\n\t{}\n}}",
+            "function {}({}) {{\n{}}}",
             self.name.as_deref().unwrap_or_default(),
             args.join(","),
-            self.expr
+            self.exprs
+                .iter()
+                .map(|e| { format!("\t{}\n", e) })
+                .collect::<Vec<String>>()
+                .join("")
         )
     }
 }
@@ -43,29 +93,38 @@ impl UserFunction {
         name: Option<String>,
         args: Vec<String>,
         kwargs: Vec<(String, Expression)>,
-        expr: Expression,
+        exprs: Vec<LocalExpr>,
     ) -> Self {
         Self {
             name,
             args,
             kwargs,
-            expr,
+            exprs,
         }
     }
 
     pub fn eval_val(&self, ctx: &TaskContext, fctx: FunctionCtx) -> Result<Attribute, EvalError> {
-        let locals = self.resolve_locals(ctx, fctx.args, fctx.kwargs)?;
-        match self
-            .expr
-            .resolve_eval(&FunctionType::Env, ctx, Some(&locals), None)
-        {
-            Ok(Some(val)) => Ok(val),
-            Ok(None) => Err(EvalErrorType::NoReturnValue(
-                self.name.as_deref().unwrap_or("Annonymus").to_string(),
-            )
-            .no_pos()),
-            Err(e) => Err(e),
+        let mut locals = self.resolve_locals(ctx, fctx.args, fctx.kwargs)?;
+        let mut ret_expr = None;
+        for expr in &self.exprs {
+            match expr.eval(&mut locals, ctx) {
+                Ok(v) => {
+                    ret_expr = v;
+                }
+                // early return is also returned as an error so it can be caught here
+                Err(e) => {
+                    if let EvalErrorType::InvalidReturn(val) = e.ty {
+                        return Ok(val);
+                    } else {
+                        return Err(e);
+                    }
+                }
+            };
         }
+        ret_expr.ok_or(
+            EvalErrorType::NoReturnValue(self.name.as_deref().unwrap_or("Anonymous").to_string())
+                .no_pos(),
+        )
     }
 
     /// Resolve the local variables available inside the function.

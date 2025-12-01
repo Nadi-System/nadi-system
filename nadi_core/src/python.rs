@@ -32,7 +32,7 @@ impl From<EvalError> for PyErr {
             EvalErrorType::UserError(_) => PyRuntimeError::new_err(err),
             EvalErrorType::UnknownFunctionType => PyKeyError::new_err(err),
             EvalErrorType::NoReturnValue(_) => PyRuntimeError::new_err(err),
-            EvalErrorType::InvalidReturn => PyRuntimeError::new_err(err),
+            EvalErrorType::InvalidReturn(_) => PyRuntimeError::new_err(err),
             EvalErrorType::PathNotFound(_, _, _) => PyRuntimeError::new_err(err),
             EvalErrorType::AttributeError(_) => PyRuntimeError::new_err(err),
             EvalErrorType::NodeAttributeError(_, _) => PyRuntimeError::new_err(err),
