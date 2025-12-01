@@ -283,6 +283,13 @@ impl Terminal {
                         use nadi_core::parser::tokenizer::ParenCheck;
                         match ParenCheck::scan(&tkns) {
                             ParenCheck::Unpaired(_) => {
+                                // TODO: need to show the prompt that
+                                // shows more inputs needed, the
+                                // prompting method needs to be
+                                // modified for that. instead of
+                                // prompt showing with the inputs,
+                                // make it show at the end of task
+                                // execution.
                                 self.residue = tasks;
                                 self.status = "Waiting more input...".to_string();
                             }

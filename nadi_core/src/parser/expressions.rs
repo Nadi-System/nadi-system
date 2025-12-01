@@ -135,7 +135,7 @@ fn bi_operator_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression
     let (rest, (first, args)) = pair(
         alt((expression, expression_group)),
         many1(pair(
-            maybe_space(bi_operator),
+            maybe_newline(bi_operator),
             maybe_newline(cut(err_ctx(
                 &ParseErrorType::IncompleteExpression,
                 alt((expression, expression_group)),
@@ -436,10 +436,8 @@ pub fn function_body<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<Local
 pub fn function_def<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, UserFunction> {
     let (rest, (_, name, (args, kwargs), exprs)) = tuple((
         kw_func,
-        // maybe_space(opt(terminated(function_type, dot))),
         maybe_space(opt(function)),
         maybe_space(cut(funcdef_args)),
-        // maybe_newline(tasks_block),
         maybe_newline(function_body),
     ))(inp)?;
     Ok((
