@@ -260,12 +260,58 @@ impl TaskContext {
                 }
                 Ok(None)
             }
+            Task::GetSeries(gst) => self.get_series_task(gst).map(Some),
             Task::Help(kw, var) => self.help(kw, var),
             Task::Clear => {
                 self.clear();
                 Ok(None)
             }
             Task::Exit => std::process::exit(0),
+        }
+    }
+
+    pub fn get_series_task(&self, gst: GetSeriesTask) -> Result<String, EvalError> {
+        match (gst.timeseries, gst.ty) {
+            (true, FunctionType::Env) => {
+                Err(EvalErrorType::LogicalError("Not implemented").pos(gst.start))
+            }
+            (ts, FunctionType::Node) => {
+                let nodes = self.propagation(gst.propagation.clone().unwrap_or_default())?;
+                let trunc = nodes.len() > MAX_NODES_LENGTH;
+                let attrs = nodes
+                    .iter()
+                    .take(MAX_NODES_LENGTH)
+                    .map(|n| {
+                        let n = n.lock();
+                        format!(
+                            "  {} = {}",
+                            n.name(),
+                            if ts {
+                                n.try_ts(&gst.name).map(|ts| self.show_ts(ts))
+                            } else {
+                                n.try_series(&gst.name).map(|ts| self.show_sr(ts))
+                            }
+                            .unwrap_or("<None>".to_string())
+                        )
+                    })
+                    .collect::<Vec<String>>();
+                Ok(format!(
+                    "{{\n{}\n{}}}",
+                    attrs.join(",\n"),
+                    if trunc { "...truncated\n" } else { "" }
+                ))
+            }
+            (true, FunctionType::Network) => self
+                .network
+                .try_ts(&gst.name)
+                .map(|ts| self.show_ts(ts))
+                .map_err(|e| EvalErrorType::TimeSeriesNotFound(e).pos(gst.start)),
+            (false, FunctionType::Network) => self
+                .network
+                .try_series(&gst.name)
+                .map(|sr| self.show_sr(sr))
+                .map_err(|e| EvalErrorType::SeriesNotFound(e).pos(gst.start)),
+            _ => Err(EvalErrorType::LogicalError("Not implemented").pos(gst.start)),
         }
     }
 
@@ -788,6 +834,39 @@ impl ImportTask {
     }
 }
 
+/// Task representing getting of series/timeseries value
+#[derive(Clone, PartialEq, Debug)]
+pub struct GetSeriesTask {
+    /// type of function
+    pub ty: FunctionType,
+    /// node propagation for node function
+    pub propagation: Option<Propagation>,
+    /// Timeseries instead of Series
+    pub timeseries: bool,
+    /// name of the series/timeseries
+    pub name: String,
+    // TODO: Add indexing capabilities (multiple index should be accepted)
+    // pub index: Option<Range>,
+    /// start position of the task
+    pub start: (usize, usize),
+}
+
+impl std::fmt::Display for GetSeriesTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{}{}{}",
+            self.ty,
+            self.propagation
+                .as_ref()
+                .map(|p| p.to_string())
+                .unwrap_or_default(),
+            if self.timeseries { "$$" } else { "$" },
+            self.name
+        )
+    }
+}
+
 /// Execution body of the Task System
 #[derive(Clone, PartialEq, Debug)]
 pub enum Task {
@@ -810,6 +889,8 @@ pub enum Task {
     #[cfg(feature = "parser")]
     /// Import functions from a tasks file
     Import(ImportTask),
+    /// Get a series/timeseries from the node/network/env
+    GetSeries(GetSeriesTask),
     /// Clear the task context
     Clear,
     /// exit the task system/process,
@@ -833,6 +914,7 @@ impl Task {
             Task::Expr(_) => false,
             #[cfg(feature = "parser")]
             Task::Import(_) => true,
+            Task::GetSeries(_) => false,
             Task::Clear => false,
             Task::Exit => false,
         }
@@ -851,6 +933,7 @@ impl Task {
             Task::Expr(_) => "Evaluate expression",
             #[cfg(feature = "parser")]
             Task::Import(_) => "Import functions from the file",
+            Task::GetSeries(_) => "Query Series/TimeSeries values",
             Task::Clear => "Clear the task context",
             Task::Exit => "Exit the program",
         }
@@ -881,6 +964,7 @@ impl std::fmt::Display for Task {
             Task::Expr(expr) => write!(f, "{expr}"),
             #[cfg(feature = "parser")]
             Task::Import(imp) => write!(f, "{imp}"),
+            Task::GetSeries(gst) => write!(f, "{gst}"),
             Self::Clear => write!(f, "clear"),
             Self::Exit => write!(f, "exit"),
         }

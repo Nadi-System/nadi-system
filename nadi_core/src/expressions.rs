@@ -121,6 +121,10 @@ pub enum EvalErrorType {
     PathNotFound(String, String, String),
     /// Attribute with name doesn't exist
     AttributeNotFound,
+    /// Series with name doesn't exist
+    SeriesNotFound(String),
+    /// TimeSeries with name doesn't exist
+    TimeSeriesNotFound(String),
     /// Index out of range for the array
     IndexError,
     // AttributeNotFound(Option<String>, String),
@@ -194,6 +198,8 @@ impl EvalErrorType {
                 return format!("No path found between Nodes {s:?} and {t:?}, path ends at {e:?}");
             }
             Self::AttributeNotFound => "Attribute not found",
+            Self::SeriesNotFound(msg) => return format!("No Series: {msg}"),
+            Self::TimeSeriesNotFound(msg) => return format!("No TimeSeries: {msg}"),
             Self::IndexError => "Index out of range for array",
             // Self::AttributeNotFound(Some(n), var) => {
             //     return format!("Node: {n:?} Attribute {var:?} not found")

@@ -1,6 +1,7 @@
 use crate::attrs::{type_name, Attribute, Date, DateTime, FromAttribute, Time};
 use crate::datafill::DataImputeError;
 use crate::expressions::EvalErrorType;
+use crate::tasks::TaskContext;
 
 use abi_stable::{
     external_types::RMutex,
@@ -239,6 +240,55 @@ pub enum Series {
     Masked(MaskedSeries, ROption<Attribute>),
     /// Series without values
     Complete(CompleteSeries),
+}
+
+// TODO move these things to task context so people can override
+pub const SERIES_MAX_SHOW_LEN: usize = 10;
+
+impl TaskContext {
+    pub fn show_ts(&self, ts: &TimeSeries) -> String {
+        let tl = ts.timeline.lock();
+        format!(
+            "TimeSeries(from: {}, to: {}, values: {})",
+            tl.start,
+            tl.end,
+            self.show_sr(&ts.values)
+        )
+    }
+    pub fn show_sr(&self, sr: &Series) -> String {
+        let (pre, len, vals) = match sr {
+            Series::Masked(ms, RSome(fv)) => (
+                format!(
+                    "MaskedSeries(len: {}, valid: {}, fill: {fv})",
+                    ms.len(),
+                    ms.len_valid()
+                ),
+                ms.len(),
+                ms.str_values(),
+            ),
+            Series::Masked(ms, RNone) => (
+                format!("MaskedSeries(len: {}, valid: {})", ms.len(), ms.len_valid()),
+                ms.len(),
+                ms.str_values(),
+            ),
+            Series::Complete(cs) => (
+                format!("Series(len: {})", cs.len()),
+                cs.len(),
+                cs.str_values(),
+            ),
+        };
+
+        if len > SERIES_MAX_SHOW_LEN {
+            format!(
+                "{pre} [{}, ...]",
+                vals.take(SERIES_MAX_SHOW_LEN)
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            )
+        } else {
+            format!("{pre} [{}]", vals.collect::<Vec<String>>().join(", "))
+        }
+    }
 }
 
 impl From<MaskedSeries> for Series {

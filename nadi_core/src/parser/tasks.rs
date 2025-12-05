@@ -1,15 +1,18 @@
-use crate::parser::{
-    components::*,
-    errors::MatchErr,
-    expressions::{complete_expression, expression_group, function_def},
-    network::{node_name, str_path},
-    tokenizer::{RawToken, Token},
-    ParseError, ParseErrorType,
-};
 use crate::{
     expressions::TaskPosition,
     network::{PropCondition, PropNodes, PropOrder, Propagation},
     tasks::{AttrTask, CondTask, EvalTask, FunctionType, ImportTask, Task, WhileTask},
+};
+use crate::{
+    parser::{
+        components::*,
+        errors::MatchErr,
+        expressions::{complete_expression, expression_group, function_def},
+        network::{node_name, str_path},
+        tokenizer::{RawToken, Token},
+        ParseError, ParseErrorType,
+    },
+    tasks::GetSeriesTask,
 };
 use abi_stable::std_types::{RString, RVec};
 use nom::{
@@ -231,6 +234,34 @@ pub fn import_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ImportTask>
     ))
 }
 
+pub fn get_series_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, GetSeriesTask> {
+    let (rest, (ty, propagation, (_, ts, name))) = tuple((
+        function_type,
+        propagation,
+        tuple((dollar, opt(dollar), variable)),
+    ))(inp)?;
+
+    match (&ty, propagation.is_some()) {
+        (FunctionType::Node, true) => (),
+        (_, true) => {
+            return Err(nom::Err::Error(
+                MatchErr::new(function_type(inp)?.0).ty(&ParseErrorType::PropagationNotSupported),
+            ));
+        }
+        _ => (),
+    }
+    Ok((
+        rest,
+        GetSeriesTask {
+            ty,
+            timeseries: ts.is_some(),
+            name: name.content.to_string(),
+            propagation,
+            start: inp.position(),
+        },
+    ))
+}
+
 pub fn task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
     alt((
         map(eval_task, Task::Eval),
@@ -240,6 +271,7 @@ pub fn task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
         map(hook_task, Task::Hook),
         map(function_def, Task::Function),
         map(import_task, Task::Import),
+        map(get_series_task, Task::GetSeries),
         map(complete_expression, Task::Expr),
         help_task,
         value(Task::Clear, kw_clear),
