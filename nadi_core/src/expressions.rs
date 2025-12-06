@@ -6,6 +6,8 @@ use crate::tasks::{
     AttrTask, CondTask, EvalTask, FunctionType, TaskContext, TaskKeyword, WhileTask,
 };
 use crate::template::Template;
+use crate::timeseries::{CompleteSeries, Series};
+use crate::udf::UserFunction;
 use std::collections::HashMap;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -1642,6 +1644,68 @@ impl FunctionCall {
                 )
                 .pos(self.position())),
             },
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub enum MapFunction {
+    /// Annonymous function defintion
+    Defn(UserFunction),
+    /// Name of a Function to use
+    Pointer(String),
+}
+
+impl std::fmt::Display for MapFunction {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Defn(udf) => write!(f, "{udf}"),
+            Self::Pointer(n) => write!(f, "@{n}"),
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub enum SeriesExpression {
+    /// Expression evaluates to an attribute, but the attribute must be an array
+    AttrExpr(Expression),
+    /// Another Series, simply copy
+    // if single or zip them if multiple (add type for that)
+    Series(Option<VarType>, String),
+    /// Series Mapped to a Function
+    ///
+    /// The functions should have same number of arguments as the
+    /// number of series, they can have additional optional arguments
+    SeriesMap(Option<VarType>, String, MapFunction),
+}
+
+impl std::fmt::Display for SeriesExpression {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::AttrExpr(expr) => write!(f, "{expr}"),
+            Self::Series(Some(vt), srs) => write!(f, "{vt}.{srs}"),
+            Self::Series(None, srs) => write!(f, "{srs}"),
+            Self::SeriesMap(Some(vt), srs, mf) => write!(f, "{vt}.{srs} -> {mf}"),
+            Self::SeriesMap(None, srs, mf) => write!(f, "{srs} -> {mf}"),
+        }
+    }
+}
+
+impl SeriesExpression {
+    /// Evaluates the series expression and returns a series
+    pub fn resolve_eval_value(
+        &self,
+        ft: &FunctionType,
+        ctx: &TaskContext,
+        local: Option<&AttrMap>,
+        node: Option<&Node>,
+    ) -> Result<Series, EvalError> {
+        match self {
+            Self::AttrExpr(expr) => match expr.resolve_eval_value(ft, ctx, local, node)? {
+                Attribute::Array(ar) => Ok(CompleteSeries::from(ar).retype().into()),
+                _ => return Err(EvalErrorType::NotAnArray.no_pos()),
+            },
+            _ => Err(EvalErrorType::LogicalError("Not implemented").no_pos()),
         }
     }
 }

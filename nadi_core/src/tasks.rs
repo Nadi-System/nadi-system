@@ -1,4 +1,4 @@
-use crate::expressions::{EvalError, EvalErrorType, Expression, TaskPosition};
+use crate::expressions::{EvalError, EvalErrorType, Expression, SeriesExpression, TaskPosition};
 use crate::functions::{FuncArg, FuncArgType, NadiFunctions};
 use crate::network::PropCondition;
 use crate::prelude::*;
@@ -21,6 +21,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 //     FormattedText(String),
 // }
 
+// TODO: put this and other constants in the TaskContext env variables, write a constructor that loads these variables from the env_var (with NADI_ prefix), or puts the default values. Then while using them load it from the TaskContext or use default value (just in case user deletes them or changes data type)
 pub const MAX_NODES_LENGTH: usize = 50;
 
 /// Message that can be sent from the task
@@ -261,6 +262,10 @@ impl TaskContext {
                 Ok(None)
             }
             Task::GetSeries(gst) => self.get_series_task(gst).map(Some),
+            Task::SetSeries(sst) => {
+                self.set_series_task(sst)?;
+                Ok(None)
+            }
             Task::Help(kw, var) => self.help(kw, var),
             Task::Clear => {
                 self.clear();
@@ -272,7 +277,7 @@ impl TaskContext {
 
     pub fn get_series_task(&self, gst: GetSeriesTask) -> Result<String, EvalError> {
         match (gst.timeseries, gst.ty) {
-            (true, FunctionType::Env) => {
+            (_, FunctionType::Env) => {
                 Err(EvalErrorType::LogicalError("Not implemented").pos(gst.start))
             }
             (ts, FunctionType::Node) => {
@@ -311,7 +316,42 @@ impl TaskContext {
                 .try_series(&gst.name)
                 .map(|sr| self.show_sr(sr))
                 .map_err(|e| EvalErrorType::SeriesNotFound(e).pos(gst.start)),
-            _ => Err(EvalErrorType::LogicalError("Not implemented").pos(gst.start)),
+        }
+    }
+
+    pub fn set_series_task(&mut self, sst: SetSeriesTask) -> Result<(), EvalError> {
+        match (sst.timeseries, sst.ty) {
+            (_, FunctionType::Env) => {
+                Err(EvalErrorType::LogicalError("Not implemented").pos(sst.start))
+            }
+            (false, FunctionType::Node) => {
+                let nodes = self.propagation(sst.propagation.clone().unwrap_or_default())?;
+                nodes.iter().try_for_each(|n| -> Result<(), EvalError> {
+                    let series = sst.expression.resolve_eval_value(
+                        &FunctionType::Node,
+                        self,
+                        None,
+                        Some(n),
+                    )?;
+                    n.lock().set_series(&sst.name, series);
+                    Ok(())
+                })?;
+                Ok(())
+            }
+            (true, FunctionType::Node) => {
+                Err(EvalErrorType::LogicalError("Not implemented").pos(sst.start))
+            }
+            (true, FunctionType::Network) => {
+                Err(EvalErrorType::LogicalError("Not implemented").pos(sst.start))
+            }
+            (false, FunctionType::Network) => {
+                let series =
+                    sst.expression
+                        .resolve_eval_value(&FunctionType::Network, self, None, None)?;
+
+                self.network.set_series(&sst.name, series);
+                Ok(())
+            }
         }
     }
 
@@ -867,6 +907,42 @@ impl std::fmt::Display for GetSeriesTask {
     }
 }
 
+/// Task representing getting of series/timeseries value
+#[derive(Clone, PartialEq, Debug)]
+pub struct SetSeriesTask {
+    /// type of function
+    pub ty: FunctionType,
+    /// node propagation for node function
+    pub propagation: Option<Propagation>,
+    /// Timeseries instead of Series
+    pub timeseries: bool,
+    /// name of the series/timeseries
+    pub name: String,
+    /// Series Evaluation Expression
+    pub expression: SeriesExpression,
+    // TODO: Add indexing capabilities (multiple index should be accepted)
+    // pub index: Option<Range>,
+    /// start position of the task
+    pub start: (usize, usize),
+}
+
+impl std::fmt::Display for SetSeriesTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{}{}{} = {}",
+            self.ty,
+            self.propagation
+                .as_ref()
+                .map(|p| p.to_string())
+                .unwrap_or_default(),
+            if self.timeseries { "$$" } else { "$" },
+            self.name,
+            self.expression,
+        )
+    }
+}
+
 /// Execution body of the Task System
 #[derive(Clone, PartialEq, Debug)]
 pub enum Task {
@@ -891,6 +967,8 @@ pub enum Task {
     Import(ImportTask),
     /// Get a series/timeseries from the node/network/env
     GetSeries(GetSeriesTask),
+    /// Set a series/timeseries to the node/network/env
+    SetSeries(SetSeriesTask),
     /// Clear the task context
     Clear,
     /// exit the task system/process,
@@ -915,6 +993,7 @@ impl Task {
             #[cfg(feature = "parser")]
             Task::Import(_) => true,
             Task::GetSeries(_) => false,
+            Task::SetSeries(_) => true,
             Task::Clear => false,
             Task::Exit => false,
         }
@@ -934,6 +1013,7 @@ impl Task {
             #[cfg(feature = "parser")]
             Task::Import(_) => "Import functions from the file",
             Task::GetSeries(_) => "Query Series/TimeSeries values",
+            Task::SetSeries(_) => "Set Series/TimeSeries values",
             Task::Clear => "Clear the task context",
             Task::Exit => "Exit the program",
         }
@@ -965,6 +1045,7 @@ impl std::fmt::Display for Task {
             #[cfg(feature = "parser")]
             Task::Import(imp) => write!(f, "{imp}"),
             Task::GetSeries(gst) => write!(f, "{gst}"),
+            Task::SetSeries(sst) => write!(f, "{sst}"),
             Self::Clear => write!(f, "clear"),
             Self::Exit => write!(f, "exit"),
         }

@@ -259,20 +259,26 @@ impl TaskContext {
         let (pre, len, vals) = match sr {
             Series::Masked(ms, RSome(fv)) => (
                 format!(
-                    "MaskedSeries(len: {}, valid: {}, fill: {fv})",
+                    "MaskedSeries(len: {}, dtype: {}, valid: {}, fill: {fv})",
                     ms.len(),
+                    ms.type_name(),
                     ms.len_valid()
                 ),
                 ms.len(),
                 ms.str_values(),
             ),
             Series::Masked(ms, RNone) => (
-                format!("MaskedSeries(len: {}, valid: {})", ms.len(), ms.len_valid()),
+                format!(
+                    "MaskedSeries(len: {}, dtype: {}, valid: {})",
+                    ms.len(),
+                    ms.type_name(),
+                    ms.len_valid()
+                ),
                 ms.len(),
                 ms.str_values(),
             ),
             Series::Complete(cs) => (
-                format!("Series(len: {})", cs.len()),
+                format!("Series(len: {}, dtype: {})", cs.len(), cs.type_name()),
                 cs.len(),
                 cs.str_values(),
             ),
@@ -315,6 +321,25 @@ impl From<CompleteSeries> for Series {
         Series::Complete(val)
     }
 }
+
+// // TODO: This says conflicting implementation, look into it
+// impl<T> From<T> for Series
+// where
+//     CompleteSeries: From<T>,
+// {
+//     fn from(val: T) -> Series {
+//         CompleteSeries::from(val).into()
+//     }
+// }
+
+// impl<T> From<T> for Series
+// where
+//     MaskedSeries: From<T>,
+// {
+//     fn from(val: T) -> Series {
+//         MaskedSeries::from(val).into()
+//     }
+// }
 
 /// Matches and calls respective functions for all variations of [`Series`]
 macro_rules! forward_funcs {
@@ -364,6 +389,14 @@ impl Series {
         match self {
             Self::Masked(v, _) => v.str_values(),
             Self::Complete(v) => v.str_values(),
+        }
+    }
+
+    /// Retype the attributes series into a type if homogeneous
+    pub fn retype(self) -> Self {
+        match self {
+            Self::Masked(v, fv) => Self::Masked(v.retype(), fv),
+            Self::Complete(v) => Self::Complete(v.retype()),
         }
     }
 
@@ -425,6 +458,124 @@ impl MaskedSeries {
     }
     pub fn attributes(v: Vec<ROption<Attribute>>) -> Self {
         Self::Attributes(v.into())
+    }
+
+    /// Retype the attributes series into a type if homogeneous
+    pub fn retype(self) -> Self {
+        match &self {
+            Self::Attributes(attrs) => {
+                let first = match attrs.iter().filter_map(|v| v.clone().into_option()).next() {
+                    Some(f) => f,
+                    None => return self,
+                };
+                match first {
+                    Attribute::Bool(_) => {
+                        let mut vals = Vec::<ROption<bool>>::with_capacity(attrs.len());
+                        for a in attrs {
+                            match a {
+                                RSome(v) => match bool::from_attr(v) {
+                                    Some(v) => vals.push(RSome(v)),
+                                    // if the value is not bool (first one was), we can not retype
+                                    None => return self,
+                                },
+                                RNone => vals.push(RNone),
+                            }
+                        }
+                        MaskedSeries::Booleans(vals.into())
+                    }
+                    Attribute::Integer(_) => {
+                        let mut vals = Vec::<ROption<i64>>::with_capacity(attrs.len());
+                        for a in attrs {
+                            match a {
+                                RSome(v) => match i64::from_attr(v) {
+                                    Some(v) => vals.push(RSome(v)),
+                                    // if the value is not bool (first one was), we can not retype
+                                    None => return self,
+                                },
+                                RNone => vals.push(RNone),
+                            }
+                        }
+                        MaskedSeries::Integers(vals.into())
+                    }
+                    Attribute::Float(_) => {
+                        let mut vals = Vec::<ROption<f64>>::with_capacity(attrs.len());
+                        for a in attrs {
+                            match a {
+                                RSome(v) => match f64::from_attr(v)
+                                    .or_else(|| i64::from_attr(v).map(|v| v as f64))
+                                {
+                                    Some(v) => vals.push(RSome(v)),
+                                    // if the value is not bool (first one was), we can not retype
+                                    None => return self,
+                                },
+                                RNone => vals.push(RNone),
+                            }
+                        }
+                        MaskedSeries::Floats(vals.into())
+                    }
+                    Attribute::String(_) => {
+                        let mut vals = Vec::<ROption<RString>>::with_capacity(attrs.len());
+                        for a in attrs {
+                            match a {
+                                RSome(v) => match RString::from_attr(v) {
+                                    Some(v) => vals.push(RSome(v)),
+                                    // if the value is not bool (first one was), we can not retype
+                                    None => return self,
+                                },
+                                RNone => vals.push(RNone),
+                            }
+                        }
+                        MaskedSeries::Strings(vals.into())
+                    }
+                    Attribute::Date(_) => {
+                        let mut vals = Vec::<ROption<Date>>::with_capacity(attrs.len());
+                        for a in attrs {
+                            match a {
+                                RSome(v) => match Date::from_attr(v) {
+                                    Some(v) => vals.push(RSome(v)),
+                                    // if the value is not bool (first one was), we can not retype
+                                    None => return self,
+                                },
+                                RNone => vals.push(RNone),
+                            }
+                        }
+                        MaskedSeries::Dates(vals.into())
+                    }
+                    Attribute::Time(_) => {
+                        let mut vals = Vec::<ROption<Time>>::with_capacity(attrs.len());
+                        for a in attrs {
+                            match a {
+                                RSome(v) => match Time::from_attr(v) {
+                                    Some(v) => vals.push(RSome(v)),
+                                    // if the value is not bool (first one was), we can not retype
+                                    None => return self,
+                                },
+                                RNone => vals.push(RNone),
+                            }
+                        }
+                        MaskedSeries::Times(vals.into())
+                    }
+                    Attribute::DateTime(_) => {
+                        let mut vals = Vec::<ROption<DateTime>>::with_capacity(attrs.len());
+                        for a in attrs {
+                            match a {
+                                RSome(v) => match DateTime::from_attr(v).or_else(|| {
+                                    Date::from_attr(v).map(|d| d.with_time(Time::default()))
+                                }) {
+                                    Some(v) => vals.push(RSome(v)),
+                                    // if the value is not bool (first one was), we can not retype
+                                    None => return self,
+                                },
+                                RNone => vals.push(RNone),
+                            }
+                        }
+                        MaskedSeries::DateTimes(vals.into())
+                    }
+                    _ => self,
+                }
+            }
+            _ => self,
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -738,6 +889,102 @@ impl CompleteSeries {
             t => return Err(format!("Unknown Series dtype {t}")),
         };
         Ok(sr)
+    }
+
+    /// Retype the attributes series into a type if homogeneous
+    pub fn retype(self) -> Self {
+        match &self {
+            Self::Attributes(attrs) => {
+                let first = match attrs.iter().next() {
+                    Some(f) => f,
+                    None => return self,
+                };
+                match first {
+                    Attribute::Bool(_) => {
+                        let mut vals = Vec::<bool>::with_capacity(attrs.len());
+                        for a in attrs {
+                            match bool::from_attr(a) {
+                                Some(v) => vals.push(v),
+                                // if the value is not bool (first one was), we can not retype
+                                None => return self,
+                            }
+                        }
+                        CompleteSeries::Booleans(vals.into())
+                    }
+                    Attribute::Integer(_) => {
+                        let mut vals = Vec::<i64>::with_capacity(attrs.len());
+                        for a in attrs {
+                            match i64::from_attr(a) {
+                                Some(v) => vals.push(v),
+                                // if the value is not bool (first one was), we can not retype
+                                None => return self,
+                            }
+                        }
+                        CompleteSeries::Integers(vals.into())
+                    }
+                    Attribute::Float(_) => {
+                        let mut vals = Vec::<f64>::with_capacity(attrs.len());
+                        for a in attrs {
+                            match f64::from_attr(a).or_else(|| i64::from_attr(a).map(|v| v as f64))
+                            {
+                                Some(v) => vals.push(v),
+                                // if the value is not bool (first one was), we can not retype
+                                None => return self,
+                            }
+                        }
+                        CompleteSeries::Floats(vals.into())
+                    }
+                    Attribute::String(_) => {
+                        let mut vals = Vec::<RString>::with_capacity(attrs.len());
+                        for a in attrs {
+                            match RString::from_attr(a) {
+                                Some(v) => vals.push(v),
+                                // if the value is not bool (first one was), we can not retype
+                                None => return self,
+                            }
+                        }
+                        CompleteSeries::Strings(vals.into())
+                    }
+                    Attribute::Date(_) => {
+                        let mut vals = Vec::<Date>::with_capacity(attrs.len());
+                        for a in attrs {
+                            match Date::from_attr(a) {
+                                Some(v) => vals.push(v),
+                                // if the value is not bool (first one was), we can not retype
+                                None => return self,
+                            }
+                        }
+                        CompleteSeries::Dates(vals.into())
+                    }
+                    Attribute::Time(_) => {
+                        let mut vals = Vec::<Time>::with_capacity(attrs.len());
+                        for a in attrs {
+                            match Time::from_attr(a) {
+                                Some(v) => vals.push(v),
+                                // if the value is not bool (first one was), we can not retype
+                                None => return self,
+                            }
+                        }
+                        CompleteSeries::Times(vals.into())
+                    }
+                    Attribute::DateTime(_) => {
+                        let mut vals = Vec::<DateTime>::with_capacity(attrs.len());
+                        for a in attrs {
+                            match DateTime::from_attr(a).or_else(|| {
+                                Date::from_attr(a).map(|d| d.with_time(Time::default()))
+                            }) {
+                                Some(v) => vals.push(v),
+                                // if the value is not bool (first one was), we can not retype
+                                None => return self,
+                            }
+                        }
+                        CompleteSeries::DateTimes(vals.into())
+                    }
+                    _ => self,
+                }
+            }
+            _ => self,
+        }
     }
 
     pub fn to_attributes(self) -> Vec<Attribute> {

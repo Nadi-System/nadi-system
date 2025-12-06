@@ -1,5 +1,5 @@
 use crate::{
-    expressions::TaskPosition,
+    expressions::{SeriesExpression, TaskPosition},
     network::{PropCondition, PropNodes, PropOrder, Propagation},
     tasks::{AttrTask, CondTask, EvalTask, FunctionType, ImportTask, Task, WhileTask},
 };
@@ -12,7 +12,7 @@ use crate::{
         tokenizer::{RawToken, Token},
         ParseError, ParseErrorType,
     },
-    tasks::GetSeriesTask,
+    tasks::{GetSeriesTask, SetSeriesTask},
 };
 use abi_stable::std_types::{RString, RVec};
 use nom::{
@@ -262,6 +262,37 @@ pub fn get_series_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, GetSeri
     ))
 }
 
+pub fn set_series_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, SetSeriesTask> {
+    let (rest, (ty, propagation, (_, ts, name), _, expr)) = tuple((
+        function_type,
+        propagation,
+        tuple((dollar, opt(dollar), variable)),
+        maybe_space(assignment),
+        maybe_space(complete_expression),
+    ))(inp)?;
+
+    match (&ty, propagation.is_some()) {
+        (FunctionType::Node, true) => (),
+        (_, true) => {
+            return Err(nom::Err::Error(
+                MatchErr::new(function_type(inp)?.0).ty(&ParseErrorType::PropagationNotSupported),
+            ));
+        }
+        _ => (),
+    }
+    Ok((
+        rest,
+        SetSeriesTask {
+            ty,
+            timeseries: ts.is_some(),
+            name: name.content.to_string(),
+            propagation,
+            expression: SeriesExpression::AttrExpr(expr),
+            start: inp.position(),
+        },
+    ))
+}
+
 pub fn task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
     alt((
         map(eval_task, Task::Eval),
@@ -271,6 +302,8 @@ pub fn task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
         map(hook_task, Task::Hook),
         map(function_def, Task::Function),
         map(import_task, Task::Import),
+        // set should be before get
+        map(set_series_task, Task::SetSeries),
         map(get_series_task, Task::GetSeries),
         map(complete_expression, Task::Expr),
         help_task,
