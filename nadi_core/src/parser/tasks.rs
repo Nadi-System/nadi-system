@@ -1,5 +1,5 @@
 use crate::{
-    expressions::{SeriesExpression, TaskPosition},
+    expressions::{MapFunction, SeriesExpression, TaskPosition},
     network::{PropCondition, PropNodes, PropOrder, Propagation},
     tasks::{AttrTask, CondTask, EvalTask, FunctionType, ImportTask, Task, WhileTask},
 };
@@ -266,8 +266,25 @@ pub fn series_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Serie
     alt((
         map(complete_expression, SeriesExpression::AttrExpr),
         map(
-            tuple((opt(variable_type), dollar, variable)),
-            |(vt, _, name)| SeriesExpression::Series(vt, name.content.to_string()),
+            tuple((
+                opt(variable_type),
+                dollar,
+                variable,
+                // optionally the function mapping
+                opt(after_space(preceded(
+                    path_sep,
+                    cut(after_space(alt((
+                        map(function_def, MapFunction::Defn),
+                        map(preceded(at, variable), |v| {
+                            MapFunction::Pointer(v.content.to_string())
+                        }),
+                    )))),
+                ))),
+            )),
+            |(vt, _, name, func)| match func {
+                Some(func) => SeriesExpression::SeriesMap(vt, name.content.to_string(), func),
+                None => SeriesExpression::Series(vt, name.content.to_string()),
+            },
         ),
     ))(inp)
 }

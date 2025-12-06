@@ -1,6 +1,6 @@
 use crate::attrs::{type_name, Attribute, Date, DateTime, FromAttribute, Time};
 use crate::datafill::DataImputeError;
-use crate::expressions::EvalErrorType;
+use crate::expressions::{EvalError, EvalErrorType};
 use crate::tasks::TaskContext;
 
 use abi_stable::{
@@ -388,6 +388,17 @@ impl Series {
         }
     }
 
+    /// Map the function to the values
+    pub fn map_values(
+        self,
+        func: &dyn Fn(Attribute) -> Result<Attribute, EvalError>,
+    ) -> Result<Self, EvalError> {
+        match self {
+            Self::Masked(v, fv) => Ok(Self::Masked(v.map_values(func)?, fv)),
+            Self::Complete(v) => v.map_values(func).map(Self::Complete),
+        }
+    }
+
     /// Retype the attributes series into a type if homogeneous
     pub fn retype(self) -> Self {
         match self {
@@ -454,6 +465,22 @@ impl MaskedSeries {
     }
     pub fn attributes(v: Vec<ROption<Attribute>>) -> Self {
         Self::Attributes(v.into())
+    }
+
+    pub fn map_values(
+        self,
+        func: &dyn Fn(Attribute) -> Result<Attribute, EvalError>,
+    ) -> Result<Self, EvalError> {
+        Ok(Self::attributes(
+            self.to_attributes()
+                .into_iter()
+                .map(|v| match v {
+                    RSome(a) => func(a).map(RSome),
+                    RNone => Ok(RNone),
+                })
+                .collect::<Result<Vec<ROption<Attribute>>, EvalError>>()?,
+        )
+        .retype())
     }
 
     /// Retype the attributes series into a type if homogeneous
@@ -749,6 +776,19 @@ impl MaskedSeries {
         })
     }
 
+    pub fn to_attributes(self) -> Vec<ROption<Attribute>> {
+        match self {
+            Self::Floats(v) => v.into_iter().map(|a| a.map(Attribute::Float)).collect(),
+            Self::Integers(v) => v.into_iter().map(|a| a.map(Attribute::Integer)).collect(),
+            Self::Strings(v) => v.into_iter().map(|a| a.map(Attribute::String)).collect(),
+            Self::Booleans(v) => v.into_iter().map(|a| a.map(Attribute::Bool)).collect(),
+            Self::Dates(v) => v.into_iter().map(|a| a.map(Attribute::Date)).collect(),
+            Self::Times(v) => v.into_iter().map(|a| a.map(Attribute::Time)).collect(),
+            Self::DateTimes(v) => v.into_iter().map(|a| a.map(Attribute::DateTime)).collect(),
+            Self::Attributes(v) => v.into(),
+        }
+    }
+
     pub fn complete(self) -> Option<CompleteSeries> {
         if self.has_gaps() {
             return None;
@@ -887,6 +927,18 @@ impl CompleteSeries {
         Ok(sr)
     }
 
+    pub fn map_values(
+        self,
+        func: &dyn Fn(Attribute) -> Result<Attribute, EvalError>,
+    ) -> Result<Self, EvalError> {
+        Ok(Self::attributes(
+            self.to_attributes()
+                .into_iter()
+                .map(|a| func(a))
+                .collect::<Result<Vec<Attribute>, EvalError>>()?,
+        )
+        .retype())
+    }
     /// Retype the attributes series into a type if homogeneous
     pub fn retype(self) -> Self {
         match &self {

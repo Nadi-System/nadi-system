@@ -1,5 +1,5 @@
 use crate::attrs::{AttrMap, Attribute, FromAttribute, HasAttributes};
-use crate::functions::FunctionCtx;
+use crate::functions::{FunctionCtx, FunctionRet};
 use crate::network::Propagation;
 use crate::node::Node;
 use crate::tasks::{
@@ -1706,12 +1706,49 @@ impl SeriesExpression {
                 _ => return Err(EvalErrorType::NotAnArray.no_pos()),
             },
             Self::Series(ty, sr) => get_series(ft, ctx, node, ty, sr),
-            // Self::SeriesMap(ty, sr, func) => {
-            // 	let sr = get_series(ft, ctx, node, ty, sr)?;
-            // 	let func = todo!(); // generate a Fn(Attribute) -> Attribute function
-            // 	sr.map_values(func) // should give Result<Series, EvalError>
-            // }
-            _ => Err(EvalErrorType::LogicalError("Not implemented").no_pos()),
+            Self::SeriesMap(ty, sr, func) => {
+                let sr = get_series(ft, ctx, node, ty, sr)?;
+                match func {
+                    MapFunction::Defn(udf) => {
+                        let func_call = |arg| {
+                            udf.eval_val(
+                                ctx,
+                                FunctionCtx::from_arg_kwarg(vec![arg], HashMap::new()),
+                            )
+                        };
+                        sr.map_values(&func_call)
+                    }
+                    MapFunction::Pointer(name) => {
+                        let func_call = |arg| {
+                            let fctx = FunctionCtx::from_arg_kwarg(vec![arg], HashMap::new());
+                            match ctx.udf(&name).cloned() {
+                                // priority for the locally defined function
+                                Some(func) => func.eval_val(ctx, fctx),
+                                _ => match ctx.functions.env(&name) {
+                                    Some(f) => match f.call(&fctx) {
+                                        FunctionRet::None => {
+                                            Err(EvalErrorType::NoReturnValue(name.to_string())
+                                                .no_pos())
+                                        }
+                                        FunctionRet::Some(val) => Ok(val),
+                                        FunctionRet::Error(e) => Err(EvalErrorType::FunctionError(
+                                            name.to_string(),
+                                            e.to_string(),
+                                        )
+                                        .no_pos()),
+                                    },
+                                    None => Err(EvalErrorType::FunctionNotFound(
+                                        Some(FunctionType::Env),
+                                        name.to_string(),
+                                    )
+                                    .no_pos()),
+                                },
+                            }
+                        };
+                        sr.map_values(&func_call)
+                    }
+                }
+            }
         }
     }
 }
