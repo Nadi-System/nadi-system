@@ -7,7 +7,7 @@ use crate::{
     parser::{
         components::*,
         errors::MatchErr,
-        expressions::{complete_expression, expression_group, function_def},
+        expressions::{complete_expression, expression_group, function_def, variable_type},
         network::{node_name, str_path},
         tokenizer::{RawToken, Token},
         ParseError, ParseErrorType,
@@ -262,13 +262,22 @@ pub fn get_series_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, GetSeri
     ))
 }
 
+pub fn series_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, SeriesExpression> {
+    alt((
+        map(complete_expression, SeriesExpression::AttrExpr),
+        map(
+            tuple((opt(variable_type), dollar, variable)),
+            |(vt, _, name)| SeriesExpression::Series(vt, name.content.to_string()),
+        ),
+    ))(inp)
+}
 pub fn set_series_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, SetSeriesTask> {
-    let (rest, (ty, propagation, (_, ts, name), _, expr)) = tuple((
+    let (rest, (ty, propagation, (_, ts, name), _, expression)) = tuple((
         function_type,
         propagation,
         tuple((dollar, opt(dollar), variable)),
         maybe_space(assignment),
-        maybe_space(complete_expression),
+        maybe_space(series_expression),
     ))(inp)?;
 
     match (&ty, propagation.is_some()) {
@@ -287,7 +296,7 @@ pub fn set_series_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, SetSeri
             timeseries: ts.is_some(),
             name: name.content.to_string(),
             propagation,
-            expression: SeriesExpression::AttrExpr(expr),
+            expression,
             start: inp.position(),
         },
     ))

@@ -186,10 +186,6 @@ impl TimeSeries {
         self.values.is_empty()
     }
 
-    // pub fn values_as_attributes(&self) -> Vec<Attribute> {
-    //     self.values.clone().to_attributes()
-    // }
-
     pub fn series(&self) -> &Series {
         &self.values
     }

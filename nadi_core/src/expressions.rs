@@ -6,7 +6,7 @@ use crate::tasks::{
     AttrTask, CondTask, EvalTask, FunctionType, TaskContext, TaskKeyword, WhileTask,
 };
 use crate::template::Template;
-use crate::timeseries::{CompleteSeries, Series};
+use crate::timeseries::{CompleteSeries, HasSeries, Series};
 use crate::udf::UserFunction;
 use std::collections::HashMap;
 
@@ -1705,7 +1705,42 @@ impl SeriesExpression {
                 Attribute::Array(ar) => Ok(CompleteSeries::from(ar).retype().into()),
                 _ => return Err(EvalErrorType::NotAnArray.no_pos()),
             },
+            Self::Series(ty, sr) => get_series(ft, ctx, node, ty, sr),
+            // Self::SeriesMap(ty, sr, func) => {
+            // 	let sr = get_series(ft, ctx, node, ty, sr)?;
+            // 	let func = todo!(); // generate a Fn(Attribute) -> Attribute function
+            // 	sr.map_values(func) // should give Result<Series, EvalError>
+            // }
             _ => Err(EvalErrorType::LogicalError("Not implemented").no_pos()),
         }
+    }
+}
+
+fn get_series(
+    ft: &FunctionType,
+    ctx: &TaskContext,
+    node: Option<&Node>,
+    vt: &Option<VarType>,
+    name: &str,
+) -> Result<Series, EvalError> {
+    // We need to handle nodes, inputs, etc later (as zipped ts?)
+    let ft = vt.as_ref().map(|v| v.to_functiontype()).unwrap_or(ft);
+    match ft {
+        FunctionType::Env => Err(EvalErrorType::LogicalError("Not implemented").no_pos()),
+        FunctionType::Node => match node {
+            Some(n) => n
+                .try_lock()
+                .into_option()
+                .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
+                .try_series(name)
+                .map_err(|e| EvalErrorType::SeriesNotFound(e).no_pos())
+                .cloned(),
+            None => Err(EvalErrorType::InvalidOperation.no_pos()),
+        },
+        FunctionType::Network => ctx
+            .network
+            .try_series(name)
+            .map_err(|e| EvalErrorType::SeriesNotFound(e).no_pos())
+            .cloned(),
     }
 }
