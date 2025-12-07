@@ -116,17 +116,20 @@ And please refer to [architecture.md](./architecture.md) file to read how the co
   + None,
   + Error, etc.
 - [X] Implement timeseries data types with gaps
-- [ ] Add syntax to access timeseries data directly,
+- [x] Add syntax to access timeseries data directly,
   + `$` for series, and `$$` for timeseries might work, with `$` also
     falling back to get series data without time from timeseries, if
     there is no series with that name.
   + Also means we have to add a generic data type for task system, enum of (Attribute, Series, Timeseries, etc)
 - [X] Only internal plugins can be run without dot syntax. All external plugins need the plugin name to access the functions.
-- [ ] Add user defined functions. Maybe only environmental function for now? See if node/network function can be done easily.
-- [ ] Add for loop, for looping through Array and Table Keys.
-- [ ] Implement `.0` type syntax for array member access like with attrmap member access.
-- [ ] Write a `nadi-server` CLI tool, that opens a server. It opens up an API where users can send tasks to run, and it can return the output from that. It should have `mutable` and `immutable` option. In the immutable option users can only run immutable functions.
+- [X] Add user defined functions. Maybe only environmental function for now? See if node/network function can be done easily.
+  - added env functions; must return values, need to make it also not return values
+- [x] Add for loop, for looping through Array and Table Keys.
+  - Added only loop for arrays, not for table keys.
+- [x] Implement `.0` type syntax for array member access like with attrmap member access.
+- [x] Write a `nadi-server` CLI tool, that opens a server. It opens up an API where users can send tasks to run, and it can return the output from that.
+- [ ] Server should have `mutable` and `immutable` option. In the immutable option users can only run immutable functions.
 - [ ] Write editor modes for nadi, maybe using `lsp` so users can expand it to their editors with minimal work.
   - Currently, besides the NADI IDE, there are some syntax highlight available for web (through highlight.js), and sublime syntax files in `extra/syntax-highlight` directory.
   - There is no intelligent analysis of scripts, you can only run it to get errors. Better error handling while parsing, and then 
-
+- [ ] Write UserFunction to return None value, maybe add None/Null type for attribute as well. The functions that do not return values can be made to return Null if we need a value, Null can be used to introduce Gaps in the Series values. This might complicate parsing by having to have different parsers for null accepted and null not accepted variations for the attributes (and everything that uses them). Could be solved by just adding null everywhere and then for attributes parsing (.toml) erroring out if Null is found in any steps (or we can diverse from TOML standard because it can't read all types of TOML strings anyway). We could just make sure the output TOML from NADI is compatible (not write null; but how to avoid that if nulls are nested in other attributes?).
