@@ -643,7 +643,7 @@ impl MaskedSeries {
             ),
             Self::Strings(v) => Box::new(
                 v.iter()
-                    .map(|v| v.as_ref().map(ToString::to_string).unwrap_or_default()),
+                    .map(|v| v.as_ref().map(|s| format!("{s:?}")).unwrap_or_default()),
             ),
             Self::Booleans(v) => Box::new(
                 v.iter()
@@ -879,7 +879,7 @@ impl CompleteSeries {
         match self {
             Self::Floats(v) => Box::new(v.iter().map(ToString::to_string)),
             Self::Integers(v) => Box::new(v.iter().map(ToString::to_string)),
-            Self::Strings(v) => Box::new(v.iter().map(ToString::to_string)),
+            Self::Strings(v) => Box::new(v.iter().map(|s| format!("{s:?}"))),
             Self::Booleans(v) => Box::new(v.iter().map(ToString::to_string)),
             Self::Dates(v) => Box::new(v.iter().map(ToString::to_string)),
             Self::Times(v) => Box::new(v.iter().map(ToString::to_string)),

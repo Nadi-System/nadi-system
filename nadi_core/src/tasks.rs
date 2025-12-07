@@ -2,6 +2,7 @@ use crate::expressions::{EvalError, EvalErrorType, Expression, SeriesExpression,
 use crate::functions::{FuncArg, FuncArgType, NadiFunctions};
 use crate::network::PropCondition;
 use crate::prelude::*;
+use crate::timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap};
 use crate::udf::UserFunction;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -90,13 +91,47 @@ pub struct TaskContext {
     pub functions: NadiFunctions,
     /// User defined functions (only env functions with single expression now)
     pub udf: HashMap<String, UserFunction>,
-    /// environment variables
+    /// Environment variables
     pub env: AttrMap,
+    /// Environment Series
+    pub(crate) series: SeriesMap,
+    /// Environment TimeSeries
+    pub(crate) timeseries: TsMap,
     /// tasks to run after every assign execution
     pub hook: Vec<Task>,
     /// channel for sending messages
     pub channel: Sender<TaskMessage>,
     // TODO Channel to tell taskcontext to abort/cancel the current run. When it takes a long time, like while loop/ node functions can end in the middle.
+}
+
+impl HasAttributes for TaskContext {
+    fn attr_map(&self) -> &AttrMap {
+        &self.env
+    }
+
+    fn attr_map_mut(&mut self) -> &mut AttrMap {
+        &mut self.env
+    }
+}
+
+impl HasSeries for TaskContext {
+    fn series_map(&self) -> &SeriesMap {
+        &self.series
+    }
+
+    fn series_map_mut(&mut self) -> &mut SeriesMap {
+        &mut self.series
+    }
+}
+
+impl HasTimeSeries for TaskContext {
+    fn ts_map(&self) -> &TsMap {
+        &self.timeseries
+    }
+
+    fn ts_map_mut(&mut self) -> &mut TsMap {
+        &mut self.timeseries
+    }
 }
 
 impl TaskContext {
@@ -107,6 +142,8 @@ impl TaskContext {
             udf: HashMap::new(),
             env: AttrMap::new(),
             hook: Vec::new(),
+            series: SeriesMap::new(),
+            timeseries: TsMap::new(),
             channel,
         }
     }
@@ -114,6 +151,8 @@ impl TaskContext {
     pub fn clear(&mut self) {
         self.network = Network::default();
         self.env = AttrMap::new();
+        self.series = SeriesMap::new();
+        self.timeseries = TsMap::new();
         self.udf = HashMap::new();
         self.hook = Vec::new();
     }
@@ -277,9 +316,10 @@ impl TaskContext {
 
     pub fn get_series_task(&self, gst: GetSeriesTask) -> Result<String, EvalError> {
         match (gst.timeseries, gst.ty) {
-            (_, FunctionType::Env) => {
-                Err(EvalErrorType::LogicalError("Not implemented").pos(gst.start))
-            }
+            (_, FunctionType::Env) => self
+                .try_series(&gst.name)
+                .map(|sr| self.show_sr(sr))
+                .map_err(|e| EvalErrorType::SeriesNotFound(e).pos(gst.start)),
             (ts, FunctionType::Node) => {
                 let nodes = self.propagation(gst.propagation.clone().unwrap_or_default())?;
                 let trunc = nodes.len() > MAX_NODES_LENGTH;
@@ -322,7 +362,12 @@ impl TaskContext {
     pub fn set_series_task(&mut self, sst: SetSeriesTask) -> Result<(), EvalError> {
         match (sst.timeseries, sst.ty) {
             (_, FunctionType::Env) => {
-                Err(EvalErrorType::LogicalError("Not implemented").pos(sst.start))
+                let series =
+                    sst.expression
+                        .resolve_eval_value(&FunctionType::Env, self, None, None)?;
+
+                self.set_series(&sst.name, series);
+                Ok(())
             }
             (false, FunctionType::Node) => {
                 let nodes = self.propagation(sst.propagation.clone().unwrap_or_default())?;

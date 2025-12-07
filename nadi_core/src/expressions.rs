@@ -119,6 +119,8 @@ pub enum EvalErrorType {
     InvalidReturn(Attribute),
     /// Node with the name doesn't exit
     NodeNotFound(String),
+    /// Node functions run on a non-node context
+    NotANodeContext,
     /// Given Nodes are not connected with a path
     PathNotFound(String, String, String),
     /// Attribute with name doesn't exist
@@ -196,6 +198,7 @@ impl EvalErrorType {
             // if return is inside a function it is caught and the value is returned
             Self::InvalidReturn(_) => "Return statement outside of function",
             Self::NodeNotFound(n) => return format!("Node: {n:?} not found"),
+            Self::NotANodeContext => "Not inside a node context, cannot use node attributes",
             Self::PathNotFound(s, e, t) => {
                 return format!("No path found between Nodes {s:?} and {t:?}, path ends at {e:?}");
             }
@@ -1760,24 +1763,57 @@ fn get_series(
     vt: &Option<VarType>,
     name: &str,
 ) -> Result<Series, EvalError> {
-    // We need to handle nodes, inputs, etc later (as zipped ts?)
-    let ft = vt.as_ref().map(|v| v.to_functiontype()).unwrap_or(ft);
-    match ft {
-        FunctionType::Env => Err(EvalErrorType::LogicalError("Not implemented").no_pos()),
-        FunctionType::Node => match node {
-            Some(n) => n
-                .try_lock()
-                .into_option()
-                .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
-                .try_series(name)
-                .map_err(|e| EvalErrorType::SeriesNotFound(e).no_pos())
-                .cloned(),
+    match (vt, ft) {
+        (None, FunctionType::Env) | (Some(VarType::Env), _) => ctx
+            .try_series(name)
+            .map_err(|e| EvalErrorType::SeriesNotFound(e).no_pos())
+            .cloned(),
+        // Node function, or node vartype without node name
+        (None, FunctionType::Node) | (Some(VarType::Node(None)), _) => match node {
+            Some(n) => get_node_series(n, name),
             None => Err(EvalErrorType::InvalidOperation.no_pos()),
         },
-        FunctionType::Network => ctx
+        // Node name given explicitely
+        (Some(VarType::Node(Some(node))), _) => match ctx.network.node_by_name(node) {
+            Some(n) => get_node_series(n, name),
+            None => Err(EvalErrorType::NodeNotFound(node.to_string()).no_pos()),
+        },
+        // (Some(VarType::Inputs), _) => match ctx.network.outlet() {
+        //     Some(o) => get_node_series(o, name),
+        //     None => Err(EvalErrorType::NoRootNode.no_pos()),
+        // },
+        (Some(VarType::Output), _) => match node
+            .ok_or(EvalErrorType::NotANodeContext.no_pos())?
+            .try_lock()
+            .into_option()
+            .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
+            .output()
+            .into_option()
+        {
+            Some(o) => get_node_series(o, name),
+            None => Err(EvalErrorType::NoRootNode.no_pos()),
+        },
+        (Some(VarType::Root), _) => match ctx.network.outlet() {
+            Some(o) => get_node_series(o, name),
+            None => Err(EvalErrorType::NoRootNode.no_pos()),
+        },
+        (None, FunctionType::Network) | (Some(VarType::Network), _) => ctx
             .network
             .try_series(name)
             .map_err(|e| EvalErrorType::SeriesNotFound(e).no_pos())
             .cloned(),
+        _ => Err(
+            EvalErrorType::LogicalError("Reading Series are not implemented for this type")
+                .no_pos(),
+        ),
     }
+}
+
+fn get_node_series(n: &Node, name: &str) -> Result<Series, EvalError> {
+    n.try_lock()
+        .into_option()
+        .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
+        .try_series(name)
+        .map_err(|e| EvalErrorType::SeriesNotFound(e).no_pos())
+        .cloned()
 }
