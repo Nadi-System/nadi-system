@@ -1,7 +1,7 @@
 use crate::attrs::{type_name, Attribute, Date, DateTime, FromAttribute, Time};
 use crate::datafill::DataImputeError;
 use crate::expressions::{EvalError, EvalErrorType};
-use crate::tasks::TaskContext;
+use crate::tasks::{TaskContext, TaskCtxConsts};
 
 use abi_stable::{
     external_types::RMutex,
@@ -238,9 +238,6 @@ pub enum Series {
     Complete(CompleteSeries),
 }
 
-// TODO move these things to task context so people can override
-pub const SERIES_MAX_SHOW_LEN: usize = 10;
-
 impl TaskContext {
     pub fn show_ts(&self, ts: &TimeSeries) -> String {
         let tl = ts.timeline.lock();
@@ -251,6 +248,7 @@ impl TaskContext {
             self.show_sr(&ts.values)
         )
     }
+
     pub fn show_sr(&self, sr: &Series) -> String {
         let (pre, len, vals) = match sr {
             Series::Masked(ms, RSome(fv)) => (
@@ -279,11 +277,11 @@ impl TaskContext {
                 cs.str_values(),
             ),
         };
-
-        if len > SERIES_MAX_SHOW_LEN {
+        let max_series_len = TaskCtxConsts::max_series_length(self);
+        if len > max_series_len {
             format!(
                 "{pre} [{}, ...]",
-                vals.take(SERIES_MAX_SHOW_LEN)
+                vals.take(max_series_len)
                     .collect::<Vec<String>>()
                     .join(", ")
             )

@@ -22,8 +22,40 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 //     FormattedText(String),
 // }
 
-// TODO: put this and other constants in the TaskContext env variables, write a constructor that loads these variables from the env_var (with NADI_ prefix), or puts the default values. Then while using them load it from the TaskContext or use default value (just in case user deletes them or changes data type)
-pub const MAX_NODES_LENGTH: usize = 50;
+/// Some constants that are similar to system variables
+///
+/// These constants decide how certain things are shown in the task
+/// context, users can set the values to these constants to change how
+/// task system acts. The macro rules make it easy to add more
+/// variables for future.
+pub struct TaskCtxConsts;
+
+macro_rules! task_ctx_consts {
+    ($($func:ident, $name:literal, $t:ty => $value:literal);+ $(;)*) => {
+        impl TaskCtxConsts {
+	    pub fn init() -> AttrMap {
+		let mut env = AttrMap::new();
+		$(
+		    env.set_attr($name, $value.into());
+		)+
+		    env
+	    }
+
+            $(
+		pub fn $func(ctx: &TaskContext) -> $t {
+                ctx.env.try_attr($name).unwrap_or($value)
+		}
+	    )+
+        }
+    };
+}
+
+task_ctx_consts!(
+    max_nodes_length, "MAX_NODES_LENGTH", usize => 50;
+    max_attrs_length, "MAX_ATTRS_LENGTH", usize => 100;
+    max_attrs_depth, "MAX_ATTRS_DEPTH", usize => 10;
+    max_series_length, "MAX_SERIES_LENGTH", usize => 10;
+);
 
 /// Message that can be sent from the task
 #[derive(Debug, Clone)]
@@ -140,7 +172,7 @@ impl TaskContext {
             network: net.unwrap_or_default(),
             functions: NadiFunctions::new(),
             udf: HashMap::new(),
-            env: AttrMap::new(),
+            env: TaskCtxConsts::init(),
             hook: Vec::new(),
             series: SeriesMap::new(),
             timeseries: TsMap::new(),
@@ -150,7 +182,7 @@ impl TaskContext {
 
     pub fn clear(&mut self) {
         self.network = Network::default();
-        self.env = AttrMap::new();
+        self.env = TaskCtxConsts::init();
         self.series = SeriesMap::new();
         self.timeseries = TsMap::new();
         self.udf = HashMap::new();
@@ -227,7 +259,7 @@ impl TaskContext {
             }
             Task::Expr(expr) => expr
                 .resolve_eval(&FunctionType::Env, self, None, None)
-                .map(|a| a.map(|a| a.to_string())),
+                .map(|a| a.map(|a| self.show_attr(&a, 0))),
             Task::Hook(tasks) => {
                 self.hook = tasks;
                 Ok(None)
@@ -322,10 +354,11 @@ impl TaskContext {
                 .map_err(|e| EvalErrorType::SeriesNotFound(e).pos(gst.start)),
             (ts, FunctionType::Node) => {
                 let nodes = self.propagation(gst.propagation.clone().unwrap_or_default())?;
-                let trunc = nodes.len() > MAX_NODES_LENGTH;
+                let max_nodes_len = TaskCtxConsts::max_nodes_length(self);
+                let trunc = nodes.len() > max_nodes_len;
                 let attrs = nodes
                     .iter()
-                    .take(MAX_NODES_LENGTH)
+                    .take(max_nodes_len)
                     .map(|n| {
                         let n = n.lock();
                         format!(
@@ -418,7 +451,11 @@ impl TaskContext {
                             if task.silent {
                                 Ok(None)
                             } else {
-                                Ok(Some(format!("{} -> {}", old.to_string(), a.to_string())))
+                                Ok(Some(format!(
+                                    "{} -> {}",
+                                    self.show_attr(&old, 0),
+                                    self.show_attr(&a, 0)
+                                )))
                             }
                         } else {
                             Ok(None)
@@ -426,7 +463,7 @@ impl TaskContext {
                     } else if task.silent {
                         Ok(None)
                     } else {
-                        Ok(Some(a.to_string()))
+                        Ok(Some(self.show_attr(&a, 0)))
                     }
                 }
                 None => Ok(None),
@@ -434,7 +471,8 @@ impl TaskContext {
             FunctionType::Node => {
                 let nodes = self.propagation(task.propagation.unwrap_or_default())?;
                 let total = nodes.len();
-                let trunc = total > MAX_NODES_LENGTH;
+                let max_nodes_len = TaskCtxConsts::max_nodes_length(self);
+                let trunc = total > max_nodes_len;
                 let mut progress = 0;
                 let mut attrs = Vec::with_capacity(total);
                 for n in nodes {
@@ -460,7 +498,8 @@ impl TaskContext {
                         progress,
                         total,
                     ));
-                    let update = !task.silent & (progress < MAX_NODES_LENGTH);
+                    // because we did progress +=1 above we need <=
+                    let update = !task.silent & (progress <= max_nodes_len);
                     if let Some(attr) = &task.attr {
                         let old = n
                             .set_attr_nested(&task.attr_pre, attr, res.clone())
@@ -470,13 +509,13 @@ impl TaskContext {
                                 attrs.push(format!(
                                     "  {} = {} -> {}",
                                     n.name(),
-                                    o.to_string(),
-                                    res.to_string()
+                                    self.show_attr(&o, 0),
+                                    self.show_attr(&res, 0)
                                 ));
                             }
                         }
                     } else if update {
-                        attrs.push(format!("  {} = {}", n.name(), res.to_string()));
+                        attrs.push(format!("  {} = {}", n.name(), self.show_attr(&res, 0)));
                     }
                 }
                 if task.silent || attrs.is_empty() {
@@ -505,7 +544,11 @@ impl TaskContext {
                                 if task.silent {
                                     Ok(None)
                                 } else {
-                                    Ok(Some(format!("{} -> {}", old.to_string(), a.to_string())))
+                                    Ok(Some(format!(
+                                        "{} -> {}",
+                                        self.show_attr(&old, 0),
+                                        self.show_attr(&a, 0)
+                                    )))
                                 }
                             } else {
                                 Ok(None)
@@ -513,7 +556,7 @@ impl TaskContext {
                         } else if task.silent {
                             Ok(None)
                         } else {
-                            Ok(Some(a.to_string()))
+                            Ok(Some(self.show_attr(&a, 0)))
                         }
                     }
                     None => Ok(None),
@@ -529,14 +572,15 @@ impl TaskContext {
                 .env
                 .attr_nested(&task.attr_pre, &task.attr)
                 .map_err(|e| EvalErrorType::AttributeError(e).pos(task.position()))?
-                .map(|a| a.to_string())
+                .map(|a| self.show_attr(a, 0))
                 .ok_or(EvalErrorType::AttributeNotFound.pos(task.position())),
             FunctionType::Node => {
                 let nodes = self.propagation(task.propagation.clone().unwrap_or_default())?;
-                let trunc = nodes.len() > MAX_NODES_LENGTH;
+                let max_nodes_len = TaskCtxConsts::max_nodes_length(self);
+                let trunc = nodes.len() > max_nodes_len;
                 let attrs = nodes
                     .iter()
-                    .take(MAX_NODES_LENGTH)
+                    .take(max_nodes_len)
                     .map(|n| {
                         let n = n.lock();
                         Ok(format!(
@@ -548,7 +592,7 @@ impl TaskContext {
                                         .pos(task.position())
                                 })?
                             {
-                                a.to_string()
+                                self.show_attr(a, 0)
                             } else {
                                 "<None>".to_string()
                             }
@@ -565,7 +609,7 @@ impl TaskContext {
                 .network
                 .attr_nested(&task.attr_pre, &task.attr)
                 .map_err(|e| EvalErrorType::AttributeError(e).pos(task.position()))?
-                .map(|a| a.to_string())
+                .map(|a| self.show_attr(a, 0))
                 .ok_or(EvalErrorType::AttributeNotFound.pos(task.position())),
         }
     }

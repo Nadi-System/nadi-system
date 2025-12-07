@@ -1,4 +1,5 @@
 use crate::expressions::EvalErrorType;
+use crate::tasks::{TaskContext, TaskCtxConsts};
 use crate::template::Template;
 use crate::valid_var;
 use abi_stable::{
@@ -261,12 +262,6 @@ impl Default for Attribute {
     }
 }
 
-// Make it read this from env variable? and also somehow changable
-// from the task context.. idk how to do the second, and a way to stop
-// the nested representation too if there is too much. We might have
-// to just make a new trait for all the value's representation.
-pub const MAX_ATTRS_LENGTH: usize = 100;
-
 impl std::fmt::Display for Attribute {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
@@ -279,25 +274,20 @@ impl std::fmt::Display for Attribute {
             Self::Time(v) => write!(f, "{v}"),
             Self::DateTime(v) => write!(f, "{v}"),
             Self::Array(v) => {
-                let trunc = v.len() > MAX_ATTRS_LENGTH;
                 write!(
                     f,
-                    "[{}{}]",
+                    "[{}]",
                     v.iter()
-                        .take(MAX_ATTRS_LENGTH)
                         .map(|a| a.to_string())
                         .collect::<Vec<String>>()
                         .join(", "),
-                    if trunc { "...truncated " } else { "" }
                 )
             }
             Self::Table(v) => {
-                let trunc = v.len() > MAX_ATTRS_LENGTH;
                 write!(
                     f,
-                    "{{{}{}}}",
+                    "{{{}}}",
                     v.iter()
-                        .take(MAX_ATTRS_LENGTH)
                         .map(|a| {
                             if valid_var(a.0) {
                                 format!("{} = {}", a.0, a.1.to_string())
@@ -307,7 +297,60 @@ impl std::fmt::Display for Attribute {
                         })
                         .collect::<Vec<String>>()
                         .join(", "),
-                    if trunc { "...truncated " } else { "" }
+                )
+            }
+        }
+    }
+}
+
+impl TaskContext {
+    pub fn show_attr(&self, attr: &Attribute, depth: usize) -> String {
+        let max_attrs_depth = TaskCtxConsts::max_attrs_depth(self);
+        match attr {
+            Attribute::Bool(v) => format!("{v}"),
+            Attribute::String(v) => format!("{v:?}"),
+            Attribute::Integer(v) => format!("{v}"),
+            // lower for nan and inf
+            Attribute::Float(v) => format!("{}", v.to_string().to_lowercase()),
+            Attribute::Date(v) => format!("{v}"),
+            Attribute::Time(v) => format!("{v}"),
+            Attribute::DateTime(v) => format!("{v}"),
+            Attribute::Array(v) => {
+                if depth > max_attrs_depth {
+                    return "[...]".to_string();
+                }
+                let max_attr_len = TaskCtxConsts::max_attrs_length(self);
+                let trunc = v.len() > max_attr_len;
+                format!(
+                    "[{}{}]",
+                    v.iter()
+                        .take(max_attr_len)
+                        .map(|a| self.show_attr(a, depth + 1))
+                        .collect::<Vec<String>>()
+                        .join(", "),
+                    if trunc { ", ... " } else { "" }
+                )
+            }
+            Attribute::Table(v) => {
+                if depth > max_attrs_depth {
+                    return "{...}".to_string();
+                }
+                let max_attr_len = TaskCtxConsts::max_attrs_length(self);
+                let trunc = v.len() > max_attr_len;
+                format!(
+                    "{{{}{}}}",
+                    v.iter()
+                        .take(max_attr_len)
+                        .map(|a| {
+                            if valid_var(a.0) {
+                                format!("{} = {}", a.0, self.show_attr(a.1, depth + 1))
+                            } else {
+                                format!("\"{}\" = {}", a.0, self.show_attr(a.1, depth + 1))
+                            }
+                        })
+                        .collect::<Vec<String>>()
+                        .join(", "),
+                    if trunc { ", ... " } else { "" }
                 )
             }
         }
