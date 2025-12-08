@@ -96,7 +96,7 @@ mod ts {
     # TODO
     - save to file instead of showing with `outfile: Option<PathBuf>`
     */
-    #[node_func(header = true)]
+    #[node_func(header = true, missing = "")]
     fn ts_print(
         node: &NodeInner,
         /// name of the timeseries
@@ -105,9 +105,11 @@ mod ts {
         header: bool,
         /// number of head rows to show (all by default)
         head: Option<i64>,
+        /// Show missing values as this string
+        missing: String,
     ) -> Result<(), RString> {
         if let Some(ts) = node.ts(name) {
-            let values = ts.str_values();
+            let values = ts.str_values(&missing);
             if header {
                 println!("time,{name}");
             }
@@ -132,7 +134,7 @@ mod ts {
     /// TODO: error/not on unqual length
     /// TODO: error/not on no timeseries, etc...
     /// TODO: output to `file: PathBuf`
-    #[network_func]
+    #[network_func(missing = "")]
     fn ts_print_csv(
         net: &Network,
         /// Name of the timeseries to save
@@ -141,6 +143,8 @@ mod ts {
         head: Option<usize>,
         /// Include only these nodes (all by default)
         nodes: Option<HashSet<String>>,
+        /// Show missing values as this string
+        missing: String,
     ) -> anyhow::Result<()> {
         let mut ts_nodes = vec![];
         let mut values = vec![];
@@ -162,7 +166,7 @@ mod ts {
                     timeline = Some(ts.timeline().clone());
                 }
                 ts_nodes.push(node.name().to_string());
-                values.push(ts.str_values().collect::<Vec<String>>());
+                values.push(ts.str_values(&missing).collect::<Vec<String>>());
             }
         }
         // export to CSV
@@ -182,7 +186,7 @@ mod ts {
     }
 
     /// Write the given nodes to csv with given attributes and series
-    #[network_func]
+    #[network_func(missing = "")]
     fn series_csv(
         net: &Network,
         filter: Vec<bool>,
@@ -192,6 +196,8 @@ mod ts {
         attrs: Vec<String>,
         /// list of series to write
         series: Vec<String>,
+        /// Show missing values as this string
+        missing: String,
     ) -> anyhow::Result<()> {
         let f = File::create(&outfile)?;
         let mut w = BufWriter::new(f);
@@ -214,7 +220,7 @@ mod ts {
                 .iter()
                 .map(|a| {
                     node.series(a)
-                        .map(|s| s.str_values().collect())
+                        .map(|s| s.str_values(&missing).collect())
                         .unwrap_or_default()
                 })
                 .collect();

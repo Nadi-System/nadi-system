@@ -199,8 +199,8 @@ impl TimeSeries {
         FromSeries::from_series(&self.values)
     }
 
-    pub fn str_values<'a>(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
-        self.values.str_values()
+    pub fn str_values<'b, 'a: 'b>(&'a self, na: &'b str) -> Box<dyn Iterator<Item = String> + 'b> {
+        self.values.str_values(na)
     }
 
     pub fn values_mut<'a, T: FromSeries<'a>>(&'a mut self) -> Option<&'a mut [T]> {
@@ -250,6 +250,7 @@ impl TaskContext {
     }
 
     pub fn show_sr(&self, sr: &Series) -> String {
+        let na = TaskCtxConsts::series_show_na_as(self);
         let (pre, len, vals) = match sr {
             Series::Masked(ms, RSome(fv)) => (
                 format!(
@@ -259,7 +260,7 @@ impl TaskContext {
                     ms.len_valid()
                 ),
                 ms.len(),
-                ms.str_values(),
+                ms.str_values(&na),
             ),
             Series::Masked(ms, RNone) => (
                 format!(
@@ -269,7 +270,7 @@ impl TaskContext {
                     ms.len_valid()
                 ),
                 ms.len(),
-                ms.str_values(),
+                ms.str_values(&na),
             ),
             Series::Complete(cs) => (
                 format!("Series(len: {}, dtype: {})", cs.len(), cs.type_name()),
@@ -379,9 +380,9 @@ impl Series {
         CompleteSeries::from_attr(vals, dtype).map(Self::Complete)
     }
 
-    pub fn str_values<'a>(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
+    pub fn str_values<'b, 'a: 'b>(&'a self, na: &'b str) -> Box<dyn Iterator<Item = String> + 'b> {
         match self {
-            Self::Masked(v, _) => v.str_values(),
+            Self::Masked(v, _) => v.str_values(na),
             Self::Complete(v) => v.str_values(),
         }
     }
@@ -389,11 +390,11 @@ impl Series {
     /// Map the function to the values
     pub fn map_values(
         self,
-        func: &dyn Fn(Attribute) -> Result<Attribute, EvalError>,
+        func: &dyn Fn(Attribute) -> Result<Option<Attribute>, EvalError>,
     ) -> Result<Self, EvalError> {
         match self {
             Self::Masked(v, fv) => Ok(Self::Masked(v.map_values(func)?, fv)),
-            Self::Complete(v) => v.map_values(func).map(Self::Complete),
+            Self::Complete(v) => v.map_values(func),
         }
     }
 
@@ -467,13 +468,13 @@ impl MaskedSeries {
 
     pub fn map_values(
         self,
-        func: &dyn Fn(Attribute) -> Result<Attribute, EvalError>,
+        func: &dyn Fn(Attribute) -> Result<Option<Attribute>, EvalError>,
     ) -> Result<Self, EvalError> {
         Ok(Self::attributes(
             self.to_attributes()
                 .into_iter()
                 .map(|v| match v {
-                    RSome(a) => func(a).map(RSome),
+                    RSome(a) => Ok(func(a)?.into()),
                     RNone => Ok(RNone),
                 })
                 .collect::<Result<Vec<ROption<Attribute>>, EvalError>>()?,
@@ -629,40 +630,48 @@ impl MaskedSeries {
         self.len() == 0
     }
 
-    pub fn str_values<'a>(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
+    pub fn str_values<'b, 'a: 'b>(&'a self, na: &'b str) -> Box<dyn Iterator<Item = String> + 'b> {
         match self {
-            Self::Floats(v) => Box::new(
-                v.iter()
-                    .map(|v| v.as_ref().map(ToString::to_string).unwrap_or_default()),
-            ),
-            Self::Integers(v) => Box::new(
-                v.iter()
-                    .map(|v| v.as_ref().map(ToString::to_string).unwrap_or_default()),
-            ),
-            Self::Strings(v) => Box::new(
-                v.iter()
-                    .map(|v| v.as_ref().map(|s| format!("{s:?}")).unwrap_or_default()),
-            ),
-            Self::Booleans(v) => Box::new(
-                v.iter()
-                    .map(|v| v.as_ref().map(ToString::to_string).unwrap_or_default()),
-            ),
-            Self::Dates(v) => Box::new(
-                v.iter()
-                    .map(|v| v.as_ref().map(ToString::to_string).unwrap_or_default()),
-            ),
-            Self::Times(v) => Box::new(
-                v.iter()
-                    .map(|v| v.as_ref().map(ToString::to_string).unwrap_or_default()),
-            ),
-            Self::DateTimes(v) => Box::new(
-                v.iter()
-                    .map(|v| v.as_ref().map(ToString::to_string).unwrap_or_default()),
-            ),
-            Self::Attributes(v) => Box::new(
-                v.iter()
-                    .map(|v| v.as_ref().map(ToString::to_string).unwrap_or_default()),
-            ),
+            Self::Floats(v) => Box::new(v.iter().map(|v| {
+                v.as_ref()
+                    .map(ToString::to_string)
+                    .unwrap_or(na.to_string())
+            })),
+            Self::Integers(v) => Box::new(v.iter().map(|v| {
+                v.as_ref()
+                    .map(ToString::to_string)
+                    .unwrap_or(na.to_string())
+            })),
+            Self::Strings(v) => Box::new(v.iter().map(|v| {
+                v.as_ref()
+                    .map(|s| format!("{s:?}"))
+                    .unwrap_or(na.to_string())
+            })),
+            Self::Booleans(v) => Box::new(v.iter().map(|v| {
+                v.as_ref()
+                    .map(ToString::to_string)
+                    .unwrap_or(na.to_string())
+            })),
+            Self::Dates(v) => Box::new(v.iter().map(|v| {
+                v.as_ref()
+                    .map(ToString::to_string)
+                    .unwrap_or(na.to_string())
+            })),
+            Self::Times(v) => Box::new(v.iter().map(|v| {
+                v.as_ref()
+                    .map(ToString::to_string)
+                    .unwrap_or(na.to_string())
+            })),
+            Self::DateTimes(v) => Box::new(v.iter().map(|v| {
+                v.as_ref()
+                    .map(ToString::to_string)
+                    .unwrap_or(na.to_string())
+            })),
+            Self::Attributes(v) => Box::new(v.iter().map(|v| {
+                v.as_ref()
+                    .map(ToString::to_string)
+                    .unwrap_or(na.to_string())
+            })),
         }
     }
 
@@ -925,18 +934,20 @@ impl CompleteSeries {
         Ok(sr)
     }
 
+    /// Returns Series as the function could return null, converting it to MaskedSeries
     pub fn map_values(
         self,
-        func: &dyn Fn(Attribute) -> Result<Attribute, EvalError>,
-    ) -> Result<Self, EvalError> {
-        Ok(Self::attributes(
+        func: &dyn Fn(Attribute) -> Result<Option<Attribute>, EvalError>,
+    ) -> Result<Series, EvalError> {
+        Ok(Series::from(MaskedSeries::attributes(
             self.to_attributes()
                 .into_iter()
-                .map(|a| func(a))
-                .collect::<Result<Vec<Attribute>, EvalError>>()?,
-        )
+                .map(|a| func(a).map(ROption::from))
+                .collect::<Result<Vec<ROption<Attribute>>, EvalError>>()?,
+        ))
         .retype())
     }
+
     /// Retype the attributes series into a type if homogeneous
     pub fn retype(self) -> Self {
         match &self {

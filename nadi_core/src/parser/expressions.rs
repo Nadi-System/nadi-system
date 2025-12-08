@@ -31,9 +31,10 @@ pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> 
             preceded(kw_error, after_space(string_val)),
             Expression::UserError,
         ),
-        map(preceded(kw_return, after_space(complete_expression)), |e| {
-            Expression::Return(Box::new(e))
-        }),
+        map(
+            preceded(kw_return, opt(after_space(complete_expression))),
+            |e| Expression::Return(e.map(Box::new)),
+        ),
     ))(inp)
 }
 
@@ -408,7 +409,7 @@ pub fn function_call<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionC
 }
 
 pub fn local_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, LocalExpr> {
-    let (rest, (var, expr, _)) = tuple((
+    let (rest, (var, expr, sc)) = tuple((
         opt(terminated(variable, maybe_space(assignment))),
         maybe_space(complete_expression),
         opt(semicolon),
@@ -416,8 +417,8 @@ pub fn local_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, LocalExpr> {
     Ok((
         rest,
         match var {
-            Some(v) => LocalExpr::Assign(v.content.to_string(), expr),
-            None => LocalExpr::Expr(expr),
+            Some(v) => LocalExpr::Assign(v.content.to_string(), expr, sc.is_some()),
+            None => LocalExpr::Expr(expr, sc.is_some()),
         },
     ))
 }
@@ -449,13 +450,14 @@ pub fn function_def<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, UserFuncti
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::attrs::{AttrMap, Attribute, HasAttributes};
+    use crate::attrs::{Attribute, HasAttributes};
     use crate::expressions::EvalErrorType;
     use crate::functions::NadiFunctions;
     use crate::network::Network;
     use crate::parser::tokenizer::get_tokens;
     use crate::tasks::FunctionType;
-    use crate::tasks::TaskContext;
+    use crate::tasks::{TaskContext, TaskCtxConsts};
+    use crate::timeseries::{SeriesMap, TsMap};
     use rstest::{fixture, rstest};
     use std::collections::HashMap;
     use std::sync::OnceLock;
@@ -476,7 +478,9 @@ mod tests {
             network: Network::default(),
             functions,
             udf: HashMap::new(),
-            env: AttrMap::new(),
+            env: TaskCtxConsts::init(),
+            series: SeriesMap::new(),
+            timeseries: TsMap::new(),
             hook: Vec::new(),
             channel: sender,
         };

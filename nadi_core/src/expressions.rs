@@ -1,5 +1,5 @@
 use crate::attrs::{AttrMap, Attribute, FromAttribute, HasAttributes};
-use crate::functions::{FunctionCtx, FunctionRet};
+use crate::functions::FunctionCtx;
 use crate::network::Propagation;
 use crate::node::Node;
 use crate::tasks::{
@@ -116,7 +116,7 @@ pub enum EvalErrorType {
     /// Function didn't return a value to be used in expression
     NoReturnValue(String),
     /// Return Statement that returns a value, but if it's outside function this is error
-    InvalidReturn(Attribute),
+    InvalidReturn(Option<Attribute>),
     /// Node with the name doesn't exit
     NodeNotFound(String),
     /// Node functions run on a non-node context
@@ -273,7 +273,7 @@ pub enum Expression {
         Option<Box<Expression>>,
     ),
     /// Return the value if inside a function
-    Return(Box<Expression>),
+    Return(Option<Box<Expression>>),
 }
 
 impl std::fmt::Display for Expression {
@@ -346,7 +346,8 @@ impl std::fmt::Display for Expression {
                     Ok(())
                 }
             }
-            Self::Return(expr) => write!(f, "return {expr}"),
+            Self::Return(None) => write!(f, "return"),
+            Self::Return(Some(expr)) => write!(f, "return {expr}"),
         }
     }
 }
@@ -395,7 +396,8 @@ impl Expression {
             }
             Self::TryCatch(e1, e2) => e1.has_variables() || e2.has_variables(),
             Self::ForEachIf(..) => true, // TODO: it will have local var, so we need to test if it has var by getting a list of variables.
-            Self::Return(expr) => expr.has_variables(),
+            Self::Return(None) => false,
+            Self::Return(Some(expr)) => expr.has_variables(),
         }
     }
 
@@ -462,7 +464,8 @@ impl Expression {
                     None
                 },
             )),
-            Self::Return(expr) => Ok(Self::Return(Box::new(expr.simplify(ft, ctx)?))),
+            Self::Return(None) => Ok(Self::Return(None)),
+            Self::Return(Some(expr)) => Ok(Self::Return(Some(Box::new(expr.simplify(ft, ctx)?)))),
         }
     }
 
@@ -633,7 +636,10 @@ impl Expression {
                 expr2.clone(),
                 cond.clone(),
             )),
-            Self::Return(expr) => Ok(Self::Return(Box::new(expr.resolve(ft, ctx, local, node)?))),
+            Self::Return(None) => Ok(Self::Return(None)),
+            Self::Return(Some(expr)) => Ok(Self::Return(Some(Box::new(
+                expr.resolve(ft, ctx, local, node)?,
+            )))),
         }
     }
 
@@ -762,13 +768,14 @@ impl Expression {
                 }
                 Ok(Attribute::Array(results.into()))
             }
-            Self::Return(expr) => {
-                let ret = expr.eval_value(ft, ctx, local, node)?;
-                // return is done through errors due to easier
-                // propagation to parent expressions. If the
-                // expression is inside a function it will be caught
-                // and returned as the result of the function
-                // evaluation
+
+            // return is done through errors due to easier propagation
+            // to parent expressions. If the expression is inside a
+            // function it will be caught and returned as the result
+            // of the function evaluation
+            Self::Return(None) => Err(EvalErrorType::InvalidReturn(None).no_pos()),
+            Self::Return(Some(expr)) => {
+                let ret = expr.eval(ft, ctx, local, node)?;
                 Err(EvalErrorType::InvalidReturn(ret).no_pos())
             }
         }
@@ -1528,7 +1535,7 @@ impl FunctionCall {
             FunctionType::Env => {
                 match tctx.udf(&self.name).cloned() {
                     // priority for the locally defined function
-                    Some(func) if ft == &FunctionType::Env => func.eval_val(tctx, fctx).map(Some),
+                    Some(func) if ft == &FunctionType::Env => func.eval(tctx, fctx),
                     _ => match tctx.functions.env(&self.name) {
                         Some(f) => f.call(&fctx).res().map_err(|s| {
                             EvalErrorType::FunctionError(self.name.to_string(), s)
@@ -1597,7 +1604,7 @@ impl FunctionCall {
         match ft {
             FunctionType::Env => match tctx.udf(&self.name).cloned() {
                 // priority for the locally defined function
-                Some(func) if ft == &FunctionType::Env => func.eval_val(tctx, fctx).map(Some),
+                Some(func) if ft == &FunctionType::Env => func.eval(tctx, fctx),
                 _ => match tctx.functions.env(&self.name) {
                     Some(f) => f.call(&fctx).res().map_err(|s| {
                         EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
@@ -1714,10 +1721,7 @@ impl SeriesExpression {
                 match func {
                     MapFunction::Defn(udf) => {
                         let func_call = |arg| {
-                            udf.eval_val(
-                                ctx,
-                                FunctionCtx::from_arg_kwarg(vec![arg], HashMap::new()),
-                            )
+                            udf.eval(ctx, FunctionCtx::from_arg_kwarg(vec![arg], HashMap::new()))
                         };
                         sr.map_values(&func_call)
                     }
@@ -1726,20 +1730,15 @@ impl SeriesExpression {
                             let fctx = FunctionCtx::from_arg_kwarg(vec![arg], HashMap::new());
                             match ctx.udf(&name).cloned() {
                                 // priority for the locally defined function
-                                Some(func) => func.eval_val(ctx, fctx),
+                                Some(func) => func.eval(ctx, fctx),
                                 _ => match ctx.functions.env(&name) {
-                                    Some(f) => match f.call(&fctx) {
-                                        FunctionRet::None => {
-                                            Err(EvalErrorType::NoReturnValue(name.to_string())
-                                                .no_pos())
-                                        }
-                                        FunctionRet::Some(val) => Ok(val),
-                                        FunctionRet::Error(e) => Err(EvalErrorType::FunctionError(
+                                    Some(f) => f.call(&fctx).res().map_err(|e| {
+                                        EvalErrorType::FunctionError(
                                             name.to_string(),
                                             e.to_string(),
                                         )
-                                        .no_pos()),
-                                    },
+                                        .no_pos()
+                                    }),
                                     None => Err(EvalErrorType::FunctionNotFound(
                                         Some(FunctionType::Env),
                                         name.to_string(),

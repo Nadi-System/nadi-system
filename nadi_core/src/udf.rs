@@ -6,15 +6,15 @@ use abi_stable::std_types::{RNone, RSome, RVec};
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum LocalExpr {
-    Expr(Expression),
-    Assign(String, Expression),
+    Expr(Expression, bool),
+    Assign(String, Expression, bool),
 }
 
 impl std::fmt::Display for LocalExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Self::Expr(e) => write!(f, "{e}"),
-            Self::Assign(v, e) => write!(f, "{v} = {e}"),
+            Self::Expr(e, b) => write!(f, "{e}{}", if *b { ";" } else { "" }),
+            Self::Assign(v, e, b) => write!(f, "{v} = {e}{}", if *b { ";" } else { "" }),
         }
     }
 }
@@ -22,15 +22,15 @@ impl std::fmt::Display for LocalExpr {
 impl LocalExpr {
     pub fn expr(&self) -> &Expression {
         match self {
-            Self::Expr(expr) => &expr,
-            Self::Assign(_, expr) => &expr,
+            Self::Expr(expr, _) => &expr,
+            Self::Assign(_, expr, _) => &expr,
         }
     }
 
     pub fn var(&self) -> Option<&str> {
         match self {
-            Self::Expr(_) => None,
-            Self::Assign(var, _) => Some(var.as_str()),
+            Self::Expr(_, _) => None,
+            Self::Assign(var, _, _) => Some(var.as_str()),
         }
     }
 
@@ -40,11 +40,25 @@ impl LocalExpr {
         ctx: &TaskContext,
     ) -> Result<Option<Attribute>, EvalError> {
         match self {
-            Self::Expr(expr) => expr.resolve_eval(&FunctionType::Env, ctx, Some(&locals), None),
-            Self::Assign(var, expr) => {
+            Self::Expr(expr, quiet) => {
+                // evaluate it even if we don't return a value because
+                // it could be a function that has some side effect
+                let res = expr.resolve_eval(&FunctionType::Env, ctx, Some(&locals), None);
+                if *quiet {
+                    Ok(None)
+                } else {
+                    res
+                }
+            }
+            Self::Assign(var, expr, quiet) => {
                 let val = expr.resolve_eval_value(&FunctionType::Env, ctx, Some(&locals), None)?;
+                let res = if *quiet {
+                    Ok(None)
+                } else {
+                    Ok(Some(val.clone()))
+                };
                 locals.insert(var.to_string().into(), val.into());
-                Ok(None)
+                res
             }
         }
     }
@@ -103,7 +117,11 @@ impl UserFunction {
         }
     }
 
-    pub fn eval_val(&self, ctx: &TaskContext, fctx: FunctionCtx) -> Result<Attribute, EvalError> {
+    pub fn eval(
+        &self,
+        ctx: &TaskContext,
+        fctx: FunctionCtx,
+    ) -> Result<Option<Attribute>, EvalError> {
         let mut locals = self.resolve_locals(ctx, fctx.args, fctx.kwargs)?;
         let mut ret_expr = None;
         for expr in &self.exprs {
@@ -111,7 +129,8 @@ impl UserFunction {
                 Ok(v) => {
                     ret_expr = v;
                 }
-                // early return is also returned as an error so it can be caught here
+                // early return is returned as an error so it can be
+                // caught here
                 Err(e) => {
                     if let EvalErrorType::InvalidReturn(val) = e.ty {
                         return Ok(val);
@@ -121,7 +140,11 @@ impl UserFunction {
                 }
             };
         }
-        ret_expr.ok_or(
+        Ok(ret_expr)
+    }
+
+    pub fn eval_val(&self, ctx: &TaskContext, fctx: FunctionCtx) -> Result<Attribute, EvalError> {
+        self.eval(ctx, fctx)?.ok_or(
             EvalErrorType::NoReturnValue(self.name.as_deref().unwrap_or("Anonymous").to_string())
                 .no_pos(),
         )

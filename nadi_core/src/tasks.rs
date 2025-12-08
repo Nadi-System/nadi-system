@@ -31,7 +31,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 pub struct TaskCtxConsts;
 
 macro_rules! task_ctx_consts {
-    ($($func:ident, $name:literal, $t:ty => $value:literal);+ $(;)*) => {
+    ($($func:ident, $name:literal, $t:ty => $value:expr);+ $(;)*) => {
         impl TaskCtxConsts {
 	    pub fn init() -> AttrMap {
 		let mut env = AttrMap::new();
@@ -55,6 +55,7 @@ task_ctx_consts!(
     max_attrs_length, "MAX_ATTRS_LENGTH", usize => 100;
     max_attrs_depth, "MAX_ATTRS_DEPTH", usize => 10;
     max_series_length, "MAX_SERIES_LENGTH", usize => 10;
+    series_show_na_as, "SERIES_SHOW_NA_AS", String => "-".to_string();
 );
 
 /// Message that can be sent from the task
