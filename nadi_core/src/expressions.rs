@@ -8,6 +8,7 @@ use crate::tasks::{
 use crate::template::Template;
 use crate::timeseries::{CompleteSeries, HasSeries, Series};
 use crate::udf::UserFunction;
+use abi_stable::std_types::RSome;
 use std::collections::HashMap;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -132,6 +133,8 @@ pub enum EvalErrorType {
     /// Index out of range for the array
     IndexError,
     // AttributeNotFound(Option<String>, String),
+    /// The node doesn't have input nodes (only used when not having inputs is a problem)
+    NoInputNodes,
     /// The node doesn't have output node
     NoOutputNode,
     /// The network doesn't have a root node
@@ -210,6 +213,7 @@ impl EvalErrorType {
             //     return format!("Node: {n:?} Attribute {var:?} not found")
             // }
             // Self::AttributeNotFound(None, var) => return format!("Attribute {var:?} not found"),
+            Self::NoInputNodes => "Node doesn't have a input nodes",
             Self::NoOutputNode => "Node doesn't have a output node",
             Self::NoRootNode => "Network doesn't have a root node",
             Self::AttributeError(s) => return format!("Attribute Error: {s}"),
@@ -1441,7 +1445,15 @@ impl FunctionCall {
         node: Option<&Node>,
     ) -> Result<Self, EvalError> {
         let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
-        let node = self.node.as_ref().or(node);
+        let node = match &self.ty {
+            // if node name is given explicitely it overrides everything
+            Some(VarType::Node(Some(n))) => Some(
+                ctx.network
+                    .node_by_name(n)
+                    .ok_or(EvalErrorType::NodeNotFound(n.to_string()).pos(self.position()))?,
+            ),
+            _ => self.node.as_ref().or(node),
+        };
         let mut args = Vec::with_capacity(self.args.len());
         for a in &self.args {
             args.push(
@@ -1721,7 +1733,13 @@ impl SeriesExpression {
                 match func {
                     MapFunction::Defn(udf) => {
                         let func_call = |arg| {
-                            udf.eval(ctx, FunctionCtx::from_arg_kwarg(vec![arg], HashMap::new()))
+                            // eval udf with node/network context
+                            udf.eval_inline(
+                                ft,
+                                ctx,
+                                FunctionCtx::from_arg_kwarg(vec![arg], HashMap::new()),
+                                node,
+                            )
                         };
                         sr.map_values(&func_call)
                     }
@@ -1729,7 +1747,7 @@ impl SeriesExpression {
                         let func_call = |arg| {
                             let fctx = FunctionCtx::from_arg_kwarg(vec![arg], HashMap::new());
                             match ctx.udf(&name).cloned() {
-                                // priority for the locally defined function
+                                // priority for the locally defined function; evaluated in local context
                                 Some(func) => func.eval(ctx, fctx),
                                 _ => match ctx.functions.env(&name) {
                                     Some(f) => f.call(&fctx).res().map_err(|e| {
@@ -1770,17 +1788,61 @@ fn get_series(
         // Node function, or node vartype without node name
         (None, FunctionType::Node) | (Some(VarType::Node(None)), _) => match node {
             Some(n) => get_node_series(n, name),
-            None => Err(EvalErrorType::InvalidOperation.no_pos()),
+            None => Err(EvalErrorType::NotANodeContext.no_pos()),
         },
         // Node name given explicitely
         (Some(VarType::Node(Some(node))), _) => match ctx.network.node_by_name(node) {
             Some(n) => get_node_series(n, name),
             None => Err(EvalErrorType::NodeNotFound(node.to_string()).no_pos()),
         },
-        // (Some(VarType::Inputs), _) => match ctx.network.outlet() {
-        //     Some(o) => get_node_series(o, name),
-        //     None => Err(EvalErrorType::NoRootNode.no_pos()),
-        // },
+        (Some(VarType::Inputs), _) => {
+            let inp_series = node
+                .ok_or(EvalErrorType::NotANodeContext.no_pos())?
+                .try_lock()
+                .into_option()
+                .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
+                .inputs()
+                .iter()
+                .map(|i| {
+                    let sr = get_node_series(i, name)?;
+                    Ok((i.lock().name().to_string(), sr))
+                })
+                .collect::<Result<Vec<(String, Series)>, EvalError>>()?;
+            let sr_lengths: Vec<usize> = inp_series.iter().map(|(_, s)| s.len()).collect();
+            if sr_lengths.is_empty() {
+                return Err(EvalErrorType::NoInputNodes.no_pos());
+            }
+            if let Some(l) = sr_lengths.iter().find(|l| **l != sr_lengths[0]) {
+                return Err(EvalErrorType::DifferentLength(sr_lengths[0], *l).no_pos());
+            }
+            let mut compl_series = Vec::with_capacity(inp_series.len());
+            let mut masked_series = Vec::with_capacity(inp_series.len());
+            for (inp, ser) in inp_series {
+                match ser {
+                    Series::Masked(ms, _) => {
+                        masked_series.push((inp, ms.to_attributes().into_iter()))
+                    }
+                    Series::Complete(cs) => {
+                        compl_series.push((inp, cs.to_attributes().into_iter()))
+                    }
+                }
+            }
+            let zipped_vals: Vec<_> = (0..sr_lengths[0])
+                .map(|_| {
+                    let mut dt = AttrMap::with_capacity(sr_lengths.len());
+                    for (i, s) in &mut compl_series {
+                        dt.insert(i.clone().into(), s.next().expect("lengths already checked"));
+                    }
+                    for (i, s) in &mut masked_series {
+                        if let RSome(val) = s.next().expect("lengths already checked") {
+                            dt.insert(i.clone().into(), val);
+                        }
+                    }
+                    Attribute::Table(dt)
+                })
+                .collect();
+            Ok(CompleteSeries::attributes(zipped_vals).into())
+        }
         (Some(VarType::Output), _) => match node
             .ok_or(EvalErrorType::NotANodeContext.no_pos())?
             .try_lock()

@@ -22,6 +22,7 @@ impl From<EvalError> for PyErr {
             EvalErrorType::AttributeNotFound => PyAttributeError::new_err(err),
             EvalErrorType::SeriesNotFound(_) => PyAttributeError::new_err(err),
             EvalErrorType::TimeSeriesNotFound(_) => PyAttributeError::new_err(err),
+            EvalErrorType::NoInputNodes => PyAttributeError::new_err(err),
             EvalErrorType::NoOutputNode => PyAttributeError::new_err(err),
             EvalErrorType::NoRootNode => PyAttributeError::new_err(err),
 

@@ -9,7 +9,7 @@ use iced::widget::{
 };
 use iced::{Element, Fill, Font, Length, Subscription, Task, Theme};
 use nadi_core::attrs::{AttrMap, HasAttributes};
-use nadi_core::parser::{ParseErrorType, highlight::NadiFileType};
+use nadi_core::parser::highlight::NadiFileType;
 use nadi_core::tasks::{Task as NadiTask, TaskContext, TaskMessage};
 use std::io::Read;
 use std::ops::Not;

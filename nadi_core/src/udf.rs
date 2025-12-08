@@ -1,6 +1,7 @@
 use crate::attrs::{AttrMap, Attribute};
 use crate::expressions::{EvalError, EvalErrorType, Expression};
 use crate::functions::FunctionCtx;
+use crate::node::Node;
 use crate::tasks::{FunctionType, TaskContext};
 use abi_stable::std_types::{RNone, RSome, RVec};
 
@@ -36,14 +37,16 @@ impl LocalExpr {
 
     pub fn eval(
         &self,
+        ft: &FunctionType,
         locals: &mut AttrMap,
         ctx: &TaskContext,
+        node: Option<&Node>,
     ) -> Result<Option<Attribute>, EvalError> {
         match self {
             Self::Expr(expr, quiet) => {
                 // evaluate it even if we don't return a value because
                 // it could be a function that has some side effect
-                let res = expr.resolve_eval(&FunctionType::Env, ctx, Some(&locals), None);
+                let res = expr.resolve_eval(ft, ctx, Some(&locals), node);
                 if *quiet {
                     Ok(None)
                 } else {
@@ -51,7 +54,7 @@ impl LocalExpr {
                 }
             }
             Self::Assign(var, expr, quiet) => {
-                let val = expr.resolve_eval_value(&FunctionType::Env, ctx, Some(&locals), None)?;
+                let val = expr.resolve_eval_value(ft, ctx, Some(&locals), node)?;
                 let res = if *quiet {
                     Ok(None)
                 } else {
@@ -122,10 +125,25 @@ impl UserFunction {
         ctx: &TaskContext,
         fctx: FunctionCtx,
     ) -> Result<Option<Attribute>, EvalError> {
+        self.eval_inline(&FunctionType::Env, ctx, fctx, None)
+    }
+
+    // TODO: check if running this with ft: env can make it work even if there is "node" variable, because node is Some(_)
+    // TODO: Need to resolve in a way that even if function type is Env, if variable type is Node, and node is Some node
+    // This is so that we don't need the loc.x part here
+    // node$t2 = $t -> func (x) {loc.x + node.ORDER}
+
+    pub fn eval_inline(
+        &self,
+        ft: &FunctionType,
+        ctx: &TaskContext,
+        fctx: FunctionCtx,
+        node: Option<&Node>,
+    ) -> Result<Option<Attribute>, EvalError> {
         let mut locals = self.resolve_locals(ctx, fctx.args, fctx.kwargs)?;
         let mut ret_expr = None;
         for expr in &self.exprs {
-            match expr.eval(&mut locals, ctx) {
+            match expr.eval(ft, &mut locals, ctx, node) {
                 Ok(v) => {
                     ret_expr = v;
                 }

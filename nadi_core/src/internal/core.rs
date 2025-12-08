@@ -167,6 +167,30 @@ mod core {
         Ok(Attribute::Array(attrs.into()))
     }
 
+    /// Get attributes of the input nodes in map format
+    ///
+    /// ```task
+    /// network load_str("a -> b\n b -> d\n c -> d")
+    /// node assert_eq(node[b].inputs_map("NAME"), {a="a"})
+    /// ```
+    #[node_func(attr = "NAME")]
+    fn inputs_map(
+        node: &NodeInner,
+        /// Attribute to get from inputs
+        attr: String,
+    ) -> Result<Attribute, String> {
+        let attrs = node
+            .inputs()
+            .iter()
+            .map(|n| {
+                let n = n.lock();
+                let name: RString = n.name().to_string().into();
+                n.try_attr(&attr).map(|a| (name, a))
+            })
+            .collect::<Result<HashMap<RString, Attribute>, String>>()?;
+        Ok(Attribute::Table(attrs.into()))
+    }
+
     /// Node has an outlet or not
     ///
     /// This is equivalent to using `output._?`, as `_` is a dummy

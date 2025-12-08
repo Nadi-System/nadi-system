@@ -302,9 +302,16 @@ mod attrs {
         Ok(attrs)
     }
 
+    /// keys of the attribute map
     #[env_func]
     fn keys(attrmap: AttrMap) -> Vec<String> {
         attrmap.keys().map(ToString::to_string).collect()
+    }
+
+    /// values of the attribute map
+    #[env_func]
+    fn values(attrmap: AttrMap) -> Vec<Attribute> {
+        attrmap.values().cloned().collect()
     }
 
     /// get the choosen attribute from Array or AttrMap
