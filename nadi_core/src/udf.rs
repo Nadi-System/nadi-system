@@ -46,12 +46,8 @@ impl LocalExpr {
             Self::Expr(expr, quiet) => {
                 // evaluate it even if we don't return a value because
                 // it could be a function that has some side effect
-                let res = expr.resolve_eval(ft, ctx, Some(&locals), node);
-                if *quiet {
-                    Ok(None)
-                } else {
-                    res
-                }
+                let res = expr.resolve_eval(ft, ctx, Some(&locals), node)?;
+                if *quiet { Ok(None) } else { Ok(res) }
             }
             Self::Assign(var, expr, quiet) => {
                 let val = expr.resolve_eval_value(ft, ctx, Some(&locals), node)?;
