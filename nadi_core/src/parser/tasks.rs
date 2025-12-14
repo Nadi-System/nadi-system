@@ -264,7 +264,6 @@ pub fn get_series_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, GetSeri
 
 pub fn series_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, SeriesExpression> {
     alt((
-        map(complete_expression, SeriesExpression::AttrExpr),
         map(
             tuple((
                 opt(variable_type),
@@ -286,6 +285,7 @@ pub fn series_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Serie
                 None => SeriesExpression::Series(vt, name.content.to_string()),
             },
         ),
+        map(complete_expression, SeriesExpression::AttrExpr),
     ))(inp)
 }
 pub fn set_series_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, SetSeriesTask> {
@@ -321,6 +321,11 @@ pub fn set_series_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, SetSeri
 
 pub fn task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
     alt((
+        // set should be before get
+        map(set_series_task, Task::SetSeries),
+        map(get_series_task, Task::GetSeries),
+        // eval task should come after series, otherwise series gets
+        // interpreted as attribute expression
         map(eval_task, Task::Eval),
         map(attr_task, Task::Attr),
         map(cond_task, Task::Conditional),
@@ -328,9 +333,6 @@ pub fn task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
         map(hook_task, Task::Hook),
         map(function_def, Task::Function),
         map(import_task, Task::Import),
-        // set should be before get
-        map(set_series_task, Task::SetSeries),
-        map(get_series_task, Task::GetSeries),
         map(complete_expression, Task::Expr),
         help_task,
         value(Task::Clear, kw_clear),

@@ -22,6 +22,7 @@ impl From<EvalError> for PyErr {
             EvalErrorType::AttributeNotFound => PyAttributeError::new_err(err),
             EvalErrorType::SeriesNotFound(_) => PyAttributeError::new_err(err),
             EvalErrorType::TimeSeriesNotFound(_) => PyAttributeError::new_err(err),
+            EvalErrorType::EmptySeriesValue => PyAttributeError::new_err(err),
             EvalErrorType::NoInputNodes => PyAttributeError::new_err(err),
             EvalErrorType::NoOutputNode => PyAttributeError::new_err(err),
             EvalErrorType::NoRootNode => PyAttributeError::new_err(err),
@@ -39,6 +40,7 @@ impl From<EvalError> for PyErr {
             EvalErrorType::PathNotFound(_, _, _) => PyRuntimeError::new_err(err),
             EvalErrorType::AttributeError(_) => PyRuntimeError::new_err(err),
             EvalErrorType::NodeAttributeError(_, _) => PyRuntimeError::new_err(err),
+            EvalErrorType::NotANodeContext => PyRuntimeError::new_err(err),
 
             EvalErrorType::InvalidOperation => PyValueError::new_err(err),
             EvalErrorType::InvalidVariableType => PyTypeError::new_err(err),

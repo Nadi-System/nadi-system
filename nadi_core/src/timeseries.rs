@@ -45,6 +45,18 @@ pub trait HasSeries {
     fn series(&self, name: &str) -> Option<&Series> {
         self.series_map().get(name)
     }
+
+    fn get_series_ref(&self, name: &str) -> Result<&Series, EvalError> {
+        self.series(name)
+            .ok_or(EvalErrorType::SeriesNotFound(name.to_string()).no_pos())
+    }
+
+    fn get_attribute(&self, name: &str, ind: usize) -> Result<Option<Attribute>, EvalError> {
+        self.get_series_ref(name)?
+            .get_attribute(ind)
+            .ok_or(EvalErrorType::IndexError.no_pos())
+    }
+
     fn del_series(&mut self, name: &str) -> Option<Series> {
         self.series_map_mut().remove(name).into()
     }
@@ -425,6 +437,16 @@ impl Series {
             Self::Masked(ms, _) => ms.fill_gaps(value).map(Self::Complete),
         }
     }
+
+    /// outer Option is for index, inner is for data gap
+    pub fn get_attribute(&self, index: usize) -> Option<Option<Attribute>> {
+        match self {
+            Self::Complete(cs) => cs.get_attribute(index).map(Some),
+            Self::Masked(ms, fill) => ms
+                .get_attribute(index)
+                .map(|v| v.or_else(|| fill.clone().into_option())),
+        }
+    }
 }
 
 #[repr(C)]
@@ -796,6 +818,19 @@ impl MaskedSeries {
         }
     }
 
+    pub fn get_attribute(&self, index: usize) -> Option<Option<Attribute>> {
+        Some(match self {
+            Self::Floats(v) => v.get(index)?.clone().into_option().map(Attribute::Float),
+            Self::Integers(v) => v.get(index)?.clone().into_option().map(Attribute::Integer),
+            Self::Strings(v) => v.get(index)?.clone().into_option().map(Attribute::String),
+            Self::Booleans(v) => v.get(index)?.clone().into_option().map(Attribute::Bool),
+            Self::Dates(v) => v.get(index)?.clone().into_option().map(Attribute::Date),
+            Self::Times(v) => v.get(index)?.clone().into_option().map(Attribute::Time),
+            Self::DateTimes(v) => v.get(index)?.clone().into_option().map(Attribute::DateTime),
+            Self::Attributes(v) => v.get(index)?.clone().into_option(),
+        })
+    }
+
     pub fn complete(self) -> Option<CompleteSeries> {
         if self.has_gaps() {
             return None;
@@ -1055,6 +1090,19 @@ impl CompleteSeries {
             Self::DateTimes(v) => v.into_iter().map(Attribute::DateTime).collect(),
             Self::Attributes(v) => v.into(),
         }
+    }
+
+    pub fn get_attribute(&self, index: usize) -> Option<Attribute> {
+        Some(match self {
+            Self::Floats(v) => Attribute::Float(v.get(index)?.clone()),
+            Self::Integers(v) => Attribute::Integer(v.get(index)?.clone()),
+            Self::Strings(v) => Attribute::String(v.get(index)?.clone()),
+            Self::Booleans(v) => Attribute::Bool(v.get(index)?.clone()),
+            Self::Dates(v) => Attribute::Date(v.get(index)?.clone()),
+            Self::Times(v) => Attribute::Time(v.get(index)?.clone()),
+            Self::DateTimes(v) => Attribute::DateTime(v.get(index)?.clone()),
+            Self::Attributes(v) => v.get(index)?.clone(),
+        })
     }
 
     pub fn minimum(&self) -> Result<Option<Attribute>, EvalErrorType> {

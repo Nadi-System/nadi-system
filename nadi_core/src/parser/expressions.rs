@@ -35,6 +35,7 @@ pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> 
             preceded(kw_return, opt(after_space(complete_expression))),
             |e| Expression::Return(e.map(Box::new)),
         ),
+        series,
     ))(inp)
 }
 
@@ -445,6 +446,23 @@ pub fn function_def<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, UserFuncti
         rest,
         UserFunction::new(name.map(|n| n.content.to_string()), args, kwargs, exprs),
     ))
+}
+
+pub fn series<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+    let (rest, (vt, name, ind)) = tuple((
+        opt(variable_type),
+        preceded(dollar, map(variable, |v| v.content.to_string())),
+        opt(delimited(
+            bracket_start,
+            maybe_space(integer_usize),
+            maybe_space(bracket_end),
+        )),
+    ))(inp)?;
+    let sr = match ind {
+        Some(ind) => Expression::SeriesValue(vt, name, ind),
+        None => Expression::Series(vt, name),
+    };
+    Ok((rest, sr))
 }
 
 #[cfg(test)]

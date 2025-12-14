@@ -8,7 +8,7 @@ use crate::tasks::{
 use crate::template::Template;
 use crate::timeseries::{CompleteSeries, HasSeries, Series};
 use crate::udf::UserFunction;
-use abi_stable::std_types::RSome;
+use abi_stable::std_types::{RNone, RSome};
 use std::collections::HashMap;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -128,6 +128,8 @@ pub enum EvalErrorType {
     AttributeNotFound,
     /// Series with name doesn't exist
     SeriesNotFound(String),
+    /// Series value was empty
+    EmptySeriesValue,
     /// TimeSeries with name doesn't exist
     TimeSeriesNotFound(String),
     /// Index out of range for the array
@@ -208,6 +210,7 @@ impl EvalErrorType {
             Self::AttributeNotFound => "Attribute not found",
             Self::SeriesNotFound(msg) => return format!("No Series: {msg}"),
             Self::TimeSeriesNotFound(msg) => return format!("No TimeSeries: {msg}"),
+            Self::EmptySeriesValue => "Series value is empty, and no fill in value",
             Self::IndexError => "Index out of range for array",
             // Self::AttributeNotFound(Some(n), var) => {
             //     return format!("Node: {n:?} Attribute {var:?} not found")
@@ -278,6 +281,10 @@ pub enum Expression {
     ),
     /// Return the value if inside a function
     Return(Option<Box<Expression>>),
+    /// Get the series as Attributes
+    Series(Option<VarType>, String),
+    /// Get a value from the series
+    SeriesValue(Option<VarType>, String, usize),
 }
 
 impl std::fmt::Display for Expression {
@@ -352,6 +359,10 @@ impl std::fmt::Display for Expression {
             }
             Self::Return(None) => write!(f, "return"),
             Self::Return(Some(expr)) => write!(f, "return {expr}"),
+            Self::Series(Some(vt), name) => write!(f, "{vt}${name}"),
+            Self::Series(None, name) => write!(f, "${name}"),
+            Self::SeriesValue(Some(vt), name, ind) => write!(f, "{vt}${name}[{ind}]"),
+            Self::SeriesValue(None, name, ind) => write!(f, "${name}[{ind}]"),
         }
     }
 }
@@ -373,6 +384,8 @@ impl Expression {
             Self::TryCatch(_, _) => true,
             Self::ForEachIf(..) => true,
             Self::Return(_) => false,
+            Self::Series(..) => false,
+            Self::SeriesValue(..) => false,
         }
     }
 
@@ -402,6 +415,8 @@ impl Expression {
             Self::ForEachIf(..) => true, // TODO: it will have local var, so we need to test if it has var by getting a list of variables.
             Self::Return(None) => false,
             Self::Return(Some(expr)) => expr.has_variables(),
+            Self::Series(..) => true,
+            Self::SeriesValue(..) => true,
         }
     }
 
@@ -470,6 +485,8 @@ impl Expression {
             )),
             Self::Return(None) => Ok(Self::Return(None)),
             Self::Return(Some(expr)) => Ok(Self::Return(Some(Box::new(expr.simplify(ft, ctx)?)))),
+            Self::Series(vt, name) => Ok(Self::Series(vt, name)),
+            Self::SeriesValue(vt, name, ind) => Ok(Self::SeriesValue(vt, name, ind)),
         }
     }
 
@@ -644,6 +661,31 @@ impl Expression {
             Self::Return(Some(expr)) => Ok(Self::Return(Some(Box::new(
                 expr.resolve(ft, ctx, local, node)?,
             )))),
+            Self::Series(vt, name) => match get_series(ft, ctx, node, vt, name)? {
+                Series::Complete(sr) => Ok(Self::Literal(sr.to_attributes().into())),
+                Series::Masked(sr, RSome(fill)) => Ok(Self::Literal(
+                    sr.to_attributes()
+                        .into_iter()
+                        .map(|a| a.unwrap_or_else(|| fill.clone()))
+                        .collect::<Vec<Attribute>>()
+                        .into(),
+                )),
+                Series::Masked(_, RNone) => Err(EvalErrorType::AttributeError(
+                    "Masked Series without Fill value".into(),
+                )
+                .no_pos()),
+            },
+            Self::SeriesValue(vt, name, ind) => {
+                // this is inefficient as it clones the series; but
+                // the inputs type can not be obtained as ref, so
+                // can't write a generic function to get this at the
+                // moment
+                match get_series(ft, ctx, node, vt, name)?.get_attribute(*ind) {
+                    Some(Some(val)) => Ok(Self::Literal(val)),
+                    Some(None) => Err(EvalErrorType::EmptySeriesValue.no_pos()),
+                    None => Err(EvalErrorType::IndexError.no_pos()),
+                }
+            }
         }
     }
 
@@ -782,6 +824,9 @@ impl Expression {
                 let ret = expr.eval(ft, ctx, local, node)?;
                 Err(EvalErrorType::InvalidReturn(ret).no_pos())
             }
+            // these should be resolved away
+            Self::Series(..) => todo!(),
+            Self::SeriesValue(..) => todo!(),
         }
     }
 }
@@ -1860,8 +1905,8 @@ fn get_series(
         },
         (None, FunctionType::Network) | (Some(VarType::Network), _) => ctx
             .network
-            .try_series(name)
-            .map_err(|e| EvalErrorType::SeriesNotFound(e).no_pos())
+            .series(name)
+            .ok_or(EvalErrorType::SeriesNotFound(name.to_string()).no_pos())
             .cloned(),
         _ => Err(
             EvalErrorType::LogicalError("Reading Series are not implemented for this type")
