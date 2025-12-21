@@ -17,16 +17,16 @@ pub struct NodeData {
     pub label: String,
 }
 
-fn iced_color(c: NadiColor) -> Color {
-    Color::from_rgb(c.r as f32, c.g as f32, c.b as f32)
+pub(super) fn iced_color(c: NadiColor) -> Color {
+    Color::from_rgb(c.r as f32 / 255.0, c.g as f32 / 255.0, c.b as f32 / 255.0)
 }
 
 impl NodeData {
     fn new(node: &NodeInner, label: &Option<Template>) -> Self {
         let size = node.node_size() as f32;
         let shape = node.node_shape();
-        let color = node.node_color().map(iced_color);
-        let textcolor = node.text_color().map(iced_color);
+        let color = node.maybe_node_color().map(iced_color);
+        let textcolor = node.maybe_text_color().map(iced_color);
         // TODO load node.visual.nodelabel if not use network label provided
         let label = label
             .as_ref()
@@ -182,7 +182,7 @@ impl NetworkData {
                         (
                             n.index(),
                             o.lock().index(),
-                            n.line_color().map(iced_color),
+                            n.maybe_line_color().map(iced_color),
                             n.line_width() as f32,
                         )
                     })
@@ -214,7 +214,7 @@ impl NetworkData {
                         (
                             n.index(),
                             o.lock().index(),
-                            n.line_color().map(iced_color),
+                            n.maybe_line_color().map(iced_color),
                             n.line_width() as f32,
                         )
                     })

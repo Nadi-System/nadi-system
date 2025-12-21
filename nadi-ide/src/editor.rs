@@ -271,6 +271,12 @@ impl Editor {
                 }
             }
             Message::EditorAction(action) => {
+                // These new ones don't seem to work
+                // match action {
+                //     Action::Indent => ,
+                //     Action::UnIndent => ,
+                //     _ => ()
+                // }
                 if action.is_edit() {
                     self.is_dirty = true;
                     self.is_hist_dirty = true;

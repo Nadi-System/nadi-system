@@ -31,7 +31,7 @@ pub const TEXT_COLOR: (&str, Color) = (
 );
 pub const LINE_WIDTH: (&str, f64) = ("visual.linewidth", 1.0);
 pub const NODE_SIZE: (&str, f64) = ("visual.nodesize", 5.0);
-pub const NODE_SHAPE: (&str, NodeShape) = ("visual.nodeshape", NodeShape::Square);
+pub const NODE_SHAPE: (&str, NodeShape) = ("visual.nodeshape", NodeShape::Circle);
 pub const DEFAULT_RATIO: f64 = 1.5;
 
 #[repr(C)]
@@ -176,38 +176,46 @@ impl NodeInner {
         _ = self.set_attr_dot(NODE_SIZE.0, val.into());
     }
 
-    pub fn node_color(&self) -> Option<Color> {
+    pub fn maybe_node_color(&self) -> Option<Color> {
         self.try_attr::<nadi_core::graphics::color::AttrColor>(NODE_COLOR.0)
+            .ok()?
+            .color()
             .ok()
-            .map(|c| c.color().ok())
-            .unwrap_or(Some(NODE_COLOR.1))
     }
 
-    pub fn text_color(&self) -> Option<Color> {
+    pub fn node_color(&self) -> Color {
+        self.maybe_node_color().unwrap_or(NODE_COLOR.1)
+    }
+
+    pub fn maybe_text_color(&self) -> Option<Color> {
         self.try_attr::<nadi_core::graphics::color::AttrColor>(TEXT_COLOR.0)
             .ok()?
             .color()
             .ok()
     }
 
-    pub fn line_color(&self) -> Option<Color> {
+    pub fn text_color(&self) -> Color {
+        self.maybe_text_color().unwrap_or(TEXT_COLOR.1)
+    }
+
+    pub fn maybe_line_color(&self) -> Option<Color> {
         self.try_attr::<nadi_core::graphics::color::AttrColor>(LINE_COLOR.0)
+            .ok()?
+            .color()
             .ok()
-            .map(|c| c.color().ok())
-            .unwrap_or(Some(LINE_COLOR.1))
+    }
+
+    pub fn line_color(&self) -> Color {
+        self.maybe_line_color().unwrap_or(LINE_COLOR.1)
     }
 
     pub fn node_shape(&self) -> NodeShape {
-        self.try_attr(NODE_SHAPE.0).unwrap_or_default()
+        self.try_attr(NODE_SHAPE.0).unwrap_or(NODE_SHAPE.1)
     }
 
     pub fn node_point(&self, x: f64, y: f64) -> Element {
-        self.node_shape().svg(
-            x,
-            y,
-            self.node_size(),
-            self.node_color().unwrap_or(NODE_COLOR.1).hex(),
-        )
+        self.node_shape()
+            .svg(x, y, self.node_size(), self.node_color().hex())
     }
 
     pub fn node_label(&self, x: f64, y: f64, text: String) -> Text {
@@ -216,7 +224,7 @@ impl NodeInner {
             .set("y", y)
             .set("text-anchor", "start")
             .set("font-size", "large");
-        match self.text_color() {
+        match self.maybe_text_color() {
             Some(c) => lab
                 .set("fill", c.hex())
                 .set("stroke", c.hex())
@@ -232,7 +240,7 @@ impl NodeInner {
             .set("x2", x2)
             .set("y2", y2)
             .set("stroke-width", self.line_width())
-            .set("stroke", self.line_color().unwrap_or(LINE_COLOR.1).hex())
+            .set("stroke", self.line_color().hex())
     }
 }
 
