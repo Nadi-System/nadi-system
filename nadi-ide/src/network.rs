@@ -5,7 +5,7 @@ use iced_core::widget::tree::{self, Tree};
 use iced_core::{
     Clipboard, Color, Element, Layout, Length, Point, Rectangle, Shell, Size, Theme, Widget,
 };
-use iced_core::{event, layout, mouse};
+use iced_core::{layout, mouse};
 use iced_graphics::geometry::{Path, Stroke};
 use std::cell::RefCell;
 

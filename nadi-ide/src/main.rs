@@ -4,7 +4,7 @@ use iced::widget::{
     Row, button, center, column, container, pick_list, row, space::horizontal, text, text_editor,
     toggler, tooltip,
 };
-use iced::{Element, Fill, Length, Program, Subscription, Task, Theme};
+use iced::{Element, Fill, Length, Subscription, Task, Theme};
 use nadi_core::functions::NadiFunctions;
 use nadi_ide::attributes::AttrView;
 use nadi_ide::editor::{self, Editor};
@@ -34,16 +34,6 @@ pub fn main() -> iced::Result {
         .run()
 }
 
-// struct App;
-
-// impl Program for App {
-//     type State = Self;
-//     type Message = Message;
-
-//     fn name() -> &'static str {
-//         "NADI"
-//     }
-
 fn boot() -> (MainWindow, Task<Message>) {
     let options = NadiIdeOptions::parse();
     let mut ide = MainWindow::default();
@@ -69,18 +59,6 @@ fn boot() -> (MainWindow, Task<Message>) {
     };
     (ide, task)
 }
-
-//     fn update(&self, state: &mut Self::State, message: Self::Message) -> Task<Self::Message> {
-//         state.update(message)
-//     }
-//     fn view<'a>(
-//         &self,
-//         state: &'a Self::State,
-//         _window: Id,
-//     ) -> Element<'a, Self::Message, Self::Theme, Self::Renderer> {
-//         state.view()
-//     }
-// }
 
 struct MainWindow {
     light_theme: bool,

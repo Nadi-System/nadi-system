@@ -182,7 +182,7 @@ impl MdHelp {
             Message::LinkClicked(url) => {
                 // we can make our own schema for the links to nadi
                 // functions later
-                webbrowser::open(&url);
+                let _ = webbrowser::open(&url);
             }
             Message::Home => {
                 self.markdown = markdown::parse(MAIN_HELP).collect();
