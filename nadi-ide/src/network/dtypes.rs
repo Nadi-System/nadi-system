@@ -18,7 +18,7 @@ pub struct NodeData {
 }
 
 fn iced_color(c: NadiColor) -> Color {
-    Color::new(c.r as f32, c.g as f32, c.b as f32, 1.0)
+    Color::from_rgb(c.r as f32, c.g as f32, c.b as f32)
 }
 
 impl NodeData {

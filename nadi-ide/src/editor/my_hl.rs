@@ -17,18 +17,18 @@ struct HlTokens {
 /// convert hightlight into iced format
 pub fn hlto_format(hl: &Highlight, _theme: &iced::Theme) -> Format<Font> {
     let color = match hl {
-        Highlight::Comment => Some(Color::new(0.5, 0.5, 0.5, 0.7)),
-        Highlight::Keyword => Some(Color::new(0.7, 0.0, 0.0, 1.0)),
+        Highlight::Comment => Some(Color::from_rgba(0.5, 0.5, 0.5, 0.7)),
+        Highlight::Keyword => Some(Color::from_rgba(0.7, 0.0, 0.0, 1.0)),
         Highlight::Symbol => None,
-        Highlight::Operator => Some(Color::new(0.2, 0.7, 0.7, 1.0)),
-        Highlight::Paren => Some(Color::new(0.0, 0.0, 1.0, 1.0)),
-        Highlight::Variable => Some(Color::new(0.0, 0.5, 0.0, 1.0)),
-        Highlight::Function => Some(Color::new(0.5, 0.2, 0.2, 1.0)),
-        Highlight::Bool => Some(Color::new(0.4, 0.6, 0.9, 1.0)),
+        Highlight::Operator => Some(Color::from_rgba(0.2, 0.7, 0.7, 1.0)),
+        Highlight::Paren => Some(Color::from_rgba(0.0, 0.0, 1.0, 1.0)),
+        Highlight::Variable => Some(Color::from_rgba(0.0, 0.5, 0.0, 1.0)),
+        Highlight::Function => Some(Color::from_rgba(0.5, 0.2, 0.2, 1.0)),
+        Highlight::Bool => Some(Color::from_rgba(0.4, 0.6, 0.9, 1.0)),
         Highlight::Number => None,
-        Highlight::DateTime => Some(Color::new(0.1, 0.7, 0.5, 1.0)),
-        Highlight::String => Some(Color::new(0.1, 0.7, 0.5, 1.0)),
-        Highlight::Error => Some(Color::new(1.0, 0.3, 0.3, 1.0)),
+        Highlight::DateTime => Some(Color::from_rgba(0.1, 0.7, 0.5, 1.0)),
+        Highlight::String => Some(Color::from_rgba(0.1, 0.7, 0.5, 1.0)),
+        Highlight::Error => Some(Color::from_rgba(1.0, 0.3, 0.3, 1.0)),
         Highlight::None => None,
     };
     Format { color, font: None }

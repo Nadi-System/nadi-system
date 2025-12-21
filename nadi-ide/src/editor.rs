@@ -2,9 +2,14 @@ use crate::icons;
 use iced::highlighter;
 use iced::time::{self, Duration, Instant};
 use iced::widget::{
-    column, container, horizontal_space, pick_list, row, scrollable, text,
+    column, container, pick_list, row,
+    rule::vertical as vrule,
+    scrollable,
+    space::horizontal as hspace,
+    text,
     text::{Rich, Span},
-    text_editor, vertical_rule,
+    text_editor,
+    text_editor::Position,
 };
 use iced::{Element, Fill, Font, Subscription, Task, Theme};
 use nadi_core::{
@@ -46,7 +51,7 @@ pub struct EditorFunction {
 }
 
 impl EditorFunction {
-    fn view(&self) -> Rich<'_, Message> {
+    fn view(&self) -> Rich<'_, String, Message> {
         let mut args: Vec<Vec<Span<_>>> = self
             .args
             .iter()
@@ -274,7 +279,7 @@ impl Editor {
                 }
                 self.content.perform(action);
                 Task::perform(
-                    func_at_mark(self.content.text(), self.content.cursor_position()),
+                    func_at_mark(self.content.text(), self.content.cursor().position),
                     Message::FunctionAtMark,
                 )
             }
@@ -470,7 +475,7 @@ impl Editor {
         ];
         if self.embedded {
             controls = controls
-                .push(vertical_rule(1.0))
+                .push(vrule(1.0))
                 .push(icons::action(
                     icons::run_all_icon(),
                     "Run Selection/Line (Ctrl + Enter)",
@@ -492,7 +497,7 @@ impl Editor {
                     self.curr_func.as_ref().map(|_| Message::HelpTask),
                 ));
         }
-        controls = controls.push(horizontal_space());
+        controls = controls.push(hspace());
         controls = controls.push(pick_list(
             highlighter::Theme::ALL,
             Some(self.theme),
@@ -520,10 +525,10 @@ impl Editor {
                     .map(|p| { p.to_string_lossy().to_string() })
                     .unwrap_or("*New File*".into())
             ),
-            horizontal_space(),
+            hspace(),
             text({
-                let (line, column) = self.content.cursor_position();
-                format!("{}:{}", line + 1, column + 1)
+                let pos = self.content.cursor().position;
+                format!("{}:{}", pos.line + 1, pos.column + 1)
             })
         ];
         let editor = text_editor(&self.content)
@@ -600,7 +605,7 @@ impl Editor {
 }
 
 fn key_binding(kp: text_editor::KeyPress) -> Option<text_editor::Binding<Message>> {
-    if !matches!(kp.status, text_editor::Status::Focused) {
+    if !matches!(kp.status, text_editor::Status::Focused { .. }) {
         return text_editor::Binding::<Message>::from_key_press(kp);
     }
 
@@ -723,8 +728,8 @@ async fn save_file(path: Option<PathBuf>, contents: String) -> Result<PathBuf, E
     Ok(path)
 }
 
-async fn func_at_mark(text: String, mark: (usize, usize)) -> Option<(FunctionType, String)> {
-    let line = mark.0;
+async fn func_at_mark(text: String, mark: Position) -> Option<(FunctionType, String)> {
+    let line = mark.line;
     // if the current line can be parsed into a proper task, use that
     let task_str = text.lines().nth(line)?;
     let tokens_v = tokenizer::get_tokens(task_str);
@@ -733,7 +738,7 @@ async fn func_at_mark(text: String, mark: (usize, usize)) -> Option<(FunctionTyp
     let mut name = None;
     let mut col = 0;
     // let mut ind = 0;
-    while col < mark.1 {
+    while col < mark.column {
         let tk = match tokens.next() {
             Some(t) => t,
             None => break,

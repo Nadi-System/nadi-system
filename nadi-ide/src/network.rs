@@ -75,7 +75,7 @@ where
     }
 
     fn layout(
-        &self,
+        &mut self,
         _tree: &mut Tree,
         _renderer: &Renderer,
         _limits: &layout::Limits,
@@ -98,17 +98,17 @@ where
     }
 
     // might have to use this for hover effect
-    fn on_event(
+    fn update(
         &mut self,
         tree: &mut Tree,
-        event: Event,
+        event: &Event,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         _renderer: &Renderer,
         _clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         _viewport: &Rectangle,
-    ) -> event::Status {
+    ) {
         let state = tree.state.downcast_mut::<State>();
         let node = cursor.position_in(layout.bounds()).and_then(|pt| {
             let y = ((pt.y - self.data.offsety) / self.data.deltay).round() - 1.0;
@@ -130,14 +130,11 @@ where
             if let Some(on_press) = &self.on_press {
                 if let Some(node) = &state.over_node {
                     shell.publish(on_press(Some(node.to_string())));
-                    return event::Status::Captured;
                 } else if cursor.is_over(layout.bounds()) {
                     shell.publish(on_press(None));
-                    return event::Status::Captured;
                 }
             }
         }
-        event::Status::Ignored
     }
 
     fn draw(
@@ -213,7 +210,7 @@ where
                     pos.1,
                 )
                     .into();
-                txt.vertical_alignment = iced_core::alignment::Vertical::Center;
+                txt.align_y = iced_core::alignment::Vertical::Center;
                 txt.color = node.textcolor.unwrap_or(style.text);
                 frame.fill_text(txt);
             }

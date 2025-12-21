@@ -100,7 +100,7 @@ mod visuals {
         for node in net.nodes() {
             let n = node.lock();
             let x = n.level() as f64 * set.deltax + set.left;
-            let y = (count - n.index()) as f64 * set.deltay + set.top;
+            let y = (count - 1 - n.index()) as f64 * set.deltay + set.top;
             let lab = label
                 .render(&n)
                 .unwrap_or_else(|_| label.original().to_string());
@@ -115,7 +115,7 @@ mod visuals {
             if let RSome(out) = n.output() {
                 let o = out.lock();
                 let xo = o.level() as f64 * set.deltax + set.left;
-                let yo = (count - o.index()) as f64 * set.deltay + set.top;
+                let yo = (count - 1 - o.index()) as f64 * set.deltay + set.top;
                 edges = edges.add(n.node_line(x, y, xo, yo));
             }
         }
@@ -150,7 +150,9 @@ mod visuals {
                 0,
                 0,
                 width.unwrap_or(settings.left + settings.right + settings.deltax * level as f64),
-                height.unwrap_or(settings.top + settings.bottom + settings.deltay * count as f64),
+                height.unwrap_or(
+                    settings.top + settings.bottom + settings.deltay * (count - 2) as f64,
+                ),
             ),
         );
         if let Some(col) = bgcolor {
@@ -178,6 +180,8 @@ mod visuals {
         width: f64,
         /// width of the arrows
         arr_width: f64,
+        /// Background color
+        bgcolor: Option<String>,
         settings: Settings,
     ) -> anyhow::Result<()> {
         let count = net.nodes_count();
@@ -381,8 +385,23 @@ mod visuals {
                     .set("stroke", "#0000aa")
                     .set("stroke-width", 0.5),
             );
-        let doc = doc.add(Definitions::new().add(arr1).add(arr2));
-        svg::save(outfile, &doc.add(edges).add(nodes).add(lines).add(axis))?;
+        let mut doc = doc.add(Definitions::new().add(arr1).add(arr2));
+        if let Some(col) = bgcolor {
+            doc = doc.add(
+                Rectangle::new()
+                    .set("height", "100%")
+                    .set("width", "100%")
+                    .set("fill", col),
+            );
+        }
+        let trans = format!("translate(0 {})", settings.deltay);
+        svg::save(
+            outfile,
+            &doc.add(edges.set("transform", trans.clone()))
+                .add(nodes.set("transform", trans))
+                .add(lines)
+                .add(axis),
+        )?;
         Ok(())
     }
 }

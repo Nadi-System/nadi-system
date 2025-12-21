@@ -9,14 +9,14 @@ readme = "README.md"
 default-run = "nadi-ide"
 
 [dependencies]
-iced = { git = "https://github.com/atreyagaurav/iced.git", branch="cargo-stable", features = ["highlighter", "markdown", "lazy", "tokio", "svg", "canvas"] }
+iced = { version="0.14", features = ["highlighter", "markdown", "lazy", "tokio", "svg", "canvas"] }
 nadi_core = { version = "0.8.0", path="../nadi_core", features = ["functions"] }
 
 tokio = {version = "1.44.1", features = ["fs"]}
 rfd = "0.13"
 gag = "1.0.0"
-iced_core = {git = "https://github.com/atreyagaurav/iced.git", branch="cargo-stable"}
-iced_graphics = { git = "https://github.com/atreyagaurav/iced.git", branch="cargo-stable", features = ["geometry"] }
+iced_core = "0.14"
+iced_graphics = { version="0.14", features = ["geometry"] }
 webbrowser = "1.0.4"
 clap = { version = "4.5.51", features = ["derive"] }
 

@@ -1,5 +1,5 @@
 use crate::icons;
-use iced::widget::{Column, column, container, horizontal_space, row, scrollable, text};
+use iced::widget::{Column, column, container, row, scrollable, space::horizontal, text};
 use iced::{Element, Fill, Length, color};
 use nadi_core::attrs::{AttrMap, Attribute};
 
@@ -197,7 +197,7 @@ impl AttrView {
     pub fn view(&self) -> Element<'_, Message> {
         let controls = row![
             text(&self.label),
-            horizontal_space(),
+            horizontal(),
             icons::action(
                 icons::resize_small_icon(),
                 "Collapse All",

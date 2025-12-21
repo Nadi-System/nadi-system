@@ -1,10 +1,10 @@
 use clap::Parser;
 use iced::widget::pane_grid::{self, PaneGrid};
 use iced::widget::{
-    Row, button, center, column, container, horizontal_space, pick_list, row, text, text_editor,
+    Row, button, center, column, container, pick_list, row, space::horizontal, text, text_editor,
     toggler, tooltip,
 };
-use iced::{Element, Fill, Length, Subscription, Task, Theme};
+use iced::{Element, Fill, Length, Program, Subscription, Task, Theme};
 use nadi_core::functions::NadiFunctions;
 use nadi_ide::attributes::AttrView;
 use nadi_ide::editor::{self, Editor};
@@ -27,36 +27,60 @@ struct NadiIdeOptions {
 }
 
 pub fn main() -> iced::Result {
-    iced::application("NADI", MainWindow::update, MainWindow::view)
+    iced::application(boot, MainWindow::update, MainWindow::view)
         .font(icons::FONT)
         .theme(MainWindow::theme)
         .subscription(MainWindow::subscription)
-        .run_with(|| {
-            let options = NadiIdeOptions::parse();
-            let mut ide = MainWindow::default();
-            ide.light_theme = options.light_theme;
-            let task = if let Some(t) = options.task_file {
-                // if a File is given start with the ENT configuration
-                ide.panes = pane_grid::State::<Pane>::with_configuration(panety_2_pane(
-                    &pane_grid::Configuration::Split {
-                        axis: pane_grid::Axis::Vertical,
-                        ratio: 0.5,
-                        a: Box::new(pane_grid::Configuration::Pane(&PaneType::TextEditor)),
-                        b: Box::new(pane_grid::Configuration::Split {
-                            axis: pane_grid::Axis::Horizontal,
-                            ratio: 0.5,
-                            a: Box::new(pane_grid::Configuration::Pane(&PaneType::NetworkView)),
-                            b: Box::new(pane_grid::Configuration::Pane(&PaneType::Terminal)),
-                        }),
-                    },
-                ));
-                Task::perform(async { editor::Message::OpenFilePath(t) }, Message::Editor)
-            } else {
-                Task::none()
-            };
-            (ide, task)
-        })
+        .run()
 }
+
+// struct App;
+
+// impl Program for App {
+//     type State = Self;
+//     type Message = Message;
+
+//     fn name() -> &'static str {
+//         "NADI"
+//     }
+
+fn boot() -> (MainWindow, Task<Message>) {
+    let options = NadiIdeOptions::parse();
+    let mut ide = MainWindow::default();
+    ide.light_theme = options.light_theme;
+    let task = if let Some(t) = options.task_file {
+        // if a File is given start with the ENT configuration
+        ide.panes = pane_grid::State::<Pane>::with_configuration(panety_2_pane(
+            &pane_grid::Configuration::Split {
+                axis: pane_grid::Axis::Vertical,
+                ratio: 0.5,
+                a: Box::new(pane_grid::Configuration::Pane(&PaneType::TextEditor)),
+                b: Box::new(pane_grid::Configuration::Split {
+                    axis: pane_grid::Axis::Horizontal,
+                    ratio: 0.5,
+                    a: Box::new(pane_grid::Configuration::Pane(&PaneType::NetworkView)),
+                    b: Box::new(pane_grid::Configuration::Pane(&PaneType::Terminal)),
+                }),
+            },
+        ));
+        Task::perform(async { editor::Message::OpenFilePath(t) }, Message::Editor)
+    } else {
+        Task::none()
+    };
+    (ide, task)
+}
+
+//     fn update(&self, state: &mut Self::State, message: Self::Message) -> Task<Self::Message> {
+//         state.update(message)
+//     }
+//     fn view<'a>(
+//         &self,
+//         state: &'a Self::State,
+//         _window: Id,
+//     ) -> Element<'a, Self::Message, Self::Theme, Self::Renderer> {
+//         state.view()
+//     }
+// }
 
 struct MainWindow {
     light_theme: bool,
@@ -119,14 +143,14 @@ impl MainWindow {
                         let tasks = match self.editor.content.selection() {
                             Some(sel) => sel,
                             None => {
-                                let (line, _) = self.editor.content.cursor_position();
+                                let line = self.editor.content.cursor().position.line;
                                 self.editor
                                     .content
                                     .perform(text_editor::Action::Move(text_editor::Motion::Down));
                                 self.editor
                                     .content
                                     .line(line)
-                                    .map(|l| l.to_string())
+                                    .map(|l| l.text.to_string())
                                     .unwrap_or_default()
                             }
                         };
@@ -263,7 +287,7 @@ impl MainWindow {
         .spacing(10.0);
         let controls = row![
             panes,
-            horizontal_space(),
+            horizontal(),
             icons::action(
                 icons::help_icon(),
                 "Browse Nadi Book",

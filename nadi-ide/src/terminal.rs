@@ -4,8 +4,8 @@ use crate::icons;
 use crate::network::{NetworkData, NetworkDataView, NetworkTable};
 use iced::time::{self, Duration};
 use iced::widget::{
-    button, center, column, combo_box, container, horizontal_space, markdown, progress_bar, row,
-    scrollable, text, text_editor, text_input, toggler,
+    button, center, column, combo_box, container, markdown, progress_bar, row, scrollable,
+    space::horizontal, text, text_editor, text_input, toggler,
 };
 use iced::{Element, Fill, Font, Length, Subscription, Task, Theme};
 use nadi_core::attrs::{AttrMap, HasAttributes};
@@ -145,7 +145,7 @@ pub enum Message {
     GoUp,
     GoDown,
     ToggleNetSidebar,
-    LinkClicked(markdown::Url),
+    LinkClicked(String),
     Tick,
     NodeClicked(Option<String>),
     // handled in main
@@ -197,7 +197,7 @@ impl Terminal {
             self.content
                 .perform(text_editor::Action::Move(text_editor::Motion::DocumentEnd));
             if !append {
-                self.last_line = self.content.cursor_position().0;
+                self.last_line = self.content.cursor().position.line;
             }
         }
         let text = if prompt {
@@ -427,7 +427,7 @@ impl Terminal {
                 "Goto Bottom",
                 Some(Message::GotoBottom)
             ),
-            horizontal_space(),
+            horizontal(),
             combo_box(&self.history, "Search History", None, Message::History)
         ];
         if !self.embedded {
@@ -468,7 +468,7 @@ impl Terminal {
             text(&self.status).style(text::danger),
             entry,
             progress_bar(0.0..=100.0, self.progress.1)
-                .height(4.0)
+                .girth(4.0)
                 .style(progress_bar::success)
         ]
         .padding(10)
@@ -491,8 +491,7 @@ impl Terminal {
             sidebar = sidebar.push(scrollable(
                 markdown::view(
                     &self.network_help,
-                    markdown::Settings::default(),
-                    md_style(self.light_theme),
+                    markdown::Settings::with_style(md_style(self.light_theme)),
                 )
                 .map(Message::LinkClicked),
             ));

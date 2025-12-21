@@ -1,11 +1,13 @@
 use crate::editor::colors;
 use crate::icons;
 use iced::widget::{
-    button, center, column, horizontal_space, markdown, row, scrollable, text,
+    button, center, column, markdown, row, scrollable,
+    space::horizontal,
+    text,
     text::{Rich, Span},
     text_input, toggler,
 };
-use iced::{Color, Element, Length, Theme, widget::Column};
+use iced::{Color, Element, Font, Length, Theme, widget::Column};
 use nadi_core::{
     functions::{FuncArg, NadiFunctions},
     tasks::FunctionType,
@@ -29,7 +31,7 @@ pub struct MdHelp {
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    LinkClicked(markdown::Url),
+    LinkClicked(String),
     Home,
     Github,
     Book,
@@ -83,7 +85,7 @@ impl MdHelp {
             button("Home").on_press(Message::Home),
             button("Book").on_press(Message::Book),
             button("GitHub").on_press(Message::Github),
-            horizontal_space()
+            horizontal()
         ]
         .spacing(20)
         .padding(10);
@@ -92,8 +94,7 @@ impl MdHelp {
         }
         let md = markdown::view(
             &self.markdown,
-            markdown::Settings::default(),
-            md_style(self.light_theme),
+            markdown::Settings::with_style(md_style(self.light_theme)),
         )
         .map(Message::LinkClicked);
 
@@ -179,14 +180,9 @@ impl MdHelp {
     pub fn update(&mut self, message: Message) {
         match message {
             Message::LinkClicked(url) => {
-                match url.scheme() {
-                    // this way we can make our own schema for the
-                    // links to nadi functions
-                    "nadi" => todo!(),
-                    _ => {
-                        _ = webbrowser::open(url.as_ref());
-                    }
-                }
+                // we can make our own schema for the links to nadi
+                // functions later
+                webbrowser::open(&url);
             }
             Message::Home => {
                 self.markdown = markdown::parse(MAIN_HELP).collect();
@@ -259,7 +255,7 @@ impl<'a> Term<'a> {
     }
 }
 
-fn function_label(label: String, search: &str) -> Rich<'_, Message> {
+fn function_label(label: String, search: &str) -> Rich<'_, String, Message> {
     let searches: Vec<&str> = search.trim().split(' ').collect();
     let mut labels = vec![Term::Remainder(&label)];
     for s in searches {
@@ -374,12 +370,18 @@ pub fn md_style(light: bool) -> markdown::Style {
         b: 1.0,
         a: 1.0,
     };
+    let code_block_font = Font::MONOSPACE;
+    let font = Font::DEFAULT;
+    let inline_code_font = Font::MONOSPACE;
 
     markdown::Style {
         inline_code_highlight,
         inline_code_padding,
         inline_code_color,
         link_color,
+        code_block_font,
+        font,
+        inline_code_font,
     }
 }
 
