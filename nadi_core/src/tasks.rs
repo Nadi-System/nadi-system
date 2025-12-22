@@ -466,6 +466,7 @@ impl TaskContext {
                 None => Ok(None),
             },
             FunctionType::Node => {
+                // this is the only task that needs parallization,
                 let nodes = self.propagation(task.propagation.unwrap_or_default())?;
                 let total = nodes.len();
                 let max_nodes_len = TaskCtxConsts::max_nodes_length(self);
@@ -473,11 +474,17 @@ impl TaskContext {
                 let mut progress = 0;
                 let mut attrs = Vec::with_capacity(total);
                 for n in nodes {
+                    let name = n
+                        .try_lock()
+                        .into_option()
+                        .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(task.start))?
+                        .name()
+                        .to_string();
                     let res = match task
                         .input
                         // add node name to this error
                         .resolve_eval_mut(&FunctionType::Node, self, None, Some(&n))
-                        .map_err(|e| e.pos(task.start))?
+                        .map_err(|e| e.pos(task.start).node(name.clone()))?
                     {
                         Some(r) => r,
                         None => {
@@ -490,29 +497,29 @@ impl TaskContext {
                         .into_option()
                         .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(task.start))?;
                     progress += 1;
-                    let _ = self.channel.send(TaskMessage::Progress(
-                        n.name().to_string(),
-                        progress,
-                        total,
-                    ));
+                    let _ = self
+                        .channel
+                        .send(TaskMessage::Progress(name.clone(), progress, total));
                     // because we did progress +=1 above we need <=
                     let update = !task.silent & (progress <= max_nodes_len);
                     if let Some(attr) = &task.attr {
                         let old = n
                             .set_attr_nested(&task.attr_pre, attr, res.clone())
-                            .map_err(|e| EvalErrorType::AttributeError(e).no_pos())?;
+                            .map_err(|e| {
+                                EvalErrorType::AttributeError(e).no_pos().node(name.clone())
+                            })?;
                         if update {
                             if let Some(o) = old {
                                 attrs.push(format!(
                                     "  {} = {} -> {}",
-                                    n.name(),
+                                    name,
                                     self.show_attr(&o, 0),
                                     self.show_attr(&res, 0)
                                 ));
                             }
                         }
                     } else if update {
-                        attrs.push(format!("  {} = {}", n.name(), self.show_attr(&res, 0)));
+                        attrs.push(format!("  {} = {}", name, self.show_attr(&res, 0)));
                     }
                 }
                 if task.silent || attrs.is_empty() {
@@ -580,13 +587,15 @@ impl TaskContext {
                     .take(max_nodes_len)
                     .map(|n| {
                         let n = n.lock();
+                        let name = n.name().to_string();
                         Ok(format!(
                             "  {} = {}",
-                            n.name(),
+                            name,
                             if let Some(a) =
                                 n.attr_nested(&task.attr_pre, &task.attr).map_err(|e| {
-                                    EvalErrorType::AttributeError(format!("Node {}: {e}", n.name()))
+                                    EvalErrorType::AttributeError(e)
                                         .pos(task.position())
+                                        .node(name.clone())
                                 })?
                             {
                                 self.show_attr(a, 0)

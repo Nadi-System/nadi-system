@@ -17,11 +17,18 @@ pub struct EvalError {
     pub ty: EvalErrorType,
     /// Position of Eval Error
     pub position: Vec<(usize, usize)>,
+    /// Name of the Node if caused in a node
+    pub node: Option<String>,
 }
 
 impl EvalError {
     pub fn pos(mut self, position: (usize, usize)) -> EvalError {
         self.position.push(position);
+        self
+    }
+
+    pub fn node(mut self, name: String) -> EvalError {
+        self.node.replace(name);
         self
     }
 }
@@ -36,16 +43,21 @@ impl std::error::Error for EvalError {}
 
 impl std::fmt::Display for EvalError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let node = self
+            .node
+            .as_ref()
+            .map(|n| format!("[{n}]"))
+            .unwrap_or_default();
         if let Some(pos) = self.position.iter().last() {
             write!(
                 f,
-                "EvalError at Line {} Column {}: {}",
+                "EvalError{node} at Line {} Column {}: {}",
                 pos.0,
                 pos.1,
                 self.ty.message()
             )
         } else {
-            write!(f, "EvalError: {}", self.ty.message())
+            write!(f, "EvalError{node}: {}", self.ty.message())
         }
     }
 }
@@ -83,6 +95,7 @@ impl EvalErrorType {
         EvalError {
             ty: self,
             position: vec![pos.position()],
+            node: None,
         }
     }
 
@@ -90,6 +103,7 @@ impl EvalErrorType {
         EvalError {
             ty: self,
             position: vec![position],
+            node: None,
         }
     }
 
@@ -97,6 +111,7 @@ impl EvalErrorType {
         EvalError {
             ty: self,
             position: Vec::new(),
+            node: None,
         }
     }
 }
