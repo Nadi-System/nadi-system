@@ -6,7 +6,7 @@ use iced_core::{
     Clipboard, Color, Element, Layout, Length, Point, Rectangle, Shell, Size, Theme, Widget,
 };
 use iced_core::{layout, mouse};
-use iced_graphics::geometry::{Path, Stroke};
+use iced_graphics::geometry::{Frame, Path, Stroke};
 use std::cell::RefCell;
 
 mod dtypes;
@@ -115,21 +115,21 @@ where
             if y < 0.0 {
                 None
             } else {
+                let ind = y as usize;
                 self.data
                     .network
                     .nodes
-                    .get(y as usize)
-                    .map(|n| n.name.to_string())
+                    .get(ind)
+                    .map(|n| (ind, n.name.to_string()))
             }
         });
         if state.over_node != node {
             state.over_node = node;
-            self.data.cache.clear();
         }
         if let Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) = event
             && let Some(on_press) = &self.on_press
         {
-            if let Some(node) = &state.over_node {
+            if let Some((_, node)) = &state.over_node {
                 shell.publish(on_press(Some(node.to_string())));
             } else if cursor.is_over(layout.bounds()) {
                 shell.publish(on_press(None));
@@ -155,10 +155,24 @@ where
 
         if Some(style) != *last_style {
             self.data.cache.clear();
-
             *last_style = Some(style);
         }
 
+        let mut frame = Frame::new(renderer, bounds.size());
+        frame.scale(self.data.scale);
+
+        if let Some((ind, _)) = &state.over_node
+            && let Some(node) = self.data.network.nodes.get(*ind)
+        {
+            let y = (node.pos.1 + 1) as f32 * self.data.deltay + self.data.offsety;
+            // highlight the row if it's selected
+            frame.fill_rectangle(
+                (self.data.offsetx / 2.0, y - self.data.deltay / 2.0).into(),
+                iced::Size::new(bounds.size().width - self.data.offsetx, self.data.deltay),
+                style.highlight,
+            );
+        }
+        let highlight = frame.into_geometry();
         // Reuse cache if possible
         let geometry = self.data.cache.draw(renderer, bounds.size(), |frame| {
             frame.scale(self.data.scale);
@@ -175,21 +189,6 @@ where
                     )
                 })
                 .collect();
-
-            if let Some(name) = &state.over_node
-                && let Some(node) = self.data.network.nodes.iter().find(|n| &n.name == name)
-            {
-                // highlight the row if it's selected
-                frame.fill_rectangle(
-                    (
-                        self.data.offsetx / 2.0,
-                        coords[node.index].1 - self.data.deltay / 2.0,
-                    )
-                        .into(),
-                    iced::Size::new(bounds.size().width - self.data.offsetx, self.data.deltay),
-                    style.highlight,
-                );
-            }
             // Draw network lines
             for (from, to, color, width) in &self.data.network.edges {
                 let line = Path::line(coords[*from].into(), coords[*to].into());
@@ -219,6 +218,7 @@ where
         renderer.with_translation(bounds.position() - Point::ORIGIN, |renderer| {
             use iced_graphics::geometry::Renderer as _;
 
+            renderer.draw_geometry(highlight);
             renderer.draw_geometry(geometry);
         });
     }
@@ -237,7 +237,7 @@ where
 
 #[derive(Default)]
 struct State {
-    over_node: Option<String>,
+    over_node: Option<(usize, String)>,
     last_style: RefCell<Option<Style>>,
 }
 
