@@ -787,8 +787,8 @@ impl std::fmt::Display for EvalTask {
                 .map(|p| p.to_string())
                 .unwrap_or_default(),
             outattr,
-            self.input.to_string(),
-            self.silent.then_some(";").unwrap_or_default()
+            self.input,
+            if self.silent { ";" } else { Default::default() }
         )
     }
 }
@@ -861,12 +861,12 @@ impl std::fmt::Display for CondTask {
             .collect::<Vec<String>>()
             .join("\n");
         if self.iffalse.is_empty() {
-            write!(f, "if ({}) {{\n\t{}\n}}", self.cond.to_string(), tasks,)
+            write!(f, "if ({}) {{\n\t{}\n}}", self.cond, tasks,)
         } else {
             write!(
                 f,
                 "if ({}) {{\n\t{}\n}} else {{\n\t{}\n}}",
-                self.cond.to_string(),
+                self.cond,
                 tasks,
                 self.iffalse
                     .iter()
@@ -901,7 +901,7 @@ impl std::fmt::Display for WhileTask {
         write!(
             f,
             "while ({}) {{\n\t{}\n}}",
-            self.cond.to_string(),
+            self.cond,
             self.tasks
                 .iter()
                 .map(|p| p.to_string())

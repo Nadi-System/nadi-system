@@ -521,7 +521,7 @@ impl NadiFunctions {
             let args: Vec<String> = fargs.iter().map(|s| s.to_string()).collect();
             let args_help: Vec<String> = fargs
                 .iter()
-                .map(|s| format!("- `{}` => {}", s.to_string(), s.help))
+                .map(|s| format!("- `{}` => {}", s, s.help))
                 .collect();
             (
                 if args.len() < 3 {

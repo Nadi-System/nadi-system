@@ -138,13 +138,29 @@ mod series {
         let sr = node.try_series_mut(name)?;
         match sr {
             Series::Complete(CompleteSeries::Floats(ref mut vals)) => {
-                Ok(vals.sort_by(f64::total_cmp))
+                let _: () = vals.sort_by(f64::total_cmp);
+                Ok(())
             }
-            Series::Complete(CompleteSeries::Integers(ref mut vals)) => Ok(vals.sort()),
-            Series::Complete(CompleteSeries::Booleans(ref mut vals)) => Ok(vals.sort()),
-            Series::Complete(CompleteSeries::Strings(ref mut vals)) => Ok(vals.sort()),
-            Series::Complete(CompleteSeries::Dates(ref mut vals)) => Ok(vals.sort()),
-            Series::Complete(CompleteSeries::Times(ref mut vals)) => Ok(vals.sort()),
+            Series::Complete(CompleteSeries::Integers(ref mut vals)) => {
+                let _: () = vals.sort();
+                Ok(())
+            },
+            Series::Complete(CompleteSeries::Booleans(ref mut vals)) => {
+                let _: () = vals.sort();
+                Ok(())
+            },
+            Series::Complete(CompleteSeries::Strings(ref mut vals)) => {
+                let _: () = vals.sort();
+                Ok(())
+            },
+            Series::Complete(CompleteSeries::Dates(ref mut vals)) => {
+                let _: () = vals.sort();
+                Ok(())
+            },
+            Series::Complete(CompleteSeries::Times(ref mut vals)) => {
+                let _: () = vals.sort();
+                Ok(())
+            },
             s => Err(format!(
                 "Incorrect Type: Mean cannot be calculated for series of type `{}`",
                 s.type_name(),
@@ -182,9 +198,7 @@ mod series {
                 Ok(vals.get(ind).cloned().map(Attribute::DateTime))
             }
             Series::Complete(CompleteSeries::Attributes(ref vals)) => Ok(vals.get(ind).cloned()),
-            _ => Err(format!(
-                "Incorrect Type: Masked Series not supported for Nth",
-            )),
+            _ => Err("Incorrect Type: Masked Series not supported for Nth".to_string()),
         }
     }
 

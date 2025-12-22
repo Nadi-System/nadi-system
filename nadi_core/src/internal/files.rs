@@ -11,7 +11,7 @@ mod files {
     fn file_exists(path: &Path, min_lines: Option<usize>) -> bool {
         if let Some(ml) = min_lines {
             match std::fs::File::open(path) {
-                Ok(f) => BufReader::new(f).lines().skip(ml).next().is_some(),
+                Ok(f) => BufReader::new(f).lines().nth(ml).is_some(),
                 _ => false,
             }
         } else {

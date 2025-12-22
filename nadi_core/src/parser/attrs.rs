@@ -66,8 +66,8 @@ pub fn parse(tokens: Vec<RawToken>) -> Result<AttrMap, ParseError> {
                     return Err(ParseError::custom(format!(
                         "Key {} already set to value {} (new: {})",
                         keys.join("."),
-                        val.to_string(),
-                        oval.to_string()
+                        val,
+                        oval
                     )));
                 }
             }
@@ -88,7 +88,7 @@ fn move_in<'a>(keys: &[String], table: &'a mut AttrMap) -> Result<&'a mut AttrMa
                 return Err(ParseError::custom(format!(
                     "Key {k} in {} is not a table (value: {})",
                     keys.join("."),
-                    val.to_string(),
+                    val,
                 )));
             }
         };

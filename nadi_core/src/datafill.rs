@@ -115,7 +115,7 @@ impl MaskedSeries {
 
     pub fn impute_gaps(self, method: SeriesMethod) -> Result<Series, DataImputeError> {
         match method {
-            SeriesMethod::Zero => Ok(self.fill_zero()).map(Series::Complete),
+            SeriesMethod::Zero => Ok(Series::Complete(self.fill_zero())),
             SeriesMethod::One => self.fill_one().map(Series::Complete),
             SeriesMethod::Forward(v) => self.fill_forward(v),
             SeriesMethod::Backward(v) => self.fill_backward(v),

@@ -144,7 +144,7 @@ No arguments and no errors, it'll just print all the attributes in a node with
 
     fn call(&self, node: &NodeInner, _ctx: &FunctionCtx) -> FunctionRet {
         for Tuple2(k, v) in node.attr_map() {
-            println!("{}::{k} = {}", node.name(), v.to_string());
+            println!("{}::{k} = {}", node.name(), v);
         }
         FunctionRet::None
     }
@@ -181,7 +181,7 @@ fn print_attrs(node: &NodeInner, #[args] attrs: AttrSlice, name: bool) -> Functi
             if name {
                 print!("{}::", node.name());
             }
-            println!("{a} = {}", v.to_string());
+            println!("{a} = {}", v);
         }
     }
     FunctionRet::None

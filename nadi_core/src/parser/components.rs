@@ -35,7 +35,7 @@ pub fn string_val<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, String> {
 pub fn template_val<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Template> {
     if let [first, rest @ ..] = inp {
         match &first.ty {
-            TaskToken::Template(s) => Template::from_str(&s).map(|t| (rest, t)).map_err(|e| {
+            TaskToken::Template(s) => Template::from_str(s).map(|t| (rest, t)).map_err(|e| {
                 nom::Err::Error(MatchErr::new(inp).ty(&ParseErrorType::InvalidTemplate(e)))
             }),
             _ => Err(nom::Err::Error(

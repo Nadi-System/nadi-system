@@ -23,8 +23,8 @@ impl std::fmt::Display for LocalExpr {
 impl LocalExpr {
     pub fn expr(&self) -> &Expression {
         match self {
-            Self::Expr(expr, _) => &expr,
-            Self::Assign(_, expr, _) => &expr,
+            Self::Expr(expr, _) => expr,
+            Self::Assign(_, expr, _) => expr,
         }
     }
 
@@ -46,7 +46,7 @@ impl LocalExpr {
             Self::Expr(expr, quiet) => {
                 // evaluate it even if we don't return a value because
                 // it could be a function that has some side effect
-                let res = expr.resolve_eval(ft, ctx, Some(&locals), node)?;
+                let res = expr.resolve_eval(ft, ctx, Some(locals), node)?;
                 if *quiet {
                     Ok(None)
                 } else {
@@ -54,13 +54,13 @@ impl LocalExpr {
                 }
             }
             Self::Assign(var, expr, quiet) => {
-                let val = expr.resolve_eval_value(ft, ctx, Some(&locals), node)?;
+                let val = expr.resolve_eval_value(ft, ctx, Some(locals), node)?;
                 let res = if *quiet {
                     Ok(None)
                 } else {
                     Ok(Some(val.clone()))
                 };
-                locals.insert(var.to_string().into(), val.into());
+                locals.insert(var.to_string().into(), val);
                 res
             }
         }
@@ -199,7 +199,7 @@ impl UserFunction {
             self.args
                 .iter()
                 .chain(self.kwargs.iter().map(|v| &v.0))
-                .zip(args.into_iter())
+                .zip(args)
                 .for_each(|(k, v)| {
                     locals.insert(k.to_string().into(), v);
                 });
@@ -217,7 +217,7 @@ impl UserFunction {
             // the functioncall, we need to have all the remaining
             // positional parameters provided in the keyword arguments
             // of the function call
-            self.args.iter().zip(args.into_iter()).for_each(|(k, v)| {
+            self.args.iter().zip(args).for_each(|(k, v)| {
                 locals.insert(k.to_string().into(), v);
             });
             for arg in self.args.iter().skip(args_len) {

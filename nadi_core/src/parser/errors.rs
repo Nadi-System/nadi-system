@@ -202,7 +202,7 @@ impl ParseErrorType {
             Self::MissingValue => "Missing Value",
             Self::ExpectedPath => "Expected Path symbol here",
             Self::InvalidToken => "Unsupported Token",
-            Self::InvalidTemplate(err) => return format!("Invalid Template: {}", err.to_string()),
+            Self::InvalidTemplate(err) => return format!("Invalid Template: {}", err),
             Self::TokenMismatch => "Unexpected Token",
             Self::MultipleOutput(msg) => return format!("Multiple output not supported: {msg}"),
             Self::Custom(msg) => msg.as_str(),

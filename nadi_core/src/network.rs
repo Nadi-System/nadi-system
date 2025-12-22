@@ -335,7 +335,7 @@ impl Network {
         self.nodes_map
             .iter()
             .map(|n| n.1)
-            .filter(|n| n.lock().inputs().len() == 0)
+            .filter(|n| n.lock().inputs().is_empty())
     }
 
     /// Calculate the order of all nodes
@@ -347,7 +347,7 @@ impl Network {
 
         // ran into stackoverflow with the recursive pattern of calculation
         self.nodes_map.iter().for_each(|n| {
-            if n.1.lock().inputs().len() == 0 {
+            if n.1.lock().inputs().is_empty() {
                 orders.insert(n.0.clone(), 1);
             }
             let mut n =
@@ -375,8 +375,7 @@ impl Network {
         self.outlet = {
             let outlets: Vec<Node> = self
                 .nodes()
-                .filter(|n| n.try_lock().expect("mutex error nr1").output().is_none())
-                .map(|o| o.clone())
+                .filter(|n| n.try_lock().expect("mutex error nr1").output().is_none()).cloned()
                 .collect();
             match &outlets[..] {
                 [] => {
@@ -630,7 +629,7 @@ impl Network {
             .into_iter()
             .map(|(n, o)| (n.into(), o))
             .collect();
-        self.nodes = self.nodes_map.keys().map(|s| s.clone()).collect();
+        self.nodes = self.nodes_map.keys().cloned().collect();
         self.reorder();
         self.set_levels();
         Ok(())
@@ -838,7 +837,7 @@ impl std::fmt::Display for PropCondition {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
         match self {
             Self::All => Ok(()),
-            Self::Expr(expr) => write!(fmt, "({})", expr.to_string()),
+            Self::Expr(expr) => write!(fmt, "({})", expr),
         }
     }
 }

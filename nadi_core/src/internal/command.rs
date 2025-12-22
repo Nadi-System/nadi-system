@@ -84,10 +84,10 @@ mod command {
                     match outvars.attr(&k) {
                         Some(vold) => {
                             if !(vold == &v) {
-                                println!("{k}={} -> {}", vold.to_string(), v.to_string())
+                                println!("{k}={} -> {}", vold, v)
                             }
                         }
-                        None => println!("{k}={}", v.to_string()),
+                        None => println!("{k}={}", v),
                     };
                 }
                 outvars.set_attr(&k, v);
@@ -214,10 +214,10 @@ mod command {
                     match node.attr(&k) {
                         Some(vold) => {
                             if !(vold == &v) {
-                                println!("{k}={} -> {}", vold.to_string(), v.to_string())
+                                println!("{k}={} -> {}", vold, v)
                             }
                         }
-                        None => println!("{k}={}", v.to_string()),
+                        None => println!("{k}={}", v),
                     };
                 }
                 node.set_attr(&k, v);
@@ -389,10 +389,10 @@ mod command {
                             match node.attr(&k) {
                                 Some(vold) => {
                                     if !(vold == &v) {
-                                        println!("{k}={} -> {}", vold.to_string(), v.to_string())
+                                        println!("{k}={} -> {}", vold, v)
                                     }
                                 }
-                                None => println!("{k}={}", v.to_string()),
+                                None => println!("{k}={}", v),
                             };
                         }
                         node.set_attr(&k, v);
@@ -404,10 +404,10 @@ mod command {
                         match net.attr(&k) {
                             Some(vold) => {
                                 if !(vold == &v) {
-                                    println!("{k}={} -> {}", vold.to_string(), v.to_string())
+                                    println!("{k}={} -> {}", vold, v)
                                 }
                             }
-                            None => println!("{k}={}", v.to_string()),
+                            None => println!("{k}={}", v),
                         };
                     }
                     net.set_attr(&k, v);

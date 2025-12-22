@@ -312,9 +312,9 @@ impl std::fmt::Display for Expression {
             }
             Self::UniOp(op, expr) => {
                 if expr.nested() {
-                    write!(f, "{} ({})", op.to_string(), expr.to_string())
+                    write!(f, "{} ({})", op, expr)
                 } else {
-                    write!(f, "{} {}", op.to_string(), expr.to_string())
+                    write!(f, "{} {}", op, expr)
                 }
             }
             Self::BiOp(op, expr1, expr2) => write!(
@@ -325,7 +325,7 @@ impl std::fmt::Display for Expression {
                 } else {
                     expr1.to_string()
                 },
-                op.to_string(),
+                op,
                 if expr2.nested() {
                     format!("({})", expr2)
                 } else {
@@ -454,7 +454,7 @@ impl Expression {
                     Ok(fc)
                 })
                 .collect::<Result<Vec<FunctionCall>, EvalError>>()
-                .map(|fcs| Self::MultiFunction(fcs)),
+                .map(Self::MultiFunction),
             Self::UniOp(op, expr) => Ok(Self::UniOp(op, Box::new(expr.simplify(ft, ctx)?))),
             Self::BiOp(op, expr1, expr2) => Ok(Self::BiOp(
                 op,
@@ -589,7 +589,7 @@ impl Expression {
                         .into_option()
                         .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(fc.position()))?
                         .inputs()
-                        .into_iter()
+                        .iter()
                         .map(|n| fc.resolve(ft, ctx, local, Some(n)))
                         .collect::<Result<Vec<FunctionCall>, EvalError>>()?;
                     Ok(Self::MultiFunction(fcs))
@@ -625,10 +625,10 @@ impl Expression {
                 _ => fc.resolve(ft, ctx, local, node).map(Self::Function),
             },
             Self::MultiFunction(fcs) => fcs
-                .into_iter()
+                .iter()
                 .map(|fc| fc.resolve(ft, ctx, local, node))
                 .collect::<Result<Vec<FunctionCall>, EvalError>>()
-                .map(|fcs| Self::MultiFunction(fcs)),
+                .map(Self::MultiFunction),
             Self::UniOp(op, expr) => Ok(Self::UniOp(
                 op.clone(),
                 Box::new(expr.resolve(ft, ctx, local, node)?),
@@ -756,7 +756,7 @@ impl Expression {
                 Err(e) => Err(e),
             },
             Self::MultiFunction(fcs) => fcs
-                .into_iter()
+                .iter()
                 .map(|fc| match fc.eval(ft, ctx, local, node) {
                     Ok(None) => {
                         Err(EvalErrorType::NoReturnValue(fc.name.to_string()).pos(fc.position()))
@@ -983,7 +983,7 @@ pub enum InputVarIndex {
 }
 
 impl InputVarIndex {
-    pub fn index<'a, 'b>(&'a self, val: &'b Attribute) -> Result<&'b Attribute, EvalErrorType> {
+    pub fn index<'b>(&self, val: &'b Attribute) -> Result<&'b Attribute, EvalErrorType> {
         match (self, val) {
             (Self::Str(s), Attribute::Table(am)) => am
                 .attr(s)
@@ -1036,7 +1036,7 @@ impl std::fmt::Display for InputVar {
             "{}{}{}{}",
             self.ty
                 .as_ref()
-                .map(|t| format!("{}.", t.to_string()))
+                .map(|t| format!("{}.", t))
                 .unwrap_or_default(),
             self.name,
             self.indices
@@ -1044,7 +1044,7 @@ impl std::fmt::Display for InputVar {
                 .map(|p| format!(".{p}"))
                 .collect::<Vec<String>>()
                 .join(""),
-            self.check.then_some("?").unwrap_or_default(),
+            if self.check { "?" } else { Default::default() },
         )
     }
 }
@@ -1067,8 +1067,8 @@ impl InputVar {
         }
     }
 
-    pub fn attr_nested<'a, 'b, T: HasAttributes>(
-        &'a self,
+    pub fn attr_nested<'b, T: HasAttributes>(
+        &self,
         attrmap: &'b T,
     ) -> Result<&'b Attribute, EvalErrorType> {
         let mut at = attrmap
@@ -1164,8 +1164,7 @@ impl InputVar {
                                                     .pos(self.position()),
                                             )?,
                                         )
-                                        .is_ok()
-                                        .into(),
+                                        .is_ok(),
                                     ))
                                 })
                                 .collect::<Result<_, EvalError>>()?;
@@ -1416,7 +1415,7 @@ impl std::fmt::Display for FunctionCall {
         let kwargs = self
             .kwargs
             .iter()
-            .map(|a| format!("{} = {}", a.0, a.1.to_string()))
+            .map(|a| format!("{} = {}", a.0, a.1))
             .collect::<Vec<String>>()
             .join(", ");
         let middle = if args.is_empty() || kwargs.is_empty() {
@@ -1770,7 +1769,7 @@ impl SeriesExpression {
         match self {
             Self::AttrExpr(expr) => match expr.resolve_eval_value(ft, ctx, local, node)? {
                 Attribute::Array(ar) => Ok(CompleteSeries::from(ar).retype().into()),
-                _ => return Err(EvalErrorType::NotAnArray.no_pos()),
+                _ => Err(EvalErrorType::NotAnArray.no_pos()),
             },
             Self::Series(ty, sr) => get_series(ft, ctx, node, ty, sr),
             Self::SeriesMap(ty, sr, func) => {
@@ -1791,10 +1790,10 @@ impl SeriesExpression {
                     MapFunction::Pointer(name) => {
                         let func_call = |arg| {
                             let fctx = FunctionCtx::from_arg_kwarg(vec![arg], HashMap::new());
-                            match ctx.udf(&name).cloned() {
+                            match ctx.udf(name).cloned() {
                                 // priority for the locally defined function; evaluated in local context
                                 Some(func) => func.eval(ctx, fctx),
-                                _ => match ctx.functions.env(&name) {
+                                _ => match ctx.functions.env(name) {
                                     Some(f) => f.call(&fctx).res().map_err(|e| {
                                         EvalErrorType::FunctionError(
                                             name.to_string(),

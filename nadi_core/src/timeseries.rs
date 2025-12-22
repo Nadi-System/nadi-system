@@ -767,7 +767,7 @@ impl MaskedSeries {
         }
         blocks
             .into_iter()
-            .filter_map(|(pos, len, val)| val.then(|| (pos, len)))
+            .filter_map(|(pos, len, val)| val.then_some((pos, len)))
             .collect()
     }
 
@@ -775,7 +775,7 @@ impl MaskedSeries {
         Ok(match self {
             Self::Floats(v) => v
                 .iter()
-                .filter_map(|v| v.into_option().clone())
+                .filter_map(|v| v.into_option())
                 .reduce(f64::min)
                 .map(Attribute::Float),
             Self::Integers(v) => minimum_masked(v).map(Attribute::Integer),
@@ -792,7 +792,7 @@ impl MaskedSeries {
         Ok(match self {
             Self::Floats(v) => v
                 .iter()
-                .filter_map(|v| v.into_option().clone())
+                .filter_map(|v| v.into_option())
                 .reduce(f64::max)
                 .map(Attribute::Float),
             Self::Integers(v) => maximum_masked(v).map(Attribute::Integer),
@@ -820,10 +820,10 @@ impl MaskedSeries {
 
     pub fn get_attribute(&self, index: usize) -> Option<Option<Attribute>> {
         Some(match self {
-            Self::Floats(v) => v.get(index)?.clone().into_option().map(Attribute::Float),
-            Self::Integers(v) => v.get(index)?.clone().into_option().map(Attribute::Integer),
+            Self::Floats(v) => (*v.get(index)?).into_option().map(Attribute::Float),
+            Self::Integers(v) => (*v.get(index)?).into_option().map(Attribute::Integer),
             Self::Strings(v) => v.get(index)?.clone().into_option().map(Attribute::String),
-            Self::Booleans(v) => v.get(index)?.clone().into_option().map(Attribute::Bool),
+            Self::Booleans(v) => (*v.get(index)?).into_option().map(Attribute::Bool),
             Self::Dates(v) => v.get(index)?.clone().into_option().map(Attribute::Date),
             Self::Times(v) => v.get(index)?.clone().into_option().map(Attribute::Time),
             Self::DateTimes(v) => v.get(index)?.clone().into_option().map(Attribute::DateTime),
@@ -1094,10 +1094,10 @@ impl CompleteSeries {
 
     pub fn get_attribute(&self, index: usize) -> Option<Attribute> {
         Some(match self {
-            Self::Floats(v) => Attribute::Float(v.get(index)?.clone()),
-            Self::Integers(v) => Attribute::Integer(v.get(index)?.clone()),
+            Self::Floats(v) => Attribute::Float(*v.get(index)?),
+            Self::Integers(v) => Attribute::Integer(*v.get(index)?),
             Self::Strings(v) => Attribute::String(v.get(index)?.clone()),
-            Self::Booleans(v) => Attribute::Bool(v.get(index)?.clone()),
+            Self::Booleans(v) => Attribute::Bool(*v.get(index)?),
             Self::Dates(v) => Attribute::Date(v.get(index)?.clone()),
             Self::Times(v) => Attribute::Time(v.get(index)?.clone()),
             Self::DateTimes(v) => Attribute::DateTime(v.get(index)?.clone()),
@@ -1107,7 +1107,7 @@ impl CompleteSeries {
 
     pub fn minimum(&self) -> Result<Option<Attribute>, EvalErrorType> {
         Ok(match self {
-            Self::Floats(v) => v.iter().map(|&v| v).reduce(f64::min).map(Attribute::Float),
+            Self::Floats(v) => v.iter().copied().reduce(f64::min).map(Attribute::Float),
             Self::Integers(v) => minimum(v).map(Attribute::Integer),
             Self::Strings(v) => minimum(v).map(Attribute::String),
             Self::Booleans(v) => minimum(v).map(Attribute::Bool),
@@ -1120,7 +1120,7 @@ impl CompleteSeries {
 
     pub fn maximum(&self) -> Result<Option<Attribute>, EvalErrorType> {
         Ok(match self {
-            Self::Floats(v) => v.iter().map(|&v| v).reduce(f64::max).map(Attribute::Float),
+            Self::Floats(v) => v.iter().copied().reduce(f64::max).map(Attribute::Float),
             Self::Integers(v) => maximum(v).map(Attribute::Integer),
             Self::Strings(v) => maximum(v).map(Attribute::String),
             Self::Booleans(v) => maximum(v).map(Attribute::Bool),
@@ -1213,7 +1213,7 @@ impl_from_series!(Attribute, Attributes);
 // Generic functions to apply to all types of series
 
 fn has_gaps<T>(vals: &RVec<ROption<T>>) -> bool {
-    vals.iter().find(|v| v.is_none()).is_some()
+    vals.iter().any(|v| v.is_none())
 }
 
 /// To convert a pre-checked not-null series to a complete series

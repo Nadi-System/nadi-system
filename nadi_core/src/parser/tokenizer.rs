@@ -34,7 +34,7 @@ impl<'a> TaskPosition for Token<'a> {
 
 impl<'a, 'b> TaskPosition for &'b [Token<'a>] {
     fn position(&self) -> (usize, usize) {
-        if let Some(t) = self.get(0) {
+        if let Some(t) = self.first() {
             t.position()
         } else {
             (0, 0)
@@ -131,7 +131,7 @@ impl<'a> ParenCheck<'a> {
         if stack.is_empty() {
             Self::Paired
         } else {
-            Self::Unpaired(stack.into_iter().map(|t| t.clone()).collect())
+            Self::Unpaired(stack.into_iter().cloned().collect())
         }
     }
 }
@@ -223,7 +223,7 @@ impl Token<'_> {
     }
 
     pub fn colored(&self) -> String {
-        self.ty.highlight().colored(&self.content)
+        self.ty.highlight().colored(self.content)
     }
 
     pub fn attribute(&self) -> Result<Option<Attribute>, &'static str> {

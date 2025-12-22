@@ -290,9 +290,9 @@ impl std::fmt::Display for Attribute {
                     v.iter()
                         .map(|a| {
                             if valid_var(a.0) {
-                                format!("{} = {}", a.0, a.1.to_string())
+                                format!("{} = {}", a.0, a.1)
                             } else {
-                                format!("\"{}\" = {}", a.0, a.1.to_string())
+                                format!("\"{}\" = {}", a.0, a.1)
                             }
                         })
                         .collect::<Vec<String>>()
@@ -311,7 +311,7 @@ impl TaskContext {
             Attribute::String(v) => format!("{v:?}"),
             Attribute::Integer(v) => format!("{v}"),
             // lower for nan and inf
-            Attribute::Float(v) => format!("{}", v.to_string().to_lowercase()),
+            Attribute::Float(v) => v.to_string().to_lowercase().to_string(),
             Attribute::Date(v) => format!("{v}"),
             Attribute::Time(v) => format!("{v}"),
             Attribute::DateTime(v) => format!("{v}"),
@@ -438,7 +438,7 @@ impl std::ops::Not for Attribute {
             Self::Bool(b) => Ok(Self::Bool(!b)),
             Self::Array(ar) => Ok(Self::Array(
                 ar.into_iter()
-                    .map(|a| std::ops::Not::not(a))
+                    .map(std::ops::Not::not)
                     .collect::<Result<Vec<Self>, EvalErrorType>>()?
                     .into(),
             )),
@@ -456,7 +456,7 @@ impl std::ops::Neg for Attribute {
             Self::Float(v) => Ok(Self::Float(-v)),
             Self::Array(ar) => Ok(Self::Array(
                 ar.into_iter()
-                    .map(|a| std::ops::Neg::neg(a))
+                    .map(std::ops::Neg::neg)
                     .collect::<Result<Vec<Self>, EvalErrorType>>()?
                     .into(),
             )),
@@ -1572,7 +1572,7 @@ impl Date {
 
     /// get if the year is leap year or not
     pub fn leap_year(year: u16) -> bool {
-        (year % 4 == 0) && ((year % 100 != 0) || (year % 400 == 0))
+        year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400))
     }
 
     /// Get days in the month
@@ -1712,7 +1712,7 @@ mod tests {
     #[case("sething", 12.into())]
     #[case("someng", 12.0.into())]
     #[case("SOMETHING", "same_true".into())]
-    #[case("SoMe", attr!(true, "something").into())]
+    #[case("SoMe", attr!(true, "something"))]
     #[case("SoMe", attr!(x => true, y => "something").into())]
     #[should_panic]
     #[case("_", attr!("some value"))]
@@ -1729,7 +1729,7 @@ mod tests {
     #[case("sething", 12.into())]
     #[case("someng", 12.0.into())]
     #[case("SOMETHING", "same_true".into())]
-    #[case("SoMe", attr!(true, "something").into())]
+    #[case("SoMe", attr!(true, "something"))]
     #[case("SoMe", attr!(x => true, y => "something").into())]
     #[should_panic]
     #[case("_", attr!("some value"))]
@@ -1737,7 +1737,7 @@ mod tests {
     #[case("set.hing", 12.into())]
     #[case("some.ng", 12.0.into())]
     #[case("SOMET.HING", "same_true".into())]
-    #[case("So.Me", attr!(true, "something").into())]
+    #[case("So.Me", attr!(true, "something"))]
     #[case("SoMe.STH", attr!(x => true, y => "something").into())]
     #[should_panic]
     #[case("hsh._.shs", attr!("some value"))]
