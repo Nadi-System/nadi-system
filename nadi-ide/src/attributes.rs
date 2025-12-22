@@ -96,7 +96,7 @@ impl Attr {
         for i in mem {
             if id.starts_with(&i.id) {
                 if id.len() > i.id.len() {
-                    i.toggle_internal(&id);
+                    i.toggle_internal(id);
                 } else {
                     i.toggle();
                 }

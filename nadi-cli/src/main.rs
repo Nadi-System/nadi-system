@@ -342,7 +342,7 @@ fn execute_tasks(txt: &str, print_tasks: bool, tasks_ctx: &mut TaskContext) -> a
 
     for fc in tasks {
         if print_tasks {
-            println!("{}", fc.to_string());
+            println!("{}", fc);
         }
         match tasks_ctx.execute(fc) {
             Ok(Some(p)) => println!("{p}"),

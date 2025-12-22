@@ -227,7 +227,7 @@ impl Editor {
             last_edit: Instant::now(),
             error: None,
             embedded: false,
-            functions: functions.unwrap_or_else(|| NadiFunctions::new()),
+            functions: functions.unwrap_or_else(NadiFunctions::new),
         }
     }
 
@@ -256,10 +256,11 @@ impl Editor {
                         return Task::none();
                     }
                 };
-                if let Some(curr) = &self.curr_func {
-                    if curr.ty == ty && curr.name == name {
-                        return Task::none();
-                    }
+                if let Some(curr) = &self.curr_func
+                    && curr.ty == ty
+                    && curr.name == name
+                {
+                    return Task::none();
                 }
                 Task::perform(async { (ty, name) }, Message::FuncSignature)
             }

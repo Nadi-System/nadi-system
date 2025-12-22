@@ -118,6 +118,7 @@ impl NodeData {
     }
 }
 
+#[derive(Default)]
 pub struct NetworkData {
     pub nodes: Vec<NodeData>,
     pub edges: Vec<(usize, usize, Option<Color>, f32)>,
@@ -135,17 +136,6 @@ pub struct NetworkDataView {
     pub invert: bool,
     pub scale: f32,
     pub cache: Cache<iced::Renderer>,
-}
-
-impl Default for NetworkData {
-    fn default() -> Self {
-        Self {
-            nodes: vec![],
-            edges: vec![],
-            label: None,
-            maxlevel: 0,
-        }
-    }
 }
 
 impl Default for NetworkDataView {

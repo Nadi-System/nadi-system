@@ -78,14 +78,14 @@ impl PyNode {
     }
 
     #[pyo3(signature = (name, default=None))]
-    fn getattr(&self, name: String, default: Option<PyAttribute>) -> Option<impl IntoPyObject> {
+    fn getattr(&self, name: String, default: Option<PyAttribute>) -> Option<impl IntoPyObject<'_>> {
         match self.0.lock().attr(&name) {
             Some(v) => Some(PyAttribute::from(v.clone())),
             None => default,
         }
     }
 
-    fn __getattr__(&self, name: String) -> PyResult<impl IntoPyObject> {
+    fn __getattr__(&self, name: String) -> PyResult<impl IntoPyObject<'_>> {
         match self.0.lock().attr(&name) {
             Some(v) => Ok(PyAttribute::from(v.clone())),
             None => Err(PyAttributeError::new_err("Attribute Not Found")),

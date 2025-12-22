@@ -320,9 +320,10 @@ pub fn pos_vars<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<String>> {
     )(inp)
 }
 
-pub fn funcdef_args<'a, 'b>(
-    inp: &'a [Token<'b>],
-) -> MatchRes<'a, 'b, (Vec<String>, Vec<(String, Expression)>)> {
+type FuncDefArgKwarg = (Vec<String>, Vec<(String, Expression)>);
+type FuncCallArgKwarg = (Vec<Expression>, Vec<(String, Expression)>);
+
+pub fn funcdef_args<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FuncDefArgKwarg> {
     err_ctx(
         &ParseErrorType::InvalidFunctionParameters,
         alt((
@@ -355,9 +356,7 @@ pub fn funcdef_args<'a, 'b>(
     )(inp)
 }
 
-pub fn func_args<'a, 'b>(
-    inp: &'a [Token<'b>],
-) -> MatchRes<'a, 'b, (Vec<Expression>, Vec<(String, Expression)>)> {
+pub fn func_args<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FuncCallArgKwarg> {
     err_ctx(
         &ParseErrorType::InvalidFunctionParameters,
         alt((

@@ -1396,8 +1396,7 @@ impl Eq for DateTime {}
 
 impl PartialOrd for DateTime {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        // TODO don't ignore offset
-        Some(self.date.cmp(&other.date).then(self.time.cmp(&other.time)))
+        Some(self.cmp(other))
     }
 }
 

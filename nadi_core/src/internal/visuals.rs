@@ -167,6 +167,7 @@ mod visuals {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[network_func(settings = Settings::default())]
     fn svg_ts_blocks(
         net: &mut Network,

@@ -188,10 +188,9 @@ pub trait EnvFunction: Debug + Clone {
             .into()
     }
     fn has_kw_args(&self) -> bool {
-        self.args().iter().any(|a| match a.category {
-            FuncArgType::Args | FuncArgType::KwArgs => true,
-            _ => false,
-        })
+        self.args()
+            .iter()
+            .any(|a| matches!(a.category, FuncArgType::Args | FuncArgType::KwArgs))
     }
     fn args(&self) -> RVec<FuncArg>;
     fn signature(&self) -> RString {
@@ -219,10 +218,9 @@ pub trait NodeFunction: Debug + Clone {
             .into()
     }
     fn has_kw_args(&self) -> bool {
-        self.args().iter().any(|a| match a.category {
-            FuncArgType::Args | FuncArgType::KwArgs => true,
-            _ => false,
-        })
+        self.args()
+            .iter()
+            .any(|a| matches!(a.category, FuncArgType::Args | FuncArgType::KwArgs))
     }
     fn args(&self) -> RVec<FuncArg>;
     fn signature(&self) -> RString {
@@ -259,10 +257,9 @@ pub trait NetworkFunction: Debug + Clone {
             .into()
     }
     fn has_kw_args(&self) -> bool {
-        self.args().iter().any(|a| match a.category {
-            FuncArgType::Args | FuncArgType::KwArgs => true,
-            _ => false,
-        })
+        self.args()
+            .iter()
+            .any(|a| matches!(a.category, FuncArgType::Args | FuncArgType::KwArgs))
     }
     fn args(&self) -> RVec<FuncArg>;
     fn signature(&self) -> RString {

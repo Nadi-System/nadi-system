@@ -36,8 +36,10 @@ pub fn main() -> iced::Result {
 
 fn boot() -> (MainWindow, Task<Message>) {
     let options = NadiIdeOptions::parse();
-    let mut ide = MainWindow::default();
-    ide.light_theme = options.light_theme;
+    let mut ide = MainWindow {
+        light_theme: options.light_theme,
+        ..Default::default()
+    };
     let task = if let Some(t) = options.task_file {
         // if a File is given start with the ENT configuration
         ide.panes = pane_grid::State::<Pane>::with_configuration(panety_2_pane(

@@ -59,7 +59,9 @@ mod tests {
             Err(e) => return Err(e.user_msg_color(None)),
         };
         for tsk in tasks {
-            if let Err(p) = ctx.execute(tsk.clone()) { return Err(format!("Error in:\n{tsk}\n {p}")) }
+            if let Err(p) = ctx.execute(tsk.clone()) {
+                return Err(format!("Error in:\n{tsk}\n {p}"));
+            }
         }
         Ok(())
     }

@@ -243,11 +243,7 @@ fn parse_template(val: &str) -> Result<Template, TemplateError> {
     let mut pos: usize = 0;
     let mut lastpos: usize = 0;
     let mut fmt = None;
-    loop {
-        let c = match chars.next() {
-            Some(c) => c,
-            None => break,
-        };
+    while let Some(c) = chars.next() {
         pos += 1;
         match c {
             '\\' => {
@@ -455,12 +451,12 @@ mod tests {
     #[case(" {SoMe} ", attr_map!(SoMe => 1), " 1 ")]
     #[case("{foo}",  attr_map!(foo => "bar"), "bar")]
     #[case("{foo}",  attr_map!(foo => 42),   "42")]
-    #[case("{foo}",  attr_map!(foo => 3.14), "3.14")]
+    #[case("{foo}",  attr_map!(foo => 3.11), "3.11")]
     #[case("{foo}",  attr_map!(foo => true), "true")]
     #[case("{foo}",  attr_map!(foo => vec![1,2,3]), "[1, 2, 3]")]
-    #[case("{foo:0.2}", attr_map!(foo => 3.1415), "3.14")]
-    #[case("{foo:0.1}", attr_map!(foo => 3.1415), "3.1")]
-    #[case("{foo:0.0}", attr_map!(foo => 3.1415), "3")]
+    #[case("{foo:0.2}", attr_map!(foo => 3.123), "3.12")]
+    #[case("{foo:0.1}", attr_map!(foo => 3.123), "3.1")]
+    #[case("{foo:0.0}", attr_map!(foo => 3.123), "3")]
     #[case("{foo:>10}", attr_map!(foo => "hi"), "        hi")]
     #[case("{foo:<10}", attr_map!(foo => "hi"), "hi        ")]
     #[case("{foo:^10}", attr_map!(foo => "hi"), "    hi    ")]
@@ -472,7 +468,7 @@ mod tests {
     // #[case("{foo:02}", attr_map!(foo => 42), "42")]
     #[case("{foo:>5}", attr_map!(foo => 3), "    3")]
     #[case("{foo:>5.2}", attr_map!(foo => 3.1), " 3.10")]
-    #[case("{foo:>5.2}", attr_map!(foo => 3.1415), " 3.14")]
+    #[case("{foo:>5.2}", attr_map!(foo => 3.1615), " 3.16")]
     #[should_panic]
     #[case("{foo}", attr_map!(), "???")] // placeholder missing – expected placeholder‑token
     #[should_panic]

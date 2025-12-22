@@ -404,10 +404,9 @@ mod core {
                 ));
             }
         }
-        if err_diff_len
-            && attrs.iter().any(|a| a.len() != min_len) {
-                return Err("Lengths of the arguments are not the same".to_string());
-            }
+        if err_diff_len && attrs.iter().any(|a| a.len() != min_len) {
+            return Err("Lengths of the arguments are not the same".to_string());
+        }
         let mut zipped = Vec::with_capacity(min_len);
         for j in 0..min_len {
             // we already made sure the min_len is valid, but using

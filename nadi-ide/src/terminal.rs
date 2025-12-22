@@ -31,7 +31,7 @@ enum TaskCtxMessage {
 
 /// Messages that can be sent to the task context over the channel
 enum TaskCtxRequest {
-    Run(NadiTask),
+    Run(Box<NadiTask>),
     NodeAttr(String),
     NetworkAttr,
     // no need to send request for NetworkData as it is sent whenever
@@ -68,11 +68,11 @@ fn spawn_task_context() -> (Sender<TaskCtxRequest>, Receiver<TaskCtxMessage>) {
                         // result to show somewhere else (like here)
                         let mut buf = gag::BufferRedirect::stdout().unwrap();
                         let mut output = String::new();
-                        if matches!(task, NadiTask::Clear) {
+                        if matches!(*task, NadiTask::Clear) {
                             task_ctx.clear();
                             let _ = send.send(TaskCtxMessage::Clear);
                         }
-                        let res = task_ctx.execute(task).map_err(|e| e.to_string());
+                        let res = task_ctx.execute(*task).map_err(|e| e.to_string());
                         // print the stdout output to the terminal
                         buf.read_to_string(&mut output).unwrap();
                         output.push('\n');
@@ -272,7 +272,7 @@ impl Terminal {
                 } else {
                     return Task::none();
                 };
-                let _ = self.sender.send(TaskCtxRequest::Run(task));
+                let _ = self.sender.send(TaskCtxRequest::Run(Box::new(task)));
                 return Task::perform(async { tasks }, move |t| Message::TaskChain(done + 1, t));
             }
             Message::RunTasks(tasks) => {

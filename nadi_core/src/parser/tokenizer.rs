@@ -356,16 +356,14 @@ fn variable(i: &str) -> TokenRes<'_> {
                 TaskToken::Function
             } else if let Some(re) = rest.trim_start().strip_prefix('.') {
                 // .var or ."var" is supported
-                if re.trim_start().starts_with('"') {
-                    TaskToken::Variable
-                }
                 // .0 etc are supported for array indexing
-                else if re
-                    .trim_start()
-                    .chars()
-                    .next()
-                    .map(|c| c.is_numeric())
-                    .unwrap_or_default()
+                if re.trim_start().starts_with('"')
+                    || re
+                        .trim_start()
+                        .chars()
+                        .next()
+                        .map(|c| c.is_numeric())
+                        .unwrap_or_default()
                 {
                     TaskToken::Variable
                 } else {

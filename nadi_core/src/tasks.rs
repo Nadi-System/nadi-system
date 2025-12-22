@@ -274,33 +274,29 @@ impl TaskContext {
                     .map_err(|e| EvalErrorType::AttributeError(e).pos(ct.position()))?
                 {
                     true => {
-                        let mut progress = 0;
                         let total = ct.iftrue.len();
-                        for task in ct.iftrue {
+                        for (p, task) in ct.iftrue.into_iter().enumerate() {
                             let _ = self.channel.send(TaskMessage::Progress(
                                 task.to_string(),
-                                progress,
+                                p,
                                 total,
                             ));
                             if let Some(a) = self.execute(task.clone())? {
                                 let _ = self.channel.send(TaskMessage::Info(a));
                             }
-                            progress += 1;
                         }
                     }
                     false => {
-                        let mut progress = 0;
                         let total = ct.iffalse.len();
-                        for task in ct.iffalse {
+                        for (p, task) in ct.iffalse.into_iter().enumerate() {
                             let _ = self.channel.send(TaskMessage::Progress(
                                 task.to_string(),
-                                progress,
+                                p,
                                 total,
                             ));
                             if let Some(a) = self.execute(task.clone())? {
                                 let _ = self.channel.send(TaskMessage::Info(a));
                             }
-                            progress += 1;
                         }
                     }
                 }

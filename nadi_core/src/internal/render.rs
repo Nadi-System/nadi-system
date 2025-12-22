@@ -177,7 +177,7 @@ mod render_utils {
     pub enum RenderFileContentsType {
         Include(PathBuf, String),
         Literal(String),
-        Snippet(Template, Propagation),
+        Snippet(Template, Box<Propagation>),
     }
 
     pub struct RenderFileContents {
@@ -190,7 +190,7 @@ mod render_utils {
         filecontents: &mut RenderFileContents,
     ) -> Result<(), Error> {
         let p = if let Some(batch) = batch {
-            RenderFileContentsType::Snippet(Template::from_str(lines)?, batch)
+            RenderFileContentsType::Snippet(Template::from_str(lines)?, Box::new(batch))
         } else {
             RenderFileContentsType::Literal(lines.clone())
         };
@@ -266,7 +266,7 @@ mod render_utils {
             Ok(Self {
                 contents: vec![RenderFileContentsType::Snippet(
                     Template::from_str(templ)?,
-                    batch,
+                    Box::new(batch),
                 )],
             })
         }

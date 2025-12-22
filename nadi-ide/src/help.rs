@@ -67,7 +67,7 @@ impl MdHelp {
     pub fn new(functions: Option<NadiFunctions>) -> Self {
         Self {
             light_theme: false,
-            functions: functions.unwrap_or_else(|| NadiFunctions::new()),
+            functions: functions.unwrap_or_else(NadiFunctions::new),
             state: None,
             search: String::new(),
             markdown: markdown::parse(MAIN_HELP).collect(),
@@ -241,7 +241,7 @@ impl<'a> Term<'a> {
     fn split(self, s: &'a str) -> Vec<Term<'a>> {
         match self {
             Self::Remainder(a) => {
-                let parts: Vec<_> = a.split(s).map(|v| Self::Remainder(v)).collect();
+                let parts: Vec<_> = a.split(s).map(Self::Remainder).collect();
                 let mut joined = Vec::with_capacity(parts.len() * 2);
                 for p in parts {
                     joined.push(p);
@@ -259,7 +259,7 @@ fn function_label(label: String, search: &str) -> Rich<'_, String, Message> {
     let searches: Vec<&str> = search.trim().split(' ').collect();
     let mut labels = vec![Term::Remainder(&label)];
     for s in searches {
-        labels = labels.into_iter().map(|t| t.split(s)).flatten().collect();
+        labels = labels.into_iter().flat_map(|t| t.split(s)).collect();
     }
     let texts: Vec<_> = labels
         .into_iter()
@@ -330,7 +330,7 @@ pub fn help_to_markdown(
     ));
     items.push("## Arguments".to_string());
     args.iter()
-        .for_each(|f| items.push(format!("- `{}` => {}", f.to_string(), f.help)));
+        .for_each(|f| items.push(format!("- `{}` => {}", f, f.help)));
     items.push("\n".to_string());
     items.push(long[short.len()..].trim().to_string());
     items.push(format!("# Code\n```rust\n{code}\n```\n"));

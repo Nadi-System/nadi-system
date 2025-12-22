@@ -126,13 +126,13 @@ where
             state.over_node = node;
             self.data.cache.clear();
         }
-        if let Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) = event {
-            if let Some(on_press) = &self.on_press {
-                if let Some(node) = &state.over_node {
-                    shell.publish(on_press(Some(node.to_string())));
-                } else if cursor.is_over(layout.bounds()) {
-                    shell.publish(on_press(None));
-                }
+        if let Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) = event
+            && let Some(on_press) = &self.on_press
+        {
+            if let Some(node) = &state.over_node {
+                shell.publish(on_press(Some(node.to_string())));
+            } else if cursor.is_over(layout.bounds()) {
+                shell.publish(on_press(None));
             }
         }
     }
@@ -176,19 +176,19 @@ where
                 })
                 .collect();
 
-            if let Some(name) = &state.over_node {
-                if let Some(node) = self.data.network.nodes.iter().find(|n| &n.name == name) {
-                    // highlight the row if it's selected
-                    frame.fill_rectangle(
-                        (
-                            self.data.offsetx / 2.0,
-                            coords[node.index].1 - self.data.deltay / 2.0,
-                        )
-                            .into(),
-                        iced::Size::new(bounds.size().width - self.data.offsetx, self.data.deltay),
-                        style.highlight,
-                    );
-                }
+            if let Some(name) = &state.over_node
+                && let Some(node) = self.data.network.nodes.iter().find(|n| &n.name == name)
+            {
+                // highlight the row if it's selected
+                frame.fill_rectangle(
+                    (
+                        self.data.offsetx / 2.0,
+                        coords[node.index].1 - self.data.deltay / 2.0,
+                    )
+                        .into(),
+                    iced::Size::new(bounds.size().width - self.data.offsetx, self.data.deltay),
+                    style.highlight,
+                );
             }
             // Draw network lines
             for (from, to, color, width) in &self.data.network.edges {

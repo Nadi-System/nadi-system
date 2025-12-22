@@ -259,10 +259,7 @@ mod command {
                 .collect(),
         ));
 
-        // todo: put commands in a mutex, and then pop it from each
-        // thread until it is exhausted to implement the number of
-        // workers thing.
-
+        #[allow(clippy::type_complexity)]
         let (tx, rx): (Sender<(usize, String)>, Receiver<(usize, String)>) = mpsc::channel();
         let mut children = Vec::new();
 

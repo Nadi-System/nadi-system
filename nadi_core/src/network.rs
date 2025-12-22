@@ -375,7 +375,8 @@ impl Network {
         self.outlet = {
             let outlets: Vec<Node> = self
                 .nodes()
-                .filter(|n| n.try_lock().expect("mutex error nr1").output().is_none()).cloned()
+                .filter(|n| n.try_lock().expect("mutex error nr1").output().is_none())
+                .cloned()
                 .collect();
             match &outlets[..] {
                 [] => {
@@ -392,13 +393,9 @@ impl Network {
                     let already_root = self.node_by_name(ROOT_NODE_NAME).is_some();
                     let mut outs = outs.to_vec();
                     if already_root {
-                        let maybe_root = outs
-                            .iter()
-                            .enumerate()
-                            .filter(|(_, o)| {
-                                o.try_lock().expect("mutex error nr2").name() == ROOT_NODE_NAME
-                            })
-                            .next();
+                        let maybe_root = outs.iter().enumerate().find(|(_, o)| {
+                            o.try_lock().expect("mutex error nr2").name() == ROOT_NODE_NAME
+                        });
                         if let Some(root) = maybe_root {
                             eprintln!("WARN: a *ROOT* node found, adding others to it");
                             outs.remove(root.0);
@@ -449,11 +446,7 @@ impl Network {
                 .to_string(),
         );
 
-        loop {
-            let curr = match nodes_queue.pop() {
-                Some(n) => n,
-                None => break,
-            };
+        while let Some(curr) = nodes_queue.pop() {
             let mut inps: Vec<String> = self.nodes_map[curr.as_str()]
                 .try_lock()
                 .expect("mutex error nr8")

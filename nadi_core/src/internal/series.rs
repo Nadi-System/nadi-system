@@ -144,23 +144,23 @@ mod series {
             Series::Complete(CompleteSeries::Integers(ref mut vals)) => {
                 let _: () = vals.sort();
                 Ok(())
-            },
+            }
             Series::Complete(CompleteSeries::Booleans(ref mut vals)) => {
                 let _: () = vals.sort();
                 Ok(())
-            },
+            }
             Series::Complete(CompleteSeries::Strings(ref mut vals)) => {
                 let _: () = vals.sort();
                 Ok(())
-            },
+            }
             Series::Complete(CompleteSeries::Dates(ref mut vals)) => {
                 let _: () = vals.sort();
                 Ok(())
-            },
+            }
             Series::Complete(CompleteSeries::Times(ref mut vals)) => {
                 let _: () = vals.sort();
                 Ok(())
-            },
+            }
             s => Err(format!(
                 "Incorrect Type: Mean cannot be calculated for series of type `{}`",
                 s.type_name(),
