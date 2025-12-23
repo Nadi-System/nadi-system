@@ -1,12 +1,14 @@
 use crate::expressions::{EvalError, EvalErrorType, Expression, SeriesExpression, TaskPosition};
 use crate::functions::{FuncArg, FuncArgType, NadiFunctions};
-use crate::network::PropCondition;
+use crate::network::{PropCondition, PropOrder};
 use crate::prelude::*;
 use crate::timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap};
 use crate::udf::UserFunction;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::{Arc, Mutex};
+use std::thread;
 
 // /// Result of a Task when executed
 // pub enum TaskResult {
@@ -56,6 +58,8 @@ task_ctx_consts!(
     max_attrs_depth, "MAX_ATTRS_DEPTH", usize => 10;
     max_series_length, "MAX_SERIES_LENGTH", usize => 10;
     series_show_na_as, "SERIES_SHOW_NA_AS", String => "-".to_string();
+    parallize_nodes, "PARALLIZE_NODES", bool => false;
+    parallel_cores, "PARALLEL_CORES", usize => 8;
 );
 
 /// Message that can be sent from the task
@@ -481,69 +485,23 @@ impl TaskContext {
             },
             FunctionType::Node => {
                 // this is the only task that needs parallization,
-                let nodes = self.propagation(task.propagation.unwrap_or_default())?;
-                let total = nodes.len();
-                let max_nodes_len = TaskCtxConsts::max_nodes_length(self);
-                let trunc = total > max_nodes_len;
-                let mut progress = 0;
-                let mut attrs = Vec::with_capacity(total);
-                for n in nodes {
-                    let name = n
-                        .try_lock()
-                        .into_option()
-                        .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(task.start))?
-                        .name()
-                        .to_string();
-                    let res = match task
-                        .input
-                        // add node name to this error
-                        .resolve_eval_mut(&FunctionType::Node, self, None, Some(&n))
-                        .map_err(|e| e.pos(task.start).node(name.clone()))?
-                    {
-                        Some(r) => r,
-                        None => {
-                            progress += 1;
-                            continue;
-                        }
+                let parallize = TaskCtxConsts::parallize_nodes(self)
+                    & match task.propagation {
+                        // if a propagation order is given it needs to be run at that order
+                        Some(ref p) => matches!(p.order, PropOrder::Auto),
+                        None => true,
                     };
-                    let mut n = n
-                        .try_lock()
-                        .into_option()
-                        .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(task.start))?;
-                    progress += 1;
-                    let _ = self
-                        .channel
-                        .send(TaskMessage::Progress(name.clone(), progress, total));
-                    // because we did progress +=1 above we need <=
-                    let update = !task.silent & (progress <= max_nodes_len);
-                    if let Some(attr) = &task.attr {
-                        let old = n
-                            .set_attr_nested(&task.attr_pre, attr, res.clone())
-                            .map_err(|e| {
-                                EvalErrorType::AttributeError(e).no_pos().node(name.clone())
-                            })?;
-                        if update {
-                            if let Some(o) = old {
-                                attrs.push(format!(
-                                    "  {} = {} -> {}",
-                                    name,
-                                    self.show_attr(&o, 0),
-                                    self.show_attr(&res, 0)
-                                ));
-                            }
-                        }
-                    } else if update {
-                        attrs.push(format!("  {} = {}", name, self.show_attr(&res, 0)));
-                    }
-                }
-                if task.silent || attrs.is_empty() {
-                    Ok(None)
+                if parallize {
+                    // Implementation not possible because we call
+                    // functions from loaded .so files, that are not
+                    // thread safe
+                    // Err(EvalErrorType::LogicalError(
+                    //     "Parallel Execution not supported at the moment",
+                    // )
+                    // .at(&task))
+                    self.run_nodes_task_parallel(task)
                 } else {
-                    Ok(Some(format!(
-                        "{{\n{}\n{}}}",
-                        attrs.join(",\n"),
-                        if trunc { "...truncated\n" } else { "" }
-                    )))
+                    self.run_nodes_task(task)
                 }
             }
             FunctionType::Network => {
@@ -580,6 +538,190 @@ impl TaskContext {
                     None => Ok(None),
                 }
             }
+        }
+    }
+
+    fn run_nodes_task(&mut self, task: EvalTask) -> Result<Option<String>, EvalError> {
+        let nodes = self.propagation(task.propagation.unwrap_or_default())?;
+        let total = nodes.len();
+        let max_nodes_len = TaskCtxConsts::max_nodes_length(self);
+        let trunc = total > max_nodes_len;
+        let mut progress = 0;
+        let mut attrs = Vec::with_capacity(total);
+        for n in nodes {
+            let name = n
+                .try_lock()
+                .into_option()
+                .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(task.start))?
+                .name()
+                .to_string();
+            let res = match task
+                .input
+                // add node name to this error
+                .resolve_eval_mut(&FunctionType::Node, self, None, Some(&n))
+                .map_err(|e| e.pos(task.start).node(name.clone()))?
+            {
+                Some(r) => r,
+                None => {
+                    progress += 1;
+                    continue;
+                }
+            };
+            let mut n = n
+                .try_lock()
+                .into_option()
+                .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(task.start))?;
+            progress += 1;
+            let _ = self
+                .channel
+                .send(TaskMessage::Progress(name.clone(), progress, total));
+            // because we did progress +=1 above we need <=
+            let update = !task.silent & (progress <= max_nodes_len);
+            if let Some(attr) = &task.attr {
+                let old = n
+                    .set_attr_nested(&task.attr_pre, attr, res.clone())
+                    .map_err(|e| EvalErrorType::AttributeError(e).no_pos().node(name.clone()))?;
+                if update {
+                    if let Some(o) = old {
+                        attrs.push(format!(
+                            "  {} = {} -> {}",
+                            name,
+                            self.show_attr(&o, 0),
+                            self.show_attr(&res, 0)
+                        ));
+                    }
+                }
+            } else if update {
+                attrs.push(format!("  {} = {}", name, self.show_attr(&res, 0)));
+            }
+        }
+        if task.silent || attrs.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(format!(
+                "{{\n{}\n{}}}",
+                attrs.join(",\n"),
+                if trunc { "...truncated\n" } else { "" }
+            )))
+        }
+    }
+
+    // // Can not compile because of the sabi_trait object not being Send, idk if it can be fixed
+    fn run_nodes_task_parallel(&mut self, task: EvalTask) -> Result<Option<String>, EvalError> {
+        let nodes = self.propagation(task.propagation.unwrap_or_default())?;
+        let total = nodes.len();
+        let expressions: Arc<Mutex<Vec<(String, Node, Expression)>>> = Arc::new(Mutex::new(
+            nodes
+                .into_iter()
+                .map(|n| {
+                    let name = n
+                        .try_lock()
+                        .into_option()
+                        .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(task.start))?
+                        .name()
+                        .to_string();
+                    task.input
+                        // add node name to this error
+                        .resolve(&FunctionType::Node, self, None, Some(&n))
+                        .map_err(|e| e.pos(task.start).node(name.clone()))
+                        .map(|e| (name, n, e))
+                })
+                .collect::<Result<Vec<(String, Node, Expression)>, EvalError>>()?,
+        ));
+
+        #[allow(clippy::type_complexity)]
+        let (tx, rx): (
+            Sender<(String, Result<Option<Attribute>, EvalError>)>,
+            Receiver<(String, Result<Option<Attribute>, EvalError>)>,
+        ) = channel();
+        let mut children = Vec::new();
+
+        let cores = TaskCtxConsts::parallel_cores(self);
+        // just to make it work for now
+        let tctx = Arc::new(self.clone());
+        for _ in 0..cores {
+            let ctx = tx.clone();
+            let tc = tctx.clone();
+            let expr_lst = expressions.clone();
+            let child = thread::spawn(move || -> Result<(), anyhow::Error> {
+                loop {
+                    let expr = expr_lst
+                        .lock()
+                        .map_err(|e| anyhow::Error::msg(e.to_string()))?
+                        .pop();
+                    if let Some((name, n, expr)) = expr {
+                        let res = expr.eval(&FunctionType::Node, &tc, None, Some(&n));
+                        ctx.send((name, res))?
+                    } else {
+                        break;
+                    }
+                }
+                Ok::<(), anyhow::Error>(())
+            });
+            children.push(child);
+        }
+        // since we cloned it, only the cloned ones are dropped when
+        // the thread ends
+        drop(tx);
+
+        let max_nodes_len = TaskCtxConsts::max_nodes_length(self);
+        let trunc = total > max_nodes_len;
+        let mut progress = 0;
+        let mut attrs = Vec::with_capacity(total);
+        for (name, res) in rx {
+            let res = match res {
+                Ok(Some(r)) => r,
+                Ok(None) => {
+                    progress += 1;
+                    continue;
+                }
+                Err(e) => {
+                    // remove them from the queue (might have extra computations)
+                    expressions.lock().unwrap().clear();
+                    return Err(e);
+                }
+            };
+            let node = self
+                .network
+                .node_by_name(&name)
+                .expect("Should have this node in the network")
+                .clone();
+            let mut n = node
+                .try_lock()
+                .into_option()
+                .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(task.start))?;
+            progress += 1;
+            let _ = self
+                .channel
+                .send(TaskMessage::Progress(name.clone(), progress, total));
+            // because we did progress +=1 above we need <=
+            let update = !task.silent & (progress <= max_nodes_len);
+            if let Some(attr) = &task.attr {
+                let old = n
+                    .set_attr_nested(&task.attr_pre, attr, res.clone())
+                    .map_err(|e| EvalErrorType::AttributeError(e).no_pos().node(name.clone()))?;
+                if update {
+                    if let Some(o) = old {
+                        attrs.push(format!(
+                            "  {} = {} -> {}",
+                            name,
+                            self.show_attr(&o, 0),
+                            self.show_attr(&res, 0)
+                        ));
+                    }
+                }
+            } else if update {
+                attrs.push(format!("  {} = {}", name, self.show_attr(&res, 0)));
+            }
+        }
+        if task.silent || attrs.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(format!(
+                "{{\n{}\n{}}}",
+                attrs.join(",\n"),
+                if trunc { "...truncated\n" } else { "" }
+            )))
         }
     }
 

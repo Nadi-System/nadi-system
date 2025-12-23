@@ -176,7 +176,7 @@ pub enum FuncArgType {
 
 /// Environmental functions that can be applied anywhere
 #[sabi_trait]
-pub trait EnvFunction: Debug + Clone {
+pub trait EnvFunction: Debug + Clone + Send + Sync {
     fn name(&self) -> RString;
     fn help(&self) -> RString;
     fn short_help(&self) -> RString {
@@ -206,7 +206,7 @@ pub trait EnvFunction: Debug + Clone {
 }
 
 #[sabi_trait]
-pub trait NodeFunction: Debug + Clone {
+pub trait NodeFunction: Debug + Clone + Send + Sync {
     fn name(&self) -> RString;
     fn help(&self) -> RString;
     fn short_help(&self) -> RString {
@@ -245,7 +245,7 @@ pub trait NodeFunction: Debug + Clone {
 
 // can't use generics because of sabi_trait
 #[sabi_trait]
-pub trait NetworkFunction: Debug + Clone {
+pub trait NetworkFunction: Debug + Clone + Send + Sync {
     fn name(&self) -> RString;
     fn help(&self) -> RString;
     fn short_help(&self) -> RString {
