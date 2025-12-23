@@ -428,10 +428,10 @@ impl TaskContext {
                 Ok(())
             }
             (true, FunctionType::Node) => {
-                Err(EvalErrorType::LogicalError("Not implemented").pos(sst.start))
+                Err(EvalErrorType::NotImplementedError("Can not set timeseries").pos(sst.start))
             }
             (true, FunctionType::Network) => {
-                Err(EvalErrorType::LogicalError("Not implemented").pos(sst.start))
+                Err(EvalErrorType::NotImplementedError("Can not set timeseries").pos(sst.start))
             }
             (false, FunctionType::Network) => {
                 let series =

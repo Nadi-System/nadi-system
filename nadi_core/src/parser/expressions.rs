@@ -448,9 +448,12 @@ pub fn function_def<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, UserFuncti
 }
 
 pub fn series<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
-    let (rest, (vt, name, ind)) = tuple((
+    let (rest, (vt, (ts, name), ind)) = tuple((
         opt(variable_type),
-        preceded(dollar, map(variable, |v| v.content.to_string())),
+        preceded(
+            dollar,
+            pair(opt(dollar), map(variable, |v| v.content.to_string())),
+        ),
         opt(delimited(
             bracket_start,
             maybe_space(integer_usize),
@@ -458,8 +461,8 @@ pub fn series<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
         )),
     ))(inp)?;
     let sr = match ind {
-        Some(ind) => Expression::SeriesValue(vt, name, ind),
-        None => Expression::Series(vt, name),
+        Some(ind) => Expression::SeriesValue(vt, ts.is_some(), name, ind),
+        None => Expression::Series(vt, ts.is_some(), name),
     };
     Ok((rest, sr))
 }

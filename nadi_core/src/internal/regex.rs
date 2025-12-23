@@ -137,4 +137,21 @@ mod regex {
             pattern.split(attr).map(String::from).collect()
         }
     }
+
+    /// Join the list of strings with the given string
+    ///
+    /// ```task
+    /// env assert_eq(str_join(["abc", "de"]), "abcde")
+    /// env assert_eq(str_join(["abc", "de"], " "), "abc de")
+    /// env assert_eq(str_join(["abc", "de"], ", "), "abc, de")
+    /// ```
+    #[env_func(with = "")]
+    fn str_join(
+        /// Strings to join
+        strings: Vec<String>,
+        /// Substring to join with
+        with: &str,
+    ) -> String {
+        strings.join(with)
+    }
 }

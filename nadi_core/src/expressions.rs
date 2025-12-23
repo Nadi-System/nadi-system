@@ -6,7 +6,7 @@ use crate::tasks::{
     AttrTask, CondTask, EvalTask, FunctionType, TaskContext, TaskKeyword, WhileTask,
 };
 use crate::template::Template;
-use crate::timeseries::{CompleteSeries, HasSeries, Series};
+use crate::timeseries::{CompleteSeries, HasSeries, HasTimeSeries, Series};
 use crate::udf::UserFunction;
 use abi_stable::std_types::{RNone, RSome};
 use std::collections::HashMap;
@@ -182,6 +182,8 @@ pub enum EvalErrorType {
     ParseError(String),
     /// Logical error by the developer
     LogicalError(&'static str),
+    /// Planned but not implemented features
+    NotImplementedError(&'static str),
     /// Lock on mutex failed
     MutexError(&'static str, u32),
 }
@@ -249,6 +251,11 @@ impl EvalErrorType {
             Self::RegexError(e) => return format!("Error in regex: {e}"),
             Self::ParseError(e) => return format!("Error parsing: {e}"),
             Self::LogicalError(s) => return format!("Logical Error: {s}, contact developer"),
+            Self::NotImplementedError(s) => {
+                return format!(
+                    "Not Implemented: {s}, this feature is planned for future versions"
+                );
+            }
             Self::MutexError(f, l) => {
                 return format!("Mutex Error on file: {f}::{l}, contact developer");
             }
@@ -297,9 +304,9 @@ pub enum Expression {
     /// Return the value if inside a function
     Return(Option<Box<Expression>>),
     /// Get the series as Attributes
-    Series(Option<VarType>, String),
+    Series(Option<VarType>, bool, String),
     /// Get a value from the series
-    SeriesValue(Option<VarType>, String, usize),
+    SeriesValue(Option<VarType>, bool, String, usize),
 }
 
 impl std::fmt::Display for Expression {
@@ -374,10 +381,16 @@ impl std::fmt::Display for Expression {
             }
             Self::Return(None) => write!(f, "return"),
             Self::Return(Some(expr)) => write!(f, "return {expr}"),
-            Self::Series(Some(vt), name) => write!(f, "{vt}${name}"),
-            Self::Series(None, name) => write!(f, "${name}"),
-            Self::SeriesValue(Some(vt), name, ind) => write!(f, "{vt}${name}[{ind}]"),
-            Self::SeriesValue(None, name, ind) => write!(f, "${name}[{ind}]"),
+            Self::Series(Some(vt), ts, name) => {
+                write!(f, "{vt}{}{name}", if *ts { "$$" } else { "$" })
+            }
+            Self::Series(None, ts, name) => write!(f, "{}{name}", if *ts { "$$" } else { "$" }),
+            Self::SeriesValue(Some(vt), ts, name, ind) => {
+                write!(f, "{vt}{}{name}[{ind}]", if *ts { "$$" } else { "$" })
+            }
+            Self::SeriesValue(None, ts, name, ind) => {
+                write!(f, "{}{name}[{ind}]", if *ts { "$$" } else { "$" })
+            }
         }
     }
 }
@@ -500,8 +513,8 @@ impl Expression {
             )),
             Self::Return(None) => Ok(Self::Return(None)),
             Self::Return(Some(expr)) => Ok(Self::Return(Some(Box::new(expr.simplify(ft, ctx)?)))),
-            Self::Series(vt, name) => Ok(Self::Series(vt, name)),
-            Self::SeriesValue(vt, name, ind) => Ok(Self::SeriesValue(vt, name, ind)),
+            Self::Series(vt, ts, name) => Ok(Self::Series(vt, ts, name)),
+            Self::SeriesValue(vt, ts, name, ind) => Ok(Self::SeriesValue(vt, ts, name, ind)),
         }
     }
 
@@ -676,7 +689,7 @@ impl Expression {
             Self::Return(Some(expr)) => Ok(Self::Return(Some(Box::new(
                 expr.resolve(ft, ctx, local, node)?,
             )))),
-            Self::Series(vt, name) => match get_series(ft, ctx, node, vt, name)? {
+            Self::Series(vt, ts, name) => match get_series(ft, ctx, node, vt, name, *ts)? {
                 Series::Complete(sr) => Ok(Self::Literal(sr.to_attributes().into())),
                 Series::Masked(sr, RSome(fill)) => Ok(Self::Literal(
                     sr.to_attributes()
@@ -690,12 +703,12 @@ impl Expression {
                 )
                 .no_pos()),
             },
-            Self::SeriesValue(vt, name, ind) => {
+            Self::SeriesValue(vt, ts, name, ind) => {
                 // this is inefficient as it clones the series; but
                 // the inputs type can not be obtained as ref, so
                 // can't write a generic function to get this at the
                 // moment
-                match get_series(ft, ctx, node, vt, name)?.get_attribute(*ind) {
+                match get_series(ft, ctx, node, vt, name, *ts)?.get_attribute(*ind) {
                     Some(Some(val)) => Ok(Self::Literal(val)),
                     Some(None) => Err(EvalErrorType::EmptySeriesValue.no_pos()),
                     None => Err(EvalErrorType::IndexError.no_pos()),
@@ -1756,22 +1769,28 @@ pub enum SeriesExpression {
     AttrExpr(Expression),
     /// Another Series, simply copy
     // if single or zip them if multiple (add type for that)
-    Series(Option<VarType>, String),
+    Series(Option<VarType>, bool, String),
     /// Series Mapped to a Function
     ///
     /// The functions should have same number of arguments as the
     /// number of series, they can have additional optional arguments
-    SeriesMap(Option<VarType>, String, MapFunction),
+    SeriesMap(Option<VarType>, bool, String, MapFunction),
 }
 
 impl std::fmt::Display for SeriesExpression {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::AttrExpr(expr) => write!(f, "{expr}"),
-            Self::Series(Some(vt), srs) => write!(f, "{vt}.{srs}"),
-            Self::Series(None, srs) => write!(f, "{srs}"),
-            Self::SeriesMap(Some(vt), srs, mf) => write!(f, "{vt}.{srs} -> {mf}"),
-            Self::SeriesMap(None, srs, mf) => write!(f, "{srs} -> {mf}"),
+            Self::Series(Some(vt), ts, srs) => {
+                write!(f, "{vt}{}{srs}", if *ts { "$$" } else { "$" })
+            }
+            Self::Series(None, ts, srs) => write!(f, "{}{srs}", if *ts { "$$" } else { "$" }),
+            Self::SeriesMap(Some(vt), ts, srs, mf) => {
+                write!(f, "{vt}{}{srs} -> {mf}", if *ts { "$$" } else { "$" })
+            }
+            Self::SeriesMap(None, ts, srs, mf) => {
+                write!(f, "{}{srs} -> {mf}", if *ts { "$$" } else { "$" })
+            }
         }
     }
 }
@@ -1790,9 +1809,9 @@ impl SeriesExpression {
                 Attribute::Array(ar) => Ok(CompleteSeries::from(ar).retype().into()),
                 _ => Err(EvalErrorType::NotAnArray.no_pos()),
             },
-            Self::Series(ty, sr) => get_series(ft, ctx, node, ty, sr),
-            Self::SeriesMap(ty, sr, func) => {
-                let sr = get_series(ft, ctx, node, ty, sr)?;
+            Self::Series(ty, ts, sr) => get_series(ft, ctx, node, ty, sr, *ts),
+            Self::SeriesMap(ty, ts, sr, func) => {
+                let sr = get_series(ft, ctx, node, ty, sr, *ts)?;
                 match func {
                     MapFunction::Defn(udf) => {
                         let func_call = |arg| {
@@ -1842,21 +1861,18 @@ fn get_series(
     node: Option<&Node>,
     vt: &Option<VarType>,
     name: &str,
+    ts: bool,
 ) -> Result<Series, EvalError> {
     match (vt, ft) {
-        (None, FunctionType::Env) | (Some(VarType::Env), _) => ctx
-            .env
-            .try_series(name)
-            .map_err(|e| EvalErrorType::SeriesNotFound(e).no_pos())
-            .cloned(),
+        (None, FunctionType::Env) | (Some(VarType::Env), _) => get_series_or_ts(&ctx.env, name, ts),
         // Node function, or node vartype without node name
         (None, FunctionType::Node) | (Some(VarType::Node(None)), _) => match node {
-            Some(n) => get_node_series(n, name),
+            Some(n) => get_node_series_or_ts(n, name, ts),
             None => Err(EvalErrorType::NotANodeContext.no_pos()),
         },
         // Node name given explicitely
         (Some(VarType::Node(Some(node))), _) => match ctx.network.node_by_name(node) {
-            Some(n) => get_node_series(n, name),
+            Some(n) => get_node_series_or_ts(n, name, ts),
             None => Err(EvalErrorType::NodeNotFound(node.to_string()).no_pos()),
         },
         (Some(VarType::Inputs), _) => {
@@ -1868,7 +1884,7 @@ fn get_series(
                 .inputs()
                 .iter()
                 .map(|i| {
-                    let sr = get_node_series(i, name)?;
+                    let sr = get_node_series_or_ts(i, name, ts)?;
                     Ok((i.lock().name().to_string(), sr))
                 })
                 .collect::<Result<Vec<(String, Series)>, EvalError>>()?;
@@ -1915,30 +1931,45 @@ fn get_series(
             .output()
             .into_option()
         {
-            Some(o) => get_node_series(o, name),
+            Some(o) => get_node_series_or_ts(o, name, ts),
             None => Err(EvalErrorType::NoRootNode.no_pos()),
         },
         (Some(VarType::Root), _) => match ctx.network.outlet() {
-            Some(o) => get_node_series(o, name),
+            Some(o) => get_node_series_or_ts(o, name, ts),
             None => Err(EvalErrorType::NoRootNode.no_pos()),
         },
-        (None, FunctionType::Network) | (Some(VarType::Network), _) => ctx
-            .network
-            .series(name)
-            .ok_or(EvalErrorType::SeriesNotFound(name.to_string()).no_pos())
-            .cloned(),
-        _ => Err(
-            EvalErrorType::LogicalError("Reading Series are not implemented for this type")
-                .no_pos(),
-        ),
+        (None, FunctionType::Network) | (Some(VarType::Network), _) => {
+            get_series_or_ts(&ctx.network, name, ts)
+        }
+        _ => Err(EvalErrorType::NotImplementedError(
+            "Reading Series are not implemented for this type",
+        )
+        .no_pos()),
     }
 }
 
-fn get_node_series(n: &Node, name: &str) -> Result<Series, EvalError> {
-    n.try_lock()
+fn get_series_or_ts<T: HasSeries + HasTimeSeries>(
+    n: &T,
+    name: &str,
+    ts: bool,
+) -> Result<Series, EvalError> {
+    if ts {
+        n.try_ts(name)
+            .map(|t| t.series())
+            .map_err(|e| EvalErrorType::TimeSeriesNotFound(e).no_pos())
+            .cloned()
+    } else {
+        n.try_series(name)
+            .map_err(|e| EvalErrorType::SeriesNotFound(e).no_pos())
+            .cloned()
+    }
+}
+
+fn get_node_series_or_ts(n: &Node, name: &str, ts: bool) -> Result<Series, EvalError> {
+    use std::ops::Deref;
+    let node = n
+        .try_lock()
         .into_option()
-        .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
-        .try_series(name)
-        .map_err(|e| EvalErrorType::SeriesNotFound(e).no_pos())
-        .cloned()
+        .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?;
+    get_series_or_ts(node.deref(), name, ts).map_err(|e| e.node(node.name().to_string()))
 }

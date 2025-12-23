@@ -268,6 +268,7 @@ pub fn series_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Serie
             tuple((
                 opt(variable_type),
                 dollar,
+                opt(dollar),
                 variable,
                 // optionally the function mapping
                 opt(after_space(preceded(
@@ -280,9 +281,11 @@ pub fn series_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Serie
                     )))),
                 ))),
             )),
-            |(vt, _, name, func)| match func {
-                Some(func) => SeriesExpression::SeriesMap(vt, name.content.to_string(), func),
-                None => SeriesExpression::Series(vt, name.content.to_string()),
+            |(vt, _, ts, name, func)| match func {
+                Some(func) => {
+                    SeriesExpression::SeriesMap(vt, ts.is_some(), name.content.to_string(), func)
+                }
+                None => SeriesExpression::Series(vt, ts.is_some(), name.content.to_string()),
             },
         ),
         map(complete_expression, SeriesExpression::AttrExpr),

@@ -54,6 +54,7 @@ impl From<EvalError> for PyErr {
             EvalErrorType::DifferentLength(_, _) => PyAssertionError::new_err(err),
             EvalErrorType::DivideByZero => PyZeroDivisionError::new_err(err),
             EvalErrorType::LogicalError(_) => PyAssertionError::new_err(err),
+            EvalErrorType::NotImplementedError(_) => PyNotImplementedError::new_err(err),
             EvalErrorType::MutexError(_, _) => PyPermissionError::new_err(err),
         }
     }
