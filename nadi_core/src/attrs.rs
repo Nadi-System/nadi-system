@@ -222,6 +222,15 @@ impl<T: HasAttributes> HasAttributes
     }
 }
 
+// TODO: deconstruct it into premitives and then Array and
+// Tables. That way we can have a different "Value" enum that can
+// include Array, Tables, Series, TimeSeries, Timeline, that consist
+// of the premitives. We could also generate expressions that can
+// construct the arrays and tables using the primitives, and other
+// expressions that way. Then we can write nadi functions that take
+// certain types, and it is easier to implement the conversion for
+// that.
+
 /// Generic attribute value for nadi system
 ///
 /// Attribute implements various operation traits that can provide

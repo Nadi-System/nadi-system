@@ -1111,7 +1111,9 @@ impl InputVar {
     ) -> Result<Expression, EvalError> {
         let attr = match &self.ty {
             Some(ty) => match ty {
-                VarType::Local => self.attr_nested(local.unwrap_or(&ctx.env)).cloned(),
+                VarType::Local => self
+                    .attr_nested(local.unwrap_or(ctx.env.attr_map()))
+                    .cloned(),
                 VarType::Env => self.attr_nested(&ctx.env).cloned(),
                 VarType::Network => self.attr_nested(&ctx.network).cloned(),
                 VarType::Root => self
@@ -1277,7 +1279,9 @@ impl InputVar {
             },
             None => match ft {
                 // since function expressions are only evaluated as env functions now
-                FunctionType::Env => self.attr_nested(local.unwrap_or(&ctx.env)).cloned(),
+                FunctionType::Env => self
+                    .attr_nested(local.unwrap_or(ctx.env.attr_map()))
+                    .cloned(),
                 FunctionType::Network => self.attr_nested(&ctx.network).cloned(),
                 FunctionType::Node => match node {
                     Some(n) => self
@@ -1841,6 +1845,7 @@ fn get_series(
 ) -> Result<Series, EvalError> {
     match (vt, ft) {
         (None, FunctionType::Env) | (Some(VarType::Env), _) => ctx
+            .env
             .try_series(name)
             .map_err(|e| EvalErrorType::SeriesNotFound(e).no_pos())
             .cloned(),

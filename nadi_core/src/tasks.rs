@@ -111,6 +111,57 @@ impl TaskContextWrap {
     }
 }
 
+/// Environment for Task Context to save attributes, series and ts
+#[derive(Clone)]
+pub struct TaskContextEnv {
+    /// Environment variables
+    pub(crate) attrs: AttrMap,
+    /// Environment Series
+    pub(crate) series: SeriesMap,
+    /// Environment TimeSeries
+    pub(crate) timeseries: TsMap,
+}
+
+impl TaskContextEnv {
+    pub fn new() -> Self {
+        Self {
+            attrs: TaskCtxConsts::init(),
+            series: SeriesMap::new(),
+            timeseries: TsMap::new(),
+        }
+    }
+}
+
+impl HasAttributes for TaskContextEnv {
+    fn attr_map(&self) -> &AttrMap {
+        &self.attrs
+    }
+
+    fn attr_map_mut(&mut self) -> &mut AttrMap {
+        &mut self.attrs
+    }
+}
+
+impl HasSeries for TaskContextEnv {
+    fn series_map(&self) -> &SeriesMap {
+        &self.series
+    }
+
+    fn series_map_mut(&mut self) -> &mut SeriesMap {
+        &mut self.series
+    }
+}
+
+impl HasTimeSeries for TaskContextEnv {
+    fn ts_map(&self) -> &TsMap {
+        &self.timeseries
+    }
+
+    fn ts_map_mut(&mut self) -> &mut TsMap {
+        &mut self.timeseries
+    }
+}
+
 /// Main Context for Task System
 ///
 /// Everything is evaluated in the task context while using the task
@@ -124,47 +175,13 @@ pub struct TaskContext {
     pub functions: NadiFunctions,
     /// User defined functions (only env functions with single expression now)
     pub udf: HashMap<String, UserFunction>,
-    /// Environment variables
-    pub env: AttrMap,
-    /// Environment Series
-    pub(crate) series: SeriesMap,
-    /// Environment TimeSeries
-    pub(crate) timeseries: TsMap,
+    /// Environment variables, series and timeseries
+    pub env: TaskContextEnv,
     /// tasks to run after every assign execution
     pub hook: Vec<Task>,
     /// channel for sending messages
     pub channel: Sender<TaskMessage>,
     // TODO Channel to tell taskcontext to abort/cancel the current run. When it takes a long time, like while loop/ node functions can end in the middle.
-}
-
-impl HasAttributes for TaskContext {
-    fn attr_map(&self) -> &AttrMap {
-        &self.env
-    }
-
-    fn attr_map_mut(&mut self) -> &mut AttrMap {
-        &mut self.env
-    }
-}
-
-impl HasSeries for TaskContext {
-    fn series_map(&self) -> &SeriesMap {
-        &self.series
-    }
-
-    fn series_map_mut(&mut self) -> &mut SeriesMap {
-        &mut self.series
-    }
-}
-
-impl HasTimeSeries for TaskContext {
-    fn ts_map(&self) -> &TsMap {
-        &self.timeseries
-    }
-
-    fn ts_map_mut(&mut self) -> &mut TsMap {
-        &mut self.timeseries
-    }
 }
 
 impl TaskContext {
@@ -173,19 +190,15 @@ impl TaskContext {
             network: net.unwrap_or_default(),
             functions: NadiFunctions::new(),
             udf: HashMap::new(),
-            env: TaskCtxConsts::init(),
+            env: TaskContextEnv::new(),
             hook: Vec::new(),
-            series: SeriesMap::new(),
-            timeseries: TsMap::new(),
             channel,
         }
     }
 
     pub fn clear(&mut self) {
         self.network = Network::default();
-        self.env = TaskCtxConsts::init();
-        self.series = SeriesMap::new();
-        self.timeseries = TsMap::new();
+        self.env = TaskContextEnv::new();
         self.udf = HashMap::new();
         self.hook = Vec::new();
     }
@@ -346,6 +359,7 @@ impl TaskContext {
     pub fn get_series_task(&self, gst: GetSeriesTask) -> Result<String, EvalError> {
         match (gst.timeseries, gst.ty) {
             (_, FunctionType::Env) => self
+                .env
                 .try_series(&gst.name)
                 .map(|sr| self.show_sr(sr))
                 .map_err(|e| EvalErrorType::SeriesNotFound(e).pos(gst.start)),
@@ -396,7 +410,7 @@ impl TaskContext {
                     sst.expression
                         .resolve_eval_value(&FunctionType::Env, self, None, None)?;
 
-                self.set_series(&sst.name, series);
+                self.env.set_series(&sst.name, series);
                 Ok(())
             }
             (false, FunctionType::Node) => {

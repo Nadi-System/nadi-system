@@ -46,8 +46,7 @@ mod tests {
     use super::register_internal;
     use crate::functions::NadiFunctions;
     use crate::prelude::*;
-    use crate::tasks::TaskContext;
-    use crate::timeseries::{SeriesMap, TsMap};
+    use crate::tasks::{TaskContext, TaskContextEnv};
     use abi_stable::std_types::Tuple2;
     use pulldown_cmark::{CodeBlockKind, CowStr, Event, Options, Parser, Tag, TagEnd};
     use std::collections::HashMap;
@@ -93,9 +92,7 @@ mod tests {
         let mut ctx = TaskContext {
             network: Network::default(),
             functions: functions.clone(),
-            env: AttrMap::new(),
-            series: SeriesMap::new(),
-            timeseries: TsMap::new(),
+            env: TaskContextEnv::new(),
             hook: Vec::new(),
             udf: HashMap::new(),
             channel: sender,

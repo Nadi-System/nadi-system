@@ -178,7 +178,7 @@ pub fn if_else_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression
         maybe_newline(expression_group),
         maybe_newline(expression_block),
         maybe_newline(kw_else),
-        maybe_newline(expression_block),
+        alt((after_space(if_else_expr), maybe_newline(expression_block))),
     ))(inp)?;
     Ok((
         rest,
@@ -473,8 +473,7 @@ mod tests {
     use crate::network::Network;
     use crate::parser::tokenizer::get_tokens;
     use crate::tasks::FunctionType;
-    use crate::tasks::{TaskContext, TaskCtxConsts};
-    use crate::timeseries::{SeriesMap, TsMap};
+    use crate::tasks::{TaskContext, TaskContextEnv};
     use rstest::{fixture, rstest};
     use std::collections::HashMap;
     use std::sync::OnceLock;
@@ -495,9 +494,7 @@ mod tests {
             network: Network::default(),
             functions,
             udf: HashMap::new(),
-            env: TaskCtxConsts::init(),
-            series: SeriesMap::new(),
-            timeseries: TsMap::new(),
+            env: TaskContextEnv::new(),
             hook: Vec::new(),
             channel: sender,
         };
