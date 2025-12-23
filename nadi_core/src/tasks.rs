@@ -634,86 +634,105 @@ impl TaskContext {
             Sender<(String, Result<Option<Attribute>, EvalError>)>,
             Receiver<(String, Result<Option<Attribute>, EvalError>)>,
         ) = channel();
-        let mut children = Vec::new();
 
-        let cores = TaskCtxConsts::parallel_cores(self);
-        // just to make it work for now
-        let tctx = Arc::new(self.clone());
-        for _ in 0..cores {
-            let ctx = tx.clone();
-            let tc = tctx.clone();
-            let expr_lst = expressions.clone();
-            let child = thread::spawn(move || -> Result<(), anyhow::Error> {
-                loop {
-                    let expr = expr_lst
-                        .lock()
-                        .map_err(|e| anyhow::Error::msg(e.to_string()))?
-                        .pop();
-                    if let Some((name, n, expr)) = expr {
-                        let res = expr.eval(&FunctionType::Node, &tc, None, Some(&n));
-                        ctx.send((name, res))?
-                    } else {
-                        break;
-                    }
-                }
-                Ok::<(), anyhow::Error>(())
-            });
-            children.push(child);
-        }
-        // since we cloned it, only the cloned ones are dropped when
-        // the thread ends
-        drop(tx);
-
+        let mut attrs = Vec::with_capacity(total);
         let max_nodes_len = TaskCtxConsts::max_nodes_length(self);
         let trunc = total > max_nodes_len;
-        let mut progress = 0;
-        let mut attrs = Vec::with_capacity(total);
-        for (name, res) in rx {
-            let res = match res {
-                Ok(Some(r)) => r,
-                Ok(None) => {
-                    progress += 1;
-                    continue;
-                }
-                Err(e) => {
-                    // remove them from the queue (might have extra computations)
-                    expressions.lock().unwrap().clear();
-                    return Err(e);
-                }
-            };
-            let node = self
-                .network
-                .node_by_name(&name)
-                .expect("Should have this node in the network")
-                .clone();
-            let mut n = node
-                .try_lock()
-                .into_option()
-                .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(task.start))?;
-            progress += 1;
-            let _ = self
-                .channel
-                .send(TaskMessage::Progress(name.clone(), progress, total));
-            // because we did progress +=1 above we need <=
-            let update = !task.silent & (progress <= max_nodes_len);
-            if let Some(attr) = &task.attr {
-                let old = n
-                    .set_attr_nested(&task.attr_pre, attr, res.clone())
-                    .map_err(|e| EvalErrorType::AttributeError(e).no_pos().node(name.clone()))?;
-                if update {
-                    if let Some(o) = old {
-                        attrs.push(format!(
-                            "  {} = {} -> {}",
-                            name,
-                            self.show_attr(&o, 0),
-                            self.show_attr(&res, 0)
-                        ));
+        thread::scope(|s| -> Result<(), EvalError> {
+            let cores = TaskCtxConsts::parallel_cores(self);
+            // just to make it work for now
+            let mut children = Vec::with_capacity(cores);
+            let tctx = Arc::new(&*self);
+            for _ in 0..cores {
+                let ctx = tx.clone();
+                let expr_lst = expressions.clone();
+                let tc = tctx.clone();
+                let child = s.spawn(move || -> Result<(), anyhow::Error> {
+                    loop {
+                        let expr = expr_lst
+                            .lock()
+                            .map_err(|e| anyhow::Error::msg(e.to_string()))?
+                            .pop();
+                        if let Some((name, n, expr)) = expr {
+                            let res = expr.eval(&FunctionType::Node, &tc, None, Some(&n));
+                            ctx.send((name, res))?
+                        } else {
+                            break;
+                        }
                     }
-                }
-            } else if update {
-                attrs.push(format!("  {} = {}", name, self.show_attr(&res, 0)));
+                    Ok::<(), anyhow::Error>(())
+                });
+
+                children.push(child);
             }
-        }
+            // since we cloned it, only the cloned ones are dropped when
+            // the thread ends
+            drop(tx);
+
+            let mut progress = 0;
+            for (name, res) in rx {
+                let res = match res {
+                    Ok(Some(r)) => r,
+                    Ok(None) => {
+                        progress += 1;
+                        if task.attr.is_some() {
+                            // remove them from the queue (might have extra computations)
+                            expressions.lock().unwrap().clear();
+                            return Err(EvalErrorType::NoReturnValue(
+                                "input expression".to_string(),
+                            )
+                            .no_pos()
+                            .node(name));
+                        }
+                        continue;
+                    }
+                    Err(e) => {
+                        // remove them from the queue (might have extra computations)
+                        expressions.lock().unwrap().clear();
+                        return Err(e);
+                    }
+                };
+                let node = self
+                    .network
+                    .node_by_name(&name)
+                    .expect("Should have this node in the network")
+                    .clone();
+                let mut n = node
+                    .try_lock()
+                    .into_option()
+                    .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(task.start))?;
+                progress += 1;
+                let _ = self
+                    .channel
+                    .send(TaskMessage::Progress(name.clone(), progress, total));
+                // because we did progress +=1 above we need <=
+                let update = !task.silent & (progress <= max_nodes_len);
+                if let Some(attr) = &task.attr {
+                    let old = n
+                        .set_attr_nested(&task.attr_pre, attr, res.clone())
+                        .map_err(|e| {
+                            EvalErrorType::AttributeError(e).no_pos().node(name.clone())
+                        })?;
+                    if update {
+                        if let Some(o) = old {
+                            attrs.push(format!(
+                                "  {} = {} -> {}",
+                                name,
+                                self.show_attr(&o, 0),
+                                self.show_attr(&res, 0)
+                            ));
+                        }
+                    }
+                } else if update {
+                    attrs.push(format!("  {} = {}", name, self.show_attr(&res, 0)));
+                }
+            }
+            // by this time all threads should be complete (otherwise the loop does not end)
+            for child in children {
+                let _ = child.join();
+            }
+            Ok(())
+        })?;
         if task.silent || attrs.is_empty() {
             Ok(None)
         } else {
