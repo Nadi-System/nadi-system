@@ -139,7 +139,7 @@ impl Network {
     }
 
     /// Append the edges from the list, making new nodes if necessary
-    pub fn append_edges(&mut self, edges: &[(&str, &str)]) -> Result<(), String> {
+    pub fn append_edges(&mut self, edges: &[(&str, &str)], force: bool) -> Result<(), String> {
         for (start, end) in edges {
             if start == end {
                 return Err(format!("Node {:?} has itself as the output", start));
@@ -166,10 +166,16 @@ impl Network {
                         .name()
                         .to_string();
                     if &old != end {
-                        return Err(format!(
-                            "Node {:?} already has {:?} as output (new: {:?})",
-                            start, old, end
-                        ));
+                        if !force {
+                            return Err(format!(
+                                "Node {:?} already has {:?} as output (new: {:?})",
+                                start, old, end
+                            ));
+                        }
+                        n.try_lock()
+                            .into_option()
+                            .expect("mutex error n2.2")
+                            .remove_input(start);
                     }
                 }
                 out.try_lock()
@@ -184,9 +190,9 @@ impl Network {
     }
 
     /// Create a network with given edges
-    pub fn from_edges(edges: &[(&str, &str)]) -> Result<Self, String> {
+    pub fn from_edges(edges: &[(&str, &str)], force: bool) -> Result<Self, String> {
         let mut network = Self::default();
-        network.append_edges(edges)?;
+        network.append_edges(edges, force)?;
         Ok(network)
     }
 

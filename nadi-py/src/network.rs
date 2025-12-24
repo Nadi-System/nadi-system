@@ -39,7 +39,7 @@ impl PyNetwork {
     #[staticmethod]
     fn from_edges(edges: Vec<(String, String)>) -> PyResult<Self> {
         let edges: Vec<(&str, &str)> = edges.iter().map(|p| (p.0.as_str(), p.1.as_str())).collect();
-        let net = Network::from_edges(&edges).map_err(PyValueError::new_err)?;
+        let net = Network::from_edges(&edges, false).map_err(PyValueError::new_err)?;
         Ok(Self(net))
     }
 

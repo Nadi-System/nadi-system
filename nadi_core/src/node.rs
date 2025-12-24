@@ -171,6 +171,16 @@ impl NodeInner {
         self.inputs = RVec::new();
     }
 
+    pub fn remove_input(&mut self, input: &str) {
+        self.inputs = self
+            .inputs
+            .drain(..)
+            // should make sure no input nodes are locked at this time
+            .filter(|n| n.try_lock().expect("mutex error").name() != input)
+            .collect::<Vec<_>>()
+            .into();
+    }
+
     /// order the input nodes in the network
     pub fn order_inputs(&mut self) {
         self.inputs.sort_by(|a, b| {

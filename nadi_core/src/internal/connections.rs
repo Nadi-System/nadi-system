@@ -16,13 +16,15 @@ mod conn {
     ///
     /// This replaces the current network with the one loaded from the
     /// file.
-    #[network_func(append = false)]
+    #[network_func(append = false, force = false)]
     fn load_file(
         net: &mut Network,
         /// File to load the network connections from
         file: PathBuf,
         /// Append the connections in the current network
         append: bool,
+        /// Force overriding outputs if previous one is present, only valid for override
+        force: bool,
     ) -> anyhow::Result<()> {
         if append {
             let contents =
@@ -33,7 +35,12 @@ mod conn {
                 .iter()
                 .map(|p| (p.start.as_str(), p.end.as_str()))
                 .collect();
-            net.append_edges(&edges).map_err(anyhow::Error::msg)?;
+            net.append_edges(&edges, force)
+                .map_err(anyhow::Error::msg)?;
+        } else if force {
+            return Err(anyhow::Error::msg(
+                "Parameter force not valid when append is false",
+            ));
         } else {
             *net = Network::from_file(file)?;
         }
@@ -49,13 +56,15 @@ mod conn {
     /// network load_str("a -> b");
     /// env assert_eq(nodes.NAME, ["b", "a"])
     /// ```
-    #[network_func(append = false)]
+    #[network_func(append = false, force = false)]
     fn load_str(
         net: &mut Network,
         /// String containing Network connections
         contents: &str,
         /// Append the connections in the current network
         append: bool,
+        /// Force overriding outputs if previous one is present, only valid for override
+        force: bool,
     ) -> Result<(), String> {
         if append {
             let tokens = crate::parser::tokenizer::get_tokens(contents);
@@ -64,7 +73,11 @@ mod conn {
                 .iter()
                 .map(|p| (p.start.as_str(), p.end.as_str()))
                 .collect();
-            net.append_edges(&edges)?;
+            net.append_edges(&edges, force)?;
+        } else if force {
+            return Err(String::from(
+                "Parameter force not valid when append is false",
+            ));
         } else {
             *net = Network::from_str(contents).map_err(|e| e.user_msg(None))?;
         }
@@ -80,19 +93,21 @@ mod conn {
     /// network load_edges([["a", "b"], ["b", "c"]]);
     /// env assert_eq(nodes.NAME, ["c", "b", "a"])
     /// ```
-    #[network_func(append = false)]
+    #[network_func(append = false, force = false)]
     fn load_edges(
         net: &mut Network,
         /// String containing Network connections
         edges: &[(String, String)],
         /// Append the connections in the current network
         append: bool,
+        /// Force overriding outputs if previous one is present
+        force: bool,
     ) -> Result<(), String> {
         let edges: Vec<(&str, &str)> = edges.iter().map(|p| (p.0.as_str(), p.1.as_str())).collect();
         if append {
-            net.append_edges(&edges)?;
+            net.append_edges(&edges, force)?;
         } else {
-            *net = Network::from_edges(&edges)?;
+            *net = Network::from_edges(&edges, force)?;
         }
         Ok(())
     }
