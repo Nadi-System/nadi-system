@@ -23,6 +23,7 @@ number_range = "0.3.2"
 filetime = {version = "0.2.25", optional = true}
 svg = {version="0.18.0", optional=true}
 termimad = "0.31.1"
+rand = {version = "0.10.0", optional = true}
 regex = "1.11.1"
 pyo3 = {version = "0.25.0", features = ["anyhow"], optional=true}
 
@@ -33,7 +34,7 @@ pulldown-cmark = "0.13.0"
 [features]
 all = ["chrono", "functions", "parser", "graphics"]
 chrono = ["dep:chrono"]
-functions = ["dep:filetime", "chrono", "graphics", "parser"]
+functions = ["dep:filetime", "dep:rand", "chrono", "graphics", "parser"]
 graphics = ["dep:svg"]
 parser = ["dep:nom"]
 python = ["dep:pyo3"]

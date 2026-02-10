@@ -1100,6 +1100,14 @@ attr_subset! {
     }
 }
 
+attr_subset! {
+    /// AttrMap or Array, useful when you need a bunch of values
+    enum TableOrArray{
+    Array(AttrArray),
+    Table(AttrMap),
+    }
+}
+
 /// Macro to generate attribute value with different patterns.
 ///
 /// It uses (val) for single attribute, [val,...] for array attribute
@@ -1377,6 +1385,8 @@ where
     }
 }
 
+/// Array of Attributes
+pub type AttrArray = RVec<Attribute>;
 /// Slice of Attributes
 pub type AttrSlice<'a> = RSlice<'a, Attribute>;
 /// Map of [`Attribute`]s by their name

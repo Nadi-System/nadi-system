@@ -2,7 +2,9 @@ use nadi_plugin::nadi_internal_plugin;
 
 #[nadi_internal_plugin]
 mod attrs {
+    use crate::attrs::TableOrArray;
     use crate::prelude::*;
+    use abi_stable::std_types::RString;
     use abi_stable::std_types::Tuple2;
     use nadi_plugin::{env_func, network_func, node_func};
     use std::str::FromStr;
@@ -411,26 +413,41 @@ mod attrs {
         Ok(())
     }
 
-    /// Set node attributes in a network using a attrmap
+    /// Set node attributes in a network using a attrmap or array
+    ///
+    /// Currenly you can only set all nodes using array, if you want
+    /// to set a subset of the nodes, use the attrmap option.
     ///
     /// ```task
-    /// network set_attrs(val = 23.4)
-    /// network assert_eq(val, 23.4)
+    /// network load_str("a -> b")
+    /// network set_node_attrs("val", {a = 23.4})
+    /// network assert_eq(node[a].val, 23.4)
+    /// network set_node_attrs("val", [2, 4])
+    /// network assert_eq(nodes.val, [2, 4])
     /// ```
     #[network_func]
     fn set_node_attrs(
         network: &mut Network,
         /// Name of the attribute to set,
         attr_name: &str,
-        /// key value pair of attributes to set (key = node name)
-        node_map: AttrMap,
+        /// array or a key value pair of attributes to set (key = node name)
+        node_values: TableOrArray,
     ) -> Result<(), String> {
-        for Tuple2(k, v) in node_map.into_iter() {
-            network
-                .node_by_name(&k)
-                .ok_or(format!("Node {k} not found"))?
-                .lock()
-                .set_attr(attr_name, v);
+        match node_values {
+            TableOrArray::Table(node_map) => {
+                for Tuple2(k, v) in node_map.into_iter() {
+                    network
+                        .node_by_name(&k)
+                        .ok_or(format!("Node {k} not found"))?
+                        .lock()
+                        .set_attr(attr_name, v);
+                }
+            }
+            TableOrArray::Array(nodes_vals) => {
+                network.nodes().zip(nodes_vals).for_each(|(n, v)| {
+                    n.lock().set_attr(attr_name, v);
+                });
+            }
         }
         Ok(())
     }
@@ -457,5 +474,45 @@ mod attrs {
             network.set_attr(k.as_str(), text.into());
         }
         Ok(())
+    }
+
+    fn node_attr(n: &Node, attr: &str) -> (RString, Option<Attribute>) {
+        let n = n.lock();
+        let a = n.attr(attr);
+        (n.name().to_string().into(), a.cloned())
+    }
+
+    /// Generate attribute map for the given attribute for the nodes
+    #[network_func(safe = false)]
+    fn nodemap(
+        net: &Network,
+        /// attribute to be the value of the attrmap
+        attr: String,
+        /// Only include these nodes
+        filter: Option<Vec<bool>>,
+        /// Exclude nodes if they do not have the attribute
+        safe: bool,
+    ) -> Result<AttrMap, String> {
+        let nodes = if let Some(filter) = filter {
+            net.nodes()
+                .zip(filter)
+                .filter(|(_, f)| *f)
+                .map(|(n, _)| n)
+                .collect::<Vec<&Node>>()
+        } else {
+            net.nodes().collect::<Vec<&Node>>()
+        };
+        let mut amap = AttrMap::with_capacity(nodes.len());
+        for n in nodes {
+            let (name, at) = node_attr(n, &attr);
+            match at {
+                Some(a) => {
+                    amap.insert(name, a);
+                }
+                None if safe => (),
+                None => return Err(format!("Node {name:?} does not have {attr:?} attribute")),
+            }
+        }
+        Ok(amap)
     }
 }
