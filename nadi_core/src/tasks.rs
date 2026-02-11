@@ -2,7 +2,7 @@ use crate::expressions::{EvalError, EvalErrorType, Expression, SeriesExpression,
 use crate::functions::{FuncArg, FuncArgType, NadiFunctions};
 use crate::network::{PropCondition, PropOrder};
 use crate::prelude::*;
-use crate::structs::NadiStruct;
+use crate::structs::{NadiAttrType, NadiStruct};
 use crate::timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap};
 use crate::udf::UserFunction;
 use std::collections::HashMap;
@@ -463,9 +463,21 @@ impl TaskContext {
             {
                 Some(a) => {
                     if let Some(attr) = &task.attr {
+                        // assert the type if explicitely provided
+                        if let Some(ty) = &attr.1 {
+                            if !a.is_type(&ty) {
+                                if task.attr.is_some() {
+                                    return Err(EvalErrorType::InvalidAttributeType(
+                                        ty.clone(),
+                                        a.dtype(),
+                                    )
+                                    .no_pos());
+                                }
+                            }
+                        }
                         if let Some(old) = self
                             .env
-                            .set_attr_nested(&task.attr_pre, attr, a.clone())
+                            .set_attr_nested(&task.attr_pre, &attr.0, a.clone())
                             .map_err(|e| EvalErrorType::AttributeError(e).no_pos())?
                         {
                             if task.silent {
@@ -517,9 +529,21 @@ impl TaskContext {
                 {
                     Some(a) => {
                         if let Some(attr) = &task.attr {
+                            // assert the type if explicitely provided
+                            if let Some(ty) = &attr.1 {
+                                if !a.is_type(&ty) {
+                                    if task.attr.is_some() {
+                                        return Err(EvalErrorType::InvalidAttributeType(
+                                            ty.clone(),
+                                            a.dtype(),
+                                        )
+                                        .no_pos());
+                                    }
+                                }
+                            }
                             if let Some(old) = self
                                 .network
-                                .set_attr_nested(&task.attr_pre, attr, a.clone())
+                                .set_attr_nested(&task.attr_pre, &attr.0, a.clone())
                                 .map_err(|e| EvalErrorType::AttributeError(e).no_pos())?
                             {
                                 if task.silent {
@@ -583,8 +607,22 @@ impl TaskContext {
             // because we did progress +=1 above we need <=
             let update = !task.silent & (progress <= max_nodes_len);
             if let Some(attr) = &task.attr {
+                // assert the type if explicitely provided
+                if let Some(ty) = &attr.1 {
+                    if !res.is_type(&ty) {
+                        if task.attr.is_some() {
+                            return Err(EvalErrorType::InvalidAttributeType(
+                                ty.clone(),
+                                res.dtype(),
+                            )
+                            .no_pos()
+                            .node(name));
+                        }
+                        continue;
+                    }
+                }
                 let old = n
-                    .set_attr_nested(&task.attr_pre, attr, res.clone())
+                    .set_attr_nested(&task.attr_pre, &attr.0, res.clone())
                     .map_err(|e| EvalErrorType::AttributeError(e).no_pos().node(name.clone()))?;
                 if update {
                     if let Some(o) = old {
@@ -713,8 +751,24 @@ impl TaskContext {
                 // because we did progress +=1 above we need <=
                 let update = !task.silent & (progress <= max_nodes_len);
                 if let Some(attr) = &task.attr {
+                    // assert the type if explicitely provided
+                    if let Some(ty) = &attr.1 {
+                        if !res.is_type(&ty) {
+                            if task.attr.is_some() {
+                                // remove them from the queue (might have extra computations)
+                                expressions.lock().unwrap().clear();
+                                return Err(EvalErrorType::InvalidAttributeType(
+                                    ty.clone(),
+                                    res.dtype(),
+                                )
+                                .no_pos()
+                                .node(name));
+                            }
+                            continue;
+                        }
+                    }
                     let old = n
-                        .set_attr_nested(&task.attr_pre, attr, res.clone())
+                        .set_attr_nested(&task.attr_pre, &attr.0, res.clone())
                         .map_err(|e| {
                             EvalErrorType::AttributeError(e).no_pos().node(name.clone())
                         })?;
@@ -939,7 +993,7 @@ pub struct EvalTask {
     /// prefix for set attribute
     pub attr_pre: Vec<String>,
     /// attribute to set the result of the expression
-    pub attr: Option<String>,
+    pub attr: Option<(String, Option<NadiAttrType>)>,
     /// input expression
     pub input: Expression,
     /// do not show the results to stdout/terminal
@@ -952,13 +1006,18 @@ impl std::fmt::Display for EvalTask {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let outattr = if let Some(attr) = &self.attr {
             format!(
-                ".{} =",
+                ".{}{} =",
                 self.attr_pre
                     .iter()
                     .map(|s| s.as_str())
-                    .chain([attr.as_str()])
+                    .chain([attr.0.as_str()])
                     .collect::<Vec<&str>>()
-                    .join(".")
+                    .join("."),
+                if let Some(ty) = &attr.1 {
+                    format!(": {ty}")
+                } else {
+                    "".to_string()
+                }
             )
         } else {
             "".to_string()

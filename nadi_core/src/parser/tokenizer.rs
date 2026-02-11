@@ -169,6 +169,7 @@ pub enum TaskToken {
     Slash,        // /
     Percentage,   // %
     Question,     // ?
+    Colon,        // :
     Semicolon,    // ;
     Dot,          // .
     And,          // &
@@ -326,6 +327,7 @@ fn symbols(i: &str) -> TokenRes<'_> {
         map(tag("."), |s| RawToken::new(TaskToken::Dot, s)),
         map(tag(","), |s| RawToken::new(TaskToken::Comma, s)),
         map(tag("?"), |s| RawToken::new(TaskToken::Question, s)),
+        map(tag(":"), |s| RawToken::new(TaskToken::Colon, s)),
         map(tag(";"), |s| RawToken::new(TaskToken::Semicolon, s)),
         map(tag("@"), |s| RawToken::new(TaskToken::At, s)),
         map(tag("$"), |s| RawToken::new(TaskToken::Dollar, s)),

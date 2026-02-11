@@ -1,6 +1,7 @@
 use crate::{
     expressions::{MapFunction, SeriesExpression, TaskPosition},
     network::{PropCondition, PropNodes, PropOrder, Propagation},
+    structs::NadiAttrType,
     tasks::{AttrTask, CondTask, EvalTask, FunctionType, ImportTask, Task, WhileTask},
 };
 use crate::{
@@ -19,10 +20,11 @@ use nom::{
     branch::alt,
     combinator::{cut, map, opt, value},
     multi::separated_list1,
-    sequence::{delimited, preceded, tuple},
+    sequence::{delimited, pair, preceded, tuple},
     Finish,
 };
 use std::path::PathBuf;
+use std::str::FromStr;
 
 pub fn prop_order<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, PropOrder> {
     let (rest, var) = delimited(
@@ -126,11 +128,31 @@ pub fn attr_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, AttrTask> {
     ))
 }
 
+// todo add support for user types as well (structs)
+pub fn attr_type<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, NadiAttrType> {
+    let (rest, var) = variable(inp)?;
+    match NadiAttrType::from_str(var.content) {
+        Ok(v) => Ok((rest, v)),
+        Err(_) => Err(nom::Err::Failure(
+            MatchErr::new(inp).ty(&ParseErrorType::InvalidPropagation),
+        )),
+    }
+}
+
+pub fn typed_var<'a, 'b>(
+    inp: &'a [Token<'b>],
+) -> MatchRes<'a, 'b, (Vec<String>, Option<NadiAttrType>)> {
+    pair(
+        dot_variable,
+        opt(preceded(maybe_space(colon), maybe_space(attr_type))),
+    )(inp)
+}
+
 pub fn eval_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, EvalTask> {
     let (rest, (ty, propagation, attr, input, sc)) = tuple((
         function_type,
         propagation,
-        opt(delimited(opt(dot), dot_variable, maybe_space(assignment))),
+        opt(delimited(opt(dot), typed_var, maybe_space(assignment))),
         maybe_newline(complete_expression),
         opt(semicolon),
     ))(inp)?;
@@ -145,8 +167,8 @@ pub fn eval_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, EvalTask> {
     }
     let (attr_pre, attr) = match attr {
         None => (vec![], None),
-        Some(mut v) => {
-            let name = v.pop();
+        Some((mut v, aty)) => {
+            let name = v.pop().map(|v| (v, aty));
             (v, name)
         }
     };

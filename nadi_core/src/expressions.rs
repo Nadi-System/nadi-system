@@ -2,6 +2,7 @@ use crate::attrs::{AttrMap, Attribute, FromAttribute, HasAttributes};
 use crate::functions::FunctionCtx;
 use crate::network::Propagation;
 use crate::node::Node;
+use crate::structs::NadiAttrType;
 use crate::tasks::{
     AttrTask, CondTask, EvalTask, FunctionType, TaskContext, TaskKeyword, WhileTask,
 };
@@ -164,6 +165,8 @@ pub enum EvalErrorType {
     InvalidOperation,
     /// Variable is not of correct type (e.g. node variable in network function)
     InvalidVariableType,
+    /// Attribute is not of correct type (e.g. int instead of bool)
+    InvalidAttributeType(NadiAttrType, NadiAttrType),
     /// Array required for operation
     NotAnArray,
     /// Number required for operation
@@ -240,6 +243,9 @@ impl EvalErrorType {
             Self::NodeAttributeError(n, s) => return format!("Node {n:?} Attribute Error: {s}"),
             Self::InvalidOperation => "Operation not Allowed",
             Self::InvalidVariableType => "Variable type invalid in this context",
+            Self::InvalidAttributeType(e, f) => {
+                return format!("Attribute type assertion failed: expected {e} found {f}");
+            }
             Self::NotAnArray => "Array required Non-Array found",
             Self::NotANumber => "Numerical Operation on Non Number",
             Self::NotABool => "Boolean Operation on Non Boolean",

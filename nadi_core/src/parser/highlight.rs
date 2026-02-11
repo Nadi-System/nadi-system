@@ -163,6 +163,7 @@ impl Highlight {
                 TaskToken::Percentage => Self::Operator,
                 TaskToken::Question => Self::Symbol,
                 TaskToken::Semicolon => Self::Operator,
+                TaskToken::Colon => Self::Symbol,
                 TaskToken::None => Self::Comment,
                 TaskToken::Caret => Self::Operator,
                 TaskToken::And => Self::Operator,

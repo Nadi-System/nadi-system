@@ -111,6 +111,7 @@ one_token!(star, TaskToken::Star);
 one_token!(slash, TaskToken::Slash);
 one_token!(percentage, TaskToken::Percentage);
 one_token!(question, TaskToken::Question);
+one_token!(colon, TaskToken::Colon);
 one_token!(semicolon, TaskToken::Semicolon);
 one_token!(dot, TaskToken::Dot);
 one_token!(and, TaskToken::And);
