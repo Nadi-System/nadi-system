@@ -6,6 +6,7 @@ pub mod functions;
 pub mod network;
 pub mod node;
 pub mod plugins;
+pub mod structs;
 pub mod table;
 pub mod tasks;
 pub mod template;

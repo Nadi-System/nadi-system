@@ -2,6 +2,7 @@ use crate::expressions::{EvalError, EvalErrorType, Expression, SeriesExpression,
 use crate::functions::{FuncArg, FuncArgType, NadiFunctions};
 use crate::network::{PropCondition, PropOrder};
 use crate::prelude::*;
+use crate::structs::NadiStruct;
 use crate::timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap};
 use crate::udf::UserFunction;
 use std::collections::HashMap;
@@ -177,6 +178,8 @@ pub struct TaskContext {
     pub network: Network,
     /// Functions loaded from the plugins
     pub functions: NadiFunctions,
+    /// Functions loaded from the plugins
+    pub structs: HashMap<String, NadiStruct>,
     /// User defined functions (only env functions with single expression now)
     pub udf: HashMap<String, UserFunction>,
     /// Environment variables, series and timeseries
@@ -193,6 +196,7 @@ impl TaskContext {
         Self {
             network: net.unwrap_or_default(),
             functions: NadiFunctions::new(),
+            structs: HashMap::new(),
             udf: HashMap::new(),
             env: TaskContextEnv::new(),
             hook: Vec::new(),
@@ -203,6 +207,7 @@ impl TaskContext {
     pub fn clear(&mut self) {
         self.network = Network::default();
         self.env = TaskContextEnv::new();
+        self.structs = HashMap::new();
         self.udf = HashMap::new();
         self.hook = Vec::new();
     }
@@ -1348,6 +1353,7 @@ pub enum TaskKeyword {
     Match,
     Hook,
     Local,
+    Struct,
     Function,
     Return,
     Error,
@@ -1385,6 +1391,7 @@ impl std::str::FromStr for TaskKeyword {
             "match" => TaskKeyword::Match,
             "hook" => TaskKeyword::Hook,
             "loc" | "local" => TaskKeyword::Local,
+            "struct" => TaskKeyword::Struct,
             "function" | "func" => TaskKeyword::Function,
             "return" => TaskKeyword::Return,
             "error" => TaskKeyword::Error,
@@ -1426,6 +1433,7 @@ impl std::fmt::Display for TaskKeyword {
                 TaskKeyword::Match => "match",
                 TaskKeyword::Hook => "hook",
                 TaskKeyword::Local => "local",
+                TaskKeyword::Struct => "struct",
                 TaskKeyword::Function => "function",
                 TaskKeyword::Return => "return",
                 TaskKeyword::Error => "error",
@@ -1465,6 +1473,7 @@ impl TaskKeyword {
             TaskKeyword::Match => "match regex pattern with strings",
             TaskKeyword::Hook => "hook tasks to run at each execution",
             TaskKeyword::Local => "Local; similar to environment but within current locale",
+            TaskKeyword::Struct => "struct definition",
             TaskKeyword::Function => "function definition",
             TaskKeyword::Return => "return statement inside function",
             TaskKeyword::Error => "raises an error while evaluating",

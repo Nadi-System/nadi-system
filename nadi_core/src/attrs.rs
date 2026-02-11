@@ -1,4 +1,5 @@
 use crate::expressions::EvalErrorType;
+use crate::structs::NadiAttrType;
 use crate::tasks::{TaskContext, TaskCtxConsts};
 use crate::template::Template;
 use crate::valid_var;
@@ -750,6 +751,20 @@ impl Attribute {
         }
     }
 
+    pub fn dtype(&self) -> NadiAttrType {
+        match self {
+            Self::Bool(_) => NadiAttrType::Bool,
+            Self::String(_) => NadiAttrType::String,
+            Self::Integer(_) => NadiAttrType::Integer,
+            Self::Float(_) => NadiAttrType::Float,
+            Self::Date(_) => NadiAttrType::Date,
+            Self::Time(_) => NadiAttrType::Time,
+            Self::DateTime(_) => NadiAttrType::DateTime,
+            Self::Array(_) => NadiAttrType::Array,
+            Self::Table(_) => NadiAttrType::Table,
+        }
+    }
+
     /// Get the name of the type
     pub fn type_name(&self) -> &str {
         match self {
@@ -763,6 +778,10 @@ impl Attribute {
             Self::Array(_) => "Array",
             Self::Table(_) => "Table",
         }
+    }
+
+    pub fn is_type(&self, ty: &NadiAttrType) -> bool {
+        &self.dtype() == ty
     }
 
     /// If it is a string get the reference
