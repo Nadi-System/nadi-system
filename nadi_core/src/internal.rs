@@ -10,6 +10,7 @@ mod files;
 mod logic;
 mod math;
 mod optimum;
+mod random;
 mod regex;
 mod render;
 mod series;
@@ -35,6 +36,7 @@ pub(crate) fn register_internal(funcs: &mut NadiFunctions) {
     logic::LogicMod {}.register(funcs);
     math::MathMod {}.register(funcs);
     optimum::OptimumMod {}.register(funcs);
+    random::RandomMod {}.register(funcs);
     regex::RegexMod {}.register(funcs);
     render::RenderMod {}.register(funcs);
     series::SeriesMod {}.register(funcs);

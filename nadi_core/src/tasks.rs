@@ -58,6 +58,7 @@ task_ctx_consts!(
     max_attrs_length, "MAX_ATTRS_LENGTH", usize => 100;
     max_attrs_depth, "MAX_ATTRS_DEPTH", usize => 10;
     max_series_length, "MAX_SERIES_LENGTH", usize => 10;
+    max_iterations, "MAX_ITERATIONS", usize => 10_000_000;
     series_show_na_as, "SERIES_SHOW_NA_AS", String => "-".to_string();
     parallize_nodes, "PARALLIZE_NODES", bool => false;
     parallel_cores, "PARALLEL_CORES", usize => 8;
@@ -325,8 +326,9 @@ impl TaskContext {
                 Ok(None)
             }
             Task::WhileLoop(lt) => {
-                let max_iter = 1_000_000; // todo make it a constant (maybe configurable)
+                let max_iter = TaskCtxConsts::max_iterations(self);
                 let mut progress = 0;
+                let mut exit = false;
                 for i in 0..max_iter {
                     let _ = self.channel.send(TaskMessage::Progress(
                         format!("Loop: {}", i + 1),
@@ -346,10 +348,17 @@ impl TaskContext {
                                 progress += 1;
                             }
                         }
-                        false => break,
+                        false => {
+                            exit = true;
+                            break;
+                        }
                     }
                 }
-                Ok(None)
+                if exit {
+                    Ok(None)
+                } else {
+                    Err(EvalErrorType::MaxIteratorError(max_iter).pos(lt.position()))
+                }
             }
             Task::GetSeries(gst) => self.get_series_task(gst).map(Some),
             Task::SetSeries(sst) => {

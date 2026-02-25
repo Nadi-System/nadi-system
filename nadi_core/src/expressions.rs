@@ -177,6 +177,8 @@ pub enum EvalErrorType {
     DifferentLength(usize, usize),
     /// Division by zero
     DivideByZero,
+    /// Loop Longer than Maximum Iteration limit
+    MaxIteratorError(usize),
     /// String Template Rendering Failed
     RenderError(String),
     /// Regex compilation failed (invalid pattern)
@@ -253,6 +255,9 @@ impl EvalErrorType {
                 return format!("Different number of members in an array: {a} and {b}");
             }
             Self::DivideByZero => "Division by Zero",
+            Self::MaxIteratorError(n) => {
+                return format!("Loop did not exit after {n} iterations, could be infinite loop");
+            }
             Self::RenderError(e) => return format!("Rendering Failed: {e}"),
             Self::RegexError(e) => return format!("Error in regex: {e}"),
             Self::ParseError(e) => return format!("Error parsing: {e}"),
