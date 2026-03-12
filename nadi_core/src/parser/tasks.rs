@@ -134,7 +134,7 @@ pub fn attr_type<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, NadiAttrType>
     match NadiAttrType::from_str(var.content) {
         Ok(v) => Ok((rest, v)),
         Err(_) => Err(nom::Err::Failure(
-            MatchErr::new(inp).ty(&ParseErrorType::InvalidPropagation),
+            MatchErr::new(inp).ty(&ParseErrorType::InvalidType),
         )),
     }
 }
