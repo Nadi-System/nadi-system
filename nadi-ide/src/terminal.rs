@@ -4,8 +4,8 @@ use crate::icons;
 use crate::network::{NetworkData, NetworkDataView, NetworkTable};
 use iced::time::{self, Duration};
 use iced::widget::{
-    button, center, column, combo_box, container, markdown, progress_bar, row, scrollable,
-    space::horizontal, text, text_editor, text_input, toggler,
+    button, center, column, combo_box, container, markdown, mouse_area, progress_bar, row,
+    scrollable, slider, space::horizontal, text, text_editor, text_input, toggler,
 };
 use iced::{Element, Fill, Font, Length, Subscription, Task, Theme};
 use nadi_core::attrs::{AttrMap, HasAttributes};
@@ -148,6 +148,7 @@ pub enum Message {
     LinkClicked(String),
     Tick,
     NodeClicked(Option<String>),
+    ScaleChanged(f32),
     // handled in main
     AttrFound((String, AttrMap)),
 }
@@ -333,6 +334,9 @@ impl Terminal {
             Message::NodeClicked(Some(node)) => {
                 let _ = self.sender.send(TaskCtxRequest::NodeAttr(node));
             }
+            Message::ScaleChanged(scale) => {
+                self.network_view.scale = scale / 100.0;
+            }
             Message::Tick => {
                 let messages: Vec<TaskCtxMessage> = self.receiver.try_iter().collect();
                 for m in messages {
@@ -488,20 +492,38 @@ impl Terminal {
             .width(25)
         ];
         if self.network_sidebar {
-            sidebar = sidebar.push(scrollable(
-                markdown::view(
-                    &self.network_help,
-                    markdown::Settings::with_style(md_style(self.light_theme)),
-                )
-                .map(Message::LinkClicked),
-            ));
+            sidebar = sidebar.push(
+                column![
+                    row![
+                        text("Zoom: "),
+                        slider(
+                            5.0..=200.0,
+                            self.network_view.scale * 100.0,
+                            Message::ScaleChanged
+                        ),
+                        mouse_area(text(format!("{:.1}%", self.network_view.scale * 100.0)))
+                            .on_press(Message::ScaleChanged(100.0)),
+                    ],
+                    scrollable(
+                        markdown::view(
+                            &self.network_help,
+                            markdown::Settings::with_style(md_style(self.light_theme)),
+                        )
+                        .map(Message::LinkClicked)
+                    )
+                    .width(Length::FillPortion(1)),
+                ]
+                .padding(10)
+                .spacing(10),
+            );
         }
         row![
             scrollable(
                 container(NetworkTable::new(&self.network_view).on_press(Message::NodeClicked))
                     .padding(10.0)
+                    .width(Length::Fill)
             )
-            .width(Fill)
+            .width(Length::FillPortion(1))
             .height(Fill),
             sidebar
         ]

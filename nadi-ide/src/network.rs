@@ -10,7 +10,7 @@ use iced_graphics::geometry::{Frame, Path, Stroke};
 use std::cell::RefCell;
 
 mod dtypes;
-pub use dtypes::{NetworkData, NetworkDataView};
+pub use dtypes::{NetworkData, NetworkDataView, NetworkViewType};
 
 #[allow(missing_debug_implementations)]
 pub struct NetworkTable<'a, Message, Theme = iced::Theme>
@@ -78,10 +78,14 @@ where
         &mut self,
         _tree: &mut Tree,
         _renderer: &Renderer,
-        _limits: &layout::Limits,
+        limits: &layout::Limits,
     ) -> layout::Node {
-        let mut x =
-            (self.data.network.maxlevel + 2) as f32 * self.data.deltax + self.data.offsetx * 2.0;
+        let conf = match &self.data.view_ty {
+            NetworkViewType::Flat(c) => c,
+            _ => panic!("not supported view type"),
+        };
+
+        let mut x = (self.data.network.maxlevel + 2) as f32 * conf.deltax + conf.offsetx * 2.0;
         let num_chars = self
             .data
             .network
@@ -91,10 +95,10 @@ where
             .max()
             .unwrap_or_default() as f32;
         x += num_chars * 15.0; // TODO find text length required to draw it
-        let y =
-            (self.data.network.nodes.len() + 2) as f32 * self.data.deltay + self.data.offsety * 3.0;
-
-        layout::Node::new(Size::new(x * self.data.scale, y * self.data.scale))
+        let y = (self.data.network.nodes.len() + 2) as f32 * conf.deltay + conf.offsety * 3.0;
+        let xmax = limits.max().width;
+        let xnew = x * self.data.scale;
+        layout::Node::new(Size::new(xmax.max(xnew), y * self.data.scale))
     }
 
     // might have to use this for hover effect
@@ -109,9 +113,22 @@ where
         shell: &mut Shell<'_, Message>,
         _viewport: &Rectangle,
     ) {
+        let conf = match &self.data.view_ty {
+            NetworkViewType::Flat(c) => c,
+            _ => panic!("not supported view type"),
+        };
+
         let state = tree.state.downcast_mut::<State>();
+
+        if state.last_scale != self.data.scale {
+            self.data.cache.clear();
+            state.last_scale = self.data.scale;
+        }
+
         let node = cursor.position_in(layout.bounds()).and_then(|pt| {
-            let y = ((pt.y - self.data.offsety) / self.data.deltay).round() - 1.0;
+            let y = ((pt.y - conf.offsety * self.data.scale) / (conf.deltay * self.data.scale)
+                - 1.0)
+                .round();
             if y < 0.0 {
                 None
             } else {
@@ -161,14 +178,19 @@ where
         let mut frame = Frame::new(renderer, bounds.size());
         frame.scale(self.data.scale);
 
+        let conf = match &self.data.view_ty {
+            NetworkViewType::Flat(c) => c,
+            _ => panic!("not supported view type"),
+        };
+
         if let Some((ind, _)) = &state.over_node
             && let Some(node) = self.data.network.nodes.get(*ind)
         {
-            let y = (node.pos.1 + 1) as f32 * self.data.deltay + self.data.offsety;
+            let y = (node.pos.1 + 1) as f32 * conf.deltay + conf.offsety;
             // highlight the row if it's selected
             frame.fill_rectangle(
-                (self.data.offsetx / 2.0, y - self.data.deltay / 2.0).into(),
-                iced::Size::new(bounds.size().width - self.data.offsetx, self.data.deltay),
+                (conf.offsetx / 2.0, y - conf.deltay / 2.0).into(),
+                iced::Size::new(bounds.size().width - conf.offsetx, conf.deltay),
                 style.highlight,
             );
         }
@@ -184,8 +206,8 @@ where
                 .map(|n| {
                     let (x, y) = n.pos;
                     (
-                        (x + 1) as f32 * self.data.deltax + self.data.offsetx,
-                        (y + 1) as f32 * self.data.deltay + self.data.offsety,
+                        (x + 1) as f32 * conf.deltax + conf.offsetx,
+                        (y + 1) as f32 * conf.deltay + conf.offsety,
                     )
                 })
                 .collect();
@@ -205,7 +227,7 @@ where
                 frame.fill(&npath, node.color.unwrap_or(style.node));
                 let mut txt = iced_graphics::geometry::Text::from(node.label.as_str());
                 txt.position = (
-                    self.data.offsetx + self.data.deltax * (self.data.network.maxlevel + 2) as f32,
+                    conf.offsetx + conf.deltax * (self.data.network.maxlevel + 2) as f32,
                     pos.1,
                 )
                     .into();
@@ -239,6 +261,7 @@ where
 struct State {
     over_node: Option<(usize, String)>,
     last_style: RefCell<Option<Style>>,
+    last_scale: f32,
 }
 
 /// The appearance of a Network Table.

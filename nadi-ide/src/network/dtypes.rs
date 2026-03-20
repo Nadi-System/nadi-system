@@ -126,13 +126,20 @@ pub struct NetworkData {
     pub maxlevel: u64,
 }
 
+// pub enum NetworkViewType {
+//     Flat,
+//     Tree,
+// }
+
+pub enum NetworkViewType {
+    Flat(FlatConfig),
+    Tree(TreeConfig),
+    // more to come
+}
+
 pub struct NetworkDataView {
     pub network: NetworkData,
-    pub deltax: f32,
-    pub deltay: f32,
-    pub offsetx: f32,
-    pub offsety: f32,
-    pub deltacol: f32,
+    pub view_ty: NetworkViewType,
     pub invert: bool,
     pub scale: f32,
     pub cache: Cache<iced::Renderer>,
@@ -142,14 +149,48 @@ impl Default for NetworkDataView {
     fn default() -> Self {
         Self {
             network: NetworkData::default(),
+            view_ty: NetworkViewType::Flat(FlatConfig::default()),
+            invert: true,
+            scale: 1.0,
+            cache: Cache::<iced::Renderer>::new(),
+        }
+    }
+}
+
+pub struct FlatConfig {
+    pub deltax: f32,
+    pub deltay: f32,
+    pub offsetx: f32,
+    pub offsety: f32,
+    pub deltacol: f32,
+}
+
+impl Default for FlatConfig {
+    fn default() -> Self {
+        Self {
             deltax: 20.0,
             deltay: 20.0,
             offsetx: 20.0,
             offsety: 20.0,
             deltacol: 20.0,
-            invert: true,
-            scale: 1.0,
-            cache: Cache::<iced::Renderer>::new(),
+        }
+    }
+}
+
+pub struct TreeConfig {
+    pub deltax: f32,
+    pub deltay: f32,
+    pub offsetx: f32,
+    pub offsety: f32,
+}
+
+impl Default for TreeConfig {
+    fn default() -> Self {
+        Self {
+            deltax: 5.0,
+            deltay: 3.0,
+            offsetx: 20.0,
+            offsety: 20.0,
         }
     }
 }
