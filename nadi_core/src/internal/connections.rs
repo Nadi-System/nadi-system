@@ -172,7 +172,7 @@ mod conn {
         Ok(())
     }
 
-    /// Take a subset of network by taking the given node as new outlet
+    /// Take a subset of network by taking the given node as a new outlet
     ///
     /// ```task
     /// network load_str("a -> b\n b->c\n x -> y");
@@ -191,27 +191,31 @@ mod conn {
 
     /// Take a subset of network by only including the largest blob of connected nodes
     ///
-    /// When you load a network that have disconnected nodes, nadi
-    /// includes a ROOT note by default and collects all the outlets
-    /// as inputs to that node. This function allows you to filter out
-    /// all the nodes except the one belonging to the largest
-    /// connected network (number of nodes). Alternatively, you can
-    /// also use ORDER and other logic in the task system to do that.
+    /// When you load a network that have disconnected nodes, this
+    /// function allows you to filter out all the nodes except the one
+    /// belonging to the largest connected network (number of
+    /// nodes). Alternatively, you can also use ORDER and other logic
+    /// in the task system to do that.
     ///
-    /// If your network doesn't have a root node, then it'll just keep
-    /// the network as it is.
+    /// If your network has a root node, and no parent node is given,
+    /// then it'll just keep the network as it is.
     ///
     /// ```task
     /// network load_str("a -> b\n b->c\n x -> y");
     /// network subset_largest()
     /// env assert_eq(nodes.NAME, ["c", "b", "a"])
     /// ```
-    #[network_func(parent = ROOT_NODE_NAME)]
-    fn subset_largest(net: &mut Network, parent: &str) -> Result<(), String> {
-        let node = net
-            .node_by_name(parent)
-            .ok_or(format!("Node {parent} not found in the network"))?
-            .clone();
+    #[network_func]
+    fn subset_largest(net: &mut Network, parent: Option<String>) -> Result<(), String> {
+        let node = match parent {
+            Some(par) => net
+                .node_by_name(&par)
+                .ok_or(format!("Node {par} not found in the network"))?
+                .clone(),
+            None if net.outlets.len() > 1 => net.outlets().next().unwrap().clone(),
+            // if one or 0 outlet nodes, then do nothing
+            None => return Ok(()),
+        };
         let mut outlet: Option<Node> = None;
         for i in node.lock().inputs() {
             let mut replace = outlet.is_none();

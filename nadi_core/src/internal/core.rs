@@ -58,15 +58,26 @@ mod core {
         }
     }
 
-    /// Get the name of the outlet node
+    /// Get the name of the outlet nodes
     ///
     /// ```task
     /// network load_str("a -> b")
-    /// network assert_eq(outlet(), "b")
+    /// network assert_eq(outlets(), ["b"])
     /// ```
     #[network_func]
-    fn outlet(net: &Network) -> Option<String> {
-        net.outlet().map(|o| o.lock().name().to_string())
+    fn outlets(net: &Network) -> Vec<String> {
+        net.outlets().map(|o| o.lock().name().to_string()).collect()
+    }
+
+    /// Get the name of the leaf nodes
+    ///
+    /// ```task
+    /// network load_str("a -> b")
+    /// network assert_eq(leaves(), ["a"])
+    /// ```
+    #[network_func]
+    fn leaves(net: &Network) -> Vec<String> {
+        net.leaves().map(|o| o.lock().name().to_string()).collect()
     }
 
     /// Get the attr of the provided node
@@ -191,18 +202,18 @@ mod core {
         Ok(Attribute::Table(attrs.into()))
     }
 
-    /// Node has an outlet or not
+    /// Node has an output or not
     ///
     /// This is equivalent to using `output._?`, as `_` is a dummy
     /// variable that will always be present in all cases, it being
-    /// absent is because there is no output/outlet of that node.
+    /// absent is because there is no output node of that node.
     ///
     /// ```task
     /// network load_str("a -> b\n b -> d\n c -> d")
-    /// node assert_eq(has_outlet(), output._?)
+    /// node assert_eq(has_output(), output._?)
     /// ```
     #[node_func]
-    fn has_outlet(node: &NodeInner) -> bool {
+    fn has_output(node: &NodeInner) -> bool {
         node.output().is_some()
     }
 

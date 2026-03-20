@@ -1412,6 +1412,8 @@ pub enum TaskKeyword {
     Output,
     Nodes,
     Root,
+    Outlets,
+    Leaves,
     If,
     Else,
     While,
@@ -1450,6 +1452,8 @@ impl std::str::FromStr for TaskKeyword {
             "output" => TaskKeyword::Output,
             "nodes" => TaskKeyword::Nodes,
             "root" => TaskKeyword::Root,
+            "outlets" => TaskKeyword::Outlets,
+            "leaves" => TaskKeyword::Leaves,
             "if" => TaskKeyword::If,
             "else" => TaskKeyword::Else,
             "while" => TaskKeyword::While,
@@ -1492,6 +1496,8 @@ impl std::fmt::Display for TaskKeyword {
                 TaskKeyword::Output => "output",
                 TaskKeyword::Nodes => "nodes",
                 TaskKeyword::Root => "root",
+                TaskKeyword::Outlets => "outlets",
+                TaskKeyword::Leaves => "leaves",
                 TaskKeyword::If => "if",
                 TaskKeyword::Else => "else",
                 TaskKeyword::While => "while",
@@ -1531,7 +1537,9 @@ impl TaskKeyword {
             TaskKeyword::Inputs => "inputs of the current node",
             TaskKeyword::Output => "output of the current node",
             TaskKeyword::Nodes => "all the nodes in the network",
-            TaskKeyword::Root => "root node of the network",
+            TaskKeyword::Root => "root node of the network (if single outlet)",
+            TaskKeyword::Outlets => "outlet nodes of the network",
+            TaskKeyword::Leaves => "leaf nodes of the network",
             TaskKeyword::If => "if part of if-else block",
             TaskKeyword::Else => "else part of if-else block",
             TaskKeyword::While => "while loop",
@@ -1589,7 +1597,7 @@ mod tests {
         #[values(
             "node", "network", "env", "exit", "end", "help", "inputs", "output", "nodes", "root",
             "local", "if", "else", "while", "in", "match", "function", "map", "attrs", "loop",
-            "for"
+            "for", "outlets", "leaves"
         )]
         tk: &str,
     ) {

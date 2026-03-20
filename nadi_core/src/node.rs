@@ -161,6 +161,16 @@ impl NodeInner {
         &mut self.inputs
     }
 
+    /// check if the node is a leaf node
+    pub fn is_leaf(&self) -> bool {
+        self.inputs.is_empty()
+    }
+
+    /// check if the node is an outlet node
+    pub fn is_outlet(&self) -> bool {
+        self.output.is_none()
+    }
+
     /// add a input node to the node
     pub fn add_input(&mut self, input: Node) {
         self.inputs.push(input);

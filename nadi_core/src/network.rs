@@ -67,8 +67,8 @@ pub struct Network {
     pub(crate) series: SeriesMap,
     /// Network TimeSeries
     pub(crate) timeseries: TsMap,
-    /// Output [`Node`] of the network if present
-    pub(crate) outlet: ROption<Node>,
+    /// Outlet [`Node`s] of the network
+    pub(crate) outlets: RVec<Node>,
     /// network is ordered based on input topology
     pub(crate) ordered: bool,
 }
@@ -78,10 +78,7 @@ impl std::fmt::Debug for Network {
         f.debug_struct("Network")
             .field("nodes", &self.nodes)
             .field("attributes", &self.attributes)
-            .field(
-                "outlet",
-                &self.outlet.clone().map(|o| o.lock().name().to_string()),
-            )
+            .field("outlets", &self.outlets.len())
             .field("ordered", &self.ordered)
             .finish()
     }
@@ -133,9 +130,26 @@ impl Network {
         })
     }
 
-    /// Outlet of the network (node with no output)
-    pub fn outlet(&self) -> Option<&Node> {
-        self.outlet.as_ref().into()
+    /// Iterator for the outlet nodes in the network
+    pub fn outlets(&self) -> impl Iterator<Item = &Node> {
+        self.outlets.iter()
+    }
+
+    /// Iterator for the leaf nodes in the network
+    pub fn leaves(&self) -> impl Iterator<Item = &Node> {
+        self.nodes
+            .iter()
+            .filter(|n| self.nodes_map[n.as_str()].lock().is_leaf())
+            .map(|n| &self.nodes_map[n])
+    }
+
+    /// Root of the network (single node with no output)
+    pub fn root(&self) -> Option<&Node> {
+        if let [root] = self.outlets.as_slice() {
+            Some(root)
+        } else {
+            None
+        }
     }
 
     /// Append the edges from the list, making new nodes if necessary
@@ -378,58 +392,20 @@ impl Network {
     /// Reorder the nodes in the network
     pub fn reorder(&mut self) {
         self.calc_order();
-        self.outlet = {
-            let outlets: Vec<Node> = self
+        self.outlets = {
+            let mut outlets: Vec<Node> = self
                 .nodes()
-                .filter(|n| n.try_lock().expect("mutex error nr1").output().is_none())
+                .filter(|n| n.try_lock().expect("mutex error nr1").is_outlet())
                 .cloned()
                 .collect();
-            match &outlets[..] {
-                [] => {
-                    if self.nodes.is_empty() {
-                        RNone
-                    } else {
-                        eprintln!("Not a rooted graph");
-                        return;
-                    }
-                }
-                [o] => RSome(o.clone()),
-                outs => {
-                    eprintln!("WARN: Multiple Outlet Nodes found");
-                    let already_root = self.node_by_name(ROOT_NODE_NAME).is_some();
-                    let mut outs = outs.to_vec();
-                    if already_root {
-                        let maybe_root = outs.iter().enumerate().find(|(_, o)| {
-                            o.try_lock().expect("mutex error nr2").name() == ROOT_NODE_NAME
-                        });
-                        if let Some(root) = maybe_root {
-                            eprintln!("WARN: a *ROOT* node found, adding others to it");
-                            outs.remove(root.0);
-                        } else {
-                            eprintln!(
-                                "Graph already has {ROOT_NODE_NAME} node, but it is not the root node of the graph"
-                            );
-                            return;
-                        }
-                    } else {
-                        eprintln!("WARN: adding a *ROOT* node");
-                        self.insert_node_by_name(ROOT_NODE_NAME);
-                    }
-                    let outlet = self.node_by_name(ROOT_NODE_NAME).expect("Just inserted");
-                    for o in outs {
-                        o.try_lock()
-                            .expect("mutex error nr3")
-                            .set_output(outlet.clone());
-                        outlet
-                            .try_lock()
-                            .expect("mutex error nr4")
-                            .add_input(o.clone());
-                    }
-                    RSome(outlet.clone())
-                }
-            }
+            outlets.sort_by(|a, b| {
+                a.try_lock()
+                    .expect("mutex error nr2")
+                    .order()
+                    .cmp(&b.try_lock().expect("mutex error nr3").order())
+            });
+            outlets.into()
         };
-        self.calc_order();
         let orders: HashMap<_, _> = self
             .nodes_map
             .iter()
@@ -442,15 +418,9 @@ impl Network {
             .collect();
         let mut nodes_queue: Vec<String> = Vec::with_capacity(self.nodes.len());
         let mut new_nodes: Vec<String> = Vec::with_capacity(self.nodes.len());
-        nodes_queue.push(
-            self.outlet
-                .clone()
-                .unwrap()
-                .try_lock()
-                .expect("mutex error nr7")
-                .name()
-                .to_string(),
-        );
+        for o in &self.outlets {
+            nodes_queue.push(o.try_lock().expect("mutex error nr7").name().to_string());
+        }
 
         while let Some(curr) = nodes_queue.pop() {
             let mut inps: Vec<String> = self.nodes_map[curr.as_str()]
@@ -525,8 +495,8 @@ impl Network {
                 }
             }
         }
-        if let RSome(output) = &self.outlet {
-            recc_set(output, 0);
+        for o in &self.outlets {
+            recc_set(o, 0);
         }
     }
 
@@ -649,7 +619,7 @@ impl Network {
         register(&node, &mut nodes, &mut nodes_map);
         self.nodes = nodes.into();
         self.nodes_map = nodes_map.into();
-        self.outlet = RSome(node);
+        self.outlets = vec![node].into();
         self.reorder();
         self.set_levels();
     }
@@ -870,7 +840,7 @@ impl From<Node> for Network {
             .collect::<HashMap<RString, Node>>()
             .into();
         net.nodes = net.nodes_map.keys().cloned().collect::<Vec<_>>().into();
-        net.outlet = RSome(node);
+        net.outlets = vec![node].into();
         net.reorder();
         net.set_levels();
         net

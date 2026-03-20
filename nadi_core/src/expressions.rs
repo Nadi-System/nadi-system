@@ -618,6 +618,22 @@ impl Expression {
                         .collect::<Result<Vec<FunctionCall>, EvalError>>()?;
                     Ok(Self::MultiFunction(fcs))
                 }
+                Some(VarType::Leaves) => {
+                    let fcs = ctx
+                        .network
+                        .leaves()
+                        .map(|n| fc.resolve(ft, ctx, local, Some(n)))
+                        .collect::<Result<Vec<FunctionCall>, EvalError>>()?;
+                    Ok(Self::MultiFunction(fcs))
+                }
+                Some(VarType::Outlets) => {
+                    let fcs = ctx
+                        .network
+                        .outlets()
+                        .map(|n| fc.resolve(ft, ctx, local, Some(n)))
+                        .collect::<Result<Vec<FunctionCall>, EvalError>>()?;
+                    Ok(Self::MultiFunction(fcs))
+                }
                 Some(VarType::Inputs) => {
                     let fcs = node
                         .ok_or(
@@ -653,7 +669,7 @@ impl Expression {
                     Ok(v)
                 }
                 Some(VarType::Root) => {
-                    let v = match ctx.network.outlet() {
+                    let v = match ctx.network.root() {
                         Some(o) => Self::Function(fc.resolve(ft, ctx, local, Some(o))?),
                         None => {
                             Expression::ResolveError(EvalErrorType::NoRootNode.pos(fc.position()))
@@ -1143,7 +1159,7 @@ impl InputVar {
                 VarType::Root => self
                     .attr_nested(
                         &ctx.network
-                            .outlet()
+                            .root()
                             .ok_or(EvalErrorType::NoRootNode.pos(self.position()))?
                             .try_lock()
                             .into_option()
@@ -1300,6 +1316,38 @@ impl InputVar {
                     }
                     return Ok(Expression::Literal(Attribute::Array(vars.into())));
                 }
+                VarType::Leaves => {
+                    let mut vars = Vec::new();
+                    for n in ctx.network.leaves() {
+                        let a = self
+                            .attr_nested(&n.try_lock().into_option().ok_or(
+                                EvalErrorType::MutexError(file!(), line!()).pos(self.position()),
+                            )?)
+                            .cloned();
+                        if self.check {
+                            vars.push(a.is_ok().into());
+                        } else {
+                            vars.push(a.map_err(|e| e.pos(self.position()))?);
+                        }
+                    }
+                    return Ok(Expression::Literal(Attribute::Array(vars.into())));
+                }
+                VarType::Outlets => {
+                    let mut vars = Vec::new();
+                    for n in ctx.network.outlets() {
+                        let a = self
+                            .attr_nested(&n.try_lock().into_option().ok_or(
+                                EvalErrorType::MutexError(file!(), line!()).pos(self.position()),
+                            )?)
+                            .cloned();
+                        if self.check {
+                            vars.push(a.is_ok().into());
+                        } else {
+                            vars.push(a.map_err(|e| e.pos(self.position()))?);
+                        }
+                    }
+                    return Ok(Expression::Literal(Attribute::Array(vars.into())));
+                }
             },
             None => match ft {
                 // since function expressions are only evaluated as env functions now
@@ -1352,6 +1400,10 @@ pub enum VarType {
     Output,
     /// Nodes variable (array of variable from each node)
     Nodes(Box<Propagation>),
+    /// Outlets of the network
+    Outlets,
+    /// leaf nodes of the network
+    Leaves,
     /// variable for the Root node of the network
     Root,
 }
@@ -1372,6 +1424,8 @@ impl VarType {
             TaskKeyword::Output => Some(VarType::Output),
             TaskKeyword::Nodes => Some(VarType::Nodes(Box::new(prop.unwrap_or_default()))),
             TaskKeyword::Root => Some(VarType::Root),
+            TaskKeyword::Outlets => Some(VarType::Outlets),
+            TaskKeyword::Leaves => Some(VarType::Leaves),
             _ => None,
         }
     }
@@ -1382,9 +1436,12 @@ impl VarType {
             VarType::Node(_) => &FunctionType::Node,
             VarType::Network => &FunctionType::Network,
             VarType::Env | VarType::Local => &FunctionType::Env,
-            VarType::Inputs | VarType::Output | VarType::Nodes(_) | VarType::Root => {
-                &FunctionType::Node
-            }
+            VarType::Inputs
+            | VarType::Output
+            | VarType::Nodes(_)
+            | VarType::Root
+            | VarType::Outlets
+            | VarType::Leaves => &FunctionType::Node,
         }
     }
 }
@@ -1405,6 +1462,8 @@ impl std::fmt::Display for VarType {
                 return write!(f, "nodes{p}");
             }
             VarType::Root => "root",
+            VarType::Outlets => "outlets",
+            VarType::Leaves => "leaves",
         };
         write!(f, "{ty}")
     }
@@ -1945,7 +2004,7 @@ fn get_series(
             Some(o) => get_node_series_or_ts(o, name, ts),
             None => Err(EvalErrorType::NoRootNode.no_pos()),
         },
-        (Some(VarType::Root), _) => match ctx.network.outlet() {
+        (Some(VarType::Root), _) => match ctx.network.root() {
             Some(o) => get_node_series_or_ts(o, name, ts),
             None => Err(EvalErrorType::NoRootNode.no_pos()),
         },
