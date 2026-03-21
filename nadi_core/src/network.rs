@@ -399,10 +399,10 @@ impl Network {
                 .cloned()
                 .collect();
             outlets.sort_by(|a, b| {
-                a.try_lock()
+                b.try_lock()
                     .expect("mutex error nr2")
                     .order()
-                    .cmp(&b.try_lock().expect("mutex error nr3").order())
+                    .cmp(&a.try_lock().expect("mutex error nr3").order())
             });
             outlets.into()
         };
@@ -418,7 +418,7 @@ impl Network {
             .collect();
         let mut nodes_queue: Vec<String> = Vec::with_capacity(self.nodes.len());
         let mut new_nodes: Vec<String> = Vec::with_capacity(self.nodes.len());
-        for o in &self.outlets {
+        for o in self.outlets.iter().rev() {
             nodes_queue.push(o.try_lock().expect("mutex error nr7").name().to_string());
         }
 
