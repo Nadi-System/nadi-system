@@ -1239,6 +1239,46 @@ impl InputVar {
                         });
                     }
                 },
+                VarType::Input => match node {
+                    Some(n) => self
+                        .attr_nested(
+                            &match n
+                                .try_lock()
+                                .into_option()
+                                .ok_or(
+                                    EvalErrorType::MutexError(file!(), line!())
+                                        .pos(self.position()),
+                                )?
+                                .input()
+                                .into_option()
+                            {
+                                Some(o) => o,
+                                None if self.check => {
+                                    return Ok(Expression::Literal(Attribute::Bool(false)));
+                                }
+                                None => {
+                                    return Ok(Expression::ResolveError(
+                                        EvalErrorType::NoOutputNode.pos(self.position()),
+                                    ));
+                                }
+                            }
+                            .try_lock()
+                            .into_option()
+                            .ok_or(
+                                EvalErrorType::MutexError(file!(), line!()).pos(self.position()),
+                            )?,
+                        )
+                        .cloned(),
+                    None => {
+                        return Err(match ft {
+                            FunctionType::Node => EvalErrorType::LogicalError(
+                                "Output variable tried without Node value",
+                            )
+                            .pos(self.position()),
+                            _ => EvalErrorType::InvalidVariableType.pos(self.position()),
+                        });
+                    }
+                },
                 VarType::Inputs => match node {
                     Some(n) => {
                         if self.check {
@@ -1298,6 +1338,7 @@ impl InputVar {
                         });
                     }
                 },
+
                 VarType::Output => match node {
                     Some(n) => self
                         .attr_nested(
@@ -1328,6 +1369,53 @@ impl InputVar {
                             )?,
                         )
                         .cloned(),
+                    None => {
+                        return Err(match ft {
+                            FunctionType::Node => EvalErrorType::LogicalError(
+                                "Output variable tried without Node value",
+                            )
+                            .pos(self.position()),
+                            _ => EvalErrorType::InvalidVariableType.pos(self.position()),
+                        });
+                    }
+                },
+                VarType::Outputs => match node {
+                    Some(n) => {
+                        let v = self
+                            .attr_nested(
+                                &match n
+                                    .try_lock()
+                                    .into_option()
+                                    .ok_or(
+                                        EvalErrorType::MutexError(file!(), line!())
+                                            .pos(self.position()),
+                                    )?
+                                    .output()
+                                    .into_option()
+                                {
+                                    Some(o) => o,
+                                    None => {
+                                        return Ok(Expression::Literal(Attribute::Array(
+                                            vec![].into(),
+                                        )));
+                                    }
+                                }
+                                .try_lock()
+                                .into_option()
+                                .ok_or(
+                                    EvalErrorType::MutexError(file!(), line!())
+                                        .pos(self.position()),
+                                )?,
+                            )
+                            .cloned();
+                        return if self.check {
+                            Ok(Expression::Literal(Attribute::Array(
+                                vec![Attribute::Bool(v.is_ok())].into(),
+                            )))
+                        } else {
+                            Ok(v.map(|a| Expression::Literal(Attribute::Array(vec![a].into())))?)
+                        };
+                    }
                     None => {
                         return Err(match ft {
                             FunctionType::Node => EvalErrorType::LogicalError(
@@ -1432,10 +1520,14 @@ pub enum VarType {
     Node(Option<String>),
     /// Network variable
     Network,
+    /// Single Input variable (only valid in a node function for a node with single input)
+    Input,
     /// Inputs variable (only valid in a node function)
     Inputs,
-    /// Output variable (only valid in a node function)
+    /// Output variable (only valid in a node function for a node with single output)
     Output,
+    /// Outputs variable (only valid in a node function)
+    Outputs,
     /// Nodes variable (array of variable from each node)
     Nodes(Box<Propagation>),
     /// Outlets of the network
@@ -1458,8 +1550,10 @@ impl VarType {
             TaskKeyword::Network => Some(VarType::Network),
             TaskKeyword::Env => Some(VarType::Env),
             TaskKeyword::Local => Some(VarType::Local),
+            TaskKeyword::Input => Some(VarType::Input),
             TaskKeyword::Inputs => Some(VarType::Inputs),
             TaskKeyword::Output => Some(VarType::Output),
+            TaskKeyword::Outputs => Some(VarType::Outputs),
             TaskKeyword::Nodes => Some(VarType::Nodes(Box::new(prop.unwrap_or_default()))),
             TaskKeyword::Root => Some(VarType::Root),
             TaskKeyword::Outlets => Some(VarType::Outlets),
@@ -1474,8 +1568,10 @@ impl VarType {
             VarType::Node(_) => &FunctionType::Node,
             VarType::Network => &FunctionType::Network,
             VarType::Env | VarType::Local => &FunctionType::Env,
-            VarType::Inputs
+            VarType::Input
+            | VarType::Inputs
             | VarType::Output
+            | VarType::Outputs
             | VarType::Nodes(_)
             | VarType::Root
             | VarType::Outlets
@@ -1494,8 +1590,10 @@ impl std::fmt::Display for VarType {
             VarType::Network => "network",
             VarType::Env => "env",
             VarType::Local => "local",
+            VarType::Input => "input",
             VarType::Inputs => "inputs",
             VarType::Output => "output",
+            VarType::Outputs => "outputs",
             VarType::Nodes(p) => {
                 return write!(f, "nodes{p}");
             }
@@ -1983,6 +2081,17 @@ fn get_series(
             Some(n) => get_node_series_or_ts(n, name, ts),
             None => Err(EvalErrorType::NodeNotFound(node.to_string()).no_pos()),
         },
+        (Some(VarType::Input), _) => match node
+            .ok_or(EvalErrorType::NotANodeContext.no_pos())?
+            .try_lock()
+            .into_option()
+            .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
+            .input()
+            .into_option()
+        {
+            Some(o) => get_node_series_or_ts(o, name, ts),
+            None => Err(EvalErrorType::NoInputNodes.no_pos()),
+        },
         (Some(VarType::Inputs), _) => {
             let inp_series = node
                 .ok_or(EvalErrorType::NotANodeContext.no_pos())?
@@ -2040,7 +2149,21 @@ fn get_series(
             .into_option()
         {
             Some(o) => get_node_series_or_ts(o, name, ts),
-            None => Err(EvalErrorType::NoRootNode.no_pos()),
+            None => Err(EvalErrorType::NoOutputNode.no_pos()),
+        },
+        (Some(VarType::Outputs), _) => match node
+            .ok_or(EvalErrorType::NotANodeContext.no_pos())?
+            .try_lock()
+            .into_option()
+            .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
+            .output()
+            .into_option()
+        {
+            Some(o) => Err(EvalErrorType::NotImplementedError(
+                "multiple outputs series is not implemented",
+            )
+            .no_pos()),
+            None => Err(EvalErrorType::NoOutputNode.no_pos()),
         },
         (Some(VarType::Root), _) => match ctx.network.root() {
             Some(o) => get_node_series_or_ts(o, name, ts),

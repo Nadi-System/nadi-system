@@ -6,7 +6,7 @@ use abi_stable::{
     external_types::RMutex,
     std_types::{
         RArc,
-        ROption::{self, RSome},
+        ROption::{self, RNone, RSome},
         RString, RVec,
     },
     StableAbi,
@@ -53,8 +53,10 @@ pub struct NodeInner {
     /// level represents the rank of the tributary, 0 for main branch
     /// and 1 for tributaries connected to main branch and so on
     pub(crate) level: u64,
-    /// Number of inputs connected to the current node
+    /// order of the current node
     pub(crate) order: u64,
+    /// Number of nodes inputs to the current node
+    pub(crate) weight: u64,
     /// Node attributes in a  Hashmap of [`RString`] to [`Attribute`]
     pub(crate) attributes: AttrMap,
     /// Hashmap of [`RString`] to [`Series`]
@@ -139,6 +141,11 @@ impl NodeInner {
         self.order
     }
 
+    /// weight of the node
+    pub fn weight(&self) -> u64 {
+        self.weight
+    }
+
     /// set level of the node
     pub fn set_level(&mut self, level: u64) {
         self.level = level;
@@ -149,6 +156,21 @@ impl NodeInner {
     pub fn set_order(&mut self, order: u64) {
         self.order = order;
         self.set_attr("ORDER", Attribute::Integer(order as i64));
+    }
+
+    /// set weight of the node
+    pub fn set_weight(&mut self, weight: u64) {
+        self.weight = weight;
+        self.set_attr("WEIGHT", Attribute::Integer(weight as i64));
+    }
+
+    /// single input node of the node, None if no inputs or multiple inputs
+    pub fn input(&self) -> ROption<&Node> {
+        if let [inp] = self.inputs.as_slice() {
+            RSome(inp)
+        } else {
+            RNone
+        }
     }
 
     /// input nodes of the node
@@ -202,9 +224,18 @@ impl NodeInner {
         });
     }
 
-    /// output of the node
+    /// single input node of the node, None if no inputs or multiple inputs
     pub fn output(&self) -> ROption<&Node> {
         self.output.as_ref()
+    }
+
+    // TODO: when DAG implementation is here, modify this and other output related functions
+    /// Outputs of the node (empty or one node for now)
+    pub fn outputs(&self) -> &[Node] {
+        self.output
+            .as_ref()
+            .map(core::slice::from_ref)
+            .unwrap_or_default()
     }
 
     /// set the output of the node
