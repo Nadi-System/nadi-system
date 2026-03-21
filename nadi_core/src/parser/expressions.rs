@@ -8,6 +8,7 @@ use crate::parser::{
     tasks::propagation,
     tokenizer::Token,
 };
+use crate::structs::NadiStructExpr;
 use crate::tasks::TaskKeyword;
 use crate::udf::{LocalExpr, UserFunction};
 use nom::{
@@ -19,6 +20,7 @@ use nom::{
 
 pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
     alt((
+        map(nadi_struct_expr, Expression::StructExpr),
         input_variable,
         map(attribute, Expression::Literal),
         map(function_call, Expression::Function),
@@ -170,6 +172,26 @@ pub fn bi_operator<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, BiOperator>
         value(BiOperator::LessThan, angle_start),
         value(BiOperator::GreaterThan, angle_end),
     ))(inp)
+}
+
+pub fn nadi_struct_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, NadiStructExpr> {
+    let (rest, (name, fields)) = tuple((
+        variable_name,
+        delimited(
+            maybe_space(brace_start),
+            maybe_newline(newline_separated(tuple((
+                variable_name,
+                preceded(maybe_space(assignment), maybe_space(complete_expression)),
+                maybe_space(comma),
+            )))),
+            maybe_newline(brace_end),
+        ),
+    ))(inp)?;
+    let mut nstr = NadiStructExpr::with_name(name);
+    for (fd, val, _) in fields {
+        nstr.values.insert(fd.into(), val);
+    }
+    Ok((rest, nstr))
 }
 
 pub fn if_else_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
@@ -497,6 +519,7 @@ mod tests {
             network: Network::default(),
             functions,
             udf: HashMap::new(),
+            structs: HashMap::new(),
             env: TaskContextEnv::new(),
             hook: Vec::new(),
             channel: sender,

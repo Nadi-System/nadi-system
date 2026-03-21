@@ -99,6 +99,7 @@ mod tests {
             env: TaskContextEnv::new(),
             hook: Vec::new(),
             udf: HashMap::new(),
+            structs: HashMap::new(),
             channel: sender,
         };
         let mut tests = 0;

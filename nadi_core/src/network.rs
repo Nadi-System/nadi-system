@@ -15,8 +15,6 @@ use colored::Colorize;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 
-pub const ROOT_NODE_NAME: &str = "*ROOT*";
-
 /// Network is a collection of Nodes, with Connection information. The
 /// connection information is saved in the nodes itself (`inputs` and
 /// `output` variables), but they are assigned from the network.

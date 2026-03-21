@@ -249,6 +249,10 @@ impl TaskContext {
                     Ok(Some("Anonymous Function".into()))
                 }
             }
+            Task::StructDef(sdef) => {
+                self.structs.insert(sdef.name.to_string(), sdef);
+                Ok(None)
+            }
             #[cfg(feature = "parser")]
             Task::Import(imp) => {
                 if let Some(path) = imp.path() {
@@ -1303,6 +1307,8 @@ pub enum Task {
     Help(Option<TaskKeyword>, Option<String>),
     /// Function Definition (needs to be named),
     Function(UserFunction),
+    /// Struct definition
+    StructDef(NadiStruct),
     /// Evaluate the expression
     Expr(Expression),
     #[cfg(feature = "parser")]
@@ -1322,7 +1328,7 @@ pub enum Task {
 // While working on this, also define a syntax to alias a function. Can either do single function or whole plugin
 
 impl Task {
-    /// The given task has the capacity to change the task context
+    /// The given task has the capacity to change the network/node/env
     pub fn can_mutate(&self) -> bool {
         match self {
             Task::Eval(_) => true,
@@ -1332,6 +1338,7 @@ impl Task {
             Task::Hook(ht) => ht.iter().any(|t| t.can_mutate()),
             Task::Help(_, _) => false,
             Task::Function(_) => false,
+            Task::StructDef(_) => false,
             Task::Expr(_) => false,
             #[cfg(feature = "parser")]
             Task::Import(_) => true,
@@ -1352,6 +1359,7 @@ impl Task {
             Task::Hook(_) => "Evaluate these tasks after each eval task",
             Task::Help(_, _) => "Show help",
             Task::Function(_) => "Define a new user function",
+            Task::StructDef(_) => "Defines a new user struct",
             Task::Expr(_) => "Evaluate expression",
             #[cfg(feature = "parser")]
             Task::Import(_) => "Import functions from the file",
@@ -1384,6 +1392,7 @@ impl std::fmt::Display for Task {
             Self::Help(None, Some(s)) => write!(f, "help {s}"),
             Self::Help(Some(kw), Some(s)) => write!(f, "help {kw} {s}"),
             Task::Function(fdef) => write!(f, "{fdef}"),
+            Task::StructDef(sdef) => write!(f, "{sdef}"),
             Task::Expr(expr) => write!(f, "{expr}"),
             #[cfg(feature = "parser")]
             Task::Import(imp) => write!(f, "{imp}"),

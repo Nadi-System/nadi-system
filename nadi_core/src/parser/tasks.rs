@@ -1,7 +1,7 @@
 use crate::{
     expressions::{MapFunction, SeriesExpression, TaskPosition},
     network::{PropCondition, PropNodes, PropOrder, Propagation},
-    structs::NadiAttrType,
+    structs::{NadiAttrType, NadiStruct},
     tasks::{AttrTask, CondTask, EvalTask, FunctionType, ImportTask, Task, WhileTask},
 };
 use crate::{
@@ -19,7 +19,7 @@ use abi_stable::std_types::{RString, RVec};
 use nom::{
     branch::alt,
     combinator::{cut, map, opt, value},
-    multi::separated_list1,
+    multi::{separated_list0, separated_list1},
     sequence::{delimited, pair, preceded, tuple},
     Finish,
 };
@@ -137,6 +137,37 @@ pub fn attr_type<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, NadiAttrType>
             MatchErr::new(inp).ty(&ParseErrorType::InvalidType),
         )),
     }
+}
+
+pub fn nadi_struct_def<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, NadiStruct> {
+    let (rest, (_, name, fields)) = tuple((
+        kw_struct,
+        maybe_space(variable_name), // name
+        delimited(
+            maybe_space(brace_start),
+            separated_list0(
+                maybe_space(comma),
+                // fd, ty, val
+                tuple((
+                    maybe_newline(variable_name),
+                    preceded(maybe_space(colon), maybe_space(attr_type)),
+                    opt(preceded(
+                        maybe_space(assignment),
+                        maybe_space(attribute_inline),
+                    )),
+                )),
+            ),
+            maybe_newline(brace_end),
+        ),
+    ))(inp)?;
+    let mut nstr = NadiStruct::with_name(name);
+    for (fd, ty, val) in fields {
+        if let Some(val) = val {
+            nstr.values.insert(fd.clone().into(), val);
+        }
+        nstr.fields.insert(fd.into(), ty);
+    }
+    Ok((rest, nstr))
 }
 
 pub fn typed_var<'a, 'b>(
@@ -346,6 +377,8 @@ pub fn set_series_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, SetSeri
 
 pub fn task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
     alt((
+        map(function_def, Task::Function),
+        map(nadi_struct_def, Task::StructDef),
         // set should be before get
         map(set_series_task, Task::SetSeries),
         map(get_series_task, Task::GetSeries),
@@ -356,7 +389,6 @@ pub fn task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
         map(cond_task, Task::Conditional),
         map(while_task, Task::WhileLoop),
         map(hook_task, Task::Hook),
-        map(function_def, Task::Function),
         map(import_task, Task::Import),
         map(complete_expression, Task::Expr),
         help_task,
@@ -426,9 +458,20 @@ mod tests {
     #[case("while (true) {\n\tenv echo(x)\n}")]
     #[case("if (true) {\n\tenv echo(x)\n} else {\n\tenv echo(y)\n}")]
     #[case("while (true) {\n\tenv echo(x)\n}")]
+    #[case("struct HiThere {\nval: Integer = 0\n}")]
     pub fn task_valid_test(#[case] txt: &str) {
         let tokens = Token::validate(get_tokens(txt)).unwrap();
         let (rest, tasks) = task(&tokens).unwrap();
+        assert_eq!(rest, vec![]);
+        let tsk = tasks.to_string();
+        assert_eq!(txt, tsk);
+    }
+
+    #[rstest]
+    #[case("struct HiThere {\nval: Integer = 0\n}")]
+    pub fn struct_def_test(#[case] txt: &str) {
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let (rest, tasks) = nadi_struct_def(&tokens).unwrap();
         assert_eq!(rest, vec![]);
         let tsk = tasks.to_string();
         assert_eq!(txt, tsk);

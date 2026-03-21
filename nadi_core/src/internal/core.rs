@@ -62,10 +62,10 @@ mod core {
     ///
     /// ```task
     /// network load_str("a -> b")
-    /// network assert_eq(outlets(), ["b"])
+    /// network assert_eq(net_outlets(), ["b"])
     /// ```
     #[network_func]
-    fn outlets(net: &Network) -> Vec<String> {
+    fn net_outlets(net: &Network) -> Vec<String> {
         net.outlets().map(|o| o.lock().name().to_string()).collect()
     }
 
@@ -73,10 +73,10 @@ mod core {
     ///
     /// ```task
     /// network load_str("a -> b")
-    /// network assert_eq(leaves(), ["a"])
+    /// network assert_eq(net_leaves(), ["a"])
     /// ```
     #[network_func]
-    fn leaves(net: &Network) -> Vec<String> {
+    fn net_leaves(net: &Network) -> Vec<String> {
         net.leaves().map(|o| o.lock().name().to_string()).collect()
     }
 

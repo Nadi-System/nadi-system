@@ -2,7 +2,6 @@ use nadi_plugin::nadi_internal_plugin;
 
 #[nadi_internal_plugin]
 mod conn {
-    use crate::network::ROOT_NODE_NAME;
     use crate::parser::tokenizer::valid_variable_name;
     use crate::prelude::*;
     use anyhow::Context;
@@ -208,27 +207,31 @@ mod conn {
     #[network_func]
     fn subset_largest(net: &mut Network, parent: Option<String>) -> Result<(), String> {
         let node = match parent {
-            Some(par) => net
-                .node_by_name(&par)
-                .ok_or(format!("Node {par} not found in the network"))?
-                .clone(),
+            Some(par) => {
+                let par = net
+                    .node_by_name(&par)
+                    .ok_or(format!("Node {par} not found in the network"))?
+                    .clone();
+
+                let mut outlet: Option<Node> = None;
+                for i in par.lock().inputs() {
+                    let mut replace = outlet.is_none();
+                    if let Some(ref o) = outlet {
+                        if o.lock().order() < i.lock().order() {
+                            replace = true;
+                        }
+                    }
+                    if replace {
+                        outlet = Some(i.clone());
+                    }
+                }
+                outlet.unwrap_or(par)
+            }
             None if net.outlets.len() > 1 => net.outlets().next().unwrap().clone(),
             // if one or 0 outlet nodes, then do nothing
             None => return Ok(()),
         };
-        let mut outlet: Option<Node> = None;
-        for i in node.lock().inputs() {
-            let mut replace = outlet.is_none();
-            if let Some(ref o) = outlet {
-                if o.lock().order() < i.lock().order() {
-                    replace = true;
-                }
-            }
-            if replace {
-                outlet = Some(i.clone());
-            }
-        }
-        net.new_outlet(outlet.unwrap_or(node));
+        net.new_outlet(node);
         Ok(())
     }
 
@@ -242,11 +245,5 @@ mod conn {
     #[node_func]
     fn move_down(node: &mut NodeInner) {
         node.move_down()
-    }
-
-    /// default name used for ROOT node of the network
-    #[env_func]
-    fn root_node() -> String {
-        ROOT_NODE_NAME.to_string()
     }
 }

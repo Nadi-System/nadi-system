@@ -2,14 +2,14 @@ use crate::attrs::{AttrMap, Attribute, FromAttribute, HasAttributes};
 use crate::functions::FunctionCtx;
 use crate::network::Propagation;
 use crate::node::Node;
-use crate::structs::NadiAttrType;
+use crate::structs::{NadiAttrType, NadiStruct, NadiStructExpr};
 use crate::tasks::{
     AttrTask, CondTask, EvalTask, FunctionType, TaskContext, TaskKeyword, WhileTask,
 };
 use crate::template::Template;
 use crate::timeseries::{CompleteSeries, HasSeries, HasTimeSeries, Series};
 use crate::udf::UserFunction;
-use abi_stable::std_types::{RNone, RSome};
+use abi_stable::std_types::{RHashMap, RNone, RSome, RString, Tuple2};
 use std::collections::HashMap;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -284,6 +284,8 @@ pub enum Expression {
     Variable(InputVar),
     /// String Template to Render in given context
     Render(Template),
+    /// Struct Expressions are hashmap expression with name
+    StructExpr(NadiStructExpr),
     /// Error in variable resolve process. Will propagation if evaluation is tried.
     ///
     /// This is for cases where the evaluation might short circuit,
@@ -326,6 +328,7 @@ impl std::fmt::Display for Expression {
             Self::Literal(a) => std::fmt::Display::fmt(a, f),
             Self::Variable(v) => std::fmt::Display::fmt(v, f),
             Self::Render(v) => write!(f, "r{v:?}"),
+            Self::StructExpr(e) => write!(f, "{e}"),
             Self::ResolveError(e) => write!(f, "error {:?}", e.to_string()),
             Self::UserError(e) => write!(f, "error {:?}", e),
             Self::Function(fc) => std::fmt::Display::fmt(fc, f),
@@ -414,6 +417,7 @@ impl Expression {
             Self::ResolveError(_) => false,
             Self::UserError(_) => false,
             Self::Variable(_) => false,
+            Self::StructExpr(_) => false,
             Self::Render(_) => false,
             Self::Function(_) => false,
             Self::MultiFunction(_) => false,
@@ -435,6 +439,7 @@ impl Expression {
             Self::ResolveError(_) => false,
             Self::UserError(_) => false,
             Self::Variable(_) => true,
+            Self::StructExpr(e) => e.has_variables(),
             // Could also do true here, as render stirng without variable is converted to a string
             Self::Render(templ) => templ.has_variables(),
             Self::Function(fc) => {
@@ -475,6 +480,14 @@ impl Expression {
                 Ok(Self::Literal(v))
             }
             Self::Variable(v) => Ok(Self::Variable(v)),
+            Self::StructExpr(mut st) => {
+                st.values = st
+                    .values
+                    .into_iter()
+                    .map(|Tuple2(k, v)| v.simplify(ft, ctx).map(|r| Tuple2(k, r)))
+                    .collect::<Result<_, EvalError>>()?;
+                Ok(Self::StructExpr(st))
+            }
             Self::Render(v) => match v.lit() {
                 Some(s) => Ok(Self::Literal(Attribute::String(s.into()))),
                 None => Ok(Self::Render(v)),
@@ -584,6 +597,20 @@ impl Expression {
             Self::UserError(_) => Ok(self.clone()),
             Self::Literal(_) => Ok(self.clone()),
             Self::Variable(vt) => vt.resolve(ft, ctx, local, node),
+            Self::StructExpr(st) => {
+                let values = st
+                    .values
+                    .iter()
+                    .map(|Tuple2(k, v)| {
+                        v.resolve(ft, ctx, local, node)
+                            .map(|v| Tuple2(k.clone(), v))
+                    })
+                    .collect::<Result<_, EvalError>>()?;
+                Ok(Self::StructExpr(NadiStructExpr {
+                    name: st.name.clone(),
+                    values,
+                }))
+            }
             Self::Render(t) => {
                 let res = match ft {
                     FunctionType::Env => t.render(&ctx.env),
@@ -798,6 +825,17 @@ impl Expression {
                     }
                 }
                 Err(EvalErrorType::UnresolvedVariable.pos(vt.position()))
+            }
+            Self::StructExpr(st) => {
+                let values = st
+                    .values
+                    .iter()
+                    .map(|Tuple2(k, v)| {
+                        v.eval_value(ft, ctx, local, node)
+                            .map(|v| Tuple2(k.clone(), v))
+                    })
+                    .collect::<Result<RHashMap<RString, Attribute>, EvalError>>()?;
+                Ok(Attribute::Table(values))
             }
             // Resolve should have converted Render to Lit(String)
             Self::Render(_) => Err(EvalErrorType::UnresolvedVariable.no_pos()),

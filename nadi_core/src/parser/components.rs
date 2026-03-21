@@ -64,6 +64,21 @@ pub fn keyword_val<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, TaskKeyword
     }
 }
 
+pub fn variable_name<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, String> {
+    if let [first, rest @ ..] = inp {
+        match &first.ty {
+            TaskToken::Variable => Ok((rest, first.content.to_string())),
+            _ => Err(nom::Err::Error(
+                MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch),
+            )),
+        }
+    } else {
+        Err(nom::Err::Error(
+            MatchErr::new(inp).ty(&ParseErrorType::Incomplete),
+        ))
+    }
+}
+
 macro_rules! one_token {
     ($name:ident, $ty:pat) => {
         pub fn $name<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, &'a Token<'b>> {
@@ -136,6 +151,7 @@ one_token!(kw_for, TaskToken::Keyword(TaskKeyword::For));
 one_token!(kw_try, TaskToken::Keyword(TaskKeyword::Try));
 one_token!(kw_catch, TaskToken::Keyword(TaskKeyword::Catch));
 one_token!(kw_func, TaskToken::Keyword(TaskKeyword::Function));
+one_token!(kw_struct, TaskToken::Keyword(TaskKeyword::Struct));
 one_token!(kw_error, TaskToken::Keyword(TaskKeyword::Error));
 one_token!(kw_in, TaskToken::Keyword(TaskKeyword::In));
 one_token!(kw_match, TaskToken::Keyword(TaskKeyword::Match));

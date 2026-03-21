@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use abi_stable::{
-    std_types::{RHashMap, ROption, RString},
+    std_types::{RHashMap, ROption, RString, Tuple2},
     StableAbi,
 };
 use std::str::FromStr;
@@ -77,12 +77,42 @@ pub enum NadiType {
     Series(ROption<NadiAttrType>),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 /// Data type for struct definition as well as use
 pub struct NadiStruct {
-    name: RString,
-    fields: RHashMap<RString, NadiType>,
-    values: RHashMap<RString, Attribute>,
+    pub name: RString,
+    pub fields: RHashMap<RString, NadiAttrType>,
+    pub values: RHashMap<RString, Attribute>,
+}
+
+impl std::fmt::Display for NadiStruct {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "struct {} {{\n{}\n}}",
+            self.name,
+            self.fields
+                .iter()
+                .map(|Tuple2(k, t)| {
+                    match self.values.get(k) {
+                        Some(v) => format!("{k}: {t} = {v}"),
+                        None => format!("{k}: {t}"),
+                    }
+                })
+                .collect::<Vec<String>>()
+                .join(",\n")
+        )
+    }
+}
+
+impl NadiStruct {
+    pub fn with_name(name: String) -> Self {
+        Self {
+            name: name.into(),
+            fields: RHashMap::new(),
+            values: RHashMap::new(),
+        }
+    }
 }
 
 impl FromAttribute for NadiStruct {
@@ -101,5 +131,40 @@ impl FromAttribute for NadiStruct {
 impl From<NadiStruct> for Attribute {
     fn from(val: NadiStruct) -> Attribute {
         Attribute::Table(val.values)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+/// Expression to build a struct
+pub struct NadiStructExpr {
+    pub name: String,
+    pub values: RHashMap<RString, Expression>,
+}
+
+impl NadiStructExpr {
+    pub fn with_name(name: String) -> Self {
+        Self {
+            name: name.into(),
+            values: RHashMap::new(),
+        }
+    }
+
+    pub fn has_variables(&self) -> bool {
+        self.values.values().any(|v| v.has_variables())
+    }
+}
+
+impl std::fmt::Display for NadiStructExpr {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {{\n{}\n}}",
+            self.name,
+            self.values
+                .iter()
+                .map(|Tuple2(k, v)| { format!("{k} = {v}") })
+                .collect::<Vec<String>>()
+                .join(",\n")
+        )
     }
 }
