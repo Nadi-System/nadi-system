@@ -62,6 +62,8 @@ task_ctx_consts!(
     series_show_na_as, "SERIES_SHOW_NA_AS", String => "-".to_string();
     parallize_nodes, "PARALLIZE_NODES", bool => false;
     parallel_cores, "PARALLEL_CORES", usize => 8;
+    prettify_map, "PRETTIFY_MAP", bool => true;
+    track_change, "TRACK_CHANGE", bool => true;
 );
 
 /// Message that can be sent from the task
@@ -238,6 +240,8 @@ impl TaskContext {
     /// execute a task in the task context
     pub fn execute_single(&mut self, task: Task) -> Result<Option<String>, EvalError> {
         match task {
+            Task::Network => Ok(Some(format!("{:?}", self.network))),
+            Task::Env => Ok(Some(format!("{:?}", self.env.attrs))),
             Task::Function(fdef) => {
                 if let Some(name) = fdef.name() {
                     // TODO: check the function doesn't have
@@ -1318,6 +1322,10 @@ pub enum Task {
     GetSeries(GetSeriesTask),
     /// Set a series/timeseries to the node/network/env
     SetSeries(SetSeriesTask),
+    /// Network details
+    Network,
+    /// Env details
+    Env,
     /// Clear the task context
     Clear,
     /// exit the task system/process,
@@ -1344,6 +1352,8 @@ impl Task {
             Task::Import(_) => true,
             Task::GetSeries(_) => false,
             Task::SetSeries(_) => true,
+            Task::Network => false,
+            Task::Env => false,
             Task::Clear => false,
             Task::Exit => false,
         }
@@ -1365,6 +1375,8 @@ impl Task {
             Task::Import(_) => "Import functions from the file",
             Task::GetSeries(_) => "Query Series/TimeSeries values",
             Task::SetSeries(_) => "Set Series/TimeSeries values",
+            Task::Network => "Show current Network Details",
+            Task::Env => "Show current environment",
             Task::Clear => "Clear the task context",
             Task::Exit => "Exit the program",
         }
@@ -1398,6 +1410,8 @@ impl std::fmt::Display for Task {
             Task::Import(imp) => write!(f, "{imp}"),
             Task::GetSeries(gst) => write!(f, "{gst}"),
             Task::SetSeries(sst) => write!(f, "{sst}"),
+            Self::Network => write!(f, "network"),
+            Self::Env => write!(f, "env"),
             Self::Clear => write!(f, "clear"),
             Self::Exit => write!(f, "exit"),
         }

@@ -51,16 +51,16 @@ mod debug {
     /// those files back to the stdout.
     ///
     /// Also useful for nadi preprocessor.
-    #[env_func(error = false, newline = true)]
+    #[env_func(stderr = false, newline = true)]
     fn echo(
         /// line to print
         line: String,
         /// print to stderr instead of stdout
-        error: bool,
+        stderr: bool,
         /// print newline at the end
         newline: bool,
     ) {
-        match (error, newline) {
+        match (stderr, newline) {
             (false, false) => print!("{line}"),
             (false, true) => println!("{line}"),
             (true, false) => eprint!("{line}"),
@@ -93,12 +93,12 @@ mod debug {
     /// only the parts after that are relevant to the user. Hence,
     /// it'll discard outputs before that during documentation
     /// generation.
-    #[env_func(error = false)]
+    #[env_func(stderr = false)]
     fn clip(
         /// print in stderr instead of in stdout
-        error: bool,
+        stderr: bool,
     ) {
-        if error {
+        if stderr {
             eprintln!("----8<----");
         } else {
             println!("----8<----");

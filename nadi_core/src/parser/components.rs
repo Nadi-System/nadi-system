@@ -141,6 +141,9 @@ one_token!(at, TaskToken::At);
 one_token!(dollar, TaskToken::Dollar);
 one_token!(invalid, TaskToken::Invalid(_));
 
+one_token!(kw_network, TaskToken::Keyword(TaskKeyword::Network));
+one_token!(kw_node, TaskToken::Keyword(TaskKeyword::Node));
+one_token!(kw_env, TaskToken::Keyword(TaskKeyword::Env));
 one_token!(kw_import, TaskToken::Keyword(TaskKeyword::Import));
 one_token!(kw_exec, TaskToken::Keyword(TaskKeyword::Exec));
 one_token!(kw_from, TaskToken::Keyword(TaskKeyword::From));

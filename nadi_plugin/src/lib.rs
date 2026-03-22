@@ -263,27 +263,42 @@ fn nadi_func_inner(
 }
 
 /// Invalid argument names = task system keywords
-const INVALID_ARG_NAME: [&str; 22] = [
-    "node", // TaskKeyword::Node
-    "network", "net",    // TaskKeyword::Network
-    "env",    // TaskKeyword::Env
-    "exit",   // TaskKeyword::Exit
-    "end",    // TaskKeyword::End
-    "help",   // TaskKeyword::Help
-    "inputs", // TaskKeyword::Inputs
-    "output", // TaskKeyword::Output
-    "nodes",  // TaskKeyword::Nodes
-    "if",     // TaskKeyword::If
-    "else",   // TaskKeyword::Else
-    "while",  // TaskKeyword::While
-    "in",     // TaskKeyword::In
-    "match",  // TaskKeyword::Match
-    "hook",   // TaskKeyword::Hook
-    "function", "func",  // TaskKeyword::Function
-    "map",   // TaskKeyword::Map
-    "attrs", // TaskKeyword::Attrs
-    "loop",  // TaskKeyword::Loop
-    "for",   // TaskKeyword::For
+const INVALID_ARG_NAME: [&str; 38] = [
+    "clear",  // TaskKeyword::Clear
+    "import", // TaskKeyword::Import
+    "exec",   // TaskKeyword::Exec
+    "from",   // TaskKeyword::From
+    "node",   // TaskKeyword::Node
+    "network", "net",     // TaskKeyword::Network
+    "env",     // TaskKeyword::Env
+    "exit",    // TaskKeyword::Exit
+    "end",     // TaskKeyword::End
+    "help",    // TaskKeyword::Help
+    "input",   // TaskKeyword::Input
+    "inputs",  // TaskKeyword::Inputs
+    "output",  // TaskKeyword::Output
+    "outputs", // TaskKeyword::Outputs
+    "nodes",   // TaskKeyword::Nodes
+    "root",    // TaskKeyword::Root
+    "outlets", // TaskKeyword::Outlets
+    "leaves",  // TaskKeyword::Leaves
+    "if",      // TaskKeyword::If
+    "else",    // TaskKeyword::Else
+    "while",   // TaskKeyword::While
+    "try",     // TaskKeyword::Try
+    "catch",   // TaskKeyword::Catch
+    "in",      // TaskKeyword::In
+    "match",   // TaskKeyword::Match
+    "hook",    // TaskKeyword::Hook
+    "local", "loc",    // TaskKeyword::Local
+    "struct", // TaskKeyword::Struct
+    "function", "func",   // TaskKeyword::Function
+    "return", // TaskKeyword::Return
+    "error",  // TaskKeyword::Error
+    "for",    // TaskKeyword::For
+    "map",    // TaskKeyword::Map
+    "attrs",  // TaskKeyword::Attrs
+    "loop",   // TaskKeyword::Loop
 ];
 
 fn check_args_kwargs_order(

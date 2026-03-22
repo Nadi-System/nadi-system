@@ -394,6 +394,8 @@ pub fn task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
         help_task,
         value(Task::Clear, kw_clear),
         value(Task::Exit, kw_exit),
+        value(Task::Network, kw_network),
+        value(Task::Env, kw_env),
     ))(inp)
 }
 
