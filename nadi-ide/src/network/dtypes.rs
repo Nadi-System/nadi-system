@@ -8,10 +8,12 @@ use nadi_core::template::Template;
 
 pub struct NodeData {
     pub index: usize,
+    pub weight: u64,
+    pub order: u64,
     pub name: String,
     pub size: f32,
     pub shape: NodeShape,
-    pub pos: (u64, usize),
+    pub pos: (f32, f32),
     pub color: Option<Color>,
     pub textcolor: Option<Color>,
     pub label: String,
@@ -34,10 +36,12 @@ impl NodeData {
             .unwrap_or_else(|| node.name().to_string());
         Self {
             index: node.index(),
+            order: node.order(),
+            weight: node.weight(),
             name: node.name().to_string(),
             size,
             shape,
-            pos: (node.level(), node.index()),
+            pos: (node.level() as f32, node.index() as f32),
             color,
             textcolor,
             label,
@@ -123,23 +127,16 @@ pub struct NetworkData {
     pub nodes: Vec<NodeData>,
     pub edges: Vec<(usize, usize, Option<Color>, f32)>,
     pub label: Option<Template>,
+    pub hide_labels: bool,
     pub maxlevel: u64,
-}
-
-// pub enum NetworkViewType {
-//     Flat,
-//     Tree,
-// }
-
-pub enum NetworkViewType {
-    Flat(FlatConfig),
-    Tree(TreeConfig),
-    // more to come
+    pub weight: u64,
+    pub maxorder: u64,
+    pub ty: NetworkViewType,
 }
 
 pub struct NetworkDataView {
     pub network: NetworkData,
-    pub view_ty: NetworkViewType,
+    pub config: TreeConfig,
     pub invert: bool,
     pub scale: f32,
     pub cache: Cache<iced::Renderer>,
@@ -149,7 +146,7 @@ impl Default for NetworkDataView {
     fn default() -> Self {
         Self {
             network: NetworkData::default(),
-            view_ty: NetworkViewType::Flat(FlatConfig::default()),
+            config: TreeConfig::default(),
             invert: true,
             scale: 1.0,
             cache: Cache::<iced::Renderer>::new(),
@@ -157,7 +154,14 @@ impl Default for NetworkDataView {
     }
 }
 
-pub struct FlatConfig {
+#[derive(Default)]
+pub enum NetworkViewType {
+    #[default]
+    Flat,
+    Tree,
+}
+
+pub struct TreeConfig {
     pub deltax: f32,
     pub deltay: f32,
     pub offsetx: f32,
@@ -165,7 +169,7 @@ pub struct FlatConfig {
     pub deltacol: f32,
 }
 
-impl Default for FlatConfig {
+impl Default for TreeConfig {
     fn default() -> Self {
         Self {
             deltax: 20.0,
@@ -177,33 +181,35 @@ impl Default for FlatConfig {
     }
 }
 
-pub struct TreeConfig {
-    pub deltax: f32,
-    pub deltay: f32,
-    pub offsetx: f32,
-    pub offsety: f32,
-}
-
-impl Default for TreeConfig {
-    fn default() -> Self {
-        Self {
-            deltax: 5.0,
-            deltay: 3.0,
-            offsetx: 20.0,
-            offsety: 20.0,
-        }
+fn position_nodes(nds: Vec<Node>, x: f32, mut y: f32, pos: &mut Vec<NodeData>) {
+    for n in nds {
+        let n = n.lock();
+        let ind = n.index();
+        let nd = &mut pos[ind];
+        let wt = n.weight();
+        nd.pos = (x, y + wt as f32 / 2.0);
+        position_nodes(n.inputs().iter().cloned().collect(), x + 1.0, y, pos);
+        y += wt as f32;
     }
 }
 
 impl NetworkData {
-    pub fn new(net: &Network) -> Self {
+    pub fn new(net: &Network, ty: NetworkViewType) -> Self {
         // TODO read network.visual.nodelabel here
         let label: Option<Template> = None;
-        let nodes = net
+        let mut nodes = net
             .nodes()
             .map(|n| NodeData::new(&n.lock(), &label))
             .collect();
+
+        let mut hide_labels = false;
+        if let NetworkViewType::Tree = ty {
+            position_nodes(net.outlets().cloned().collect(), 0.0, 0.0, &mut nodes);
+            hide_labels = true;
+        }
         let maxlevel = net.nodes().map(|n| n.lock().level()).max().unwrap_or(0);
+        let weight = net.outlets().map(|n| n.lock().weight()).sum();
+        let maxorder = net.nodes().next().map(|n| n.lock().order()).unwrap_or(0);
         let edges = net
             .nodes()
             .filter_map(|n| {
@@ -226,16 +232,28 @@ impl NetworkData {
             edges,
             label,
             maxlevel,
+            weight,
+            maxorder,
+            hide_labels,
+            ty,
         }
     }
 
-    pub fn update(&mut self, net: &Network) {
+    pub fn update(&mut self, net: &Network, ty: NetworkViewType) {
         let label: Option<Template> = None;
-        let nodes = net
+        let mut nodes = net
             .nodes()
             .map(|n| NodeData::new(&n.lock(), &label))
             .collect();
         let maxlevel = net.nodes().map(|n| n.lock().level()).max().unwrap_or(0);
+        let weight = net.outlets().map(|n| n.lock().weight()).sum();
+        let maxorder = net.nodes().next().map(|n| n.lock().order()).unwrap_or(0);
+        if let NetworkViewType::Tree = ty {
+            position_nodes(net.outlets().cloned().collect(), 0.0, 0.0, &mut nodes);
+            self.hide_labels = true;
+        } else {
+            self.hide_labels = false;
+        }
         let edges = net
             .nodes()
             .filter_map(|n| {
@@ -256,6 +274,9 @@ impl NetworkData {
         self.nodes = nodes;
         self.edges = edges;
         self.maxlevel = maxlevel;
+        self.weight = weight;
+        self.maxorder = maxorder;
+        self.ty = ty;
     }
 }
 

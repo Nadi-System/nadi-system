@@ -80,25 +80,34 @@ where
         _renderer: &Renderer,
         limits: &layout::Limits,
     ) -> layout::Node {
-        let conf = match &self.data.view_ty {
-            NetworkViewType::Flat(c) => c,
-            _ => panic!("not supported view type"),
-        };
+        let conf = &self.data.config;
 
-        let mut x = (self.data.network.maxlevel + 2) as f32 * conf.deltax + conf.offsetx * 2.0;
-        let num_chars = self
-            .data
-            .network
-            .nodes
-            .iter()
-            .map(|n| n.label.len())
-            .max()
-            .unwrap_or_default() as f32;
-        x += num_chars * 15.0; // TODO find text length required to draw it
-        let y = (self.data.network.nodes.len() + 2) as f32 * conf.deltay + conf.offsety * 3.0;
-        let xmax = limits.max().width;
-        let xnew = x * self.data.scale;
-        layout::Node::new(Size::new(xmax.max(xnew), y * self.data.scale))
+        let size = match self.data.network.ty {
+            NetworkViewType::Flat => {
+                let mut x =
+                    (self.data.network.maxlevel + 2) as f32 * conf.deltax + conf.offsetx * 2.0;
+                let num_chars = self
+                    .data
+                    .network
+                    .nodes
+                    .iter()
+                    .map(|n| n.label.len())
+                    .max()
+                    .unwrap_or_default() as f32;
+                x += num_chars * 15.0; // TODO find text length required to draw it
+                let y =
+                    (self.data.network.nodes.len() + 2) as f32 * conf.deltay + conf.offsety * 3.0;
+                let xmax = limits.max().width;
+                let xnew = x * self.data.scale;
+                Size::new(xmax.max(xnew), y * self.data.scale)
+            }
+            NetworkViewType::Tree => {
+                let x = (self.data.network.maxorder + 2) as f32 * conf.deltay + conf.offsety * 3.0;
+                let y = (self.data.network.weight + 2) as f32 * conf.deltax + conf.offsetx * 2.0;
+                Size::new(x * self.data.scale, y * self.data.scale)
+            }
+        };
+        layout::Node::new(size)
     }
 
     // might have to use this for hover effect
@@ -113,10 +122,7 @@ where
         shell: &mut Shell<'_, Message>,
         _viewport: &Rectangle,
     ) {
-        let conf = match &self.data.view_ty {
-            NetworkViewType::Flat(c) => c,
-            _ => panic!("not supported view type"),
-        };
+        let conf = &self.data.config;
 
         let state = tree.state.downcast_mut::<State>();
 
@@ -125,29 +131,77 @@ where
             state.last_scale = self.data.scale;
         }
 
-        let node = cursor.position_in(layout.bounds()).and_then(|pt| {
-            let y = ((pt.y - conf.offsety * self.data.scale) / (conf.deltay * self.data.scale)
-                - 1.0)
-                .round();
-            if y < 0.0 {
-                None
-            } else {
-                let ind = y as usize;
-                self.data
-                    .network
-                    .nodes
-                    .get(ind)
-                    .map(|n| (ind, n.name.to_string()))
-            }
-        });
+        let node = cursor
+            .position_in(layout.bounds())
+            .and_then(|pt| match self.data.network.ty {
+                NetworkViewType::Flat => {
+                    let y = ((pt.y - conf.offsety * self.data.scale)
+                        / (conf.deltay * self.data.scale)
+                        - 1.0)
+                        .round();
+                    if y < 0.0 {
+                        None
+                    } else {
+                        let index = y as usize;
+                        self.data.network.nodes.get(index).map(|n| {
+                            let y = (y + 0.5) * conf.deltay * self.data.scale
+                                + conf.offsety * self.data.scale;
+                            OverNode {
+                                index,
+                                name: n.name.to_string(),
+                                pos: (conf.offsetx, y),
+                                size: (
+                                    layout.bounds().width - conf.offsetx,
+                                    conf.deltay * self.data.scale,
+                                ),
+                            }
+                        })
+                    }
+                }
+                NetworkViewType::Tree => 'tree: {
+                    let x = ((pt.x - conf.offsetx * self.data.scale)
+                        / (conf.deltax * self.data.scale))
+                        .round()
+                        - 1.0;
+                    if x < 0.0 || x > self.data.network.maxorder as f32 {
+                        break 'tree None;
+                    }
+                    let y = ((pt.y - conf.offsety * self.data.scale)
+                        / (conf.deltay * self.data.scale)
+                        - 0.5);
+                    if y < 0.0 || y > self.data.network.weight as f32 {
+                        break 'tree None;
+                    }
+                    self.data
+                        .network
+                        .nodes
+                        .iter()
+                        .find(|n| n.pos.0 == x && (n.pos.1 + 1.0) > y && n.pos.1 < y)
+                        .map(|n| {
+                            let y1 = conf.offsety * self.data.scale
+                                + (n.pos.1 + 0.5) * conf.deltay * self.data.scale;
+                            let x1 = conf.offsetx * self.data.scale
+                                + (x + 0.5) * conf.deltax * self.data.scale;
+                            OverNode {
+                                index: n.index,
+                                name: n.name.to_string(),
+                                pos: (x1, y1),
+                                size: (
+                                    conf.deltax * self.data.scale,
+                                    conf.deltay * self.data.scale,
+                                ),
+                            }
+                        })
+                }
+            });
         if state.over_node != node {
             state.over_node = node;
         }
         if let Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) = event
             && let Some(on_press) = &self.on_press
         {
-            if let Some((_, node)) = &state.over_node {
-                shell.publish(on_press(Some(node.to_string())));
+            if let Some(node) = &state.over_node {
+                shell.publish(on_press(Some(node.name.to_string())));
             } else if cursor.is_over(layout.bounds()) {
                 shell.publish(on_press(None));
             }
@@ -178,19 +232,13 @@ where
         let mut frame = Frame::new(renderer, bounds.size());
         frame.scale(self.data.scale);
 
-        let conf = match &self.data.view_ty {
-            NetworkViewType::Flat(c) => c,
-            _ => panic!("not supported view type"),
-        };
+        let conf = &self.data.config;
 
-        if let Some((ind, _)) = &state.over_node
-            && let Some(node) = self.data.network.nodes.get(*ind)
-        {
-            let y = (node.pos.1 + 1) as f32 * conf.deltay + conf.offsety;
+        if let Some(overnode) = &state.over_node {
             // highlight the row if it's selected
             frame.fill_rectangle(
-                (conf.offsetx / 2.0, y - conf.deltay / 2.0).into(),
-                iced::Size::new(bounds.size().width - conf.offsetx, conf.deltay),
+                (overnode.pos.0, overnode.pos.1).into(),
+                iced::Size::new(overnode.size.0, overnode.size.1),
                 style.highlight,
             );
         }
@@ -206,8 +254,8 @@ where
                 .map(|n| {
                     let (x, y) = n.pos;
                     (
-                        (x + 1) as f32 * conf.deltax + conf.offsetx,
-                        (y + 1) as f32 * conf.deltay + conf.offsety,
+                        (x + 1.0) * conf.deltax + conf.offsetx,
+                        (y + 1.0) * conf.deltay + conf.offsety,
                     )
                 })
                 .collect();
@@ -225,15 +273,17 @@ where
             for (node, pos) in self.data.network.nodes.iter().zip(coords) {
                 let npath = node.path(pos);
                 frame.fill(&npath, node.color.unwrap_or(style.node));
-                let mut txt = iced_graphics::geometry::Text::from(node.label.as_str());
-                txt.position = (
-                    conf.offsetx + conf.deltax * (self.data.network.maxlevel + 2) as f32,
-                    pos.1,
-                )
-                    .into();
-                txt.align_y = iced_core::alignment::Vertical::Center;
-                txt.color = node.textcolor.unwrap_or(style.text);
-                frame.fill_text(txt);
+                if !self.data.network.hide_labels {
+                    let mut txt = iced_graphics::geometry::Text::from(node.label.as_str());
+                    txt.position = (
+                        conf.offsetx + conf.deltax * (self.data.network.maxlevel + 2) as f32,
+                        pos.1,
+                    )
+                        .into();
+                    txt.align_y = iced_core::alignment::Vertical::Center;
+                    txt.color = node.textcolor.unwrap_or(style.text);
+                    frame.fill_text(txt);
+                }
             }
         });
 
@@ -257,9 +307,17 @@ where
     }
 }
 
+#[derive(Clone, Default, PartialEq)]
+struct OverNode {
+    index: usize,
+    name: String,
+    pos: (f32, f32),
+    size: (f32, f32),
+}
+
 #[derive(Default)]
 struct State {
-    over_node: Option<(usize, String)>,
+    over_node: Option<OverNode>,
     last_style: RefCell<Option<Style>>,
     last_scale: f32,
 }

@@ -356,17 +356,17 @@ impl Network {
             .filter(|n| n.lock().inputs().is_empty())
     }
 
-    /// Calculate the order of all nodes
+    /// Calculate the weight of all nodes
     ///
-    /// Value of order signifies the number of all nodes (recursively)
+    /// Value of weight signifies the number of all nodes (recursively)
     /// that are on the input side of the node
-    pub fn calc_order(&mut self) {
-        let mut orders = HashMap::<RString, u64>::with_capacity(self.nodes.len());
+    pub fn calc_weights(&mut self) {
+        let mut weights = HashMap::<RString, u64>::with_capacity(self.nodes.len());
 
         // ran into stackoverflow with the recursive pattern of calculation
         self.nodes_map.iter().for_each(|n| {
             if n.1.lock().inputs().is_empty() {
-                orders.insert(n.0.clone(), 1);
+                weights.insert(n.0.clone(), 1);
             }
             let mut n =
                 n.1.try_lock_for(RDuration::from_secs(1))
@@ -377,19 +377,37 @@ impl Network {
                 let o = out
                     .try_lock_for(RDuration::from_secs(1))
                     .expect("Lock failed for node, maybe branched network");
-                *orders.entry(o.name().into()).or_insert(1) += 1;
+                *weights.entry(o.name().into()).or_insert(1) += 1;
                 n = o.output().cloned();
             }
         });
 
-        for (node, ord) in orders {
-            self.nodes_map[&node].lock().set_order(ord);
+        for (node, ord) in weights {
+            self.nodes_map[&node].lock().set_weight(ord);
         }
+    }
+
+    /// Calculate the order of all nodes
+    ///
+    /// Value of order signifies the number of all nodes (recursively)
+    /// that are on the input side of the node
+    pub fn calc_order(&mut self) {
+        self.nodes.iter().rev().for_each(|n| {
+            let nobj = &self.nodes_map[n];
+            let ord = nobj
+                .lock()
+                .inputs()
+                .iter()
+                .map(|i| i.lock().order())
+                .max()
+                .unwrap_or(0);
+            nobj.lock().set_order(ord + 1);
+        });
     }
 
     /// Reorder the nodes in the network
     pub fn reorder(&mut self) {
-        self.calc_order();
+        self.calc_weights();
         self.outlets = {
             let mut outlets: Vec<Node> = self
                 .nodes()
@@ -399,18 +417,18 @@ impl Network {
             outlets.sort_by(|a, b| {
                 b.try_lock()
                     .expect("mutex error nr2")
-                    .order()
-                    .cmp(&a.try_lock().expect("mutex error nr3").order())
+                    .weight()
+                    .cmp(&a.try_lock().expect("mutex error nr3").weight())
             });
             outlets.into()
         };
-        let orders: HashMap<_, _> = self
+        let weights: HashMap<_, _> = self
             .nodes_map
             .iter()
             .map(|n| {
                 (
                     n.0.as_str(),
-                    n.1.try_lock().expect("mutex error nr6").order(),
+                    n.1.try_lock().expect("mutex error nr6").weight(),
                 )
             })
             .collect();
@@ -429,8 +447,8 @@ impl Network {
                 .map(|i| i.lock().name().to_string())
                 .collect();
             inps.sort_by(|n1, n2| {
-                orders[n2.as_str()]
-                    .partial_cmp(&orders[n1.as_str()])
+                weights[n2.as_str()]
+                    .partial_cmp(&weights[n1.as_str()])
                     .unwrap()
             });
             // this just reorders the inputs, we don't change the input nodes
@@ -466,6 +484,7 @@ impl Network {
             .collect::<Vec<RString>>()
             .into();
         self.reindex();
+        self.calc_order();
         self.ordered = true;
         // eprintln!("Exit Re Order");
     }

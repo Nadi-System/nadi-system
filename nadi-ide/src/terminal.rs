@@ -1,7 +1,7 @@
 use crate::editor::my_hl;
 use crate::help::md_style;
 use crate::icons;
-use crate::network::{NetworkData, NetworkDataView, NetworkTable};
+use crate::network::{NetworkData, NetworkDataView, NetworkTable, NetworkViewType};
 use iced::time::{self, Duration};
 use iced::widget::{
     button, center, column, combo_box, container, markdown, mouse_area, progress_bar, row,
@@ -79,8 +79,10 @@ fn spawn_task_context() -> (Sender<TaskCtxRequest>, Receiver<TaskCtxMessage>) {
                         let _ = send.send(TaskCtxMessage::Result(output, res));
                         if mutates {
                             // only send this if there might have been new values
-                            let _ = send
-                                .send(TaskCtxMessage::Network(NetworkData::new(&task_ctx.network)));
+                            let _ = send.send(TaskCtxMessage::Network(NetworkData::new(
+                                &task_ctx.network,
+                                NetworkViewType::Flat,
+                            )));
                         }
                     }
                     TaskCtxRequest::NodeAttr(name) => {
