@@ -265,6 +265,7 @@ pub enum Message {
     FuncFound(EditorFunction),
     FuncSignature((FunctionType, String)),
     TabComplete,
+    TabInvert,
     // these messages are only sent when embedded; and are handled in
     // the main window
     GetCompletions(Option<String>),
@@ -351,12 +352,23 @@ impl Editor {
                 self.completions = compl;
                 Task::none()
             }
+            Message::TabInvert => {
+                self.content
+                    .perform(text_editor::Action::Edit(text_editor::Edit::Unindent));
+                Task::none()
+            }
             Message::TabComplete => {
-                Completion::apply_multiple(&self.completions, &mut self.content);
-                Task::perform(
-                    get_completion_for(self.content.text(), self.content.cursor().position),
-                    Message::GetCompletions,
-                )
+                if self.completions.is_empty() {
+                    self.content
+                        .perform(text_editor::Action::Edit(text_editor::Edit::Indent));
+                    Task::none()
+                } else {
+                    Completion::apply_multiple(&self.completions, &mut self.content);
+                    Task::perform(
+                        get_completion_for(self.content.text(), self.content.cursor().position),
+                        Message::GetCompletions,
+                    )
+                }
             }
             Message::EditorAction(action) => {
                 // These new ones don't seem to work
@@ -737,6 +749,9 @@ fn key_binding(kp: text_editor::KeyPress) -> Option<text_editor::Binding<Message
         }
         Key::Named(Named::Enter) if kp.modifiers.control() => {
             return Some(text_editor::Binding::Custom(Message::RunTask));
+        }
+        Key::Named(Named::Tab) if kp.modifiers.shift() => {
+            return Some(text_editor::Binding::Custom(Message::TabInvert));
         }
         Key::Named(Named::Tab) => {
             return Some(text_editor::Binding::Custom(Message::TabComplete));
