@@ -167,6 +167,7 @@ impl Completion {
             .into()
     }
 
+    #[allow(unused)]
     fn apply(&self, content: &mut text_editor::Content) {
         for _ in 0..self.delete {
             content.perform(text_editor::Action::Edit(text_editor::Edit::Backspace));
@@ -176,6 +177,31 @@ impl Completion {
         )));
         for _ in 0..self.move_back {
             content.perform(text_editor::Action::Move(text_editor::Motion::Left));
+        }
+    }
+
+    fn apply_multiple(compls: &[Completion], content: &mut text_editor::Content) {
+        match compls {
+            [] => return,
+            [m] => m.apply(content),
+            [m, rest @ ..] => {
+                if rest.iter().any(|c| c.delete != m.delete) {
+                    // don't know how to recoincile different deletes
+                    return;
+                }
+                let mut pre = m.content[m.insert_from..].to_string();
+                for c in rest.iter() {
+                    while !c.content[c.insert_from..].starts_with(&pre) {
+                        if pre.is_empty() {
+                            return;
+                        }
+                        pre.pop(); // Shorten the prefix
+                    }
+                }
+                content.perform(text_editor::Action::Edit(text_editor::Edit::Paste(
+                    Arc::new(pre),
+                )));
+            }
         }
     }
 }
@@ -316,17 +342,21 @@ impl Editor {
             }
             Message::ComplClick(compl) => {
                 compl.apply(&mut self.content);
-                Task::none()
+                Task::perform(
+                    get_completion_for(self.content.text(), self.content.cursor().position),
+                    Message::GetCompletions,
+                )
             }
             Message::ComplResult(compl) => {
                 self.completions = compl;
                 Task::none()
             }
             Message::TabComplete => {
-                if let Some(c) = self.completions.drain(..).next() {
-                    c.apply(&mut self.content);
-                }
-                Task::none()
+                Completion::apply_multiple(&self.completions, &mut self.content);
+                Task::perform(
+                    get_completion_for(self.content.text(), self.content.cursor().position),
+                    Message::GetCompletions,
+                )
             }
             Message::EditorAction(action) => {
                 // These new ones don't seem to work
