@@ -2,7 +2,7 @@ use crate::icons;
 use iced::highlighter;
 use iced::time::{self, Duration, Instant};
 use iced::widget::{
-    column, container, pick_list, row,
+    Row, column, container, mouse_area, pick_list, row,
     rule::vertical as vrule,
     scrollable,
     space::horizontal as hspace,
@@ -126,6 +126,8 @@ pub struct Editor {
     is_loading: bool,
     /// contents of the editor
     pub content: text_editor::Content,
+    /// completions
+    completions: Vec<Completion>,
     /// edit history
     content_hist: Vec<String>,
     /// current index in the edit history
@@ -140,6 +142,42 @@ pub struct Editor {
     embedded: bool,
     /// nadi functions
     functions: NadiFunctions,
+}
+
+#[derive(Debug, Clone)]
+pub struct Completion {
+    pub label: String,
+    pub delete: usize,
+    pub content: String,
+    pub insert_from: usize,
+    pub move_back: usize,
+}
+
+impl Completion {
+    fn view(&self, primary: bool) -> Element<'_, Message> {
+        container(mouse_area(text(&self.label)).on_press(Message::ComplClick(self.clone())))
+            .padding(2)
+            .style(move |_| {
+                if primary {
+                    container::Style::default().background(iced::Color::BLACK.scale_alpha(0.3))
+                } else {
+                    container::Style::default()
+                }
+            })
+            .into()
+    }
+
+    fn apply(&self, content: &mut text_editor::Content) {
+        for _ in 0..self.delete {
+            content.perform(text_editor::Action::Edit(text_editor::Edit::Backspace));
+        }
+        content.perform(text_editor::Action::Edit(text_editor::Edit::Paste(
+            Arc::new(self.content[self.insert_from..].to_string()),
+        )));
+        for _ in 0..self.move_back {
+            content.perform(text_editor::Action::Move(text_editor::Motion::Left));
+        }
+    }
 }
 
 /// Default task script to show in the editor pane
@@ -180,6 +218,8 @@ impl Default for Editor {
 
 #[derive(Debug, Clone)]
 pub enum Message {
+    ComplClick(Completion),
+    ComplResult(Vec<Completion>),
     EditorAction(text_editor::Action),
     ThemeChange(highlighter::Theme),
     NewFile,
@@ -198,8 +238,10 @@ pub enum Message {
     FunctionAtMark(Option<(FunctionType, String)>),
     FuncFound(EditorFunction),
     FuncSignature((FunctionType, String)),
+    TabComplete,
     // these messages are only sent when embedded; and are handled in
     // the main window
+    GetCompletions(Option<String>),
     RunAllTask,
     RunTask,
     SearchHelp,
@@ -221,6 +263,7 @@ impl Editor {
             is_dirty: false,
             is_loading: false,
             content,
+            completions: vec![],
             content_hist,
             content_index,
             is_hist_dirty: false,
@@ -271,6 +314,20 @@ impl Editor {
                     Task::none()
                 }
             }
+            Message::ComplClick(compl) => {
+                compl.apply(&mut self.content);
+                Task::none()
+            }
+            Message::ComplResult(compl) => {
+                self.completions = compl;
+                Task::none()
+            }
+            Message::TabComplete => {
+                if let Some(c) = self.completions.drain(..).next() {
+                    c.apply(&mut self.content);
+                }
+                Task::none()
+            }
             Message::EditorAction(action) => {
                 // These new ones don't seem to work
                 // match action {
@@ -285,10 +342,16 @@ impl Editor {
                     self.error = None;
                 }
                 self.content.perform(action);
-                Task::perform(
-                    func_at_mark(self.content.text(), self.content.cursor().position),
-                    Message::FunctionAtMark,
-                )
+                Task::batch([
+                    Task::perform(
+                        func_at_mark(self.content.text(), self.content.cursor().position),
+                        Message::FunctionAtMark,
+                    ),
+                    Task::perform(
+                        get_completion_for(self.content.text(), self.content.cursor().position),
+                        Message::GetCompletions,
+                    ),
+                ])
             }
             Message::NewFile => {
                 if !self.is_loading {
@@ -556,11 +619,29 @@ impl Editor {
                 .into(),
             _ => editor.highlight(ext, self.theme).into(),
         };
+        let compl = container(
+            Row::from_iter(
+                self.completions
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| c.view(i % 2 == 0).into()),
+            )
+            .spacing(5)
+            .width(Fill),
+        )
+        .style(container::bordered_box);
         column![
             controls.spacing(10).height(25.0),
-            scrollable(container(status).padding(1.0))
-                .height(45.0)
-                .width(Fill),
+            scrollable(
+                if self.completions.is_empty() {
+                    container(status)
+                } else {
+                    compl
+                }
+                .padding(1.0)
+            )
+            .height(45.0)
+            .width(Fill),
             editor,
             fileinfo
         ]
@@ -626,6 +707,9 @@ fn key_binding(kp: text_editor::KeyPress) -> Option<text_editor::Binding<Message
         }
         Key::Named(Named::Enter) if kp.modifiers.control() => {
             return Some(text_editor::Binding::Custom(Message::RunTask));
+        }
+        Key::Named(Named::Tab) => {
+            return Some(text_editor::Binding::Custom(Message::TabComplete));
         }
         Key::Character("s") if kp.modifiers.control() => {
             return Some(text_editor::Binding::Custom(Message::SaveFile));
@@ -733,6 +817,24 @@ async fn save_file(path: Option<PathBuf>, contents: String) -> Result<PathBuf, E
         .map_err(|error| Error::IoError(error.kind()))?;
 
     Ok(path)
+}
+
+async fn get_completion_for(text: String, mark: Position) -> Option<String> {
+    let line = mark.line;
+    let task_str = &text.lines().nth(line)?[0..mark.column];
+    let chrs: Vec<char> = task_str.chars().collect();
+    let pos = chrs
+        .iter()
+        .rposition(|c| !c.is_alphabetic() && *c != '.' && *c != '_');
+    let chrs: String = match pos {
+        Some(p) => chrs[(p + 1)..].iter().collect(),
+        None => task_str.to_string(),
+    };
+    if chrs.is_empty() {
+        return None;
+    } else {
+        Some(chrs)
+    }
 }
 
 async fn func_at_mark(text: String, mark: Position) -> Option<(FunctionType, String)> {

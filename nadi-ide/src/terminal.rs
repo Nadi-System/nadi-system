@@ -1,13 +1,14 @@
-use crate::editor::my_hl;
+use crate::editor::{Completion, my_hl};
 use crate::help::md_style;
 use crate::icons;
 use crate::network::{NetworkData, NetworkDataView, NetworkTable, NetworkViewType};
 use iced::time::{self, Duration};
 use iced::widget::{
-    button, center, column, combo_box, container, markdown, mouse_area, progress_bar, row,
-    scrollable, slider, space::horizontal, text, text_editor, text_input, toggler,
+    button, center, column, combo_box, container, markdown, mouse_area, pick_list, progress_bar,
+    row, scrollable, slider, space::horizontal, text, text_editor, text_input, toggler,
 };
 use iced::{Element, Fill, Font, Length, Subscription, Task, Theme};
+use nadi_core::abi_stable::std_types::RString;
 use nadi_core::attrs::{AttrMap, HasAttributes};
 use nadi_core::parser::highlight::NadiFileType;
 use nadi_core::tasks::{Task as NadiTask, TaskContext, TaskMessage};
@@ -25,6 +26,7 @@ enum TaskCtxMessage {
     Attribute(String, AttrMap),
     Result(String, Result<Option<String>, String>), // User TaskResult later
     Update(TaskMessage),
+    Completions(Vec<Completion>),
     Clear,
     Waiting,
 }
@@ -33,7 +35,9 @@ enum TaskCtxMessage {
 enum TaskCtxRequest {
     Run(Box<NadiTask>),
     NodeAttr(String),
+    Completions(String),
     NetworkAttr,
+    NetworkTy(NetworkViewType),
     // no need to send request for NetworkData as it is sent whenever
     // a task is run successfully
 }
@@ -57,6 +61,7 @@ fn spawn_task_context() -> (Sender<TaskCtxRequest>, Receiver<TaskCtxMessage>) {
 
     thread::spawn(move || {
         let mut task_ctx = TaskContext::new(None, send_inner);
+        let mut ty = NetworkViewType::default();
         loop {
             while let Ok(req) = recv.try_recv() {
                 match req {
@@ -81,7 +86,7 @@ fn spawn_task_context() -> (Sender<TaskCtxRequest>, Receiver<TaskCtxMessage>) {
                             // only send this if there might have been new values
                             let _ = send.send(TaskCtxMessage::Network(NetworkData::new(
                                 &task_ctx.network,
-                                NetworkViewType::Flat,
+                                &ty,
                             )));
                         }
                     }
@@ -94,6 +99,18 @@ fn spawn_task_context() -> (Sender<TaskCtxRequest>, Receiver<TaskCtxMessage>) {
                     TaskCtxRequest::NetworkAttr => {
                         let am = task_ctx.network.attr_map().clone();
                         let _ = send.send(TaskCtxMessage::Attribute("Network".to_string(), am));
+                    }
+                    TaskCtxRequest::NetworkTy(new) => {
+                        ty = new;
+                        let _ = send.send(TaskCtxMessage::Network(NetworkData::new(
+                            &task_ctx.network,
+                            &ty,
+                        )));
+                    }
+                    TaskCtxRequest::Completions(compl) => {
+                        let _ = send.send(TaskCtxMessage::Completions(task_completion(
+                            &task_ctx, compl,
+                        )));
                     }
                 }
             }
@@ -118,6 +135,7 @@ pub struct Terminal {
     receiver: Receiver<TaskCtxMessage>,
     progress: (String, f32),
     network_view: NetworkDataView,
+    network_ty: NetworkViewType,
     network_sidebar: bool,
     network_help: Vec<markdown::Item>,
     embedded: bool,
@@ -151,8 +169,11 @@ pub enum Message {
     Tick,
     NodeClicked(Option<String>),
     ScaleChanged(f32),
+    GetCompletions(String),
+    NetworkTyChange(NetworkViewType),
     // handled in main
     AttrFound((String, AttrMap)),
+    ComplResult(Vec<Completion>),
 }
 
 impl Terminal {
@@ -172,6 +193,7 @@ impl Terminal {
             receiver,
             progress: (String::new(), 0.0),
             network_view: NetworkDataView::default(),
+            network_ty: NetworkViewType::Flat,
             network_sidebar: false,
             network_help: markdown::parse(NETWORK_HELP).collect(),
             embedded: false,
@@ -268,6 +290,13 @@ impl Terminal {
             }
             Message::CommandChange(cmd) => {
                 self.command = cmd;
+            }
+            Message::NetworkTyChange(ty) => {
+                self.network_ty = ty.clone();
+                let _ = self.sender.send(TaskCtxRequest::NetworkTy(ty));
+            }
+            Message::GetCompletions(compl) => {
+                let _ = self.sender.send(TaskCtxRequest::Completions(compl));
             }
             Message::TaskChain(done, mut tasks) => {
                 let task = if let Some(t) = tasks.pop() {
@@ -376,6 +405,9 @@ impl Terminal {
                         TaskCtxMessage::Waiting => {
                             self.progress = (String::new(), 100.0);
                             self.running_msg = None;
+                        }
+                        TaskCtxMessage::Completions(compls) => {
+                            return Task::done(Message::ComplResult(compls));
                         }
                     }
                 }
@@ -497,6 +529,15 @@ impl Terminal {
             sidebar = sidebar.push(
                 column![
                     row![
+                        text("Network Type:"),
+                        pick_list(
+                            NetworkViewType::all(),
+                            Some(&self.network_ty),
+                            Message::NetworkTyChange
+                        )
+                    ]
+                    .spacing(15),
+                    row![
                         text("Zoom: "),
                         slider(
                             5.0..=200.0,
@@ -543,5 +584,119 @@ impl Terminal {
 
     pub fn subscription(&self) -> Subscription<Message> {
         time::every(Duration::from_millis(100)).map(|_| Message::Tick)
+    }
+}
+
+fn task_completion(ctx: &TaskContext, start: String) -> Vec<Completion> {
+    // TODO, complete more things
+    match start.split_once('.') {
+        Some((pre, compl)) => match pre {
+            "env" => completions(
+                ctx.env
+                    .attr_map()
+                    .keys()
+                    .map(|k| (k, &ComplType::Attr))
+                    .chain(
+                        ctx.functions
+                            .env_alias()
+                            .keys()
+                            .map(|k| (k, &ComplType::Func)),
+                    ),
+                compl,
+            ),
+            "network" => completions(
+                ctx.network
+                    .attr_map()
+                    .keys()
+                    .map(|k| (k, &ComplType::Attr))
+                    .chain(
+                        ctx.functions
+                            .network_alias()
+                            .keys()
+                            .map(|k| (k, &ComplType::Func)),
+                    ),
+                compl,
+            ),
+            "node" => completions(
+                ctx.functions
+                    .node_alias()
+                    .keys()
+                    .map(|k| (k, &ComplType::Func)),
+                compl,
+            ),
+            plugin => {
+                if let Some(p) = ctx.functions.plugins().get(plugin) {
+                    completions(
+                        p.env()
+                            .iter()
+                            .chain(p.node())
+                            .chain(p.network())
+                            .map(|k| (k, &ComplType::Func)),
+                        compl,
+                    )
+                } else {
+                    vec![]
+                }
+            }
+        },
+        None => completions(
+            ctx.env
+                .attr_map()
+                .keys()
+                .chain(ctx.network.attr_map().keys())
+                .map(|k| (k, &ComplType::Attr)),
+            &start,
+        ),
+    }
+}
+
+enum ComplType {
+    Func,
+    Attr,
+}
+
+impl ComplType {
+    fn end(&self) -> &str {
+        match self {
+            Self::Func => "()",
+            Self::Attr => " ",
+        }
+    }
+
+    fn mback(&self) -> usize {
+        match self {
+            Self::Func => 1,
+            Self::Attr => 0,
+        }
+    }
+
+    fn label(&self, name: &str) -> String {
+        match self {
+            Self::Func => format!("{name} <f>"),
+            Self::Attr => name.to_string(),
+        }
+    }
+}
+
+fn completions<'a, I: Iterator<Item = (&'a RString, &'static ComplType)>>(
+    candidates: I,
+    start: &str,
+) -> Vec<Completion> {
+    let compl: Vec<_> = candidates
+        .filter(|k| k.0.starts_with(&start))
+        .map(|k| Completion {
+            label: k.1.label(&k.0),
+            delete: 0,
+            content: format!("{}{}", k.0, k.1.end()),
+            insert_from: start.len(),
+            move_back: k.1.mback(),
+        })
+        .collect();
+    if let [m] = compl.as_slice()
+        && m.label == start
+    {
+        vec![]
+    } else {
+        compl
     }
 }

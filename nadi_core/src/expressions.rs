@@ -2159,7 +2159,7 @@ fn get_series(
             .output()
             .into_option()
         {
-            Some(o) => Err(EvalErrorType::NotImplementedError(
+            Some(_o) => Err(EvalErrorType::NotImplementedError(
                 "multiple outputs series is not implemented",
             )
             .no_pos()),

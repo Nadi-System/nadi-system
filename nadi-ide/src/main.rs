@@ -107,6 +107,9 @@ impl MainWindow {
                     self.spawn_pane_maybe(Some(PaneType::AttrView));
                     self.attrs.load_attrs(name, &am);
                 }
+                nadi_ide::terminal::Message::ComplResult(compls) => {
+                    return Task::done(editor::Message::ComplResult(compls)).map(Message::Editor);
+                }
                 _ => return self.terminal.update(m).map(Message::Terminal),
             },
             Message::SvgView(m) => return self.svg.update(m).map(Message::SvgView),
@@ -155,6 +158,16 @@ impl MainWindow {
                                 .map(Message::FuncHelp)
                         } else {
                             Task::none()
+                        }
+                    }
+                    editor::Message::GetCompletions(compl) => {
+                        if let Some(com) = compl
+                            && !com.is_empty()
+                        {
+                            Task::done(terminal::Message::GetCompletions(com))
+                                .map(Message::Terminal)
+                        } else {
+                            Task::done(editor::Message::ComplResult(vec![])).map(Message::Editor)
                         }
                     }
                     _ => self.editor.update(m).map(Message::Editor),

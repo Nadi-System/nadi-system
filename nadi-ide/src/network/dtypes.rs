@@ -154,11 +154,26 @@ impl Default for NetworkDataView {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum NetworkViewType {
     #[default]
     Flat,
     Tree,
+}
+
+impl std::fmt::Display for NetworkViewType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Flat => write!(f, "Flat"),
+            Self::Tree => write!(f, "Tree"),
+        }
+    }
+}
+
+impl NetworkViewType {
+    pub fn all() -> &'static [Self] {
+        &[Self::Flat, Self::Tree]
+    }
 }
 
 pub struct TreeConfig {
@@ -194,7 +209,7 @@ fn position_nodes(nds: Vec<Node>, x: f32, mut y: f32, pos: &mut Vec<NodeData>) {
 }
 
 impl NetworkData {
-    pub fn new(net: &Network, ty: NetworkViewType) -> Self {
+    pub fn new(net: &Network, ty: &NetworkViewType) -> Self {
         // TODO read network.visual.nodelabel here
         let label: Option<Template> = None;
         let mut nodes = net
@@ -235,11 +250,11 @@ impl NetworkData {
             weight,
             maxorder,
             hide_labels,
-            ty,
+            ty: ty.clone(),
         }
     }
 
-    pub fn update(&mut self, net: &Network, ty: NetworkViewType) {
+    pub fn update(&mut self, net: &Network, ty: &NetworkViewType) {
         let label: Option<Template> = None;
         let mut nodes = net
             .nodes()
@@ -276,7 +291,7 @@ impl NetworkData {
         self.maxlevel = maxlevel;
         self.weight = weight;
         self.maxorder = maxorder;
-        self.ty = ty;
+        self.ty = ty.clone();
     }
 }
 

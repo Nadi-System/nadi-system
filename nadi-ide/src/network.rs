@@ -166,9 +166,9 @@ where
                     if x < 0.0 || x > self.data.network.maxorder as f32 {
                         break 'tree None;
                     }
-                    let y = ((pt.y - conf.offsety * self.data.scale)
+                    let y = (pt.y - conf.offsety * self.data.scale)
                         / (conf.deltay * self.data.scale)
-                        - 0.5);
+                        - 0.5;
                     if y < 0.0 || y > self.data.network.weight as f32 {
                         break 'tree None;
                     }
