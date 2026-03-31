@@ -2,7 +2,7 @@ use crate::attrs::{AttrMap, HasAttributes};
 use crate::expressions::{EvalErrorType, Expression};
 use crate::node::{new_node, Node};
 use crate::timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap};
-use abi_stable::std_types::RDuration;
+use abi_stable::std_types::{RDuration, Tuple2};
 use abi_stable::{
     std_types::{
         RHashMap,
@@ -408,20 +408,6 @@ impl Network {
     /// Reorder the nodes in the network
     pub fn reorder(&mut self) {
         self.calc_weights();
-        self.outlets = {
-            let mut outlets: Vec<Node> = self
-                .nodes()
-                .filter(|n| n.try_lock().expect("mutex error nr1").is_outlet())
-                .cloned()
-                .collect();
-            outlets.sort_by(|a, b| {
-                b.try_lock()
-                    .expect("mutex error nr2")
-                    .weight()
-                    .cmp(&a.try_lock().expect("mutex error nr3").weight())
-            });
-            outlets.into()
-        };
         let weights: HashMap<_, _> = self
             .nodes_map
             .iter()
@@ -432,6 +418,19 @@ impl Network {
                 )
             })
             .collect();
+        self.outlets = {
+            let mut outlets: Vec<&str> = self
+                .nodes_map
+                .iter()
+                .filter(|Tuple2(_, n)| n.try_lock().expect("mutex error nr1").is_outlet())
+                .map(|Tuple2(n, _)| n.as_str())
+                .collect();
+            outlets.sort_by(|a, b| weights[b].cmp(&weights[a]));
+            outlets
+                .into_iter()
+                .map(|o| self.nodes_map[o].clone())
+                .collect()
+        };
         let mut nodes_queue: Vec<String> = Vec::with_capacity(self.nodes.len());
         let mut new_nodes: Vec<String> = Vec::with_capacity(self.nodes.len());
         for o in self.outlets.iter().rev() {
