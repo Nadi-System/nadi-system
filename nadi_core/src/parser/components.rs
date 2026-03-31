@@ -7,11 +7,11 @@ use crate::tasks::TaskKeyword;
 use crate::template::Template;
 use nadi_core::attrs::{Attribute, Date, DateTime, Time};
 use nom::{
+    IResult,
     branch::alt,
     combinator::{map, value},
     multi::{many0, many1, separated_list0, separated_list1},
     sequence::{delimited, preceded, separated_pair, terminated},
-    IResult,
 };
 use std::str::FromStr;
 
@@ -342,6 +342,16 @@ pub fn attr_float_number<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attri
     }
     .into();
     Ok((rest, val))
+}
+
+pub fn primitives<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
+    let (rest, var) = alt((
+        attr_bool,
+        attr_float,
+        attr_integer,
+        map(string_val, |s| Attribute::String(s.into())),
+    ))(inp)?;
+    Ok((rest, var))
 }
 
 pub fn attribute_simple<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {

@@ -2204,3 +2204,81 @@ fn get_node_series_or_ts(n: &Node, name: &str, ts: bool) -> Result<Series, EvalE
         .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?;
     get_series_or_ts(node.deref(), name, ts).map_err(|e| e.node(node.name().to_string()))
 }
+
+/// Expression with some context
+struct ExprWithContext {
+    pub ty: VarType,
+    pub expr: Expression,
+}
+
+impl ExprWithContext {
+    /// Given a node we're currently working on, and the task context,
+    /// this function resolves the expression context to know where we
+    /// should be evaluating the expression on
+    pub fn resolve(
+        self,
+        ctx: &TaskContext,
+        node: Option<&Node>,
+    ) -> Result<ExprContext, EvalErrorType> {
+        match (self.ty, node) {
+            (VarType::Local, _) => Ok(ExprContext::Local),
+            (VarType::Env, _) => Ok(ExprContext::Env),
+            (VarType::Network, _) => Ok(ExprContext::Network),
+            (VarType::Nodes, _) => Ok(ExprContext::Nodes(ctx.network.nodes().collect())),
+            (VarType::Outlets, _) => Ok(ExprContext::Nodes(ctx.network.outlets().collect())),
+            (VarType::Leaves, _) => Ok(ExprContext::Nodes(ctx.network.leaves().collect())),
+            (VarType::Root, _) => match ctx.network.root() {
+                Some(r) => Ok(ExprContext::Node(r.clone())),
+                None => Err(EvalErrorType::NoRootNode),
+            },
+            (VarType::Node(Some(n)), _) => match ctx.network.node(&n) {
+                Some(n) => Ok(ExprContext::Node(n.clone())),
+                None => Err(EvalErrorType::NodeNotFound(n)),
+            },
+            (VarType::Node(None), Some(n)) => Ok(ExprContext::Node(n.clone())),
+            (VarType::Input, Some(n)) => match n.input() {
+                Some(r) => Ok(ExprContext::Node(r.clone())),
+                None => Err(EvalErrorType::NoInputNode),
+            },
+            (VarType::Output, Some(n)) => match n.output() {
+                Some(r) => Ok(ExprContext::Node(r.clone())),
+                None => Err(EvalErrorType::NoOutputNode),
+            },
+            (VarType::Inputs, Some(n)) => Ok(ExprContext::Nodes(n.inputs().collect())),
+            (VarType::Outputs, Some(n)) => Ok(ExprContext::Nodes(n.outputs().collect())),
+            (_, None) => Err(EvalErrorType::NotANodeContext),
+        }
+    }
+}
+
+/// The context for an expression to be evaluated in
+///
+/// This is env by default, unless a keyword is used to change it
+#[derive(Clone, Debug, Default)]
+enum ExprContext {
+    /// Local context
+    Local,
+    #[default]
+    /// Environmental context
+    Env,
+    /// Network Context
+    Network,
+    /// Node context like node, input, output, root
+    Node(Node),
+    /// Multiple nodes context like inputs, outputs, outlets, leaves
+    Nodes(Vec<Node>),
+}
+
+impl ExprContext {
+    pub fn attr_map(&self, ctx: &TaskContext) -> Result<&AttrMap, EvalErrorType> {
+        match self {
+            _ => todo!(),
+        }
+    }
+
+    pub fn attr_map_mut(&self, ctx: &TaskContext) -> Result<&AttrMap, EvalErrorType> {
+        match self {
+            _ => todo!(),
+        }
+    }
+}

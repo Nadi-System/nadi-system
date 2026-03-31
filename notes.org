@@ -1,0 +1,54 @@
+* New primitives for task system
+
+Remove the data and time format from the task system, they can still be used in attributes file, but the task system will no longer support them directly. You can use date/time values, and initial them by parsing strings. This will allow the use of operators like `-` without space in the expressions. And we can add syntax for the number range `1:20` instead of using it for the dates that are not used as much. We can make the range be a expression, so that we can insert variables instead of simple numbers.
+
+And because we are dividing the attributes into primitives and others, the other formats like array and attrmap can now also be considered as expressions, so that you can insert variables and other expressions inside it.
+
+This does increase the nested-ness of the expressions because everything is an expression now. So we need to look for ways to simplify it.
+
+Maybe we need an intermediate data format (Abstract Syntax Tree?) after the tokenization is done, before the expression is pased completely.
+
+This will also remove the need to have multiple types of tasks, as all of them can be expressions. We still need to be careful about the mutex problem. And avoid all crashes and send them as errors to the user. Hopefully all this change allows us to operate on any kinds of graph network, even the ones with loops.
+
+We will have to provide mechanisms for users to check for loops. And of course add checks to crash the program if user is stuck in an infinite loop.
+
+* Context Expressions
+The new syntax for the context based evaluation:
+
+Simple variables will remain the same:
+
+```task
+env.xyz
+node.xyz
+root.y
+```
+
+And so on, the syntax sugar for the function call can also remain the same
+
+```task
+nodes.get_attr("NAME")
+```
+
+Now we have context based expressions that are enclosed in the `{}`:
+
+For example this is equivalent to `env.name`
+```task
+env { name }
+```
+
+The advantage of this system comes from the nesting ability:
+
+```task
+nodes {
+   env.some_var + network {some_other_var + env.again } + node.xyz
+}
+```
+
+Or this pattern that previously required temporary variable assignment:
+
+```task
+nodes {
+  inputs.somevar + output.other_var
+}
+```
+
