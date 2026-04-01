@@ -7,11 +7,11 @@ use crate::tasks::TaskKeyword;
 use crate::template::Template;
 use nadi_core::attrs::{Attribute, Date, DateTime, Time};
 use nom::{
-    IResult,
     branch::alt,
-    combinator::{map, value},
+    combinator::{map, opt, value},
     multi::{many0, many1, separated_list0, separated_list1},
-    sequence::{delimited, preceded, separated_pair, terminated},
+    sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
+    IResult,
 };
 use std::str::FromStr;
 
@@ -104,8 +104,6 @@ one_token!(integer, TaskToken::Integer);
 one_token!(boolean, TaskToken::Bool);
 one_token!(string, TaskToken::String(_));
 one_token!(template, TaskToken::Template(_));
-one_token!(date, TaskToken::Date);
-one_token!(time, TaskToken::Time);
 one_token!(datetime, TaskToken::DateTime);
 one_token!(newline, TaskToken::NewLine);
 one_token!(space, TaskToken::WhiteSpace);
@@ -280,15 +278,21 @@ pub fn dot_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<String
     ))(inp)
 }
 
+macro_rules! parse_err {
+    ($inp:ident, $msg:literal) => {
+        Err(nom::Err::Error(
+            MatchErr::new($inp).ty(&ParseErrorType::ValueError($msg)),
+        ))
+    };
+}
+
 pub fn attr_bool<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
     let (rest, val) = boolean(inp)?;
     let val = match val.content {
         "true" => true,
         "false" => false,
         _ => {
-            return Err(nom::Err::Error(MatchErr::new(inp).ty(
-                &ParseErrorType::ValueError("Boolean should be true or false"),
-            )));
+            return parse_err!(inp, "Boolean should be true or false");
         }
     }
     .into();
@@ -300,75 +304,133 @@ pub fn integer_usize<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, usize> {
     let val = match val.content.replace('_', "").parse::<usize>() {
         Ok(v) => v,
         _ => {
-            return Err(nom::Err::Error(
-                MatchErr::new(inp).ty(&ParseErrorType::ValueError("Error while parsing Integer")),
-            ));
+            return parse_err!(inp, "Error while parsing Integer");
         }
     };
     Ok((rest, val))
 }
 
-pub fn attr_integer<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
+pub fn integer_val<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, i64> {
     let (rest, val) = integer(inp)?;
     let val = match val.content.replace('_', "").parse::<i64>() {
         Ok(v) => v,
         _ => {
-            return Err(nom::Err::Error(
-                MatchErr::new(inp).ty(&ParseErrorType::ValueError("Error while parsing Integer")),
-            ));
+            return parse_err!(inp, "Error while parsing Integer");
         }
-    }
-    .into();
+    };
     Ok((rest, val))
 }
 
-pub fn attr_float<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
-    alt((
-        attr_float_number,
-        value(Attribute::Float(f64::NAN), nan),
-        value(Attribute::Float(f64::INFINITY), infinity),
-    ))(inp)
-}
-
-pub fn attr_float_number<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
+pub fn float_val<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, f64> {
     let (rest, val) = float(inp)?;
     let val = match val.content.replace('_', "").parse::<f64>() {
         Ok(v) => v,
         _ => {
-            return Err(nom::Err::Error(
-                MatchErr::new(inp).ty(&ParseErrorType::ValueError("Error while parsing Float")),
-            ));
+            return parse_err!(inp, "Error while parsing Float");
         }
-    }
-    .into();
+    };
     Ok((rest, val))
 }
 
+pub fn neg_sign<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, bool> {
+    let (rest, sign) = alt((plus, dash))(inp)?;
+    Ok((rest, sign.content == "-"))
+}
+
+pub fn attr_integer<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
+    let (rest, (neg, val)) = pair(opt(neg_sign), integer_val)(inp)?;
+    Ok((rest, if let Some(true) = neg { -val } else { val }.into()))
+}
+
+pub fn all_float<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, f64> {
+    alt((
+        float_val,
+        value(f64::NAN, nan),
+        value(f64::INFINITY, infinity),
+    ))(inp)
+}
+
+pub fn attr_float<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
+    let (rest, (neg, val)) = pair(opt(neg_sign), all_float)(inp)?;
+    Ok((rest, if let Some(true) = neg { -val } else { val }.into()))
+}
+
+/// Primitives do not have sign (that is unary operator)
 pub fn primitives<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
     let (rest, var) = alt((
         attr_bool,
-        attr_float,
-        attr_integer,
-        map(string_val, |s| Attribute::String(s.into())),
-    ))(inp)?;
-    Ok((rest, var))
-}
-
-pub fn attribute_simple<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
-    let (rest, var) = alt((
-        attr_bool,
-        attr_float,
-        attr_integer,
+        map(all_float, Attribute::Float),
+        map(integer_val, Attribute::Integer),
         map(string_val, |s| Attribute::String(s.into())),
         map(datetime, |t| {
             Attribute::DateTime(DateTime::from_str(t.content).unwrap())
         }),
-        map(time, |t| {
-            Attribute::Time(Time::from_str(t.content).unwrap())
+    ))(inp)?;
+    Ok((rest, var))
+}
+
+/// Sign is important in case of loading attributes
+pub fn signed_primitives<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
+    let (rest, var) = alt((
+        attr_bool,
+        map(pair(opt(neg_sign), all_float), |(s, f)| {
+            Attribute::Float(if let Some(true) = s { -f } else { f })
         }),
-        map(date, |t| {
-            Attribute::Date(Date::from_str(t.content).unwrap())
+        map(pair(opt(neg_sign), integer_val), |(s, i)| {
+            Attribute::Integer(if let Some(true) = s { -i } else { i })
         }),
+        map(string_val, |s| Attribute::String(s.into())),
+        map(datetime, |t| {
+            Attribute::DateTime(DateTime::from_str(t.content).unwrap())
+        }),
+    ))(inp)?;
+    Ok((rest, var))
+}
+
+pub fn date<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Date> {
+    let (rest, (year, _, month, _, day)) = tuple((integer, dash, integer, dash, integer))(inp)?;
+    let year = match year.content.parse::<u16>() {
+        Ok(y) => y,
+        Err(_) => return parse_err!(inp, "Invalid year"),
+    };
+    let month = match month.content.parse::<u8>() {
+        Ok(m) => m,
+        Err(_) => return parse_err!(inp, "Invalid year"),
+    };
+    let day = match day.content.parse::<u8>() {
+        Ok(d) => d,
+        Err(_) => return parse_err!(inp, "Invalid year"),
+    };
+    Ok((rest, Date::new(year, month, day)))
+}
+
+pub fn time<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Time> {
+    let (rest, (hour, _, min, second)) =
+        tuple((integer, colon, integer, opt(pair(colon, integer))))(inp)?;
+    let hour = match hour.content.parse::<u8>() {
+        Ok(h) => h,
+        Err(_) => return parse_err!(inp, "Invalid year"),
+    };
+    let min = match min.content.parse::<u8>() {
+        Ok(m) => m,
+        Err(_) => return parse_err!(inp, "Invalid year"),
+    };
+    let sec = if let Some((_, sec)) = second {
+        match sec.content.parse::<u8>() {
+            Ok(d) => d,
+            Err(_) => return parse_err!(inp, "Invalid year"),
+        }
+    } else {
+        0
+    };
+    Ok((rest, Time::new(hour, min, sec, 0)))
+}
+
+pub fn attribute_simple<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Attribute> {
+    let (rest, var) = alt((
+        map(date, Attribute::Date),
+        map(time, Attribute::Time),
+        signed_primitives,
     ))(inp)?;
     Ok((rest, var))
 }
@@ -559,6 +621,31 @@ mod tests {
     }
 
     #[rstest]
+    #[case("1223-12-23", Date::new(1223, 12, 23))]
+    #[should_panic] // datetime
+    #[case("1223-12-23 23:00", Date::new(1223, 12, 23))]
+    // invalid month does not matter, leave it to the implementation
+    #[case("1223-24-23", Date::new(1223, 24, 23))]
+    pub fn date_test(#[case] txt: &str, #[case] value: Date) {
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let (_, tk) = date(&tokens).unwrap();
+        assert_eq!(tk, value)
+    }
+
+    #[rstest]
+    #[case("1223-12-23 23:00", Date::new(1223, 12, 23).with_time(Time::new(23,0,0,0)))]
+    // invalid month matters for datetime in iso format
+    #[should_panic]
+    #[case("1223-24-23T24:98:00", Date::new(1223, 24, 23).with_time(Time::new(24,98,0,0)))]
+    #[case("1223-02-23T14:14:00", Date::new(1223, 2, 23).with_time(Time::new(14,14,0,0)))]
+    pub fn datetime_test(#[case] txt: &str, #[case] value: DateTime) {
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let (rest, v) = datetime(&tokens).unwrap();
+        assert_eq!(rest, []);
+        assert_eq!(value, DateTime::from_str(v.content).unwrap());
+    }
+
+    #[rstest]
     #[case("1232", Attribute::Integer(1232))]
     #[case("12.32", Attribute::Float(12.32))]
     #[case("\"12.32\"", Attribute::String("12.32".into()))]
@@ -571,12 +658,12 @@ mod tests {
         "1223-12-23 23:00",
         Attribute::DateTime(DateTime::new(Date::new(1223, 12, 23), Time::new(23, 0, 0, 0), None))
     )]
-    #[should_panic] // invalid month
+    // invalid month does not matter, leave it to the implementation
     #[case("1223-24-23", Attribute::Date(Date::new(1223, 24, 23)))]
     pub fn attribute_test(#[case] txt: &str, #[case] value: Attribute) {
         let tokens = Token::validate(get_tokens(txt)).unwrap();
         let (_, tk) = attribute(&tokens).unwrap();
-        assert!(tk == value)
+        assert_eq!(tk, value)
     }
 
     #[rstest]
@@ -599,7 +686,7 @@ mod tests {
     #[case("1223-12-23")]
     #[case("\"some complicated string ain't problem?\"")]
     #[case("1223-12-23 23:00:12")]
-    #[should_panic] // invalid month
+    // invalid month doesn't matter
     #[case("1223-24-23")]
     pub fn toml_test(#[case] txt: &str) {
         let tokens = Token::validate(get_tokens(txt)).unwrap();

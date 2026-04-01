@@ -275,7 +275,7 @@ mod attrs {
     /// env assert_eq(parse_attr("123"), 123)
     /// env assert_eq(parse_attr("12.34"), 12.34)
     /// env assert_eq(parse_attr("\"my value\""), "my value")
-    /// env assert_eq(parse_attr("1234-12-12"), 1234-12-12)
+    /// env assert_eq(parse_attr("1234-12-12 00:00"), 1234-12-12T00:00)
     /// ```
     #[env_func]
     fn parse_attr(
@@ -290,8 +290,8 @@ mod attrs {
     /// ```task
     /// env assert_eq(parse_attrmap("y = true"), {y = true})
     /// env assert_eq(parse_attrmap(
-    ///     "x = [1234-12-12, true]"),
-    ///     {x = [1234-12-12, true]}
+    ///     "x = [1234, true]"),
+    ///     {x = [1234, true]}
     /// )
     /// ```
     #[env_func]

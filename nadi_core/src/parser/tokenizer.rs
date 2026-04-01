@@ -190,8 +190,6 @@ pub enum TaskToken {
     Template(String),
     Integer,
     Float,
-    Date,
-    Time,
     DateTime,
     NaN,
     Infinity,
@@ -227,7 +225,7 @@ impl Token<'_> {
         self.ty.highlight().colored(self.content)
     }
 
-    pub fn attribute(&self) -> Result<Option<Attribute>, &'static str> {
+    pub fn primitive(&self) -> Result<Option<Attribute>, &'static str> {
         let val = match self.ty {
             TaskToken::Bool => match self.content {
                 "true" => true,
@@ -246,8 +244,6 @@ impl Token<'_> {
                 .parse::<f64>()
                 .map_err(|_| "Invalid Float")?
                 .into(),
-            TaskToken::Date => Attribute::Date(Date::from_str(self.content)?),
-            TaskToken::Time => Attribute::Time(Time::from_str(self.content)?),
             TaskToken::DateTime => Attribute::DateTime(DateTime::from_str(self.content)?),
             TaskToken::NaN => Attribute::Float(f64::NAN),
             TaskToken::Infinity => Attribute::Float(f64::INFINITY),
@@ -429,10 +425,7 @@ fn boolean(i: &str) -> TokenRes<'_> {
 fn integer(i: &str) -> TokenRes<'_> {
     map(
         alt((
-            recognize(tuple((
-                one_of("+-"),
-                many1(terminated(digit1, many0(char('_')))),
-            ))),
+            recognize(tuple((many1(terminated(digit1, many0(char('_')))),))),
             recognize(many1(terminated(digit1, many0(char('_'))))),
         )),
         |s| RawToken::new(TaskToken::Integer, s),
@@ -445,43 +438,36 @@ fn float(i: &str) -> TokenRes<'_> {
             recognize(tuple((
                 integer,
                 preceded(char('.'), digit1),
-                opt(tuple((one_of("eE"), integer))),
+                opt(tuple((one_of("eE"), one_of("+-"), integer))),
             ))),
             // even if there is no decimal 1e10 is float.
             recognize(tuple((
                 integer,
                 opt(preceded(char('.'), digit1)),
-                tuple((one_of("eE"), integer)),
+                tuple((one_of("eE"), one_of("+-"), integer)),
             ))),
         )),
         |s| RawToken::new(TaskToken::Float, s),
     )(i)
 }
 
-fn date(i: &str) -> TokenRes<'_> {
-    map(
-        recognize(tuple((many1(terminated(digit1, many1(char('-')))), digit1))),
-        |s| RawToken::new(TaskToken::Date, s),
-    )(i)
-}
-
-fn time(i: &str) -> TokenRes<'_> {
-    map(
-        recognize(tuple((many1(terminated(digit1, many1(char(':')))), digit1))),
-        |s| RawToken::new(TaskToken::Time, s),
-    )(i)
-}
-
 fn datetime(i: &str) -> TokenRes<'_> {
-    map(recognize(tuple((date, one_of(" T"), time))), |s| {
-        RawToken::new(TaskToken::DateTime, s)
-    })(i)
+    map(
+        recognize(tuple((
+            many1(terminated(digit1, many1(char('-')))),
+            digit1,
+            one_of(" T"),
+            many1(terminated(digit1, many1(char(':')))),
+            digit1,
+        ))),
+        |s| RawToken::new(TaskToken::DateTime, s),
+    )(i)
 }
 
 fn task_token(i: &str) -> TokenRes<'_> {
     alt((
-        whitespace, newline, comment, template, string, lit_string, datetime, date, time, boolean,
-        float, integer, variable, none, symbols, operators, invalid,
+        whitespace, newline, comment, template, string, lit_string, datetime, boolean, float,
+        integer, variable, none, symbols, operators, invalid,
     ))(i)
 }
 
@@ -613,6 +599,7 @@ mod tests {
     #[rstest] // integer
     #[case("12_300", TaskToken::Integer, "")]
     #[case("123", TaskToken::Integer, "")]
+    #[should_panic] // it should not capture the -
     #[case("-123", TaskToken::Integer, "")]
     fn integer_test(#[case] txt: &str, #[case] value: TaskToken, #[case] reminder: &str) {
         let (rest, n) = integer(txt).unwrap();
@@ -623,37 +610,10 @@ mod tests {
     #[rstest] // float
     #[case("12_000.34", TaskToken::Float, "")]
     #[case("12.34", TaskToken::Float, "")]
+    #[should_panic] // it should not capture the -
     #[case("-123.45", TaskToken::Float, "")]
     fn float_test(#[case] txt: &str, #[case] value: TaskToken, #[case] reminder: &str) {
         let (rest, n) = float(txt).unwrap();
-        assert_eq!(rest, reminder);
-        assert_eq!(n.ty, value);
-    }
-
-    #[rstest] // date
-    #[case("1990-12-21", TaskToken::Date, "")]
-    fn date_test(#[case] txt: &str, #[case] value: TaskToken, #[case] reminder: &str) {
-        let (rest, n) = date(txt).unwrap();
-        assert_eq!(rest, reminder);
-        assert_eq!(n.ty, value);
-    }
-
-    #[rstest] // time
-    #[case("14:30", TaskToken::Time, "")]
-    #[case("14:30:32", TaskToken::Time, "")]
-    fn time_test(#[case] txt: &str, #[case] value: TaskToken, #[case] reminder: &str) {
-        let (rest, n) = time(txt).unwrap();
-        assert_eq!(rest, reminder);
-        assert_eq!(n.ty, value);
-    }
-
-    #[rstest] // datetime
-    #[case("1990-12-21 14:30", TaskToken::DateTime, "")]
-    #[case("1990-12-21T14:30", TaskToken::DateTime, "")]
-    #[case("1990-12-21 14:30:32", TaskToken::DateTime, "")]
-    #[case("1990-12-21T14:30:32", TaskToken::DateTime, "")]
-    fn datetime_test(#[case] txt: &str, #[case] value: TaskToken, #[case] reminder: &str) {
-        let (rest, n) = datetime(txt).unwrap();
         assert_eq!(rest, reminder);
         assert_eq!(n.ty, value);
     }
@@ -695,17 +655,10 @@ mod tests {
     #[case("nil", TaskToken::Variable, "")]
     #[case("12_300", TaskToken::Integer, "")]
     #[case("123", TaskToken::Integer, "")]
-    #[case("-123", TaskToken::Integer, "")]
+    #[case("-123", TaskToken::Dash, "123")]
     #[case("12_000.34", TaskToken::Float, "")]
     #[case("12.34", TaskToken::Float, "")]
-    #[case("-123.45", TaskToken::Float, "")]
-    #[case("1990-12-21", TaskToken::Date, "")]
-    #[case("14:30", TaskToken::Time, "")]
-    #[case("14:30:32", TaskToken::Time, "")]
-    #[case("1990-12-21 14:30", TaskToken::DateTime, "")]
-    #[case("1990-12-21T14:30", TaskToken::DateTime, "")]
-    #[case("1990-12-21 14:30:32", TaskToken::DateTime, "")]
-    #[case("1990-12-21T14:30:32", TaskToken::DateTime, "")]
+    #[case("-123.45", TaskToken::Dash, "123.45")]
     #[case("~", TaskToken::Invalid('~'), "")]
     #[case("~12", TaskToken::Invalid('~'), "12")]
     #[case("@~", TaskToken::At, "~")]

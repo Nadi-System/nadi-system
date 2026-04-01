@@ -55,8 +55,8 @@ mod command {
     /// output from the command if they are prefixed with `nadi:var:`
     ///
     /// ```task
-    /// env.outputs = command("echo nadi:var:test=12");
-    /// env assert_eq(outputs.test, 12)
+    /// env.outputs2 = command("echo nadi:var:test=12");
+    /// env assert_eq(outputs2.test, 12)
     /// ```
     #[env_func(verbose = true, echo = false)]
     fn command(

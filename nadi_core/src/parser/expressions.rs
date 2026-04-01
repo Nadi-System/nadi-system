@@ -14,17 +14,18 @@ use crate::udf::{LocalExpr, UserFunction};
 use nom::{
     branch::alt,
     combinator::{cut, map, opt, value},
-    multi::{many1, separated_list1},
+    multi::{many1, separated_list0, separated_list1},
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
 };
 
 pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
     alt((
         map(nadi_struct_expr, Expression::StructExpr),
-        input_variable,
-        map(attribute, Expression::Literal),
+        expr_maybe_range,
         map(function_call, Expression::Function),
         map(template_val, Expression::Render),
+        array_expr,
+        table_expr,
         uni_operator_expr,
         if_else_expr,
         try_catch_expr,
@@ -39,6 +40,56 @@ pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> 
         ),
         series,
     ))(inp)
+}
+
+pub fn expr_maybe_range<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+    let (rest, (start, step, end)) = tuple((
+        alt((input_variable, map(primitives, Expression::Literal))),
+        opt(preceded(
+            colon,
+            maybe_space(alt((input_variable, map(primitives, Expression::Literal)))),
+        )),
+        opt(preceded(
+            colon,
+            maybe_space(alt((input_variable, map(primitives, Expression::Literal)))),
+        )),
+    ))(inp)?;
+    if let Some(step) = step {
+        if let Some(end) = end {
+            Ok((
+                rest,
+                Expression::Range(Box::new(start), Some(Box::new(step)), Box::new(end)),
+            ))
+        } else {
+            Ok((
+                rest,
+                Expression::Range(Box::new(start), None, Box::new(step)),
+            ))
+        }
+    } else {
+        // just an expression
+        Ok((rest, start))
+    }
+}
+
+pub fn array_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+    let (rest, exprs) = delimited(
+        bracket_start,
+        separated_list0(maybe_space(comma), maybe_newline(complete_expression)),
+        maybe_newline(bracket_end),
+    )(inp)?;
+
+    Ok((rest, Expression::Array(exprs)))
+}
+
+pub fn table_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+    let (rest, exprs) = delimited(
+        brace_start,
+        maybe_newline(kw_args),
+        maybe_newline(brace_end),
+    )(inp)?;
+
+    Ok((rest, Expression::Table(exprs.into_iter().collect())))
 }
 
 pub fn expression_group<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
@@ -68,6 +119,7 @@ pub fn uni_operator_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expre
         alt((
             value(UniOperator::Not, not),
             value(UniOperator::Negative, dash),
+            value(UniOperator::Positive, plus),
         )),
         maybe_newline(alt((expression_group, expression))),
     )(inp)?;

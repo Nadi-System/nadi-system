@@ -12,6 +12,26 @@ This will also remove the need to have multiple types of tasks, as all of them c
 
 We will have to provide mechanisms for users to check for loops. And of course add checks to crash the program if user is stuck in an infinite loop.
 
+* New expressions
+Functions, array expr, attrmap expr
+
+We might need intermediate representation that simply groups things based on the braces. So that we only have to parse inside of each braces once we have a complete expression.
+
+This will decrease the amount of branch searching from nom.
+
+Basically we will have Top level expression groups based on matching parenthesis and braces that will isolate, function calls, expression groups, context, loop, if-else blocks.
+
+* new keywords
+
+Equivalent of the variables but returns the map instead
+
+inputsmap
+outputsmap
+nodesmap
+leavesmap
+outletsmap
+
+
 * Context Expressions
 The new syntax for the context based evaluation:
 

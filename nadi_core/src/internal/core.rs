@@ -575,8 +575,8 @@ mod core {
     /// hour from time/datetime
     ///
     /// ```task
-    /// env assert_eq(hour(12:14), 12)
-    /// env assert_eq(hour(1223-12-14T15:19), 15)
+    /// env assert_eq(hour(parse_attr("12:14")), 12)
+    /// env assert_eq(hour(parse_attr("1223-12-14T15:19")), 15)
     /// ```
 
     #[env_func]
@@ -600,8 +600,8 @@ mod core {
     /// minute from time/datetime
     ///
     /// ```task
-    /// env assert_eq(minute(12:14), 14)
-    /// env assert_eq(minute(1223-12-14T15:19), 19)
+    /// env assert_eq(minute(parse_attr("12:14")), 14)
+    /// env assert_eq(minute(parse_attr("1223-12-14T15:19")), 19)
     /// ```
     #[env_func]
     fn minute(
@@ -624,8 +624,8 @@ mod core {
     /// second from time/datetime
     ///
     /// ```task
-    /// env assert_eq(second(12:14), 0)
-    /// env assert_eq(second(1223-12-14T15:19:12), 12)
+    /// env assert_eq(second(parse_attr("12:14")), 0)
+    /// env assert_eq(second(parse_attr("1223-12-14T15:19:12")), 12)
     /// ```
     #[env_func]
     fn second(
@@ -648,8 +648,8 @@ mod core {
     /// nanosecond from time/datetime
     ///
     /// ```task
-    /// env assert_eq(nanosecond(12:14), 0)
-    /// env assert_eq(nanosecond(1223-12-14T15:19), 0)
+    /// env assert_eq(nanosecond(parse_attr("12:14")), 0)
+    /// env assert_eq(nanosecond(parse_attr("1223-12-14T15:19")), 0)
     /// ```
     #[env_func]
     fn nanosecond(
@@ -672,9 +672,9 @@ mod core {
     /// year from date/datetime
     ///
     /// ```task
-    /// env assert_eq(year(1223-12-12), 1223)
-    /// env assert_eq(year(1223-12-12T12:12), 1223)
-    /// env assert_eq(year(1223-12-12 12:12:08), 1223)
+    /// env assert_eq(year(parse_attr("1223-12-12")), 1223)
+    /// env assert_eq(year(parse_attr("1223-12-12T12:12")), 1223)
+    /// env assert_eq(year(parse_attr("1223-12-12 12:12:08")), 1223)
     /// ```
     #[env_func]
     fn year(
@@ -697,8 +697,8 @@ mod core {
     /// month from date/datetime
     ///
     /// ```task
-    /// env assert_eq(month(1223-12-14), 12)
-    /// env assert_eq(month(1223-12-14T15:19), 12)
+    /// env assert_eq(month(parse_attr("1223-12-14")), 12)
+    /// env assert_eq(month(parse_attr("1223-12-14T15:19")), 12)
     /// ```
     #[env_func]
     fn month(
@@ -721,8 +721,8 @@ mod core {
     /// day from date/datetime
     ///
     /// ```task
-    /// env assert_eq(day(1223-12-14), 14)
-    /// env assert_eq(day(1223-12-14T15:19), 14)
+    /// env assert_eq(day(parse_attr("1223-12-14")), 14)
+    /// env assert_eq(day(parse_attr("1223-12-14T15:19")), 14)
     /// ```
     #[env_func]
     fn day(

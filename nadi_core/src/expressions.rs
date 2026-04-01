@@ -2,7 +2,7 @@ use crate::attrs::{AttrMap, Attribute, FromAttribute, HasAttributes};
 use crate::functions::FunctionCtx;
 use crate::network::Propagation;
 use crate::node::Node;
-use crate::structs::{NadiAttrType, NadiStruct, NadiStructExpr};
+use crate::structs::{NadiAttrType, NadiStructExpr};
 use crate::tasks::{
     AttrTask, CondTask, EvalTask, FunctionType, TaskContext, TaskKeyword, WhileTask,
 };
@@ -284,6 +284,12 @@ pub enum Expression {
     Variable(InputVar),
     /// String Template to Render in given context
     Render(Template),
+    /// Range of numbers, only integers for now
+    Range(Box<Expression>, Option<Box<Expression>>, Box<Expression>),
+    /// array expression
+    Array(Vec<Expression>),
+    /// attrmap expression
+    Table(HashMap<String, Expression>),
     /// Struct Expressions are hashmap expression with name
     StructExpr(NadiStructExpr),
     /// Error in variable resolve process. Will propagation if evaluation is tried.
@@ -328,6 +334,35 @@ impl std::fmt::Display for Expression {
             Self::Literal(a) => std::fmt::Display::fmt(a, f),
             Self::Variable(v) => std::fmt::Display::fmt(v, f),
             Self::Render(v) => write!(f, "r{v:?}"),
+            Self::Range(b, s, e) => {
+                if let Some(s) = s {
+                    write!(f, "{b}:{s}:{e}")
+                } else {
+                    write!(f, "{b}:{e}")
+                }
+            }
+            Self::Array(exprs) => {
+                write!(
+                    f,
+                    "[{}]",
+                    exprs
+                        .iter()
+                        .map(|e| e.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
+            Self::Table(exprs) => {
+                write!(
+                    f,
+                    "{{{}}}",
+                    exprs
+                        .iter()
+                        .map(|(k, e)| format!("{k} = {e}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
             Self::StructExpr(e) => write!(f, "{e}"),
             Self::ResolveError(e) => write!(f, "error {:?}", e.to_string()),
             Self::UserError(e) => write!(f, "error {:?}", e),
@@ -414,6 +449,9 @@ impl Expression {
     pub fn nested(&self) -> bool {
         match self {
             Self::Literal(_) => false,
+            Self::Range(..) => false,
+            Self::Array(_) => false,
+            Self::Table(_) => false,
             Self::ResolveError(_) => false,
             Self::UserError(_) => false,
             Self::Variable(_) => false,
@@ -439,6 +477,17 @@ impl Expression {
             Self::ResolveError(_) => false,
             Self::UserError(_) => false,
             Self::Variable(_) => true,
+            Self::Range(b, s, e) => {
+                b.has_variables()
+                    || e.has_variables()
+                    || if let Some(s) = s {
+                        s.has_variables()
+                    } else {
+                        false
+                    }
+            }
+            Self::Array(ar) => ar.iter().any(|a| a.has_variables()),
+            Self::Table(tb) => tb.iter().any(|a| a.1.has_variables()),
             Self::StructExpr(e) => e.has_variables(),
             // Could also do true here, as render stirng without variable is converted to a string
             Self::Render(templ) => templ.has_variables(),
@@ -492,6 +541,55 @@ impl Expression {
                 Some(s) => Ok(Self::Literal(Attribute::String(s.into()))),
                 None => Ok(Self::Render(v)),
             },
+            Self::Range(b, s, e) => {
+                let b = b.simplify(ft, ctx)?;
+                let e = e.simplify(ft, ctx)?;
+                let s = if let Some(s) = s {
+                    Some(Box::new(s.simplify(ft, ctx)?))
+                } else {
+                    None
+                };
+                Ok(Self::Range(Box::new(b), s, Box::new(e)))
+            }
+            Self::Array(exprs) => {
+                let vals: Vec<Expression> = exprs
+                    .into_iter()
+                    .map(|v| v.simplify(ft, ctx))
+                    .collect::<Result<_, _>>()?;
+                if vals.iter().all(|e| matches!(e, Expression::Literal(_))) {
+                    let vals: Vec<Attribute> = vals
+                        .into_iter()
+                        .map(|e| match e {
+                            Expression::Literal(l) => l,
+                            _ => panic!("just checked"),
+                        })
+                        .collect();
+                    Ok(Expression::Literal(Attribute::Array(vals.into())))
+                } else {
+                    Ok(Expression::Array(vals))
+                }
+            }
+            Self::Table(exprs) => {
+                let vals: HashMap<String, Expression> = exprs
+                    .into_iter()
+                    .map(|(k, v)| v.simplify(ft, ctx).map(|v| (k, v)))
+                    .collect::<Result<_, _>>()?;
+                if vals
+                    .iter()
+                    .all(|(_, e)| matches!(e, Expression::Literal(_)))
+                {
+                    let vals: HashMap<RString, Attribute> = vals
+                        .into_iter()
+                        .map(|(k, e)| match e {
+                            Expression::Literal(l) => (k.to_string().into(), l),
+                            _ => panic!("just checked"),
+                        })
+                        .collect();
+                    Ok(Expression::Literal(Attribute::Table(vals.into())))
+                } else {
+                    Ok(Expression::Table(vals))
+                }
+            }
             // this should also be handled on has_variables()
             Self::ResolveError(e) => Err(e),
             Self::UserError(s) => Err(EvalErrorType::UserError(s).no_pos()),
@@ -596,6 +694,30 @@ impl Expression {
             Self::ResolveError(_) => Ok(self.clone()),
             Self::UserError(_) => Ok(self.clone()),
             Self::Literal(_) => Ok(self.clone()),
+            Self::Range(b, s, e) => {
+                let b = b.resolve(ft, ctx, local, node)?;
+                let e = e.resolve(ft, ctx, local, node)?;
+                let s = if let Some(s) = s {
+                    Some(Box::new(s.resolve(ft, ctx, local, node)?))
+                } else {
+                    None
+                };
+                Ok(Self::Range(Box::new(b), s, Box::new(e)))
+            }
+            Self::Array(exprs) => {
+                let vals: Vec<Expression> = exprs
+                    .iter()
+                    .map(|v| v.resolve(ft, ctx, local, node))
+                    .collect::<Result<_, _>>()?;
+                Ok(Expression::Array(vals))
+            }
+            Self::Table(exprs) => {
+                let vals: HashMap<String, Expression> = exprs
+                    .iter()
+                    .map(|(k, v)| v.resolve(ft, ctx, local, node).map(|v| (k.to_string(), v)))
+                    .collect::<Result<_, _>>()?;
+                Ok(Expression::Table(vals))
+            }
             Self::Variable(vt) => vt.resolve(ft, ctx, local, node),
             Self::StructExpr(st) => {
                 let values = st
@@ -826,6 +948,46 @@ impl Expression {
                 }
                 Err(EvalErrorType::UnresolvedVariable.pos(vt.position()))
             }
+            Self::Range(b, s, e) => {
+                let b = b.eval_value(ft, ctx, local, node)?;
+                let b = i64::from_attr(&b).ok_or(EvalErrorType::InvalidAttributeType(
+                    NadiAttrType::Integer,
+                    b.dtype(),
+                ))?;
+                let e = e.eval_value(ft, ctx, local, node)?;
+                let e = i64::from_attr(&e).ok_or(EvalErrorType::InvalidAttributeType(
+                    NadiAttrType::Integer,
+                    e.dtype(),
+                ))?;
+                let s = if let Some(s) = s {
+                    let s = s.eval_value(ft, ctx, local, node)?;
+                    usize::from_attr(&s).ok_or(EvalErrorType::InvalidAttributeType(
+                        NadiAttrType::Integer,
+                        s.dtype(),
+                    ))?
+                } else {
+                    1
+                };
+                let vals: Vec<_> = (b..e).step_by(s).map(Attribute::Integer).collect();
+                Ok(Attribute::Array(vals.into()))
+            }
+            Self::Array(exprs) => {
+                let vals: Vec<Attribute> = exprs
+                    .iter()
+                    .map(|v| v.eval_value(ft, ctx, local, node))
+                    .collect::<Result<_, _>>()?;
+                Ok(Attribute::Array(vals.into()))
+            }
+            Self::Table(exprs) => {
+                let vals: HashMap<RString, Attribute> = exprs
+                    .iter()
+                    .map(|(k, v)| {
+                        v.eval_value(ft, ctx, local, node)
+                            .map(|v| (k.to_string().into(), v))
+                    })
+                    .collect::<Result<_, _>>()?;
+                Ok(Attribute::Table(vals.into()))
+            }
             Self::StructExpr(st) => {
                 let values = st
                     .values
@@ -931,6 +1093,8 @@ pub enum UniOperator {
     Not,
     /// Numerical negative operator
     Negative,
+    /// Positive operator (does nothing)
+    Positive,
 }
 
 impl UniOperator {
@@ -939,6 +1103,7 @@ impl UniOperator {
         match self {
             Self::Not => !value,
             Self::Negative => -value,
+            Self::Positive => Ok(value),
         }
         .map_err(|e| e.no_pos())
     }
@@ -948,6 +1113,7 @@ impl std::fmt::Display for UniOperator {
         match self {
             Self::Not => write!(f, "!"),
             Self::Negative => write!(f, "-"),
+            Self::Positive => write!(f, "+"),
         }
     }
 }
@@ -2224,28 +2390,36 @@ impl ExprWithContext {
             (VarType::Local, _) => Ok(ExprContext::Local),
             (VarType::Env, _) => Ok(ExprContext::Env),
             (VarType::Network, _) => Ok(ExprContext::Network),
-            (VarType::Nodes, _) => Ok(ExprContext::Nodes(ctx.network.nodes().collect())),
-            (VarType::Outlets, _) => Ok(ExprContext::Nodes(ctx.network.outlets().collect())),
-            (VarType::Leaves, _) => Ok(ExprContext::Nodes(ctx.network.leaves().collect())),
+            (VarType::Nodes(prop), _) => Ok(ExprContext::Nodes(
+                ctx.propagation(*prop).map_err(|e| e.ty)?,
+            )),
+            (VarType::Outlets, _) => {
+                Ok(ExprContext::Nodes(ctx.network.outlets().cloned().collect()))
+            }
+            (VarType::Leaves, _) => Ok(ExprContext::Nodes(ctx.network.leaves().cloned().collect())),
             (VarType::Root, _) => match ctx.network.root() {
                 Some(r) => Ok(ExprContext::Node(r.clone())),
                 None => Err(EvalErrorType::NoRootNode),
             },
-            (VarType::Node(Some(n)), _) => match ctx.network.node(&n) {
+            (VarType::Node(Some(n)), _) => match ctx.network.node_by_name(&n) {
                 Some(n) => Ok(ExprContext::Node(n.clone())),
                 None => Err(EvalErrorType::NodeNotFound(n)),
             },
             (VarType::Node(None), Some(n)) => Ok(ExprContext::Node(n.clone())),
-            (VarType::Input, Some(n)) => match n.input() {
-                Some(r) => Ok(ExprContext::Node(r.clone())),
-                None => Err(EvalErrorType::NoInputNode),
+            (VarType::Input, Some(n)) => match n.lock().input() {
+                RSome(r) => Ok(ExprContext::Node(r.clone())),
+                RNone => Err(EvalErrorType::NoInputNodes),
             },
-            (VarType::Output, Some(n)) => match n.output() {
-                Some(r) => Ok(ExprContext::Node(r.clone())),
-                None => Err(EvalErrorType::NoOutputNode),
+            (VarType::Output, Some(n)) => match n.lock().output() {
+                RSome(r) => Ok(ExprContext::Node(r.clone())),
+                RNone => Err(EvalErrorType::NoOutputNode),
             },
-            (VarType::Inputs, Some(n)) => Ok(ExprContext::Nodes(n.inputs().collect())),
-            (VarType::Outputs, Some(n)) => Ok(ExprContext::Nodes(n.outputs().collect())),
+            (VarType::Inputs, Some(n)) => Ok(ExprContext::Nodes(
+                n.lock().inputs().iter().cloned().collect(),
+            )),
+            (VarType::Outputs, Some(n)) => Ok(ExprContext::Nodes(
+                n.lock().outputs().iter().cloned().collect(),
+            )),
             (_, None) => Err(EvalErrorType::NotANodeContext),
         }
     }
@@ -2254,7 +2428,7 @@ impl ExprWithContext {
 /// The context for an expression to be evaluated in
 ///
 /// This is env by default, unless a keyword is used to change it
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 enum ExprContext {
     /// Local context
     Local,
@@ -2270,13 +2444,13 @@ enum ExprContext {
 }
 
 impl ExprContext {
-    pub fn attr_map(&self, ctx: &TaskContext) -> Result<&AttrMap, EvalErrorType> {
+    pub fn attr_map(&self, _ctx: &TaskContext) -> Result<&AttrMap, EvalErrorType> {
         match self {
             _ => todo!(),
         }
     }
 
-    pub fn attr_map_mut(&self, ctx: &TaskContext) -> Result<&AttrMap, EvalErrorType> {
+    pub fn attr_map_mut(&self, _ctx: &TaskContext) -> Result<&AttrMap, EvalErrorType> {
         match self {
             _ => todo!(),
         }
