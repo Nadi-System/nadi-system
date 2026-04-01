@@ -284,6 +284,8 @@ pub enum Expression {
     Variable(InputVar),
     /// String Template to Render in given context
     Render(Template),
+    /// Expression with context information
+    WithContext(ExprWithContext),
     /// Range of numbers, only integers for now
     Range(Box<Expression>, Option<Box<Expression>>, Box<Expression>),
     /// array expression
@@ -334,6 +336,7 @@ impl std::fmt::Display for Expression {
             Self::Literal(a) => std::fmt::Display::fmt(a, f),
             Self::Variable(v) => std::fmt::Display::fmt(v, f),
             Self::Render(v) => write!(f, "r{v:?}"),
+            Self::WithContext(e) => write!(f, "{e}"),
             Self::Range(b, s, e) => {
                 if let Some(s) = s {
                     write!(f, "{b}:{s}:{e}")
@@ -449,6 +452,7 @@ impl Expression {
     pub fn nested(&self) -> bool {
         match self {
             Self::Literal(_) => false,
+            Self::WithContext(_) => false,
             Self::Range(..) => false,
             Self::Array(_) => false,
             Self::Table(_) => false,
@@ -477,6 +481,7 @@ impl Expression {
             Self::ResolveError(_) => false,
             Self::UserError(_) => false,
             Self::Variable(_) => true,
+            Self::WithContext(e) => e.expr.has_variables(),
             Self::Range(b, s, e) => {
                 b.has_variables()
                     || e.has_variables()
@@ -541,6 +546,10 @@ impl Expression {
                 Some(s) => Ok(Self::Literal(Attribute::String(s.into()))),
                 None => Ok(Self::Render(v)),
             },
+            Self::WithContext(mut e) => {
+                e.expr = Box::new(e.expr.simplify(e.ty.to_functiontype(), ctx)?);
+                Ok(Self::WithContext(e))
+            }
             Self::Range(b, s, e) => {
                 let b = b.simplify(ft, ctx)?;
                 let e = e.simplify(ft, ctx)?;
@@ -694,6 +703,7 @@ impl Expression {
             Self::ResolveError(_) => Ok(self.clone()),
             Self::UserError(_) => Ok(self.clone()),
             Self::Literal(_) => Ok(self.clone()),
+            Self::WithContext(e) => e.resolve(e.ty.to_functiontype(), ctx, local, node),
             Self::Range(b, s, e) => {
                 let b = b.resolve(ft, ctx, local, node)?;
                 let e = e.resolve(ft, ctx, local, node)?;
@@ -948,6 +958,8 @@ impl Expression {
                 }
                 Err(EvalErrorType::UnresolvedVariable.pos(vt.position()))
             }
+            // expression with context should be resolved to normal expression
+            Self::WithContext(_) => Err(EvalErrorType::UnresolvedVariable.no_pos()),
             Self::Range(b, s, e) => {
                 let b = b.eval_value(ft, ctx, local, node)?;
                 let b = i64::from_attr(&b).ok_or(EvalErrorType::InvalidAttributeType(
@@ -2372,26 +2384,71 @@ fn get_node_series_or_ts(n: &Node, name: &str, ts: bool) -> Result<Series, EvalE
 }
 
 /// Expression with some context
-struct ExprWithContext {
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExprWithContext {
     pub ty: VarType,
-    pub expr: Expression,
+    // TODO: make it a vec of expression later
+    pub expr: Box<Expression>,
+}
+
+impl std::fmt::Display for ExprWithContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {{{}}}",
+            self.ty,
+            self.expr // .iter()
+                      // .map(|e| e.to_string())
+                      // .collect::<Vec<_>>()
+                      // .join("\t\n")
+        )
+    }
 }
 
 impl ExprWithContext {
+    pub fn new(ty: VarType, expr: Expression) -> Self {
+        Self {
+            ty,
+            expr: Box::new(expr),
+        }
+    }
+
+    pub fn resolve(
+        &self,
+        _ft: &FunctionType,
+        ctx: &TaskContext,
+        local: Option<&RHashMap<RString, Attribute>>,
+        node: Option<&Node>,
+    ) -> Result<Expression, EvalError> {
+        let expr_ctx = self.get_expr_context(ctx, node).map_err(|e| e.no_pos())?;
+        match expr_ctx {
+            ExprContext::Local => todo!(),
+            ExprContext::Node(n) => self.expr.resolve(&FunctionType::Node, ctx, local, Some(&n)),
+            ExprContext::Nodes(nds) => {
+                let exprs = nds
+                    .iter()
+                    .map(|n| self.expr.resolve(&FunctionType::Node, ctx, local, Some(&n)))
+                    .collect::<Result<Vec<Expression>, EvalError>>()?;
+                Ok(Expression::Array(exprs))
+            }
+            ExprContext::Env => self.expr.resolve(&FunctionType::Env, ctx, local, node),
+            ExprContext::Network => self.expr.resolve(&FunctionType::Network, ctx, local, node),
+        }
+    }
     /// Given a node we're currently working on, and the task context,
     /// this function resolves the expression context to know where we
     /// should be evaluating the expression on
-    pub fn resolve(
-        self,
+    fn get_expr_context(
+        &self,
         ctx: &TaskContext,
         node: Option<&Node>,
     ) -> Result<ExprContext, EvalErrorType> {
-        match (self.ty, node) {
+        match (&self.ty, node) {
             (VarType::Local, _) => Ok(ExprContext::Local),
             (VarType::Env, _) => Ok(ExprContext::Env),
             (VarType::Network, _) => Ok(ExprContext::Network),
             (VarType::Nodes(prop), _) => Ok(ExprContext::Nodes(
-                ctx.propagation(*prop).map_err(|e| e.ty)?,
+                ctx.propagation(*prop.clone()).map_err(|e| e.ty)?,
             )),
             (VarType::Outlets, _) => {
                 Ok(ExprContext::Nodes(ctx.network.outlets().cloned().collect()))
@@ -2403,7 +2460,7 @@ impl ExprWithContext {
             },
             (VarType::Node(Some(n)), _) => match ctx.network.node_by_name(&n) {
                 Some(n) => Ok(ExprContext::Node(n.clone())),
-                None => Err(EvalErrorType::NodeNotFound(n)),
+                None => Err(EvalErrorType::NodeNotFound(n.to_string())),
             },
             (VarType::Node(None), Some(n)) => Ok(ExprContext::Node(n.clone())),
             (VarType::Input, Some(n)) => match n.lock().input() {
@@ -2441,18 +2498,4 @@ enum ExprContext {
     Node(Node),
     /// Multiple nodes context like inputs, outputs, outlets, leaves
     Nodes(Vec<Node>),
-}
-
-impl ExprContext {
-    pub fn attr_map(&self, _ctx: &TaskContext) -> Result<&AttrMap, EvalErrorType> {
-        match self {
-            _ => todo!(),
-        }
-    }
-
-    pub fn attr_map_mut(&self, _ctx: &TaskContext) -> Result<&AttrMap, EvalErrorType> {
-        match self {
-            _ => todo!(),
-        }
-    }
 }

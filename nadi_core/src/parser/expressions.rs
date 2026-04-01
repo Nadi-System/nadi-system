@@ -1,5 +1,6 @@
 use crate::expressions::{
-    BiOperator, Expression, FunctionCall, InputVar, TaskPosition, UniOperator, VarType,
+    BiOperator, ExprWithContext, Expression, FunctionCall, InputVar, TaskPosition, UniOperator,
+    VarType,
 };
 use crate::network::PropNodes;
 use crate::parser::{
@@ -21,6 +22,7 @@ use nom::{
 pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
     alt((
         map(nadi_struct_expr, Expression::StructExpr),
+        expr_with_context,
         expr_maybe_range,
         map(function_call, Expression::Function),
         map(template_val, Expression::Render),
@@ -40,6 +42,14 @@ pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> 
         ),
         series,
     ))(inp)
+}
+
+pub fn expr_with_context<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+    let (rest, (vt, expr)) = pair(variable_type, maybe_space(expression_block))(inp)?;
+    Ok((
+        rest,
+        Expression::WithContext(ExprWithContext::new(vt, expr)),
+    ))
 }
 
 pub fn expr_maybe_range<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
