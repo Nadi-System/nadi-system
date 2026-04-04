@@ -263,37 +263,46 @@ fn nadi_func_inner(
 }
 
 /// Invalid argument names = task system keywords
-const INVALID_ARG_NAME: [&str; 39] = [
+const INVALID_ARG_NAME: [&str; 45] = [
     "clear",  // TaskKeyword::Clear
     "import", // TaskKeyword::Import
     "exec",   // TaskKeyword::Exec
     "from",   // TaskKeyword::From
     "node",   // TaskKeyword::Node
-    "network", "net",      // TaskKeyword::Network
-    "networks", // TaskKeyword::Networks
-    "env",      // TaskKeyword::Env
-    "exit",     // TaskKeyword::Exit
-    "end",      // TaskKeyword::End
-    "help",     // TaskKeyword::Help
-    "input",    // TaskKeyword::Input
-    "inputs",   // TaskKeyword::Inputs
-    "output",   // TaskKeyword::Output
-    "outputs",  // TaskKeyword::Outputs
-    "nodes",    // TaskKeyword::Nodes
-    "root",     // TaskKeyword::Root
-    "outlets",  // TaskKeyword::Outlets
-    "leaves",   // TaskKeyword::Leaves
-    "if",       // TaskKeyword::If
-    "else",     // TaskKeyword::Else
-    "while",    // TaskKeyword::While
-    "try",      // TaskKeyword::Try
-    "catch",    // TaskKeyword::Catch
-    "in",       // TaskKeyword::In
-    "match",    // TaskKeyword::Match
-    "hook",     // TaskKeyword::Hook
-    "local", "loc",    // TaskKeyword::Local
+    "network",
+    "net",         // TaskKeyword::Network
+    "networks",    // TaskKeyword::Networks
+    "networksmap", // TaskKeyword::NetworksMap
+    "env",         // TaskKeyword::Env
+    "exit",        // TaskKeyword::Exit
+    "end",         // TaskKeyword::End
+    "help",        // TaskKeyword::Help
+    "input",       // TaskKeyword::Input
+    "inputs",      // TaskKeyword::Inputs
+    "inputsmap",   // TaskKeyword::InputsMap
+    "output",      // TaskKeyword::Output
+    "outputs",     // TaskKeyword::Outputs
+    "outputsmap",  // TaskKeyword::OutputsMap
+    "nodes",       // TaskKeyword::Nodes
+    "nodesmap",    // TaskKeyword::NodesMap
+    "root",        // TaskKeyword::Root
+    "outlets",     // TaskKeyword::Outlets
+    "outletsmap",  // TaskKeyword::OutletsMap
+    "leaves",      // TaskKeyword::Leaves
+    "leavesmap",   // TaskKeyword::LeavesMap
+    "if",          // TaskKeyword::If
+    "else",        // TaskKeyword::Else
+    "while",       // TaskKeyword::While
+    "try",         // TaskKeyword::Try
+    "catch",       // TaskKeyword::Catch
+    "in",          // TaskKeyword::In
+    "match",       // TaskKeyword::Match
+    "hook",        // TaskKeyword::Hook
+    "local",
+    "loc",    // TaskKeyword::Local
     "struct", // TaskKeyword::Struct
-    "function", "func",   // TaskKeyword::Function
+    "function",
+    "func",   // TaskKeyword::Function
     "return", // TaskKeyword::Return
     "error",  // TaskKeyword::Error
     "for",    // TaskKeyword::For

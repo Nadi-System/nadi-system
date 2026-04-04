@@ -1,4 +1,6 @@
-use crate::expressions::{EvalError, EvalErrorType, Expression, SeriesExpression, TaskPosition};
+use crate::expressions::{
+    EvalError, EvalErrorType, ExprContext, Expression, SeriesExpression, TaskPosition,
+};
 use crate::functions::{FuncArg, FuncArgType, NadiFunctions};
 use crate::network::{PropCondition, PropOrder};
 use crate::prelude::*;
@@ -998,6 +1000,17 @@ impl FunctionType {
             _ => None,
         }
     }
+
+    pub fn get_expr_context(&self, node: Option<&Node>) -> Result<ExprContext, EvalErrorType> {
+        match self {
+            Self::Node => node
+                .ok_or(EvalErrorType::NotANodeContext)
+                .cloned()
+                .map(ExprContext::Node),
+            Self::Network => Ok(ExprContext::Network),
+            Self::Env => Ok(ExprContext::Env),
+        }
+    }
 }
 
 /// Task representing evaluation of expression or functions
@@ -1433,12 +1446,17 @@ pub enum TaskKeyword {
     Help,
     Input,
     Inputs,
+    InputsMap,
     Output,
     Outputs,
+    OutputsMap,
     Nodes,
+    NodesMap,
     Root,
     Outlets,
+    OutletsMap,
     Leaves,
+    LeavesMap,
     If,
     Else,
     While,
@@ -1455,6 +1473,7 @@ pub enum TaskKeyword {
     For,
     // reserved
     Networks,
+    NetworksMap,
     Map,
     Attrs,
     Loop,
@@ -1476,13 +1495,19 @@ impl std::str::FromStr for TaskKeyword {
             "help" => TaskKeyword::Help,
             "input" => TaskKeyword::Input,
             "inputs" => TaskKeyword::Inputs,
+            "inputsmap" => TaskKeyword::InputsMap,
             "output" => TaskKeyword::Output,
             "outputs" => TaskKeyword::Outputs,
+            "outputsmap" => TaskKeyword::OutputsMap,
             "nodes" => TaskKeyword::Nodes,
+            "nodesmap" => TaskKeyword::NodesMap,
             "networks" => TaskKeyword::Networks,
+            "networksmap" => TaskKeyword::NetworksMap,
             "root" => TaskKeyword::Root,
             "outlets" => TaskKeyword::Outlets,
+            "outletsmap" => TaskKeyword::OutletsMap,
             "leaves" => TaskKeyword::Leaves,
+            "leavesmap" => TaskKeyword::LeavesMap,
             "if" => TaskKeyword::If,
             "else" => TaskKeyword::Else,
             "while" => TaskKeyword::While,
@@ -1523,13 +1548,19 @@ impl std::fmt::Display for TaskKeyword {
                 TaskKeyword::Help => "help",
                 TaskKeyword::Input => "input",
                 TaskKeyword::Inputs => "inputs",
+                TaskKeyword::InputsMap => "inputsmap",
                 TaskKeyword::Output => "output",
                 TaskKeyword::Outputs => "outputs",
+                TaskKeyword::OutputsMap => "outputsmap",
                 TaskKeyword::Nodes => "nodes",
+                TaskKeyword::NodesMap => "nodesmap",
                 TaskKeyword::Networks => "networks",
+                TaskKeyword::NetworksMap => "networksmap",
                 TaskKeyword::Root => "root",
                 TaskKeyword::Outlets => "outlets",
+                TaskKeyword::OutletsMap => "outletsmap",
                 TaskKeyword::Leaves => "leaves",
+                TaskKeyword::LeavesMap => "leavesmap",
                 TaskKeyword::If => "if",
                 TaskKeyword::Else => "else",
                 TaskKeyword::While => "while",
@@ -1568,13 +1599,19 @@ impl TaskKeyword {
             TaskKeyword::Help => "help",
             TaskKeyword::Input => "single input of the current node; err if zero or multiple",
             TaskKeyword::Inputs => "inputs of the current node",
+            TaskKeyword::InputsMap => "map of inputs of the current node",
             TaskKeyword::Output => "single output of the current node, err if zero or multiple",
             TaskKeyword::Outputs => "outputs of the current node",
+            TaskKeyword::OutputsMap => "map of outputs of the current node",
             TaskKeyword::Nodes => "all the nodes in the network",
+            TaskKeyword::NodesMap => "map of all the nodes in the network",
             TaskKeyword::Networks => "all the networks in the context",
+            TaskKeyword::NetworksMap => "map of all the networks in the context",
             TaskKeyword::Root => "root node of the network (if single outlet)",
             TaskKeyword::Outlets => "outlet nodes of the network",
+            TaskKeyword::OutletsMap => "map of outlet nodes of the network",
             TaskKeyword::Leaves => "leaf nodes of the network",
+            TaskKeyword::LeavesMap => "map of leaf nodes of the network",
             TaskKeyword::If => "if part of if-else block",
             TaskKeyword::Else => "else part of if-else block",
             TaskKeyword::While => "while loop",

@@ -1354,6 +1354,18 @@ impl InputVar {
         Ok(at)
     }
 
+    fn get_expr_context(
+        &self,
+        ft: &FunctionType,
+        ctx: &TaskContext,
+        node: Option<&Node>,
+    ) -> Result<ExprContext, EvalErrorType> {
+        match &self.ty {
+            Some(ty) => ty.get_expr_context(ctx, node),
+            None => ft.get_expr_context(node),
+        }
+    }
+
     /// Resolve the variable given the context
     ///
     /// it returns expression intead of Attribute because we want to
@@ -1365,317 +1377,85 @@ impl InputVar {
         local: Option<&AttrMap>,
         node: Option<&Node>,
     ) -> Result<Expression, EvalError> {
-        let attr = match &self.ty {
-            Some(ty) => match ty {
-                VarType::Local => self
-                    .attr_nested(local.unwrap_or(ctx.env.attr_map()))
-                    .cloned(),
-                VarType::Env => self.attr_nested(&ctx.env).cloned(),
-                VarType::Network => self.attr_nested(&ctx.network).cloned(),
-                VarType::Root => self
-                    .attr_nested(
-                        &ctx.network
-                            .root()
-                            .ok_or(EvalErrorType::NoRootNode.pos(self.position()))?
-                            .try_lock()
-                            .into_option()
-                            .ok_or(
-                                EvalErrorType::MutexError(file!(), line!()).pos(self.position()),
-                            )?,
-                    )
-                    .cloned(),
-                VarType::Node(n) => match (n, node) {
-                    // Node name explicitly given
-                    (Some(n), _) => self
-                        .attr_nested(
-                            &ctx.network
-                                .node_by_name(n)
-                                .ok_or(
-                                    EvalErrorType::NodeNotFound(n.to_string()).pos(self.position()),
-                                )?
-                                .try_lock()
-                                .into_option()
-                                .ok_or(
-                                    EvalErrorType::MutexError(file!(), line!())
-                                        .pos(self.position()),
-                                )?,
-                        )
-                        .cloned(),
-                    // take node from the context (while running node functions)
-                    (None, Some(n)) => self
-                        .attr_nested(&n.try_lock().into_option().ok_or(
-                            EvalErrorType::MutexError(file!(), line!()).pos(self.position()),
-                        )?)
-                        .cloned(),
-                    (None, None) => {
-                        return Err(match ft {
-                            FunctionType::Node => EvalErrorType::LogicalError(
-                                "Node variable tried without Node value",
-                            )
-                            .pos(self.position()),
-                            _ => EvalErrorType::InvalidVariableType.pos(self.position()),
-                        });
-                    }
-                },
-                VarType::Input => match node {
-                    Some(n) => self
-                        .attr_nested(
-                            &match n
-                                .try_lock()
-                                .into_option()
-                                .ok_or(
-                                    EvalErrorType::MutexError(file!(), line!())
-                                        .pos(self.position()),
-                                )?
-                                .input()
-                                .into_option()
-                            {
-                                Some(o) => o,
-                                None if self.check => {
-                                    return Ok(Expression::Literal(Attribute::Bool(false)));
-                                }
-                                None => {
-                                    return Ok(Expression::ResolveError(
-                                        EvalErrorType::NoOutputNode.pos(self.position()),
-                                    ));
-                                }
-                            }
-                            .try_lock()
-                            .into_option()
-                            .ok_or(
-                                EvalErrorType::MutexError(file!(), line!()).pos(self.position()),
-                            )?,
-                        )
-                        .cloned(),
-                    None => {
-                        return Err(match ft {
-                            FunctionType::Node => EvalErrorType::LogicalError(
-                                "Output variable tried without Node value",
-                            )
-                            .pos(self.position()),
-                            _ => EvalErrorType::InvalidVariableType.pos(self.position()),
-                        });
-                    }
-                },
-                VarType::Inputs => match node {
-                    Some(n) => {
-                        if self.check {
-                            let res: Vec<Attribute> = n
-                                .try_lock()
-                                .into_option()
-                                .ok_or(
-                                    EvalErrorType::MutexError(file!(), line!())
-                                        .pos(self.position()),
-                                )?
-                                .inputs()
-                                .iter()
-                                .map(|i| {
-                                    Ok(Attribute::Bool(
-                                        self.attr_nested(
-                                            &i.try_lock().into_option().ok_or(
-                                                EvalErrorType::MutexError(file!(), line!())
-                                                    .pos(self.position()),
-                                            )?,
-                                        )
-                                        .is_ok(),
-                                    ))
-                                })
-                                .collect::<Result<_, EvalError>>()?;
-                            return Ok(Expression::Literal(Attribute::Array(res.into())));
-                        } else {
-                            let mut vars = Vec::new();
-                            for i in n
-                                .try_lock()
-                                .into_option()
-                                .ok_or(
-                                    EvalErrorType::MutexError(file!(), line!())
-                                        .pos(self.position()),
-                                )?
-                                .inputs()
-                            {
-                                let a = self
-                                    .attr_nested(
-                                        &i.try_lock().into_option().ok_or(
-                                            EvalErrorType::MutexError(file!(), line!())
-                                                .pos(self.position()),
-                                        )?,
-                                    )
-                                    .cloned();
-                                vars.push(a.map_err(|e| e.pos(self.position()))?);
-                            }
-                            return Ok(Expression::Literal(Attribute::Array(vars.into())));
-                        }
-                    }
-                    None => {
-                        return Err(match ft {
-                            FunctionType::Node => EvalErrorType::LogicalError(
-                                "Inputs variable tried without Node value",
-                            )
-                            .pos(self.position()),
-                            _ => EvalErrorType::InvalidVariableType.pos(self.position()),
-                        });
-                    }
-                },
-
-                VarType::Output => match node {
-                    Some(n) => self
-                        .attr_nested(
-                            &match n
-                                .try_lock()
-                                .into_option()
-                                .ok_or(
-                                    EvalErrorType::MutexError(file!(), line!())
-                                        .pos(self.position()),
-                                )?
-                                .output()
-                                .into_option()
-                            {
-                                Some(o) => o,
-                                None if self.check => {
-                                    return Ok(Expression::Literal(Attribute::Bool(false)));
-                                }
-                                None => {
-                                    return Ok(Expression::ResolveError(
-                                        EvalErrorType::NoOutputNode.pos(self.position()),
-                                    ));
-                                }
-                            }
-                            .try_lock()
-                            .into_option()
-                            .ok_or(
-                                EvalErrorType::MutexError(file!(), line!()).pos(self.position()),
-                            )?,
-                        )
-                        .cloned(),
-                    None => {
-                        return Err(match ft {
-                            FunctionType::Node => EvalErrorType::LogicalError(
-                                "Output variable tried without Node value",
-                            )
-                            .pos(self.position()),
-                            _ => EvalErrorType::InvalidVariableType.pos(self.position()),
-                        });
-                    }
-                },
-                VarType::Outputs => match node {
-                    Some(n) => {
-                        let v = self
-                            .attr_nested(
-                                &match n
-                                    .try_lock()
-                                    .into_option()
-                                    .ok_or(
+        let expr_ctx = match self.get_expr_context(ft, ctx, node) {
+            Ok(k) => k,
+            // check also basically checks if the current vartype is valid or invalid
+            Err(_) if self.check => return Ok(Expression::Literal(false.into())),
+            Err(e) => return Err(e.pos(self.position())),
+        };
+        let attr = match expr_ctx {
+            ExprContext::Local => self
+                .attr_nested(local.unwrap_or(ctx.env.attr_map()))
+                .cloned(),
+            ExprContext::Env => self.attr_nested(&ctx.env).cloned(),
+            ExprContext::Network => self.attr_nested(&ctx.network).cloned(),
+            ExprContext::Node(n) => self
+                .attr_nested(
+                    &n.try_lock()
+                        .into_option()
+                        .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(self.position()))?,
+                )
+                .cloned(),
+            ExprContext::Nodes(nds) => {
+                if self.check {
+                    let res: Vec<Attribute> = nds
+                        .iter()
+                        .map(|i| {
+                            Ok(Attribute::Bool(
+                                self.attr_nested(
+                                    &i.try_lock().into_option().ok_or(
                                         EvalErrorType::MutexError(file!(), line!())
                                             .pos(self.position()),
-                                    )?
-                                    .output()
-                                    .into_option()
-                                {
-                                    Some(o) => o,
-                                    None => {
-                                        return Ok(Expression::Literal(Attribute::Array(
-                                            vec![].into(),
-                                        )));
-                                    }
-                                }
-                                .try_lock()
-                                .into_option()
-                                .ok_or(
-                                    EvalErrorType::MutexError(file!(), line!())
-                                        .pos(self.position()),
-                                )?,
-                            )
-                            .cloned();
-                        return if self.check {
-                            Ok(Expression::Literal(Attribute::Array(
-                                vec![Attribute::Bool(v.is_ok())].into(),
-                            )))
-                        } else {
-                            Ok(v.map(|a| Expression::Literal(Attribute::Array(vec![a].into())))?)
-                        };
-                    }
-                    None => {
-                        return Err(match ft {
-                            FunctionType::Node => EvalErrorType::LogicalError(
-                                "Output variable tried without Node value",
-                            )
-                            .pos(self.position()),
-                            _ => EvalErrorType::InvalidVariableType.pos(self.position()),
-                        });
-                    }
-                },
-                VarType::Nodes(prop) => {
+                                    )?,
+                                )
+                                .is_ok(),
+                            ))
+                        })
+                        .collect::<Result<_, EvalError>>()?;
+                    return Ok(Expression::Literal(Attribute::Array(res.into())));
+                } else {
                     let mut vars = Vec::new();
-                    for n in ctx.propagation(*prop.clone())? {
+                    for i in nds {
                         let a = self
-                            .attr_nested(&n.try_lock().into_option().ok_or(
+                            .attr_nested(&i.try_lock().into_option().ok_or(
                                 EvalErrorType::MutexError(file!(), line!()).pos(self.position()),
                             )?)
                             .cloned();
-                        if self.check {
-                            vars.push(a.is_ok().into());
-                        } else {
-                            vars.push(a.map_err(|e| e.pos(self.position()))?);
-                        }
+                        vars.push(a.map_err(|e| e.pos(self.position()))?);
                     }
                     return Ok(Expression::Literal(Attribute::Array(vars.into())));
                 }
-                VarType::Leaves => {
-                    let mut vars = Vec::new();
-                    for n in ctx.network.leaves() {
-                        let a = self
-                            .attr_nested(&n.try_lock().into_option().ok_or(
+            }
+            ExprContext::NodesMap(nds) => {
+                if self.check {
+                    let res: HashMap<RString, Attribute> = nds
+                        .iter()
+                        .map(|i| {
+                            let n = i.try_lock().into_option().ok_or(
                                 EvalErrorType::MutexError(file!(), line!()).pos(self.position()),
-                            )?)
-                            .cloned();
-                        if self.check {
-                            vars.push(a.is_ok().into());
-                        } else {
-                            vars.push(a.map_err(|e| e.pos(self.position()))?);
-                        }
+                            )?;
+                            Ok((
+                                n.name().to_string().into(),
+                                Attribute::Bool(self.attr_nested(&n).is_ok()),
+                            ))
+                        })
+                        .collect::<Result<_, EvalError>>()?;
+                    return Ok(Expression::Literal(Attribute::Table(res.into())));
+                } else {
+                    let mut vars = AttrMap::new();
+                    for i in nds {
+                        let n = i.try_lock().into_option().ok_or(
+                            EvalErrorType::MutexError(file!(), line!()).pos(self.position()),
+                        )?;
+                        let name = n.name().to_string().into();
+                        let a = self.attr_nested(&n).cloned();
+                        vars.insert(name, a.map_err(|e| e.pos(self.position()))?);
                     }
-                    return Ok(Expression::Literal(Attribute::Array(vars.into())));
+                    return Ok(Expression::Literal(Attribute::Table(vars.into())));
                 }
-                VarType::Outlets => {
-                    let mut vars = Vec::new();
-                    for n in ctx.network.outlets() {
-                        let a = self
-                            .attr_nested(&n.try_lock().into_option().ok_or(
-                                EvalErrorType::MutexError(file!(), line!()).pos(self.position()),
-                            )?)
-                            .cloned();
-                        if self.check {
-                            vars.push(a.is_ok().into());
-                        } else {
-                            vars.push(a.map_err(|e| e.pos(self.position()))?);
-                        }
-                    }
-                    return Ok(Expression::Literal(Attribute::Array(vars.into())));
-                }
-            },
-            None => match ft {
-                // since function expressions are only evaluated as env functions now
-                FunctionType::Env => self
-                    .attr_nested(local.unwrap_or(ctx.env.attr_map()))
-                    .cloned(),
-                FunctionType::Network => self.attr_nested(&ctx.network).cloned(),
-                FunctionType::Node => match node {
-                    Some(n) => self
-                        .attr_nested(
-                            &n.try_lock()
-                                .into_option()
-                                .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?,
-                        )
-                        .cloned(),
-                    None => {
-                        return Err(EvalErrorType::LogicalError(
-                            "Node function ran without Node value",
-                        )
-                        .no_pos());
-                    }
-                },
-            },
+            }
         };
+
         if self.check {
             Ok(Expression::Literal(attr.is_ok().into()))
         } else {
@@ -1702,16 +1482,26 @@ pub enum VarType {
     Input,
     /// Inputs variable (only valid in a node function)
     Inputs,
+    /// Inputs variable in map format (only valid in a node function)
+    InputsMap,
     /// Output variable (only valid in a node function for a node with single output)
     Output,
     /// Outputs variable (only valid in a node function)
     Outputs,
+    /// Outputs variable in map format (only valid in a node function)
+    OutputsMap,
     /// Nodes variable (array of variable from each node)
     Nodes(Box<Propagation>),
+    /// Nodes variable (map of variable from each node and its name)
+    NodesMap(Box<Propagation>),
     /// Outlets of the network
     Outlets,
+    /// Outlets of the network in map format
+    OutletsMap,
     /// leaf nodes of the network
     Leaves,
+    /// leaf nodes of the network in map format
+    LeavesMap,
     /// variable for the Root node of the network
     Root,
 }
@@ -1730,12 +1520,17 @@ impl VarType {
             TaskKeyword::Local => Some(VarType::Local),
             TaskKeyword::Input => Some(VarType::Input),
             TaskKeyword::Inputs => Some(VarType::Inputs),
+            TaskKeyword::InputsMap => Some(VarType::InputsMap),
             TaskKeyword::Output => Some(VarType::Output),
             TaskKeyword::Outputs => Some(VarType::Outputs),
+            TaskKeyword::OutputsMap => Some(VarType::OutputsMap),
             TaskKeyword::Nodes => Some(VarType::Nodes(Box::new(prop.unwrap_or_default()))),
+            TaskKeyword::NodesMap => Some(VarType::NodesMap(Box::new(prop.unwrap_or_default()))),
             TaskKeyword::Root => Some(VarType::Root),
             TaskKeyword::Outlets => Some(VarType::Outlets),
+            TaskKeyword::OutletsMap => Some(VarType::OutletsMap),
             TaskKeyword::Leaves => Some(VarType::Leaves),
+            TaskKeyword::LeavesMap => Some(VarType::LeavesMap),
             _ => None,
         }
     }
@@ -1748,12 +1543,93 @@ impl VarType {
             VarType::Env | VarType::Local => &FunctionType::Env,
             VarType::Input
             | VarType::Inputs
+            | VarType::InputsMap
+            | VarType::Output
+            | VarType::Outputs
+            | VarType::OutputsMap
+            | VarType::Nodes(_)
+            | VarType::NodesMap(_)
+            | VarType::Root
+            | VarType::Outlets
+            | VarType::OutletsMap
+            | VarType::Leaves
+            | VarType::LeavesMap => &FunctionType::Node,
+        }
+    }
+
+    /// indicate if the variable type returns a map or not
+    pub fn is_map(&self) -> bool {
+        match self {
+            VarType::Node(_)
+            | VarType::Network
+            | VarType::Env
+            | VarType::Local
+            | VarType::Input
+            | VarType::Inputs
             | VarType::Output
             | VarType::Outputs
             | VarType::Nodes(_)
             | VarType::Root
             | VarType::Outlets
-            | VarType::Leaves => &FunctionType::Node,
+            | VarType::Leaves => false,
+            VarType::NodesMap(_)
+            | VarType::OutputsMap
+            | VarType::OutletsMap
+            | VarType::InputsMap
+            | VarType::LeavesMap => true,
+        }
+    }
+
+    /// Given a node we're currently working on, and the task context,
+    /// this function resolves the expression context to know where we
+    /// should be evaluating the expression on
+    fn get_expr_context(
+        &self,
+        ctx: &TaskContext,
+        node: Option<&Node>,
+    ) -> Result<ExprContext, EvalErrorType> {
+        let nodes_func = if self.is_map() {
+            |nds| Ok(ExprContext::NodesMap(nds))
+        } else {
+            |nds| Ok(ExprContext::Nodes(nds))
+        };
+        match (self, node) {
+            (VarType::Local, _) => Ok(ExprContext::Local),
+            (VarType::Env, _) => Ok(ExprContext::Env),
+            (VarType::Network, _) => Ok(ExprContext::Network),
+            (VarType::Nodes(prop) | VarType::NodesMap(prop), _) => {
+                nodes_func(ctx.propagation(*prop.clone()).map_err(|e| e.ty)?)
+            }
+            (VarType::Outlets | VarType::OutletsMap, _) => {
+                nodes_func(ctx.network.outlets().cloned().collect())
+            }
+            (VarType::Leaves | VarType::LeavesMap, _) => {
+                nodes_func(ctx.network.leaves().cloned().collect())
+            }
+            (VarType::Root, _) => match ctx.network.root() {
+                Some(r) => Ok(ExprContext::Node(r.clone())),
+                None => Err(EvalErrorType::NoRootNode),
+            },
+            (VarType::Node(Some(n)), _) => match ctx.network.node_by_name(&n) {
+                Some(n) => Ok(ExprContext::Node(n.clone())),
+                None => Err(EvalErrorType::NodeNotFound(n.to_string())),
+            },
+            (VarType::Node(None), Some(n)) => Ok(ExprContext::Node(n.clone())),
+            (VarType::Input, Some(n)) => match n.lock().input() {
+                RSome(r) => Ok(ExprContext::Node(r.clone())),
+                RNone => Err(EvalErrorType::NoInputNodes),
+            },
+            (VarType::Output, Some(n)) => match n.lock().output() {
+                RSome(r) => Ok(ExprContext::Node(r.clone())),
+                RNone => Err(EvalErrorType::NoOutputNode),
+            },
+            (VarType::Inputs | VarType::InputsMap, Some(n)) => {
+                nodes_func(n.lock().inputs().iter().cloned().collect())
+            }
+            (VarType::Outputs | VarType::OutputsMap, Some(n)) => {
+                nodes_func(n.lock().outputs().iter().cloned().collect())
+            }
+            (_, None) => Err(EvalErrorType::NotANodeContext),
         }
     }
 }
@@ -1770,14 +1646,21 @@ impl std::fmt::Display for VarType {
             VarType::Local => "local",
             VarType::Input => "input",
             VarType::Inputs => "inputs",
+            VarType::InputsMap => "inputsmap",
             VarType::Output => "output",
             VarType::Outputs => "outputs",
+            VarType::OutputsMap => "outputsmap",
             VarType::Nodes(p) => {
                 return write!(f, "nodes{p}");
             }
+            VarType::NodesMap(p) => {
+                return write!(f, "nodesmap{p}");
+            }
             VarType::Root => "root",
             VarType::Outlets => "outlets",
+            VarType::OutletsMap => "outletsmap",
             VarType::Leaves => "leaves",
+            VarType::LeavesMap => "leavesmap",
         };
         write!(f, "{ty}")
     }
@@ -2270,7 +2153,7 @@ fn get_series(
             Some(o) => get_node_series_or_ts(o, name, ts),
             None => Err(EvalErrorType::NoInputNodes.no_pos()),
         },
-        (Some(VarType::Inputs), _) => {
+        (Some(VarType::InputsMap), _) => {
             let inp_series = node
                 .ok_or(EvalErrorType::NotANodeContext.no_pos())?
                 .try_lock()
@@ -2329,7 +2212,7 @@ fn get_series(
             Some(o) => get_node_series_or_ts(o, name, ts),
             None => Err(EvalErrorType::NoOutputNode.no_pos()),
         },
-        (Some(VarType::Outputs), _) => match node
+        (Some(VarType::OutputsMap), _) => match node
             .ok_or(EvalErrorType::NotANodeContext.no_pos())?
             .try_lock()
             .into_option()
@@ -2420,7 +2303,10 @@ impl ExprWithContext {
         local: Option<&RHashMap<RString, Attribute>>,
         node: Option<&Node>,
     ) -> Result<Expression, EvalError> {
-        let expr_ctx = self.get_expr_context(ctx, node).map_err(|e| e.no_pos())?;
+        let expr_ctx = self
+            .ty
+            .get_expr_context(ctx, node)
+            .map_err(|e| e.no_pos())?;
         match expr_ctx {
             ExprContext::Local => todo!(),
             ExprContext::Node(n) => self.expr.resolve(&FunctionType::Node, ctx, local, Some(&n)),
@@ -2431,53 +2317,26 @@ impl ExprWithContext {
                     .collect::<Result<Vec<Expression>, EvalError>>()?;
                 Ok(Expression::Array(exprs))
             }
+            ExprContext::NodesMap(nds) => {
+                let exprs = nds
+                    .iter()
+                    .map(|n| {
+                        let name = n
+                            .try_lock()
+                            .into_option()
+                            .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
+                            .name()
+                            .to_string();
+                        let expr = self
+                            .expr
+                            .resolve(&FunctionType::Node, ctx, local, Some(&n))?;
+                        Ok((name, expr))
+                    })
+                    .collect::<Result<HashMap<String, Expression>, EvalError>>()?;
+                Ok(Expression::Table(exprs))
+            }
             ExprContext::Env => self.expr.resolve(&FunctionType::Env, ctx, local, node),
             ExprContext::Network => self.expr.resolve(&FunctionType::Network, ctx, local, node),
-        }
-    }
-    /// Given a node we're currently working on, and the task context,
-    /// this function resolves the expression context to know where we
-    /// should be evaluating the expression on
-    fn get_expr_context(
-        &self,
-        ctx: &TaskContext,
-        node: Option<&Node>,
-    ) -> Result<ExprContext, EvalErrorType> {
-        match (&self.ty, node) {
-            (VarType::Local, _) => Ok(ExprContext::Local),
-            (VarType::Env, _) => Ok(ExprContext::Env),
-            (VarType::Network, _) => Ok(ExprContext::Network),
-            (VarType::Nodes(prop), _) => Ok(ExprContext::Nodes(
-                ctx.propagation(*prop.clone()).map_err(|e| e.ty)?,
-            )),
-            (VarType::Outlets, _) => {
-                Ok(ExprContext::Nodes(ctx.network.outlets().cloned().collect()))
-            }
-            (VarType::Leaves, _) => Ok(ExprContext::Nodes(ctx.network.leaves().cloned().collect())),
-            (VarType::Root, _) => match ctx.network.root() {
-                Some(r) => Ok(ExprContext::Node(r.clone())),
-                None => Err(EvalErrorType::NoRootNode),
-            },
-            (VarType::Node(Some(n)), _) => match ctx.network.node_by_name(&n) {
-                Some(n) => Ok(ExprContext::Node(n.clone())),
-                None => Err(EvalErrorType::NodeNotFound(n.to_string())),
-            },
-            (VarType::Node(None), Some(n)) => Ok(ExprContext::Node(n.clone())),
-            (VarType::Input, Some(n)) => match n.lock().input() {
-                RSome(r) => Ok(ExprContext::Node(r.clone())),
-                RNone => Err(EvalErrorType::NoInputNodes),
-            },
-            (VarType::Output, Some(n)) => match n.lock().output() {
-                RSome(r) => Ok(ExprContext::Node(r.clone())),
-                RNone => Err(EvalErrorType::NoOutputNode),
-            },
-            (VarType::Inputs, Some(n)) => Ok(ExprContext::Nodes(
-                n.lock().inputs().iter().cloned().collect(),
-            )),
-            (VarType::Outputs, Some(n)) => Ok(ExprContext::Nodes(
-                n.lock().outputs().iter().cloned().collect(),
-            )),
-            (_, None) => Err(EvalErrorType::NotANodeContext),
         }
     }
 }
@@ -2486,7 +2345,7 @@ impl ExprWithContext {
 ///
 /// This is env by default, unless a keyword is used to change it
 #[derive(Clone, Default)]
-enum ExprContext {
+pub enum ExprContext {
     /// Local context
     Local,
     #[default]
@@ -2498,4 +2357,6 @@ enum ExprContext {
     Node(Node),
     /// Multiple nodes context like inputs, outputs, outlets, leaves
     Nodes(Vec<Node>),
+    /// Multiple nodes context with their names
+    NodesMap(Vec<Node>),
 }
