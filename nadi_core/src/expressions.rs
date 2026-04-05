@@ -1,7 +1,7 @@
 use crate::attrs::{AttrMap, Attribute, FromAttribute, HasAttributes};
 use crate::functions::FunctionCtx;
 use crate::network::Propagation;
-use crate::node::Node;
+use crate::node::{Node, NodeInner};
 use crate::structs::{NadiAttrType, NadiStructExpr};
 use crate::tasks::{
     AttrTask, CondTask, EvalTask, FunctionType, TaskContext, TaskKeyword, WhileTask,
@@ -2130,36 +2130,61 @@ fn get_series(
     name: &str,
     ts: bool,
 ) -> Result<Series, EvalError> {
-    match (vt, ft) {
-        (None, FunctionType::Env) | (Some(VarType::Env), _) => get_series_or_ts(&ctx.env, name, ts),
-        // Node function, or node vartype without node name
-        (None, FunctionType::Node) | (Some(VarType::Node(None)), _) => match node {
-            Some(n) => get_node_series_or_ts(n, name, ts),
-            None => Err(EvalErrorType::NotANodeContext.no_pos()),
-        },
-        // Node name given explicitely
-        (Some(VarType::Node(Some(node))), _) => match ctx.network.node_by_name(node) {
-            Some(n) => get_node_series_or_ts(n, name, ts),
-            None => Err(EvalErrorType::NodeNotFound(node.to_string()).no_pos()),
-        },
-        (Some(VarType::Input), _) => match node
-            .ok_or(EvalErrorType::NotANodeContext.no_pos())?
-            .try_lock()
-            .into_option()
-            .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
-            .input()
-            .into_option()
-        {
-            Some(o) => get_node_series_or_ts(o, name, ts),
-            None => Err(EvalErrorType::NoInputNodes.no_pos()),
-        },
-        (Some(VarType::InputsMap), _) => {
-            let inp_series = node
-                .ok_or(EvalErrorType::NotANodeContext.no_pos())?
+    let expr_ctx = match vt {
+        Some(ty) => ty.get_expr_context(ctx, node)?,
+        None => ft.get_expr_context(node)?,
+    };
+    match expr_ctx {
+        ExprContext::Local => todo!(),
+        ExprContext::Env => get_series_or_ts(&ctx.env, name, ts),
+        ExprContext::Network => get_series_or_ts(&ctx.network, name, ts),
+        ExprContext::Node(n) => {
+            let n = &n
                 .try_lock()
                 .into_option()
-                .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
-                .inputs()
+                .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?;
+            let n: &NodeInner = &n;
+            get_series_or_ts(n, name, ts)
+        }
+        // Nodes series will error out on masked series with gaps, use nodesmap keywords
+        ExprContext::Nodes(nds) => {
+            let inp_series = nds
+                .iter()
+                .map(|i| get_node_series_or_ts(i, name, ts))
+                .collect::<Result<Vec<Series>, EvalError>>()?;
+            let sr_lengths: Vec<usize> = inp_series.iter().map(|s| s.len()).collect();
+            if sr_lengths.is_empty() {
+                return Err(EvalErrorType::NoInputNodes.no_pos());
+            }
+            if let Some(l) = sr_lengths.iter().find(|l| **l != sr_lengths[0]) {
+                return Err(EvalErrorType::DifferentLength(sr_lengths[0], *l).no_pos());
+            }
+            let mut compl_series = Vec::with_capacity(inp_series.len());
+            for ser in inp_series {
+                match ser {
+                    Series::Masked(ms, _) => {
+                        if ms.has_gaps() {}
+                        let cs = ms
+                            .complete()
+                            .ok_or(EvalErrorType::EmptySeriesValue.no_pos())?;
+                        compl_series.push(cs.to_attributes().into_iter());
+                    }
+                    Series::Complete(cs) => compl_series.push(cs.to_attributes().into_iter()),
+                }
+            }
+            let zipped_vals: Vec<_> = (0..sr_lengths[0])
+                .map(|_| {
+                    let mut dt = Vec::with_capacity(sr_lengths.len());
+                    for s in &mut compl_series {
+                        dt.push(s.next().expect("lengths already checked"));
+                    }
+                    Attribute::Array(dt.into())
+                })
+                .collect();
+            Ok(CompleteSeries::attributes(zipped_vals).into())
+        }
+        ExprContext::NodesMap(nds) => {
+            let inp_series = nds
                 .iter()
                 .map(|i| {
                     let sr = get_node_series_or_ts(i, name, ts)?;
@@ -2201,42 +2226,6 @@ fn get_series(
                 .collect();
             Ok(CompleteSeries::attributes(zipped_vals).into())
         }
-        (Some(VarType::Output), _) => match node
-            .ok_or(EvalErrorType::NotANodeContext.no_pos())?
-            .try_lock()
-            .into_option()
-            .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
-            .output()
-            .into_option()
-        {
-            Some(o) => get_node_series_or_ts(o, name, ts),
-            None => Err(EvalErrorType::NoOutputNode.no_pos()),
-        },
-        (Some(VarType::OutputsMap), _) => match node
-            .ok_or(EvalErrorType::NotANodeContext.no_pos())?
-            .try_lock()
-            .into_option()
-            .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
-            .output()
-            .into_option()
-        {
-            Some(_o) => Err(EvalErrorType::NotImplementedError(
-                "multiple outputs series is not implemented",
-            )
-            .no_pos()),
-            None => Err(EvalErrorType::NoOutputNode.no_pos()),
-        },
-        (Some(VarType::Root), _) => match ctx.network.root() {
-            Some(o) => get_node_series_or_ts(o, name, ts),
-            None => Err(EvalErrorType::NoRootNode.no_pos()),
-        },
-        (None, FunctionType::Network) | (Some(VarType::Network), _) => {
-            get_series_or_ts(&ctx.network, name, ts)
-        }
-        _ => Err(EvalErrorType::NotImplementedError(
-            "Reading Series are not implemented for this type",
-        )
-        .no_pos()),
     }
 }
 
