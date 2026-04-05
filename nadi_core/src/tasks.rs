@@ -292,7 +292,7 @@ impl TaskContext {
                 Ok(None)
             }
             Task::Expr(expr) => expr
-                .resolve_eval(&FunctionType::Env, self, None, None)
+                .resolve_eval_mut(&FunctionType::Env, self, None, None)
                 .map(|a| a.map(|a| self.show_attr(&a, 0))),
             Task::Hook(tasks) => {
                 self.hook = tasks;

@@ -282,6 +282,8 @@ pub enum Expression {
     Literal(Attribute),
     /// Variable (dot separated, optionally with context)
     Variable(InputVar),
+    /// Assignment Expression
+    SetVariable(InputVar, Box<Expression>),
     /// String Template to Render in given context
     Render(Template),
     /// Expression with context information
@@ -335,6 +337,7 @@ impl std::fmt::Display for Expression {
         match self {
             Self::Literal(a) => std::fmt::Display::fmt(a, f),
             Self::Variable(v) => std::fmt::Display::fmt(v, f),
+            Self::SetVariable(v, e) => write!(f, "r{v} = {e}"),
             Self::Render(v) => write!(f, "r{v:?}"),
             Self::WithContext(e) => write!(f, "{e}"),
             Self::Range(b, s, e) => {
@@ -459,6 +462,7 @@ impl Expression {
             Self::ResolveError(_) => false,
             Self::UserError(_) => false,
             Self::Variable(_) => false,
+            Self::SetVariable(..) => false,
             Self::StructExpr(_) => false,
             Self::Render(_) => false,
             Self::Function(_) => false,
@@ -481,6 +485,7 @@ impl Expression {
             Self::ResolveError(_) => false,
             Self::UserError(_) => false,
             Self::Variable(_) => true,
+            Self::SetVariable(_, _) => true,
             Self::WithContext(e) => e.expr.has_variables(),
             Self::Range(b, s, e) => {
                 b.has_variables()
@@ -534,6 +539,9 @@ impl Expression {
                 Ok(Self::Literal(v))
             }
             Self::Variable(v) => Ok(Self::Variable(v)),
+            Self::SetVariable(v, e) => e
+                .simplify(ft, ctx)
+                .map(|r| Self::SetVariable(v, Box::new(r))),
             Self::StructExpr(mut st) => {
                 st.values = st
                     .values
@@ -729,6 +737,9 @@ impl Expression {
                 Ok(Expression::Table(vals))
             }
             Self::Variable(vt) => vt.resolve(ft, ctx, local, node),
+            Self::SetVariable(v, e) => e
+                .resolve(ft, ctx, local, node)
+                .map(|r| Self::SetVariable(v.clone(), Box::new(r))),
             Self::StructExpr(st) => {
                 let values = st
                     .values
@@ -927,6 +938,35 @@ impl Expression {
     ) -> Result<Option<Attribute>, EvalError> {
         match self {
             Self::Function(fc) => fc.eval_mut(ft, ctx, local, node),
+            Self::SetVariable(v, e) => {
+                let expr_ctx = v.get_expr_context(ft, &ctx, node)?;
+                match expr_ctx {
+                    ExprContext::Local => todo!(),
+                    ExprContext::Env => {
+                        let val = e.eval_value(ft, ctx, local, node)?;
+                        v.set_attr_nested(ctx.env.attr_map_mut(), val)?;
+                        Ok(None)
+                    }
+                    ExprContext::Network => {
+                        let val = e.eval_value(ft, ctx, local, node)?;
+                        v.set_attr_nested(ctx.network.attr_map_mut(), val)?;
+                        Ok(None)
+                    }
+                    ExprContext::Node(n) => {
+                        let val = e.eval_value(ft, ctx, local, Some(&n))?;
+                        v.set_attr_nested(n.lock().attr_map_mut(), val)?;
+                        Ok(None)
+                    }
+                    ExprContext::Nodes(nds) => {
+                        for n in nds {
+                            let val = e.eval_value(ft, ctx, local, Some(&n))?;
+                            v.set_attr_nested(n.lock().attr_map_mut(), val)?;
+                        }
+                        Ok(None)
+                    }
+                    ExprContext::NodesMap(_) => Err(EvalErrorType::InvalidVariableType.no_pos()),
+                }
+            }
             e => e.eval_value(ft, ctx, local, node).map(Some),
         }
     }
@@ -958,6 +998,8 @@ impl Expression {
                 }
                 Err(EvalErrorType::UnresolvedVariable.pos(vt.position()))
             }
+            // add error type called immutable context
+            Self::SetVariable(..) => Err(EvalErrorType::UnresolvedVariable.no_pos()),
             // expression with context should be resolved to normal expression
             Self::WithContext(_) => Err(EvalErrorType::UnresolvedVariable.no_pos()),
             Self::Range(b, s, e) => {
@@ -1268,6 +1310,23 @@ impl InputVarIndex {
         }
     }
 
+    pub fn index_mut<'b>(
+        &self,
+        val: &'b mut Attribute,
+    ) -> Result<&'b mut Attribute, EvalErrorType> {
+        match (self, val) {
+            (Self::Str(s), Attribute::Table(am)) => am
+                .attr_mut(s)
+                .ok_or(EvalErrorType::AttributeError(format!("Key {s} not found"))),
+            (Self::Int(i), Attribute::Array(ar)) => ar.get_mut(*i).ok_or(EvalErrorType::IndexError),
+            (i, v) => Err(EvalErrorType::AttributeError(format!(
+                "{} can not be indexed by {}",
+                v.type_name(),
+                i.type_name(),
+            ))),
+        }
+    }
+
     pub fn type_name(&self) -> &'static str {
         match self {
             Self::Str(_) => "string",
@@ -1338,6 +1397,7 @@ impl InputVar {
         }
     }
 
+    /// Get the attribute value based on the nested indices
     pub fn attr_nested<'b, T: HasAttributes>(
         &self,
         attrmap: &'b T,
@@ -1352,6 +1412,48 @@ impl InputVar {
             at = ind.index(at)?;
         }
         Ok(at)
+    }
+
+    /// Set the attribute to the value based on the nested indices
+    pub fn set_attr_nested<'b, T: HasAttributes>(
+        &self,
+        attrmap: &'b mut T,
+        val: Attribute,
+    ) -> Result<(), EvalErrorType> {
+        match self.indices.as_slice() {
+            [] => {
+                attrmap
+                    .attr_map_mut()
+                    .insert(self.name.to_string().into(), val);
+            }
+            [pref @ .., last] => {
+                let mut at = attrmap
+                    .attr_mut(&self.name)
+                    .ok_or(EvalErrorType::AttributeError(format!(
+                        "Attribute {} not found",
+                        self.name
+                    )))?;
+                for ind in pref {
+                    at = ind.index_mut(at)?;
+                }
+                match (at, last) {
+                    (Attribute::Table(tb), InputVarIndex::Str(s)) => {
+                        tb.insert(s.to_string().into(), val);
+                    }
+                    (Attribute::Array(ar), InputVarIndex::Int(i)) => {
+                        *ar.get_mut(*i).ok_or(EvalErrorType::IndexError)? = val;
+                    }
+                    (v, i) => {
+                        return Err(EvalErrorType::AttributeError(format!(
+                            "{} can not be indexed by {}",
+                            v.type_name(),
+                            i.type_name(),
+                        )));
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     fn get_expr_context(
@@ -1472,7 +1574,7 @@ impl InputVar {
 pub enum VarType {
     /// Local Variables
     Local,
-    /// Environmen Variable
+    /// Environment Variable
     Env,
     /// Node variable (only valid in a node function without explicit name)
     Node(Option<String>),

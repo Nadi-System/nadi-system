@@ -23,6 +23,7 @@ pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> 
     alt((
         map(nadi_struct_expr, Expression::StructExpr),
         expr_with_context,
+        expr_set_variable,
         expr_maybe_range,
         map(function_call, Expression::Function),
         map(template_val, Expression::Render),
@@ -50,6 +51,29 @@ pub fn expr_with_context<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expre
         rest,
         Expression::WithContext(ExprWithContext::new(vt, expr)),
     ))
+}
+
+pub fn expr_set_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+    map(
+        tuple((
+            opt(terminated(variable_type, dot)),
+            task_dot_variable,
+            maybe_space(assignment),
+            maybe_space(complete_expression),
+        )),
+        |(vt, (var, indices), _, expr)| {
+            Expression::SetVariable(
+                InputVar::new(
+                    vt.clone(),
+                    var.clone(),
+                    indices.clone(),
+                    false,
+                    inp.position(),
+                ),
+                Box::new(expr),
+            )
+        },
+    )(inp)
 }
 
 pub fn expr_maybe_range<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
