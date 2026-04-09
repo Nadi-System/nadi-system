@@ -33,13 +33,12 @@ enum TaskCtxMessage {
 
 /// Messages that can be sent to the task context over the channel
 enum TaskCtxRequest {
+    NetworkData,
     Run(Box<NadiTask>),
     NodeAttr(String),
     Completions(String),
     NetworkAttr,
     NetworkTy(NetworkViewType),
-    // no need to send request for NetworkData as it is sent whenever
-    // a task is run successfully
 }
 
 /// Spawns a thread with task context, it reloads the plugins as it is not thread safe to share them.
@@ -65,6 +64,12 @@ fn spawn_task_context() -> (Sender<TaskCtxRequest>, Receiver<TaskCtxMessage>) {
         loop {
             while let Ok(req) = recv.try_recv() {
                 match req {
+                    TaskCtxRequest::NetworkData => {
+                        let _ = send.send(TaskCtxMessage::Network(NetworkData::new(
+                            &task_ctx.network,
+                            &ty,
+                        )));
+                    }
                     TaskCtxRequest::Run(task) => {
                         let mutates = task.can_mutate();
                         // temp solution, make NadiFunctions take a
@@ -395,6 +400,10 @@ impl Terminal {
                         // make it rich text and manage these better
                         TaskCtxMessage::Update(TaskMessage::Info(s) | TaskMessage::Warning(s)) => {
                             self.append_term(&s, false, true);
+                        }
+                        // this will trigger when the values are changed in the context
+                        TaskCtxMessage::Update(TaskMessage::Changed) => {
+                            _ = self.sender.send(TaskCtxRequest::NetworkData);
                         }
                         TaskCtxMessage::Clear => {
                             self.content = text_editor::Content::new();

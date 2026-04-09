@@ -209,7 +209,16 @@ impl Completion {
 /// Default task script to show in the editor pane
 static EDITOR_DEFAULT: &str = r#"# example nadi script
 # you can load network with a string
-network load_str("a -> b\n b -> d\n c -> d");
+network.load_str("a -> b\n b -> d\n c -> d")
+
+if (true) {
+  if (false) {
+    2
+} else {
+   network.y = 0
+   node[a].visual = {nodecolor = "red"}
+}
+}
 
 # if you have a file with network information uncomment
 # and use the code below, for windows, careful to use \\

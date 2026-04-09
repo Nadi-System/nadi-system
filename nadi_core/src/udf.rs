@@ -1,5 +1,5 @@
 use crate::attrs::{AttrMap, Attribute};
-use crate::expressions::{EvalError, EvalErrorType, Expression};
+use crate::expressions::{EvalError, EvalErrorType, ExprResult, Expression};
 use crate::functions::FunctionCtx;
 use crate::node::Node;
 use crate::tasks::{FunctionType, TaskContext};
@@ -41,27 +41,26 @@ impl LocalExpr {
         locals: &mut AttrMap,
         ctx: &TaskContext,
         node: Option<&Node>,
-    ) -> Result<Option<Attribute>, EvalError> {
+    ) -> Result<ExprResult, EvalError> {
         match self {
             Self::Expr(expr, quiet) => {
                 // evaluate it even if we don't return a value because
                 // it could be a function that has some side effect
                 let res = expr.resolve_eval(ft, ctx, Some(locals), node)?;
                 if *quiet {
-                    Ok(None)
+                    Ok(ExprResult::None)
                 } else {
                     Ok(res)
                 }
             }
             Self::Assign(var, expr, quiet) => {
                 let val = expr.resolve_eval_value(ft, ctx, Some(locals), node)?;
-                let res = if *quiet {
-                    Ok(None)
+                locals.insert(var.to_string().into(), val.clone());
+                if *quiet {
+                    Ok(ExprResult::None)
                 } else {
-                    Ok(Some(val.clone()))
-                };
-                locals.insert(var.to_string().into(), val);
-                res
+                    Ok(ExprResult::Val(val))
+                }
             }
         }
     }
@@ -120,11 +119,7 @@ impl UserFunction {
         }
     }
 
-    pub fn eval(
-        &self,
-        ctx: &TaskContext,
-        fctx: FunctionCtx,
-    ) -> Result<Option<Attribute>, EvalError> {
+    pub fn eval(&self, ctx: &TaskContext, fctx: FunctionCtx) -> Result<ExprResult, EvalError> {
         self.eval_inline(&FunctionType::Env, ctx, fctx, None)
     }
 
@@ -139,9 +134,9 @@ impl UserFunction {
         ctx: &TaskContext,
         fctx: FunctionCtx,
         node: Option<&Node>,
-    ) -> Result<Option<Attribute>, EvalError> {
+    ) -> Result<ExprResult, EvalError> {
         let mut locals = self.resolve_locals(ctx, fctx.args, fctx.kwargs)?;
-        let mut ret_expr = None;
+        let mut ret_expr = ExprResult::None;
         for expr in &self.exprs {
             match expr.eval(ft, &mut locals, ctx, node) {
                 Ok(v) => {
@@ -162,7 +157,7 @@ impl UserFunction {
     }
 
     pub fn eval_val(&self, ctx: &TaskContext, fctx: FunctionCtx) -> Result<Attribute, EvalError> {
-        self.eval(ctx, fctx)?.ok_or(
+        self.eval(ctx, fctx)?.to_attribute().ok_or(
             EvalErrorType::NoReturnValue(self.name.as_deref().unwrap_or("Anonymous").to_string())
                 .no_pos(),
         )

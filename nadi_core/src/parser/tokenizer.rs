@@ -3,7 +3,7 @@ use crate::parser::highlight::{Highlight, NadiFileType};
 use crate::parser::string::parse_string;
 use crate::parser::{ParseError as TaskParseError, ParseErrorType};
 use crate::tasks::TaskKeyword;
-use nadi_core::attrs::{Attribute, Date, DateTime, Time};
+use nadi_core::attrs::{Attribute, DateTime};
 use nom::{
     branch::alt,
     bytes::complete::{is_not, tag},
@@ -291,7 +291,10 @@ fn comment(i: &str) -> TokenRes<'_> {
 }
 
 fn none(i: &str) -> TokenRes<'_> {
-    map(tag("<None>"), |s| RawToken::new(TaskToken::Caret, s))(i)
+    // <None>
+    map(tag(crate::expressions::NONE_VALUE), |s| {
+        RawToken::new(TaskToken::None, s)
+    })(i)
 }
 
 fn operators(i: &str) -> TokenRes<'_> {

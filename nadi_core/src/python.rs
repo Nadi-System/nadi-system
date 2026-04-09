@@ -22,11 +22,12 @@ impl From<EvalError> for PyErr {
             EvalErrorType::AttributeNotFound => PyAttributeError::new_err(err),
             EvalErrorType::SeriesNotFound(_) => PyAttributeError::new_err(err),
             EvalErrorType::TimeSeriesNotFound(_) => PyAttributeError::new_err(err),
-            EvalErrorType::EmptySeriesValue => PyAttributeError::new_err(err),
+            EvalErrorType::EmptyValue(_) => PyAttributeError::new_err(err),
             EvalErrorType::NoInputNodes => PyAttributeError::new_err(err),
             EvalErrorType::NoOutputNode => PyAttributeError::new_err(err),
             EvalErrorType::NoRootNode => PyAttributeError::new_err(err),
 
+            EvalErrorType::KeyError(_) => PyKeyError::new_err(err),
             EvalErrorType::IndexError => PyIndexError::new_err(err),
 
             EvalErrorType::FunctionNotFound(_, _) => PyKeyError::new_err(err),
@@ -36,6 +37,7 @@ impl From<EvalError> for PyErr {
             EvalErrorType::UserError(_) => PyRuntimeError::new_err(err),
             EvalErrorType::UnknownFunctionType => PyKeyError::new_err(err),
             EvalErrorType::NoReturnValue(_) => PyRuntimeError::new_err(err),
+            EvalErrorType::InvalidContext(_) => PyRuntimeError::new_err(err),
             EvalErrorType::InvalidReturn(_) => PyRuntimeError::new_err(err),
             EvalErrorType::PathNotFound(_, _, _) => PyRuntimeError::new_err(err),
             EvalErrorType::AttributeError(_) => PyRuntimeError::new_err(err),

@@ -1,6 +1,7 @@
 #![allow(clippy::module_inception)]
 #![allow(non_local_definitions)] // warning from sabi_trait macro
 use crate::attrs::{AttrMap, AttrSlice};
+use crate::expressions::ExprResult;
 use crate::plugins::{load_library_safe, NadiPlugin};
 use crate::prelude::*;
 use crate::table::{contents_2_md, ColumnAlign};
@@ -39,6 +40,14 @@ impl FunctionRet {
         match self {
             Self::None => Ok(None),
             Self::Some(a) => Ok(Some(a)),
+            Self::Error(e) => Err(e.to_string()),
+        }
+    }
+
+    pub fn expr_res(self) -> Result<ExprResult, String> {
+        match self {
+            Self::None => Ok(ExprResult::None),
+            Self::Some(a) => Ok(ExprResult::Val(a)),
             Self::Error(e) => Err(e.to_string()),
         }
     }

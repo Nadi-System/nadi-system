@@ -263,41 +263,47 @@ fn nadi_func_inner(
 }
 
 /// Invalid argument names = task system keywords
-const INVALID_ARG_NAME: [&str; 45] = [
+const INVALID_ARG_NAME: [&str; 51] = [
     "clear",  // TaskKeyword::Clear
     "import", // TaskKeyword::Import
     "exec",   // TaskKeyword::Exec
     "from",   // TaskKeyword::From
     "node",   // TaskKeyword::Node
     "network",
-    "net",         // TaskKeyword::Network
-    "networks",    // TaskKeyword::Networks
-    "networksmap", // TaskKeyword::NetworksMap
-    "env",         // TaskKeyword::Env
-    "exit",        // TaskKeyword::Exit
-    "end",         // TaskKeyword::End
-    "help",        // TaskKeyword::Help
-    "input",       // TaskKeyword::Input
-    "inputs",      // TaskKeyword::Inputs
-    "inputsmap",   // TaskKeyword::InputsMap
-    "output",      // TaskKeyword::Output
-    "outputs",     // TaskKeyword::Outputs
-    "outputsmap",  // TaskKeyword::OutputsMap
-    "nodes",       // TaskKeyword::Nodes
-    "nodesmap",    // TaskKeyword::NodesMap
-    "root",        // TaskKeyword::Root
-    "outlets",     // TaskKeyword::Outlets
-    "outletsmap",  // TaskKeyword::OutletsMap
-    "leaves",      // TaskKeyword::Leaves
-    "leavesmap",   // TaskKeyword::LeavesMap
-    "if",          // TaskKeyword::If
-    "else",        // TaskKeyword::Else
-    "while",       // TaskKeyword::While
-    "try",         // TaskKeyword::Try
-    "catch",       // TaskKeyword::Catch
-    "in",          // TaskKeyword::In
-    "match",       // TaskKeyword::Match
-    "hook",        // TaskKeyword::Hook
+    "net",      // TaskKeyword::Network
+    "networks", // TaskKeyword::Networks
+    "networksmap",
+    "netm",   // TaskKeyword::NetworksMap
+    "env",    // TaskKeyword::Env
+    "exit",   // TaskKeyword::Exit
+    "end",    // TaskKeyword::End
+    "help",   // TaskKeyword::Help
+    "input",  // TaskKeyword::Input
+    "inputs", // TaskKeyword::Inputs
+    "inputsmap",
+    "im",      // TaskKeyword::InputsMap
+    "output",  // TaskKeyword::Output
+    "outputs", // TaskKeyword::Outputs
+    "outputsmap",
+    "om",    // TaskKeyword::OutputsMap
+    "nodes", // TaskKeyword::Nodes
+    "nodesmap",
+    "nm",    // TaskKeyword::NodesMap
+    "root",  // TaskKeyword::Root
+    "roots", // TaskKeyword::Roots
+    "rootsmap",
+    "rm",     // TaskKeyword::RootsMap
+    "leaves", // TaskKeyword::Leaves
+    "leavesmap",
+    "lm",    // TaskKeyword::LeavesMap
+    "if",    // TaskKeyword::If
+    "else",  // TaskKeyword::Else
+    "while", // TaskKeyword::While
+    "try",   // TaskKeyword::Try
+    "catch", // TaskKeyword::Catch
+    "in",    // TaskKeyword::In
+    "match", // TaskKeyword::Match
+    "hook",  // TaskKeyword::Hook
     "local",
     "loc",    // TaskKeyword::Local
     "struct", // TaskKeyword::Struct

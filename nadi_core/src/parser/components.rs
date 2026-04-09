@@ -97,6 +97,7 @@ macro_rules! one_token {
     };
 }
 
+one_token!(none, TaskToken::None);
 one_token!(infinity, TaskToken::Infinity);
 one_token!(nan, TaskToken::NaN);
 one_token!(float, TaskToken::Float);

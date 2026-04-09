@@ -20,12 +20,12 @@ fn help_shows() -> Result<(), Error> {
 fn run_tasks() -> Result<(), Error> {
     Command::cargo_bin("nadi")?
         .arg("-t")
-        .arg("env echo(\"hi\")")
+        .arg("env.echo(\"hi\")")
         .assert()
         .stdout("hi\n");
     Command::cargo_bin("nadi")?
         .arg("-t")
-        .arg("env 1 + 2 + 3")
+        .arg("env {1 + 2 + 3}")
         .assert()
         .stdout("6\n");
     Ok(())

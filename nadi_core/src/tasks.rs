@@ -1,5 +1,5 @@
 use crate::expressions::{
-    EvalError, EvalErrorType, ExprContext, Expression, SeriesExpression, TaskPosition,
+    EvalError, EvalErrorType, ExprContext, ExprResult, Expression, SeriesExpression, TaskPosition,
 };
 use crate::functions::{FuncArg, FuncArgType, NadiFunctions};
 use crate::network::{PropCondition, PropOrder};
@@ -65,6 +65,7 @@ task_ctx_consts!(
     parallize_nodes, "PARALLIZE_NODES", bool => false;
     parallel_cores, "PARALLEL_CORES", usize => 8;
     prettify_map, "PRETTIFY_MAP", bool => true;
+    prettify_all_map, "PRETTIFY_ALL_MAP", bool => false;
     track_change, "TRACK_CHANGE", bool => true;
 );
 
@@ -74,6 +75,8 @@ pub enum TaskMessage {
     Progress(String, usize, usize),
     Warning(String),
     Info(String),
+    /// Value changed (mut function or expression called)
+    Changed,
 }
 
 impl TaskMessage {
@@ -84,6 +87,7 @@ impl TaskMessage {
             }
             Self::Warning(msg) => eprintln!("WARN: {msg}"),
             Self::Info(msg) => eprintln!("INFO: {msg}"),
+            Self::Changed => (),
         }
     }
 }
@@ -293,7 +297,7 @@ impl TaskContext {
             }
             Task::Expr(expr) => expr
                 .resolve_eval_mut(&FunctionType::Env, self, None, None)
-                .map(|a| a.map(|a| self.show_attr(&a, 0))),
+                .map(|a| self.show_res(&a, 0)),
             Task::Hook(tasks) => {
                 self.hook = tasks;
                 Ok(None)
@@ -408,7 +412,7 @@ impl TaskContext {
                             } else {
                                 n.try_series(&gst.name).map(|ts| self.show_sr(ts))
                             }
-                            .unwrap_or("<None>".to_string())
+                            .unwrap_or(crate::expressions::NONE_VALUE.to_string())
                         )
                     })
                     .collect::<Vec<String>>();
@@ -478,6 +482,7 @@ impl TaskContext {
             FunctionType::Env => match task
                 .input
                 .resolve_eval(&FunctionType::Env, self, None, None)
+                .map(|r| r.to_attribute())
                 .map_err(|e| e.pos(task.position()))?
             {
                 Some(a) => {
@@ -544,6 +549,7 @@ impl TaskContext {
                 match task
                     .input
                     .resolve_eval_mut(&FunctionType::Network, self, None, None)
+                    .map(|r| r.to_attribute())
                     .map_err(|e| e.pos(task.position()))?
                 {
                     Some(a) => {
@@ -609,11 +615,11 @@ impl TaskContext {
                 .resolve_eval_mut(&FunctionType::Node, self, None, Some(&n))
                 .map_err(|e| e.pos(task.start).node(name.clone()))?
             {
-                Some(r) => r,
-                None => {
+                ExprResult::None => {
                     progress += 1;
                     continue;
                 }
+                r => r,
             };
             let mut n = n
                 .try_lock()
@@ -626,6 +632,13 @@ impl TaskContext {
             // because we did progress +=1 above we need <=
             let update = !task.silent & (progress <= max_nodes_len);
             if let Some(attr) = &task.attr {
+                let res = match res.to_attribute() {
+                    Some(r) => r,
+                    None => {
+                        progress += 1;
+                        continue;
+                    }
+                };
                 // assert the type if explicitely provided
                 if let Some(ty) = &attr.1 {
                     if !res.is_type(&ty) {
@@ -654,7 +667,12 @@ impl TaskContext {
                     }
                 }
             } else if update {
-                attrs.push(format!("  {} = {}", name, self.show_attr(&res, 0)));
+                attrs.push(format!(
+                    "  {} = {}",
+                    name,
+                    self.show_res(&res, 0)
+                        .unwrap_or(crate::expressions::NONE_VALUE.into())
+                ));
             }
         }
         if task.silent || attrs.is_empty() {
@@ -693,8 +711,8 @@ impl TaskContext {
 
         #[allow(clippy::type_complexity)]
         let (tx, rx): (
-            Sender<(String, Result<Option<Attribute>, EvalError>)>,
-            Receiver<(String, Result<Option<Attribute>, EvalError>)>,
+            Sender<(String, Result<ExprResult, EvalError>)>,
+            Receiver<(String, Result<ExprResult, EvalError>)>,
         ) = channel();
 
         let mut attrs = Vec::with_capacity(total);
@@ -733,7 +751,7 @@ impl TaskContext {
 
             let mut progress = 0;
             for (name, res) in rx {
-                let res = match res {
+                let res = match res.map(|r| r.to_attribute()) {
                     Ok(Some(r)) => r,
                     Ok(None) => {
                         progress += 1;
@@ -853,7 +871,7 @@ impl TaskContext {
                             {
                                 self.show_attr(a, 0)
                             } else {
-                                "<None>".to_string()
+                                crate::expressions::NONE_VALUE.to_string()
                             }
                         ))
                     })
@@ -1135,11 +1153,11 @@ impl std::fmt::Display for CondTask {
             .collect::<Vec<String>>()
             .join("\n");
         if self.iffalse.is_empty() {
-            write!(f, "if ({}) {{\n\t{}\n}}", self.cond, tasks,)
+            write!(f, "if ({}) {{\n  {}\n}}", self.cond, tasks,)
         } else {
             write!(
                 f,
-                "if ({}) {{\n\t{}\n}} else {{\n\t{}\n}}",
+                "if ({}) {{\n  {}\n}} else {{\n  {}\n}}",
                 self.cond,
                 tasks,
                 self.iffalse
@@ -1174,7 +1192,7 @@ impl std::fmt::Display for WhileTask {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "while ({}) {{\n\t{}\n}}",
+            "while ({}) {{\n  {}\n}}",
             self.cond,
             self.tasks
                 .iter()
@@ -1453,8 +1471,8 @@ pub enum TaskKeyword {
     Nodes,
     NodesMap,
     Root,
-    Outlets,
-    OutletsMap,
+    Roots,
+    RootsMap,
     Leaves,
     LeavesMap,
     If,
@@ -1495,19 +1513,19 @@ impl std::str::FromStr for TaskKeyword {
             "help" => TaskKeyword::Help,
             "input" => TaskKeyword::Input,
             "inputs" => TaskKeyword::Inputs,
-            "inputsmap" => TaskKeyword::InputsMap,
+            "inputsmap" | "im" => TaskKeyword::InputsMap,
             "output" => TaskKeyword::Output,
             "outputs" => TaskKeyword::Outputs,
-            "outputsmap" => TaskKeyword::OutputsMap,
+            "outputsmap" | "om" => TaskKeyword::OutputsMap,
             "nodes" => TaskKeyword::Nodes,
-            "nodesmap" => TaskKeyword::NodesMap,
-            "networks" => TaskKeyword::Networks,
-            "networksmap" => TaskKeyword::NetworksMap,
+            "nodesmap" | "nm" => TaskKeyword::NodesMap,
+            "networks" | "nets" => TaskKeyword::Networks,
+            "networksmap" | "netm" => TaskKeyword::NetworksMap,
             "root" => TaskKeyword::Root,
-            "outlets" => TaskKeyword::Outlets,
-            "outletsmap" => TaskKeyword::OutletsMap,
+            "roots" => TaskKeyword::Roots,
+            "rootsmap" | "rm" => TaskKeyword::RootsMap,
             "leaves" => TaskKeyword::Leaves,
-            "leavesmap" => TaskKeyword::LeavesMap,
+            "leavesmap" | "lm" => TaskKeyword::LeavesMap,
             "if" => TaskKeyword::If,
             "else" => TaskKeyword::Else,
             "while" => TaskKeyword::While,
@@ -1557,8 +1575,8 @@ impl std::fmt::Display for TaskKeyword {
                 TaskKeyword::Networks => "networks",
                 TaskKeyword::NetworksMap => "networksmap",
                 TaskKeyword::Root => "root",
-                TaskKeyword::Outlets => "outlets",
-                TaskKeyword::OutletsMap => "outletsmap",
+                TaskKeyword::Roots => "roots",
+                TaskKeyword::RootsMap => "rootsmap",
                 TaskKeyword::Leaves => "leaves",
                 TaskKeyword::LeavesMap => "leavesmap",
                 TaskKeyword::If => "if",
@@ -1608,8 +1626,8 @@ impl TaskKeyword {
             TaskKeyword::Networks => "all the networks in the context",
             TaskKeyword::NetworksMap => "map of all the networks in the context",
             TaskKeyword::Root => "root node of the network (if single outlet)",
-            TaskKeyword::Outlets => "outlet nodes of the network",
-            TaskKeyword::OutletsMap => "map of outlet nodes of the network",
+            TaskKeyword::Roots => "root nodes of the network",
+            TaskKeyword::RootsMap => "map of root nodes of the network",
             TaskKeyword::Leaves => "leaf nodes of the network",
             TaskKeyword::LeavesMap => "map of leaf nodes of the network",
             TaskKeyword::If => "if part of if-else block",

@@ -1,4 +1,4 @@
-use crate::expressions::EvalErrorType;
+use crate::expressions::{EvalErrorType, ExprResult};
 use crate::structs::NadiAttrType;
 use crate::tasks::{TaskContext, TaskCtxConsts};
 use crate::template::Template;
@@ -314,8 +314,58 @@ impl std::fmt::Display for Attribute {
 }
 
 impl TaskContext {
+    pub fn show_res(&self, res: &ExprResult, depth: usize) -> Option<String> {
+        Some(match res {
+            ExprResult::None => return None,
+            ExprResult::Val(a) => self.show_attr(a, depth + 1),
+            ExprResult::Arr(v) => {
+                let max_attr_len = TaskCtxConsts::max_attrs_length(self);
+                let trunc = v.len() > max_attr_len;
+                format!(
+                    "[{}{}]",
+                    v.iter()
+                        .take(max_attr_len)
+                        .map(|a| self
+                            .show_res(a, depth + 1)
+                            .unwrap_or(crate::expressions::NONE_VALUE.into()))
+                        .collect::<Vec<String>>()
+                        .join(", "),
+                    if trunc { ", ... " } else { "" }
+                )
+            }
+            ExprResult::Map(v) => {
+                let max_attrs_depth = TaskCtxConsts::max_attrs_depth(self);
+                let prettify_map = TaskCtxConsts::prettify_map(self);
+                if depth > max_attrs_depth {
+                    return Some("{...}".to_string());
+                }
+                let max_attr_len = TaskCtxConsts::max_attrs_length(self);
+                let trunc = v.len() > max_attr_len;
+                format!(
+                    "{{{}{}{}{}}}",
+                    if prettify_map { "\n  " } else { "" },
+                    v.iter()
+                        .take(max_attr_len)
+                        .map(|a| {
+                            let val = self
+                                .show_res(&a.1, depth + 1)
+                                .unwrap_or(crate::expressions::NONE_VALUE.into());
+                            if valid_var(&a.0) {
+                                format!("{} = {}", a.0, val)
+                            } else {
+                                format!("\"{}\" = {}", a.0, val)
+                            }
+                        })
+                        .collect::<Vec<String>>()
+                        .join(if prettify_map { ",\n  " } else { ", " }),
+                    if trunc { ", ... " } else { "" },
+                    if prettify_map { "\n" } else { "" },
+                )
+            }
+        })
+    }
+
     pub fn show_attr(&self, attr: &Attribute, depth: usize) -> String {
-        let max_attrs_depth = TaskCtxConsts::max_attrs_depth(self);
         match attr {
             Attribute::Bool(v) => format!("{v}"),
             Attribute::String(v) => format!("{v:?}"),
@@ -326,6 +376,7 @@ impl TaskContext {
             Attribute::Time(v) => format!("{v}"),
             Attribute::DateTime(v) => format!("{v}"),
             Attribute::Array(v) => {
+                let max_attrs_depth = TaskCtxConsts::max_attrs_depth(self);
                 if depth > max_attrs_depth {
                     return "[...]".to_string();
                 }
@@ -342,13 +393,16 @@ impl TaskContext {
                 )
             }
             Attribute::Table(v) => {
+                let max_attrs_depth = TaskCtxConsts::max_attrs_depth(self);
+                let prettify_map = TaskCtxConsts::prettify_all_map(self);
                 if depth > max_attrs_depth {
                     return "{...}".to_string();
                 }
                 let max_attr_len = TaskCtxConsts::max_attrs_length(self);
                 let trunc = v.len() > max_attr_len;
                 format!(
-                    "{{{}{}}}",
+                    "{{{}{}{}{}}}",
+                    if prettify_map { "\n  " } else { "" },
                     v.iter()
                         .take(max_attr_len)
                         .map(|a| {
@@ -359,8 +413,9 @@ impl TaskContext {
                             }
                         })
                         .collect::<Vec<String>>()
-                        .join(", "),
-                    if trunc { ", ... " } else { "" }
+                        .join(if prettify_map { ",\n  " } else { ", " }),
+                    if trunc { ", ... " } else { "" },
+                    if prettify_map { "\n" } else { "" },
                 )
             }
         }

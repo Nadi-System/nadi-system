@@ -4,13 +4,15 @@ use crate::network::Propagation;
 use crate::node::{Node, NodeInner};
 use crate::structs::{NadiAttrType, NadiStructExpr};
 use crate::tasks::{
-    AttrTask, CondTask, EvalTask, FunctionType, TaskContext, TaskKeyword, WhileTask,
+    AttrTask, CondTask, EvalTask, FunctionType, TaskContext, TaskKeyword, TaskMessage, WhileTask,
 };
 use crate::template::Template;
-use crate::timeseries::{CompleteSeries, HasSeries, HasTimeSeries, Series};
+use crate::timeseries::{CompleteSeries, HasSeries, HasTimeSeries, MaskedSeries, Series};
 use crate::udf::UserFunction;
 use abi_stable::std_types::{RHashMap, RNone, RSome, RString, Tuple2};
 use std::collections::HashMap;
+
+pub static NONE_VALUE: &str = "<None>";
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct EvalError {
@@ -130,10 +132,12 @@ pub enum EvalErrorType {
     FunctionError(String, String),
     /// Unknown Function Type
     UnknownFunctionType,
-    /// Function didn't return a value to be used in expression
+    /// Function  didn't return a value to be used in expression
     NoReturnValue(String),
+    /// The context is invalid
+    InvalidContext(&'static str),
     /// Return Statement that returns a value, but if it's outside function this is error
-    InvalidReturn(Option<Attribute>),
+    InvalidReturn(ExprResult),
     /// Node with the name doesn't exit
     NodeNotFound(String),
     /// Node functions run on a non-node context
@@ -144,10 +148,12 @@ pub enum EvalErrorType {
     AttributeNotFound,
     /// Series with name doesn't exist
     SeriesNotFound(String),
-    /// Series value was empty
-    EmptySeriesValue,
+    /// The value was empty
+    EmptyValue(Option<String>),
     /// TimeSeries with name doesn't exist
     TimeSeriesNotFound(String),
+    /// Key not found in the table
+    KeyError(String),
     /// Index out of range for the array
     IndexError,
     // AttributeNotFound(Option<String>, String),
@@ -222,6 +228,7 @@ impl EvalErrorType {
             Self::FunctionError(n, s) => return format!("Error in function {n}: {s}"),
             Self::UnknownFunctionType => "Unknown function type",
             Self::NoReturnValue(n) => return format!("Function {n} did not return a value"),
+            Self::InvalidContext(s) => return format!("Invalid Context: {s}"),
             // if return is inside a function it is caught and the value is returned
             Self::InvalidReturn(_) => "Return statement outside of function",
             Self::NodeNotFound(n) => return format!("Node: {n:?} not found"),
@@ -232,7 +239,9 @@ impl EvalErrorType {
             Self::AttributeNotFound => "Attribute not found",
             Self::SeriesNotFound(msg) => return format!("No Series: {msg}"),
             Self::TimeSeriesNotFound(msg) => return format!("No TimeSeries: {msg}"),
-            Self::EmptySeriesValue => "Series value is empty, and no fill in value",
+            Self::EmptyValue(Some(v)) => return format!("Value for {v:?} is not set"),
+            Self::EmptyValue(None) => "the expression resulted in empty value",
+            Self::KeyError(k) => return format!("Key {k:?} not found"),
             Self::IndexError => "Index out of range for array",
             // Self::AttributeNotFound(Some(n), var) => {
             //     return format!("Node: {n:?} Attribute {var:?} not found")
@@ -275,15 +284,86 @@ impl EvalErrorType {
     }
 }
 
+/// Result of an expression, because it could involve None values
+#[derive(Debug, Clone, PartialEq)]
+pub enum ExprResult {
+    None,
+    Val(Attribute),
+    Arr(Vec<ExprResult>),
+    Map(Vec<(String, ExprResult)>),
+}
+
+impl From<Option<Attribute>> for ExprResult {
+    fn from(val: Option<Attribute>) -> Self {
+        match val {
+            Some(a) => Self::Val(a),
+            None => Self::None,
+        }
+    }
+}
+
+impl std::fmt::Display for ExprResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::None => write!(f, "{}", NONE_VALUE),
+            Self::Val(a) => write!(f, "{a}"),
+            Self::Arr(ar) => write!(
+                f,
+                "[{}]",
+                ar.iter()
+                    .map(|a| a.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            Self::Map(am) => write!(
+                f,
+                "{{{}}}",
+                am.iter()
+                    .map(|(k, v)| format!("{k} = {v}"))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+        }
+    }
+}
+
+impl ExprResult {
+    pub fn to_attribute(self) -> Option<Attribute> {
+        match self {
+            Self::None => None,
+            Self::Val(a) => Some(a),
+            Self::Arr(ar) => ar
+                .into_iter()
+                .map(|a| a.to_attribute())
+                .collect::<Option<Vec<Attribute>>>()
+                .map(|a| Attribute::Array(a.into())),
+            Self::Map(am) => am
+                .into_iter()
+                .map(|(k, a)| a.to_attribute().map(|a| (k.into(), a)))
+                .collect::<Option<HashMap<RString, Attribute>>>()
+                .map(|a| Attribute::Table(a.into())),
+        }
+    }
+
+    pub fn value(self) -> Result<Attribute, EvalError> {
+        self.to_attribute()
+            .ok_or(EvalErrorType::EmptyValue(None).no_pos())
+    }
+}
+
 /// Expression for the task system
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
+    /// None value
+    None,
+    /// Result of expression
+    Result(ExprResult),
     /// Literal attribute values like `2`, `true`, etc
     Literal(Attribute),
     /// Variable (dot separated, optionally with context)
     Variable(InputVar),
     /// Assignment Expression
-    SetVariable(InputVar, Box<Expression>),
+    SetVariable(SetVariable),
     /// String Template to Render in given context
     Render(Template),
     /// Expression with context information
@@ -292,8 +372,8 @@ pub enum Expression {
     Range(Box<Expression>, Option<Box<Expression>>, Box<Expression>),
     /// array expression
     Array(Vec<Expression>),
-    /// attrmap expression
-    Table(HashMap<String, Expression>),
+    /// attrmap expression using vec to preserve order
+    Table(Vec<(String, Expression)>),
     /// Struct Expressions are hashmap expression with name
     StructExpr(NadiStructExpr),
     /// Error in variable resolve process. Will propagation if evaluation is tried.
@@ -309,12 +389,14 @@ pub enum Expression {
     Function(FunctionCall),
     /// Multiple function calls after resolving `nodes` and `inputs` type context
     MultiFunction(Vec<FunctionCall>),
+    /// Expression that are silenced (using ;)
+    Silent(Box<Expression>),
     /// With Unary operators e.g. `-``, `!true`
     UniOp(UniOperator, Box<Expression>),
     /// With Binary operator e.g. `1 + 3`
     BiOp(BiOperator, Box<Expression>, Box<Expression>),
     /// if-else statement
-    IfElse(Box<Expression>, Box<Expression>, Box<Expression>),
+    IfElse(Box<Expression>, Box<Expression>, Option<Box<Expression>>),
     /// try-catch blocks
     TryCatch(Box<Expression>, Box<Expression>),
     /// for loop blocks that filters and runs through an expression
@@ -324,6 +406,8 @@ pub enum Expression {
         Box<Expression>,
         Option<Box<Expression>>,
     ),
+    /// Multiple expressions
+    Multi(Vec<Expression>),
     /// Return the value if inside a function
     Return(Option<Box<Expression>>),
     /// Get the series as Attributes
@@ -335,9 +419,11 @@ pub enum Expression {
 impl std::fmt::Display for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
+            Self::None => write!(f, "{}", NONE_VALUE),
+            Self::Result(r) => std::fmt::Display::fmt(r, f),
             Self::Literal(a) => std::fmt::Display::fmt(a, f),
             Self::Variable(v) => std::fmt::Display::fmt(v, f),
-            Self::SetVariable(v, e) => write!(f, "r{v} = {e}"),
+            Self::SetVariable(v) => std::fmt::Display::fmt(v, f),
             Self::Render(v) => write!(f, "r{v:?}"),
             Self::WithContext(e) => write!(f, "{e}"),
             Self::Range(b, s, e) => {
@@ -387,6 +473,7 @@ impl std::fmt::Display for Expression {
                 }
                 write!(f, ")")
             }
+            Self::Silent(e) => write!(f, "{e};"),
             Self::UniOp(op, expr) => {
                 if expr.nested() {
                     write!(f, "{} ({})", op, expr)
@@ -410,7 +497,11 @@ impl std::fmt::Display for Expression {
                 },
             ),
             Self::IfElse(cond, expr1, expr2) => {
-                write!(f, "if ({}) {{{}}} else {{{}}}", cond, expr1, expr2)
+                if let Some(expr2) = expr2 {
+                    write!(f, "if ({}) {{{}}} else {{{}}}", cond, expr1, expr2)
+                } else {
+                    write!(f, "if ({}) {{{}}}", cond, expr1)
+                }
             }
             Self::TryCatch(expr1, expr2) => write!(f, "try {{{}}} catch {{{}}}", expr1, expr2),
             Self::ForEachIf(var, expr1, expr2, cond) => {
@@ -434,6 +525,17 @@ impl std::fmt::Display for Expression {
                     Ok(())
                 }
             }
+            Self::Multi(exprs) => {
+                write!(
+                    f,
+                    "{}",
+                    exprs
+                        .iter()
+                        .map(|e| e.to_string())
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                )
+            }
             Self::Return(None) => write!(f, "return"),
             Self::Return(Some(expr)) => write!(f, "return {expr}"),
             Self::Series(Some(vt), ts, name) => {
@@ -454,6 +556,8 @@ impl Expression {
     /// check if the expression is nested (needs parenthesis)
     pub fn nested(&self) -> bool {
         match self {
+            Self::None => false,
+            Self::Result(_) => false,
             Self::Literal(_) => false,
             Self::WithContext(_) => false,
             Self::Range(..) => false,
@@ -467,11 +571,47 @@ impl Expression {
             Self::Render(_) => false,
             Self::Function(_) => false,
             Self::MultiFunction(_) => false,
+            Self::Silent(e) => e.nested(),
             Self::UniOp(_, _) => true,
             Self::BiOp(_, _, _) => true,
             Self::IfElse(_, _, _) => true,
             Self::TryCatch(_, _) => true,
             Self::ForEachIf(..) => true,
+            Self::Multi(_) => true,
+            Self::Return(_) => false,
+            Self::Series(..) => false,
+            Self::SeriesValue(..) => false,
+        }
+    }
+
+    /// check if the expression mutates values
+    pub fn mutates(&self) -> bool {
+        match self {
+            Self::None => false,
+            Self::Result(_) => false,
+            Self::Literal(_) => false,
+            Self::WithContext(e) => e.expr.mutates(),
+            Self::Range(..) => false,
+            Self::Array(_) => false,
+            Self::Table(_) => false,
+            Self::ResolveError(_) => false,
+            Self::UserError(_) => false,
+            Self::Variable(_) => false,
+            Self::SetVariable(..) => true,
+            Self::StructExpr(_) => false,
+            Self::Render(_) => false,
+            // TODO: check each one; coz it depends on the function
+            Self::Function(_) => true,
+            Self::MultiFunction(_) => true,
+            Self::Silent(e) => e.mutates(),
+            Self::UniOp(_, _) => false,
+            Self::BiOp(_, _, _) => false,
+            Self::IfElse(_, a, b) => {
+                a.mutates() || b.as_ref().map(|b| b.mutates()).unwrap_or_default()
+            }
+            Self::TryCatch(a, b) => a.mutates() || b.mutates(),
+            Self::ForEachIf(..) => false,
+            Self::Multi(exprs) => exprs.iter().any(|e| e.mutates()),
             Self::Return(_) => false,
             Self::Series(..) => false,
             Self::SeriesValue(..) => false,
@@ -481,11 +621,13 @@ impl Expression {
     /// check if the expression contains variables or not
     pub fn has_variables(&self) -> bool {
         match self {
+            Self::None => false,
+            Self::Result(_) => false,
             Self::Literal(_) => false,
             Self::ResolveError(_) => false,
             Self::UserError(_) => false,
             Self::Variable(_) => true,
-            Self::SetVariable(_, _) => true,
+            Self::SetVariable(..) => true,
             Self::WithContext(e) => e.expr.has_variables(),
             Self::Range(b, s, e) => {
                 b.has_variables()
@@ -509,13 +651,17 @@ impl Expression {
                 fc.args.iter().any(|e| e.has_variables())
                     || fc.kwargs.iter().any(|e| e.1.has_variables())
             }),
+            Self::Silent(e) => e.has_variables(),
             Self::UniOp(_, e) => e.has_variables(),
             Self::BiOp(_, e1, e2) => e1.has_variables() || e2.has_variables(),
             Self::IfElse(c, e1, e2) => {
-                c.has_variables() || e1.has_variables() || e2.has_variables()
+                c.has_variables()
+                    || e1.has_variables()
+                    || e2.as_ref().map(|e| e.has_variables()).unwrap_or_default()
             }
             Self::TryCatch(e1, e2) => e1.has_variables() || e2.has_variables(),
             Self::ForEachIf(..) => true, // TODO: it will have local var, so we need to test if it has var by getting a list of variables.
+            Self::Multi(exprs) => exprs.iter().any(|e| e.has_variables()),
             Self::Return(None) => false,
             Self::Return(Some(expr)) => expr.has_variables(),
             Self::Series(..) => true,
@@ -530,18 +676,21 @@ impl Expression {
     /// attribute variables.
     pub fn simplify(self, ft: &FunctionType, ctx: &TaskContext) -> Result<Expression, EvalError> {
         if !self.has_variables() {
-            return Ok(Self::Literal(self.eval_value(ft, ctx, None, None)?));
+            return self.eval(ft, ctx, None, None).map(Expression::Result);
         }
         match self {
+            Self::None => Ok(Self::None),
+            Self::Result(r) => Ok(Self::Result(r)),
             Self::Literal(v) => {
                 // shouldn't happen
                 eprintln!("WARN: Logic Error, literal shouldn't be considered a variable");
                 Ok(Self::Literal(v))
             }
             Self::Variable(v) => Ok(Self::Variable(v)),
-            Self::SetVariable(v, e) => e
-                .simplify(ft, ctx)
-                .map(|r| Self::SetVariable(v, Box::new(r))),
+            Self::SetVariable(mut e) => {
+                e.expr = Box::new(e.expr.simplify(ft, ctx)?);
+                Ok(Self::SetVariable(e))
+            }
             Self::StructExpr(mut st) => {
                 st.values = st
                     .values
@@ -573,39 +722,14 @@ impl Expression {
                     .into_iter()
                     .map(|v| v.simplify(ft, ctx))
                     .collect::<Result<_, _>>()?;
-                if vals.iter().all(|e| matches!(e, Expression::Literal(_))) {
-                    let vals: Vec<Attribute> = vals
-                        .into_iter()
-                        .map(|e| match e {
-                            Expression::Literal(l) => l,
-                            _ => panic!("just checked"),
-                        })
-                        .collect();
-                    Ok(Expression::Literal(Attribute::Array(vals.into())))
-                } else {
-                    Ok(Expression::Array(vals))
-                }
+                Ok(Expression::Array(vals))
             }
             Self::Table(exprs) => {
-                let vals: HashMap<String, Expression> = exprs
+                let vals: Vec<(String, Expression)> = exprs
                     .into_iter()
                     .map(|(k, v)| v.simplify(ft, ctx).map(|v| (k, v)))
                     .collect::<Result<_, _>>()?;
-                if vals
-                    .iter()
-                    .all(|(_, e)| matches!(e, Expression::Literal(_)))
-                {
-                    let vals: HashMap<RString, Attribute> = vals
-                        .into_iter()
-                        .map(|(k, e)| match e {
-                            Expression::Literal(l) => (k.to_string().into(), l),
-                            _ => panic!("just checked"),
-                        })
-                        .collect();
-                    Ok(Expression::Literal(Attribute::Table(vals.into())))
-                } else {
-                    Ok(Expression::Table(vals))
-                }
+                Ok(Expression::Table(vals))
             }
             // this should also be handled on has_variables()
             Self::ResolveError(e) => Err(e),
@@ -622,6 +746,7 @@ impl Expression {
                 })
                 .collect::<Result<Vec<FunctionCall>, EvalError>>()
                 .map(Self::MultiFunction),
+            Self::Silent(e) => Ok(Self::Silent(Box::new(e.simplify(ft, ctx)?))),
             Self::UniOp(op, expr) => Ok(Self::UniOp(op, Box::new(expr.simplify(ft, ctx)?))),
             Self::BiOp(op, expr1, expr2) => Ok(Self::BiOp(
                 op,
@@ -631,7 +756,11 @@ impl Expression {
             Self::IfElse(cond, expr1, expr2) => Ok(Self::IfElse(
                 Box::new(cond.simplify(ft, ctx)?),
                 Box::new(expr1.simplify(ft, ctx)?),
-                Box::new(expr2.simplify(ft, ctx)?),
+                if let Some(expr2) = expr2 {
+                    Some(Box::new(expr2.simplify(ft, ctx)?))
+                } else {
+                    None
+                },
             )),
             Self::TryCatch(expr1, expr2) => match expr1.simplify(ft, ctx) {
                 Ok(blk) => Ok(Self::TryCatch(
@@ -650,6 +779,12 @@ impl Expression {
                     None
                 },
             )),
+            Self::Multi(exprs) => Ok(Self::Multi(
+                exprs
+                    .into_iter()
+                    .map(|e| e.simplify(ft, ctx))
+                    .collect::<Result<Vec<_>, EvalError>>()?,
+            )),
             Self::Return(None) => Ok(Self::Return(None)),
             Self::Return(Some(expr)) => Ok(Self::Return(Some(Box::new(expr.simplify(ft, ctx)?)))),
             Self::Series(vt, ts, name) => Ok(Self::Series(vt, ts, name)),
@@ -664,7 +799,7 @@ impl Expression {
         ctx: &TaskContext,
         local: Option<&AttrMap>,
         node: Option<&Node>,
-    ) -> Result<Option<Attribute>, EvalError> {
+    ) -> Result<ExprResult, EvalError> {
         self.resolve(ft, ctx, local, node)
             .and_then(|e| e.eval(ft, ctx, local, node))
     }
@@ -688,7 +823,7 @@ impl Expression {
         ctx: &mut TaskContext,
         local: Option<&AttrMap>,
         node: Option<&Node>,
-    ) -> Result<Option<Attribute>, EvalError> {
+    ) -> Result<ExprResult, EvalError> {
         self.resolve(ft, ctx, local, node)
             .and_then(|e| e.eval_mut(ft, ctx, local, node))
     }
@@ -707,11 +842,14 @@ impl Expression {
         local: Option<&AttrMap>,
         node: Option<&Node>,
     ) -> Result<Expression, EvalError> {
+        // eprintln!("Resolving [{ft}]: {self}");
         match self {
+            Self::None => Ok(Self::None),
+            Self::Result(r) => Ok(Self::Result(r.clone())),
             Self::ResolveError(_) => Ok(self.clone()),
             Self::UserError(_) => Ok(self.clone()),
             Self::Literal(_) => Ok(self.clone()),
-            Self::WithContext(e) => e.resolve(e.ty.to_functiontype(), ctx, local, node),
+            Self::WithContext(e) => e.resolve(ctx, local, node),
             Self::Range(b, s, e) => {
                 let b = b.resolve(ft, ctx, local, node)?;
                 let e = e.resolve(ft, ctx, local, node)?;
@@ -730,16 +868,16 @@ impl Expression {
                 Ok(Expression::Array(vals))
             }
             Self::Table(exprs) => {
-                let vals: HashMap<String, Expression> = exprs
+                let vals: Vec<(String, Expression)> = exprs
                     .iter()
                     .map(|(k, v)| v.resolve(ft, ctx, local, node).map(|v| (k.to_string(), v)))
                     .collect::<Result<_, _>>()?;
                 Ok(Expression::Table(vals))
             }
             Self::Variable(vt) => vt.resolve(ft, ctx, local, node),
-            Self::SetVariable(v, e) => e
-                .resolve(ft, ctx, local, node)
-                .map(|r| Self::SetVariable(v.clone(), Box::new(r))),
+            // set variable can be multiple nodes; so we can not resolve here
+            Self::SetVariable(e) => e.with_ctx(ft, ctx, node).map(Self::SetVariable),
+
             Self::StructExpr(st) => {
                 let values = st
                     .values
@@ -796,7 +934,7 @@ impl Expression {
                         .collect::<Result<Vec<FunctionCall>, EvalError>>()?;
                     Ok(Self::MultiFunction(fcs))
                 }
-                Some(VarType::Outlets) => {
+                Some(VarType::Roots) => {
                     let fcs = ctx
                         .network
                         .outlets()
@@ -854,6 +992,7 @@ impl Expression {
                 .map(|fc| fc.resolve(ft, ctx, local, node))
                 .collect::<Result<Vec<FunctionCall>, EvalError>>()
                 .map(Self::MultiFunction),
+            Self::Silent(e) => Ok(Self::Silent(Box::new(e.resolve(ft, ctx, local, node)?))),
             Self::UniOp(op, expr) => Ok(Self::UniOp(
                 op.clone(),
                 Box::new(expr.resolve(ft, ctx, local, node)?),
@@ -866,7 +1005,11 @@ impl Expression {
             Self::IfElse(cond, expr1, expr2) => Ok(Self::IfElse(
                 Box::new(cond.resolve(ft, ctx, local, node)?),
                 Box::new(expr1.resolve(ft, ctx, local, node)?),
-                Box::new(expr2.resolve(ft, ctx, local, node)?),
+                if let Some(expr2) = expr2 {
+                    Some(Box::new(expr2.resolve(ft, ctx, local, node)?))
+                } else {
+                    None
+                },
             )),
             Self::TryCatch(expr1, expr2) => match expr1.resolve(ft, ctx, local, node) {
                 Ok(blk) => Ok(Self::TryCatch(
@@ -881,6 +1024,12 @@ impl Expression {
                 // can't resolve these two yet since they have local variables
                 expr2.clone(),
                 cond.clone(),
+            )),
+            Self::Multi(exprs) => Ok(Self::Multi(
+                exprs
+                    .into_iter()
+                    .map(|e| e.resolve(ft, ctx, local, node))
+                    .collect::<Result<Vec<_>, EvalError>>()?,
             )),
             Self::Return(None) => Ok(Self::Return(None)),
             Self::Return(Some(expr)) => Ok(Self::Return(Some(Box::new(
@@ -907,7 +1056,7 @@ impl Expression {
                 // moment
                 match get_series(ft, ctx, node, vt, name, *ts)?.get_attribute(*ind) {
                     Some(Some(val)) => Ok(Self::Literal(val)),
-                    Some(None) => Err(EvalErrorType::EmptySeriesValue.no_pos()),
+                    Some(None) => Err(EvalErrorType::EmptyValue(None).no_pos()),
                     None => Err(EvalErrorType::IndexError.no_pos()),
                 }
             }
@@ -921,10 +1070,80 @@ impl Expression {
         ctx: &TaskContext,
         local: Option<&AttrMap>,
         node: Option<&Node>,
-    ) -> Result<Option<Attribute>, EvalError> {
+    ) -> Result<ExprResult, EvalError> {
         match self {
-            Self::Function(fc) => fc.eval(ft, ctx, local, node),
-            e => e.eval_value(ft, ctx, local, node).map(Some),
+            Self::None => Ok(ExprResult::None),
+            Self::Result(r) => Ok(r.clone()),
+            Self::Function(fc) => Ok(fc.eval(ft, ctx, local, node)?.into()),
+            Self::SetVariable(sv) => {
+                sv.eval(ft, ctx, local, node)?;
+                Ok(ExprResult::None)
+            }
+            Self::IfElse(cond, expr1, expr2) => {
+                let cond = cond.eval_value(ft, ctx, local, node)?;
+                let cond = bool::from_attr(&cond).ok_or(EvalErrorType::NotABool.no_pos())?;
+                if cond {
+                    expr1.eval(ft, ctx, local, node)
+                } else if let Some(expr2) = expr2 {
+                    expr2.eval(ft, ctx, local, node)
+                } else {
+                    Ok(ExprResult::None)
+                }
+            }
+            Self::TryCatch(expr1, expr2) => match expr1.eval(ft, ctx, local, node) {
+                Ok(val) => Ok(val),
+                _ => expr2.eval(ft, ctx, local, node),
+            },
+            Self::Multi(exprs) => {
+                let mut res = ExprResult::None;
+                for e in exprs {
+                    res = e.eval(ft, ctx, local, node)?;
+                }
+                Ok(res)
+            }
+            Self::Array(exprs) => {
+                let vals: Vec<ExprResult> = exprs
+                    .iter()
+                    .map(|v| v.eval(ft, ctx, local, node))
+                    .collect::<Result<_, _>>()?;
+                Ok(ExprResult::Arr(vals))
+            }
+            Self::Table(exprs) => {
+                let vals: Vec<(String, ExprResult)> = exprs
+                    .iter()
+                    .map(|(k, v)| v.eval(ft, ctx, local, node).map(|v| (k.to_string(), v)))
+                    .collect::<Result<_, _>>()?;
+                Ok(ExprResult::Map(vals))
+            }
+            Self::Silent(e) => {
+                e.eval(ft, ctx, local, node)?;
+                Ok(ExprResult::None)
+            }
+            Self::ForEachIf(var, expr1, expr2, cond) => {
+                let parent = match expr1.eval_value(ft, ctx, local, node)? {
+                    Attribute::Array(ar) => ar,
+                    _ => return Err(EvalErrorType::NotAnArray.no_pos()),
+                };
+                let mut results = Vec::with_capacity(parent.len());
+                for val in parent {
+                    // I think in future we want a data type that
+                    // saved reference of parent locales
+                    let mut loc = local.cloned().unwrap_or_default();
+                    loc.insert(var.to_string().into(), val.clone());
+                    if let Some(c) = cond {
+                        let var = c.resolve_eval_value(ft, ctx, Some(&loc), node)?;
+                        match var {
+                            Attribute::Bool(true) => (),
+                            Attribute::Bool(false) => continue,
+                            _ => return Err(EvalErrorType::NotABool.no_pos()),
+                        }
+                    }
+                    let val = expr2.resolve_eval(ft, ctx, Some(&loc), node)?;
+                    results.push(val);
+                }
+                Ok(ExprResult::None)
+            }
+            e => e.eval_value(ft, ctx, local, node).map(ExprResult::Val),
         }
     }
 
@@ -935,48 +1154,84 @@ impl Expression {
         ctx: &mut TaskContext,
         local: Option<&AttrMap>,
         node: Option<&Node>,
-    ) -> Result<Option<Attribute>, EvalError> {
+    ) -> Result<ExprResult, EvalError> {
         match self {
-            Self::Function(fc) => fc.eval_mut(ft, ctx, local, node),
-            Self::SetVariable(v, e) => {
-                let expr_ctx = v.get_expr_context(ft, &ctx, node)?;
-                match expr_ctx {
-                    ExprContext::Local => todo!(),
-                    ExprContext::Env => {
-                        let val = e.eval_value(ft, ctx, local, node)?;
-                        v.set_attr_nested(ctx.env.attr_map_mut(), val)?;
-                        Ok(None)
-                    }
-                    ExprContext::Network => {
-                        let val = e.eval_value(ft, ctx, local, node)?;
-                        v.set_attr_nested(ctx.network.attr_map_mut(), val)?;
-                        Ok(None)
-                    }
-                    ExprContext::Node(n) => {
-                        let val = e.eval_value(ft, ctx, local, Some(&n))?;
-                        v.set_attr_nested(n.lock().attr_map_mut(), val)?;
-                        Ok(None)
-                    }
-                    ExprContext::Nodes(nds) => {
-                        for n in nds {
-                            let val = e.eval_value(ft, ctx, local, Some(&n))?;
-                            v.set_attr_nested(n.lock().attr_map_mut(), val)?;
-                        }
-                        Ok(None)
-                    }
-                    ExprContext::NodesMap(_) => Err(EvalErrorType::InvalidVariableType.no_pos()),
+            Self::None => Ok(ExprResult::None),
+            Self::Result(r) => Ok(r.clone()),
+            Self::Function(fc) => Ok(fc.eval_mut(ft, ctx, local, node)?),
+            Self::SetVariable(sv) => {
+                sv.eval_mut(ft, ctx, local, node)?;
+                Ok(ExprResult::None)
+            }
+            Self::IfElse(cond, expr1, expr2) => {
+                let cond = cond.eval_value(ft, ctx, local, node)?;
+                let cond = bool::from_attr(&cond).ok_or(EvalErrorType::NotABool.no_pos())?;
+                if cond {
+                    expr1.eval_mut(ft, ctx, local, node)
+                } else if let Some(expr2) = expr2 {
+                    expr2.eval_mut(ft, ctx, local, node)
+                } else {
+                    Ok(ExprResult::None)
                 }
             }
-            e => e.eval_value(ft, ctx, local, node).map(Some),
+            Self::TryCatch(expr1, expr2) => match expr1.eval_mut(ft, ctx, local, node) {
+                Ok(val) => Ok(val),
+                _ => expr2.eval_mut(ft, ctx, local, node),
+            },
+            Self::Multi(exprs) => {
+                let mut res = ExprResult::None;
+                for e in exprs {
+                    res = e.eval_mut(ft, ctx, local, node)?;
+                }
+                Ok(res)
+            }
+            Self::Array(exprs) => {
+                let vals: Vec<ExprResult> = exprs
+                    .iter()
+                    .map(|v| v.eval_mut(ft, ctx, local, node))
+                    .collect::<Result<_, _>>()?;
+                Ok(ExprResult::Arr(vals))
+            }
+            Self::Table(exprs) => {
+                let vals: Vec<(String, ExprResult)> = exprs
+                    .iter()
+                    .map(|(k, v)| v.eval_mut(ft, ctx, local, node).map(|v| (k.to_string(), v)))
+                    .collect::<Result<_, _>>()?;
+                Ok(ExprResult::Map(vals))
+            }
+            Self::Silent(e) => {
+                e.eval_mut(ft, ctx, local, node)?;
+                Ok(ExprResult::None)
+            }
+            Self::ForEachIf(var, expr1, expr2, cond) => {
+                let parent = match expr1.eval_value(ft, ctx, local, node)? {
+                    Attribute::Array(ar) => ar,
+                    _ => return Err(EvalErrorType::NotAnArray.no_pos()),
+                };
+                let mut results = Vec::with_capacity(parent.len());
+                for val in parent {
+                    // I think in future we want a data type that
+                    // saved reference of parent locales
+                    let mut loc = local.cloned().unwrap_or_default();
+                    loc.insert(var.to_string().into(), val.clone());
+                    if let Some(c) = cond {
+                        let var = c.resolve_eval_value(ft, ctx, Some(&loc), node)?;
+                        match var {
+                            Attribute::Bool(true) => (),
+                            Attribute::Bool(false) => continue,
+                            _ => return Err(EvalErrorType::NotABool.no_pos()),
+                        }
+                    }
+                    let val = expr2.resolve_eval_mut(ft, ctx, Some(&loc), node)?;
+                    results.push(val);
+                }
+                Ok(ExprResult::None)
+            }
+            e => e.eval_value(ft, ctx, local, node).map(ExprResult::Val),
         }
     }
 
     /// Evaluate the expression and return a value
-    ///
-    /// All expressions except functions return values by default,
-    /// functions may or may not return value based on the evaluation
-    /// results. Refer to [`functions::FunctionRet`] for possible
-    /// return values from a function.
     pub fn eval_value(
         &self,
         ft: &FunctionType,
@@ -985,6 +1240,11 @@ impl Expression {
         node: Option<&Node>,
     ) -> Result<Attribute, EvalError> {
         match self {
+            Self::None => Err(EvalErrorType::EmptyValue(None).no_pos()),
+            Self::Result(r) => r
+                .clone()
+                .to_attribute()
+                .ok_or(EvalErrorType::EmptyValue(None).no_pos()),
             Self::Literal(v) => Ok(v.clone()),
             Self::Variable(vt) => {
                 // local variables might not be resolved, so let's
@@ -992,14 +1252,24 @@ impl Expression {
                 if vt.ty.is_none() {
                     if let Some(loc) = local {
                         if let Ok(v) = vt.attr_nested(loc) {
-                            return Ok(v.clone());
+                            return v.ok_or(
+                                EvalErrorType::EmptyValue(Some(
+                                    vt.indices
+                                        .iter()
+                                        .last()
+                                        .map(|i| i.name())
+                                        .unwrap_or(vt.name.to_string()),
+                                ))
+                                .no_pos(),
+                            );
                         }
                     }
                 }
                 Err(EvalErrorType::UnresolvedVariable.pos(vt.position()))
             }
-            // add error type called immutable context
-            Self::SetVariable(..) => Err(EvalErrorType::UnresolvedVariable.no_pos()),
+            Self::SetVariable(..) => {
+                Err(EvalErrorType::InvalidContext("can not set variable here").no_pos())
+            }
             // expression with context should be resolved to normal expression
             Self::WithContext(_) => Err(EvalErrorType::UnresolvedVariable.no_pos()),
             Self::Range(b, s, e) => {
@@ -1057,24 +1327,26 @@ impl Expression {
             Self::Render(_) => Err(EvalErrorType::UnresolvedVariable.no_pos()),
             Self::ResolveError(e) => Err(e.clone()),
             Self::UserError(s) => Err(EvalErrorType::UserError(s.clone()).no_pos()),
-            Self::Function(fc) => match fc.eval(ft, ctx, local, node) {
-                Ok(None) => {
+            Self::Function(fc) => match fc.eval(ft, ctx, local, node)? {
+                ExprResult::None => {
                     Err(EvalErrorType::NoReturnValue(fc.name.to_string()).pos(fc.position()))
                 }
-                Ok(Some(v)) => Ok(v),
-                Err(e) => Err(e),
+                v => v.value(),
             },
             Self::MultiFunction(fcs) => fcs
                 .iter()
-                .map(|fc| match fc.eval(ft, ctx, local, node) {
-                    Ok(None) => {
+                .map(|fc| match fc.eval(ft, ctx, local, node)? {
+                    ExprResult::None => {
                         Err(EvalErrorType::NoReturnValue(fc.name.to_string()).pos(fc.position()))
                     }
-                    Ok(Some(v)) => Ok(v),
-                    Err(e) => Err(e),
+                    v => v.value(),
                 })
                 .collect::<Result<Vec<Attribute>, EvalError>>()
                 .map(|ar| Attribute::Array(ar.into())),
+            Self::Silent(e) => {
+                e.eval(ft, ctx, local, node)?;
+                Err(EvalErrorType::EmptyValue(None).no_pos())
+            }
             Self::UniOp(op, expr) => op.eval(expr.eval_value(ft, ctx, local, node)?),
             Self::BiOp(op, expr1, expr2) => {
                 let first = expr1.eval_value(ft, ctx, local, node)?;
@@ -1091,8 +1363,13 @@ impl Expression {
                 let cond = bool::from_attr(&cond).ok_or(EvalErrorType::NotABool.no_pos())?;
                 if cond {
                     expr1.eval_value(ft, ctx, local, node)
-                } else {
+                } else if let Some(expr2) = expr2 {
                     expr2.eval_value(ft, ctx, local, node)
+                } else {
+                    Err(
+                        EvalErrorType::InvalidContext("if block without else returned none")
+                            .no_pos(),
+                    )
                 }
             }
             Self::TryCatch(expr1, expr2) => match expr1.eval_value(ft, ctx, local, node) {
@@ -1123,12 +1400,19 @@ impl Expression {
                 }
                 Ok(Attribute::Array(results.into()))
             }
-
+            Self::Multi(exprs) => {
+                let mut res = ExprResult::None;
+                for e in exprs {
+                    res = e.eval(ft, ctx, local, node)?;
+                }
+                res.to_attribute()
+                    .ok_or(EvalErrorType::EmptyValue(None).no_pos())
+            }
             // return is done through errors due to easier propagation
             // to parent expressions. If the expression is inside a
             // function it will be caught and returned as the result
             // of the function evaluation
-            Self::Return(None) => Err(EvalErrorType::InvalidReturn(None).no_pos()),
+            Self::Return(None) => Err(EvalErrorType::InvalidReturn(ExprResult::None).no_pos()),
             Self::Return(Some(expr)) => {
                 let ret = expr.eval(ft, ctx, local, node)?;
                 Err(EvalErrorType::InvalidReturn(ret).no_pos())
@@ -1298,15 +1582,18 @@ pub enum InputVarIndex {
 impl InputVarIndex {
     pub fn index<'b>(&self, val: &'b Attribute) -> Result<&'b Attribute, EvalErrorType> {
         match (self, val) {
-            (Self::Str(s), Attribute::Table(am)) => am
-                .attr(s)
-                .ok_or(EvalErrorType::AttributeError(format!("Key {s} not found"))),
+            (Self::Str(s), Attribute::Table(am)) => {
+                am.attr(s).ok_or(EvalErrorType::KeyError(s.to_string()))
+            }
             (Self::Int(i), Attribute::Array(ar)) => ar.get(*i).ok_or(EvalErrorType::IndexError),
-            (i, v) => Err(EvalErrorType::AttributeError(format!(
-                "{} can not be indexed by {}",
-                v.type_name(),
-                i.type_name(),
-            ))),
+            (Self::Str(_), a) => Err(EvalErrorType::InvalidAttributeType(
+                NadiAttrType::Table,
+                a.dtype(),
+            )),
+            (Self::Int(_), a) => Err(EvalErrorType::InvalidAttributeType(
+                NadiAttrType::Array,
+                a.dtype(),
+            )),
         }
     }
 
@@ -1319,11 +1606,14 @@ impl InputVarIndex {
                 .attr_mut(s)
                 .ok_or(EvalErrorType::AttributeError(format!("Key {s} not found"))),
             (Self::Int(i), Attribute::Array(ar)) => ar.get_mut(*i).ok_or(EvalErrorType::IndexError),
-            (i, v) => Err(EvalErrorType::AttributeError(format!(
-                "{} can not be indexed by {}",
-                v.type_name(),
-                i.type_name(),
-            ))),
+            (Self::Str(_), a) => Err(EvalErrorType::InvalidAttributeType(
+                NadiAttrType::Table,
+                a.dtype(),
+            )),
+            (Self::Int(_), a) => Err(EvalErrorType::InvalidAttributeType(
+                NadiAttrType::Array,
+                a.dtype(),
+            )),
         }
     }
 
@@ -1331,6 +1621,13 @@ impl InputVarIndex {
         match self {
             Self::Str(_) => "string",
             Self::Int(_) => "integer",
+        }
+    }
+
+    pub fn name(&self) -> String {
+        match self {
+            Self::Str(s) => s.to_string(),
+            Self::Int(i) => i.to_string(),
         }
     }
 }
@@ -1401,17 +1698,30 @@ impl InputVar {
     pub fn attr_nested<'b, T: HasAttributes>(
         &self,
         attrmap: &'b T,
-    ) -> Result<&'b Attribute, EvalErrorType> {
-        let mut at = attrmap
-            .attr(&self.name)
-            .ok_or(EvalErrorType::AttributeError(format!(
-                "Attribute {} not found",
-                self.name
-            )))?;
-        for ind in &self.indices {
-            at = ind.index(at)?;
+    ) -> Result<Option<Attribute>, EvalErrorType> {
+        let mut at = match attrmap.attr(&self.name) {
+            None if self.indices.is_empty() => return Ok(None),
+            None => {
+                return Err(EvalErrorType::AttributeError(format!(
+                    "Attribute {} not found",
+                    self.name
+                )));
+            }
+            Some(a) => a,
+        };
+        match self.indices.as_slice() {
+            [] => Ok(Some(at.clone())),
+            [pre @ .., last] => {
+                for ind in pre {
+                    at = ind.index(at)?;
+                }
+                match last.index(at) {
+                    Ok(a) => Ok(Some(a.clone())),
+                    Err(EvalErrorType::KeyError(_)) | Err(EvalErrorType::IndexError) => Ok(None),
+                    Err(e) => Err(e),
+                }
+            }
         }
-        Ok(at)
     }
 
     /// Set the attribute to the value based on the nested indices
@@ -1485,84 +1795,66 @@ impl InputVar {
             Err(_) if self.check => return Ok(Expression::Literal(false.into())),
             Err(e) => return Err(e.pos(self.position())),
         };
-        let attr = match expr_ctx {
-            ExprContext::Local => self
-                .attr_nested(local.unwrap_or(ctx.env.attr_map()))
-                .cloned(),
-            ExprContext::Env => self.attr_nested(&ctx.env).cloned(),
-            ExprContext::Network => self.attr_nested(&ctx.network).cloned(),
-            ExprContext::Node(n) => self
-                .attr_nested(
-                    &n.try_lock()
-                        .into_option()
-                        .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(self.position()))?,
-                )
-                .cloned(),
-            ExprContext::Nodes(nds) => {
-                if self.check {
-                    let res: Vec<Attribute> = nds
-                        .iter()
-                        .map(|i| {
-                            Ok(Attribute::Bool(
-                                self.attr_nested(
-                                    &i.try_lock().into_option().ok_or(
-                                        EvalErrorType::MutexError(file!(), line!())
-                                            .pos(self.position()),
-                                    )?,
-                                )
-                                .is_ok(),
-                            ))
-                        })
-                        .collect::<Result<_, EvalError>>()?;
-                    return Ok(Expression::Literal(Attribute::Array(res.into())));
-                } else {
-                    let mut vars = Vec::new();
-                    for i in nds {
-                        let a = self
-                            .attr_nested(&i.try_lock().into_option().ok_or(
-                                EvalErrorType::MutexError(file!(), line!()).pos(self.position()),
-                            )?)
-                            .cloned();
-                        vars.push(a.map_err(|e| e.pos(self.position()))?);
-                    }
-                    return Ok(Expression::Literal(Attribute::Array(vars.into())));
+        // if type is none then first priotize local
+        if self.ty.is_none() {
+            if let Some(l) = local {
+                if let Ok(Some(v)) = self.attr_nested(l) {
+                    return Ok(Expression::Result(ExprResult::Val(v)));
                 }
             }
+        }
+        let attr = match expr_ctx {
+            ExprContext::Local => self.attr_nested(local.unwrap_or(ctx.env.attr_map())),
+            ExprContext::Env => self.attr_nested(&ctx.env),
+            ExprContext::Network => self.attr_nested(&ctx.network),
+            ExprContext::Node(n) => self.attr_nested(
+                &n.try_lock()
+                    .into_option()
+                    .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(self.position()))?,
+            ),
+            ExprContext::Nodes(nds) => {
+                let mut vars = Vec::<ExprResult>::with_capacity(nds.len());
+                for i in nds {
+                    let a =
+                        self.attr_nested(&i.try_lock().into_option().ok_or(
+                            EvalErrorType::MutexError(file!(), line!()).pos(self.position()),
+                        )?);
+                    if self.check {
+                        vars.push(ExprResult::Val(matches!(a, Ok(Some(_))).into()));
+                    } else {
+                        vars.push(a.map_err(|e| e.pos(self.position()))?.into());
+                    }
+                }
+                return Ok(Expression::Result(ExprResult::Arr(vars)));
+            }
             ExprContext::NodesMap(nds) => {
-                if self.check {
-                    let res: HashMap<RString, Attribute> = nds
-                        .iter()
-                        .map(|i| {
-                            let n = i.try_lock().into_option().ok_or(
-                                EvalErrorType::MutexError(file!(), line!()).pos(self.position()),
-                            )?;
-                            Ok((
-                                n.name().to_string().into(),
-                                Attribute::Bool(self.attr_nested(&n).is_ok()),
-                            ))
-                        })
-                        .collect::<Result<_, EvalError>>()?;
-                    return Ok(Expression::Literal(Attribute::Table(res.into())));
-                } else {
-                    let mut vars = AttrMap::new();
-                    for i in nds {
+                let res: Vec<(String, ExprResult)> = nds
+                    .iter()
+                    .map(|i| {
                         let n = i.try_lock().into_option().ok_or(
                             EvalErrorType::MutexError(file!(), line!()).pos(self.position()),
                         )?;
-                        let name = n.name().to_string().into();
-                        let a = self.attr_nested(&n).cloned();
-                        vars.insert(name, a.map_err(|e| e.pos(self.position()))?);
-                    }
-                    return Ok(Expression::Literal(Attribute::Table(vars.into())));
-                }
+                        let a = self.attr_nested(&n);
+                        Ok((
+                            n.name().to_string(),
+                            if self.check {
+                                ExprResult::Val(Attribute::Bool(matches!(a, Ok(Some(_)))))
+                            } else {
+                                ExprResult::from(a.map_err(|e| e.pos(self.position()))?)
+                            },
+                        ))
+                    })
+                    .collect::<Result<_, EvalError>>()?;
+                return Ok(Expression::Result(ExprResult::Map(res)));
             }
         };
 
         if self.check {
-            Ok(Expression::Literal(attr.is_ok().into()))
+            Ok(Expression::Literal(matches!(attr, Ok(Some(_))).into()))
         } else {
             match attr {
-                Ok(v) => Ok(Expression::Literal(v)),
+                Ok(Some(v)) => Ok(Expression::Result(ExprResult::Val(v))),
+                Ok(None) => Ok(Expression::Result(ExprResult::None)),
                 Err(e) => Ok(Expression::ResolveError(e.pos(self.position()))),
             }
         }
@@ -1596,10 +1888,10 @@ pub enum VarType {
     Nodes(Box<Propagation>),
     /// Nodes variable (map of variable from each node and its name)
     NodesMap(Box<Propagation>),
-    /// Outlets of the network
-    Outlets,
-    /// Outlets of the network in map format
-    OutletsMap,
+    /// Roots of the network
+    Roots,
+    /// Roots of the network in map format
+    RootsMap,
     /// leaf nodes of the network
     Leaves,
     /// leaf nodes of the network in map format
@@ -1629,8 +1921,8 @@ impl VarType {
             TaskKeyword::Nodes => Some(VarType::Nodes(Box::new(prop.unwrap_or_default()))),
             TaskKeyword::NodesMap => Some(VarType::NodesMap(Box::new(prop.unwrap_or_default()))),
             TaskKeyword::Root => Some(VarType::Root),
-            TaskKeyword::Outlets => Some(VarType::Outlets),
-            TaskKeyword::OutletsMap => Some(VarType::OutletsMap),
+            TaskKeyword::Roots => Some(VarType::Roots),
+            TaskKeyword::RootsMap => Some(VarType::RootsMap),
             TaskKeyword::Leaves => Some(VarType::Leaves),
             TaskKeyword::LeavesMap => Some(VarType::LeavesMap),
             _ => None,
@@ -1652,8 +1944,8 @@ impl VarType {
             | VarType::Nodes(_)
             | VarType::NodesMap(_)
             | VarType::Root
-            | VarType::Outlets
-            | VarType::OutletsMap
+            | VarType::Roots
+            | VarType::RootsMap
             | VarType::Leaves
             | VarType::LeavesMap => &FunctionType::Node,
         }
@@ -1672,11 +1964,11 @@ impl VarType {
             | VarType::Outputs
             | VarType::Nodes(_)
             | VarType::Root
-            | VarType::Outlets
+            | VarType::Roots
             | VarType::Leaves => false,
             VarType::NodesMap(_)
             | VarType::OutputsMap
-            | VarType::OutletsMap
+            | VarType::RootsMap
             | VarType::InputsMap
             | VarType::LeavesMap => true,
         }
@@ -1702,7 +1994,7 @@ impl VarType {
             (VarType::Nodes(prop) | VarType::NodesMap(prop), _) => {
                 nodes_func(ctx.propagation(*prop.clone()).map_err(|e| e.ty)?)
             }
-            (VarType::Outlets | VarType::OutletsMap, _) => {
+            (VarType::Roots | VarType::RootsMap, _) => {
                 nodes_func(ctx.network.outlets().cloned().collect())
             }
             (VarType::Leaves | VarType::LeavesMap, _) => {
@@ -1759,8 +2051,8 @@ impl std::fmt::Display for VarType {
                 return write!(f, "nodesmap{p}");
             }
             VarType::Root => "root",
-            VarType::Outlets => "outlets",
-            VarType::OutletsMap => "outletsmap",
+            VarType::Roots => "outlets",
+            VarType::RootsMap => "outletsmap",
             VarType::Leaves => "leaves",
             VarType::LeavesMap => "leavesmap",
         };
@@ -1956,7 +2248,7 @@ impl FunctionCall {
         ctx: &mut TaskContext,
         local: Option<&AttrMap>,
         node: Option<&Node>,
-    ) -> Result<Option<Attribute>, EvalError> {
+    ) -> Result<ExprResult, EvalError> {
         let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
         let node = self.node.as_ref().or(node);
         let fctx = self.function_ctx(ft, ctx, local, node)?;
@@ -1970,7 +2262,7 @@ impl FunctionCall {
         ctx: &TaskContext,
         local: Option<&AttrMap>,
         node: Option<&Node>,
-    ) -> Result<Option<Attribute>, EvalError> {
+    ) -> Result<ExprResult, EvalError> {
         let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
         let node = self.node.as_ref().or(node);
         let fctx = self.function_ctx(ft, ctx, local, node)?;
@@ -1985,16 +2277,16 @@ impl FunctionCall {
         fctx: FunctionCtx,
         node: Option<&Node>,
         original: Option<FunctionType>,
-    ) -> Result<Option<Attribute>, EvalError> {
+    ) -> Result<ExprResult, EvalError> {
         let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
         let node = self.node.as_ref().or(node);
         match ft {
             FunctionType::Env => {
                 match tctx.udf(&self.name).cloned() {
                     // priority for the locally defined function
-                    Some(func) if ft == &FunctionType::Env => func.eval(tctx, fctx),
+                    Some(func) if ft == &FunctionType::Env => Ok(func.eval(tctx, fctx)?.into()),
                     _ => match tctx.functions.env(&self.name) {
-                        Some(f) => f.call(&fctx).res().map_err(|s| {
+                        Some(f) => f.call(&fctx).expr_res().map_err(|s| {
                             EvalErrorType::FunctionError(self.name.to_string(), s)
                                 .pos(self.position())
                         }),
@@ -2016,7 +2308,7 @@ impl FunctionCall {
                         .try_lock()
                         .into_option()
                         .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(self.position()))?;
-                    f.call(&n, &fctx).res().map_err(|s| {
+                    f.call(&n, &fctx).expr_res().map_err(|s| {
                         EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
                     })
                 }
@@ -2031,7 +2323,7 @@ impl FunctionCall {
                 .pos(self.position())),
             },
             FunctionType::Network => match tctx.functions.network(&self.name) {
-                Some(f) => f.call(&tctx.network, &fctx).res().map_err(|s| {
+                Some(f) => f.call(&tctx.network, &fctx).expr_res().map_err(|s| {
                     EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
                 }),
                 // if the function is not called by explicit type then also test environment function
@@ -2055,15 +2347,15 @@ impl FunctionCall {
         fctx: FunctionCtx,
         node: Option<&Node>,
         original: Option<FunctionType>,
-    ) -> Result<Option<Attribute>, EvalError> {
+    ) -> Result<ExprResult, EvalError> {
         let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
         let node = self.node.as_ref().or(node);
         match ft {
             FunctionType::Env => match tctx.udf(&self.name).cloned() {
                 // priority for the locally defined function
-                Some(func) if ft == &FunctionType::Env => func.eval(tctx, fctx),
+                Some(func) if ft == &FunctionType::Env => Ok(func.eval(tctx, fctx)?.into()),
                 _ => match tctx.functions.env(&self.name) {
-                    Some(f) => f.call(&fctx).res().map_err(|s| {
+                    Some(f) => f.call(&fctx).expr_res().map_err(|s| {
                         EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
                     }),
                     None => Err(EvalErrorType::FunctionNotFound(
@@ -2083,9 +2375,11 @@ impl FunctionCall {
                         .try_lock()
                         .into_option()
                         .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(self.position()))?;
-                    f.call_mut(&mut n, &fctx).res().map_err(|s| {
+                    let res = f.call_mut(&mut n, &fctx).expr_res().map_err(|s| {
                         EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
-                    })
+                    });
+                    _ = tctx.channel.send(TaskMessage::Changed);
+                    res
                 }
                 // if the function is not called by explicit type then also test environment function
                 None if self.ty.is_none() => {
@@ -2098,9 +2392,17 @@ impl FunctionCall {
                 .pos(self.position())),
             },
             FunctionType::Network => match tctx.functions.network(&self.name) {
-                Some(f) => f.call_mut(&mut tctx.network, &fctx).res().map_err(|s| {
-                    EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
-                }),
+                Some(f) => {
+                    let res = f
+                        .call_mut(&mut tctx.network, &fctx)
+                        .expr_res()
+                        .map_err(|s| {
+                            EvalErrorType::FunctionError(self.name.to_string(), s)
+                                .pos(self.position())
+                        });
+                    _ = tctx.channel.send(TaskMessage::Changed);
+                    res
+                }
                 // if the function is not called by explicit type then also test environment function
                 None if self.ty.is_none() => {
                     self.run_w_ctx(&FunctionType::Env, tctx, fctx, node, Some(ft.clone()))
@@ -2174,8 +2476,14 @@ impl SeriesExpression {
         node: Option<&Node>,
     ) -> Result<Series, EvalError> {
         match self {
-            Self::AttrExpr(expr) => match expr.resolve_eval_value(ft, ctx, local, node)? {
-                Attribute::Array(ar) => Ok(CompleteSeries::from(ar).retype().into()),
+            Self::AttrExpr(expr) => match expr.resolve_eval(ft, ctx, local, node)? {
+                ExprResult::Arr(ar) => Ok(MaskedSeries::from(
+                    ar.into_iter()
+                        .map(ExprResult::to_attribute)
+                        .collect::<Vec<Option<Attribute>>>(),
+                )
+                .retype()
+                .into()),
                 _ => Err(EvalErrorType::NotAnArray.no_pos()),
             },
             Self::Series(ty, ts, sr) => get_series(ft, ctx, node, ty, sr, *ts),
@@ -2184,24 +2492,28 @@ impl SeriesExpression {
                 match func {
                     MapFunction::Defn(udf) => {
                         let func_call = |arg| {
+                            let fctx = if let Some(a) = arg {
+                                FunctionCtx::from_arg_kwarg(vec![a], HashMap::new())
+                            } else {
+                                FunctionCtx::from_arg_kwarg(vec![], HashMap::new())
+                            };
                             // eval udf with node/network context
-                            udf.eval_inline(
-                                ft,
-                                ctx,
-                                FunctionCtx::from_arg_kwarg(vec![arg], HashMap::new()),
-                                node,
-                            )
+                            udf.eval_inline(ft, ctx, fctx, node)
                         };
                         sr.map_values(&func_call)
                     }
                     MapFunction::Pointer(name) => {
                         let func_call = |arg| {
-                            let fctx = FunctionCtx::from_arg_kwarg(vec![arg], HashMap::new());
+                            let fctx = if let Some(a) = arg {
+                                FunctionCtx::from_arg_kwarg(vec![a], HashMap::new())
+                            } else {
+                                FunctionCtx::from_arg_kwarg(vec![], HashMap::new())
+                            };
                             match ctx.udf(name).cloned() {
                                 // priority for the locally defined function; evaluated in local context
                                 Some(func) => func.eval(ctx, fctx),
                                 _ => match ctx.functions.env(name) {
-                                    Some(f) => f.call(&fctx).res().map_err(|e| {
+                                    Some(f) => f.call(&fctx).expr_res().map_err(|e| {
                                         EvalErrorType::FunctionError(
                                             name.to_string(),
                                             e.to_string(),
@@ -2268,7 +2580,7 @@ fn get_series(
                         if ms.has_gaps() {}
                         let cs = ms
                             .complete()
-                            .ok_or(EvalErrorType::EmptySeriesValue.no_pos())?;
+                            .ok_or(EvalErrorType::EmptyValue(None).no_pos())?;
                         compl_series.push(cs.to_attributes().into_iter());
                     }
                     Series::Complete(cs) => compl_series.push(cs.to_attributes().into_iter()),
@@ -2389,11 +2701,12 @@ impl ExprWithContext {
 
     pub fn resolve(
         &self,
-        _ft: &FunctionType,
         ctx: &TaskContext,
         local: Option<&RHashMap<RString, Attribute>>,
         node: Option<&Node>,
     ) -> Result<Expression, EvalError> {
+        // FIX: when there is setvariable inside the context expression, then we can not resolve in advance, or resolve into array and tables
+        // e.g.: nodes { node.x = 8 }
         let expr_ctx = self
             .ty
             .get_expr_context(ctx, node)
@@ -2404,8 +2717,9 @@ impl ExprWithContext {
             ExprContext::Nodes(nds) => {
                 let exprs = nds
                     .iter()
-                    .map(|n| self.expr.resolve(&FunctionType::Node, ctx, local, Some(&n)))
+                    .map(|n| self.expr.resolve(&FunctionType::Node, ctx, local, Some(n)))
                     .collect::<Result<Vec<Expression>, EvalError>>()?;
+                // FIX: how to know whether the user is looking for array or statement?
                 Ok(Expression::Array(exprs))
             }
             ExprContext::NodesMap(nds) => {
@@ -2423,7 +2737,7 @@ impl ExprWithContext {
                             .resolve(&FunctionType::Node, ctx, local, Some(&n))?;
                         Ok((name, expr))
                     })
-                    .collect::<Result<HashMap<String, Expression>, EvalError>>()?;
+                    .collect::<Result<Vec<(String, Expression)>, EvalError>>()?;
                 Ok(Expression::Table(exprs))
             }
             ExprContext::Env => self.expr.resolve(&FunctionType::Env, ctx, local, node),
@@ -2450,4 +2764,169 @@ pub enum ExprContext {
     Nodes(Vec<Node>),
     /// Multiple nodes context with their names
     NodesMap(Vec<Node>),
+}
+
+impl std::fmt::Debug for ExprContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Local => write!(f, "local"),
+            Self::Env => write!(f, "env"),
+            Self::Network => write!(f, "network"),
+            Self::Node(_) => write!(f, "node"),
+            // Self::Node(n) => write!(f, "node {}", n.lock().name()),
+            Self::Nodes(_) => write!(f, "nodes"),
+            Self::NodesMap(_) => write!(f, "nodesmap"),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct SetVariable {
+    var: InputVar,
+    expr: Box<Expression>,
+    silent: bool,
+    ctx: Option<ExprContext>,
+}
+
+impl std::fmt::Debug for SetVariable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SetVariable")
+            .field("var", &self.var)
+            .field("expr", &self.expr)
+            .field("silent", &self.silent)
+            .field("has_context", &self.ctx.is_some())
+            .finish()
+    }
+}
+
+impl PartialEq for SetVariable {
+    fn eq(&self, other: &Self) -> bool {
+        self.var == other.var && self.expr == other.expr && self.silent == other.silent
+    }
+}
+
+impl std::fmt::Display for SetVariable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} = {}", self.var, self.expr)
+    }
+}
+
+impl SetVariable {
+    pub fn new(var: InputVar, expr: Expression, silent: bool) -> Self {
+        Self {
+            var,
+            expr: Box::new(expr),
+            silent,
+            ctx: None,
+        }
+    }
+
+    pub fn with_ctx(
+        &self,
+        ft: &FunctionType,
+        ctx: &TaskContext,
+        node: Option<&Node>,
+    ) -> Result<Self, EvalError> {
+        // eprintln!("Resolving: {self:?}");
+        let mut e = self.clone();
+        e.ctx = Some(e.ctx.unwrap_or(e.var.get_expr_context(ft, ctx, node)?));
+        // eprintln!("Found: {:?}", e.ctx);
+        Ok(e)
+    }
+
+    // NOTE: might have to only resolve while evaluating, and also after evaluating the previous expressions, skipping resolve and calling it after wards seems like a good idea to not fail
+    fn eval(
+        &self,
+        ft: &FunctionType,
+        ctx: &TaskContext,
+        local: Option<&AttrMap>,
+        node: Option<&Node>,
+    ) -> Result<(), EvalError> {
+        let expr_ctx = match &self.ctx {
+            Some(s) => s.clone(),
+            None => self.var.get_expr_context(ft, &ctx, node)?,
+        };
+        match expr_ctx {
+            ExprContext::Local => Err(EvalErrorType::InvalidVariableType.no_pos()),
+            ExprContext::Env | ExprContext::Network => {
+                // env and network can only be modified if the context is in mutable state
+                Err(EvalErrorType::InvalidVariableType.no_pos())
+            }
+            ExprContext::Node(n) => {
+                let val =
+                    self.expr
+                        .resolve_eval_value(&FunctionType::Node, ctx, local, Some(&n))?;
+                self.var.set_attr_nested(n.lock().attr_map_mut(), val)?;
+                _ = ctx.channel.send(TaskMessage::Changed);
+                Ok(())
+            }
+            ExprContext::Nodes(nds) => {
+                for n in nds {
+                    let val =
+                        self.expr
+                            .resolve_eval_value(&FunctionType::Node, ctx, local, Some(&n))?;
+                    self.var.set_attr_nested(n.lock().attr_map_mut(), val)?;
+                }
+                _ = ctx.channel.send(TaskMessage::Changed);
+                Ok(())
+            }
+            ExprContext::NodesMap(_) => Err(EvalErrorType::InvalidVariableType.no_pos()),
+        }
+    }
+
+    fn eval_mut(
+        &self,
+        ft: &FunctionType,
+        ctx: &mut TaskContext,
+        local: Option<&AttrMap>,
+        node: Option<&Node>,
+    ) -> Result<(), EvalError> {
+        {
+            let expr_ctx = match &self.ctx {
+                Some(s) => s.clone(),
+                None => self.var.get_expr_context(ft, &ctx, node)?,
+            };
+            match expr_ctx {
+                ExprContext::Local => Err(EvalErrorType::InvalidVariableType.no_pos()),
+                ExprContext::Env => {
+                    let val = self
+                        .expr
+                        .resolve_eval_value(&FunctionType::Env, ctx, local, node)?;
+                    self.var.set_attr_nested(ctx.env.attr_map_mut(), val)?;
+                    _ = ctx.channel.send(TaskMessage::Changed);
+                    Ok(())
+                }
+                ExprContext::Network => {
+                    let val =
+                        self.expr
+                            .resolve_eval_value(&FunctionType::Network, ctx, local, node)?;
+                    self.var.set_attr_nested(ctx.network.attr_map_mut(), val)?;
+                    _ = ctx.channel.send(TaskMessage::Changed);
+                    Ok(())
+                }
+                ExprContext::Node(n) => {
+                    let val =
+                        self.expr
+                            .resolve_eval_value(&FunctionType::Node, ctx, local, Some(&n))?;
+                    self.var.set_attr_nested(n.lock().attr_map_mut(), val)?;
+                    _ = ctx.channel.send(TaskMessage::Changed);
+                    Ok(())
+                }
+                ExprContext::Nodes(nds) => {
+                    for n in nds {
+                        let val = self.expr.resolve_eval_value(
+                            &FunctionType::Node,
+                            ctx,
+                            local,
+                            Some(&n),
+                        )?;
+                        self.var.set_attr_nested(n.lock().attr_map_mut(), val)?;
+                    }
+                    _ = ctx.channel.send(TaskMessage::Changed);
+                    Ok(())
+                }
+                ExprContext::NodesMap(_) => Err(EvalErrorType::InvalidVariableType.no_pos()),
+            }
+        }
+    }
 }

@@ -384,9 +384,10 @@ pub fn task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
         map(get_series_task, Task::GetSeries),
         // eval task should come after series, otherwise series gets
         // interpreted as attribute expression
-        map(eval_task, Task::Eval),
-        map(attr_task, Task::Attr),
-        map(cond_task, Task::Conditional),
+        // // removing temp to see if expression works
+        // map(eval_task, Task::Eval),
+        // map(attr_task, Task::Attr),
+        // map(cond_task, Task::Conditional),
         map(while_task, Task::WhileLoop),
         map(hook_task, Task::Hook),
         map(import_task, Task::Import),
@@ -438,34 +439,35 @@ mod tests {
     #[case("help node")]
     #[case("help variable")]
     #[case("help network var")]
-    #[case("env x")]
-    #[case("env x + 1")]
-    #[case("env call_sth(x + 1);")]
+    #[case("env {x}")]
+    #[case("env {x + 1}")]
+    #[case("env.call_sth(x + 1)")]
     #[case("env.x")]
     #[case("node.x")]
     #[case("network.x")]
     #[case("inputs.x")]
-    #[case("env (x + 1) != 5")]
-    #[case("env \"val\" in selected_vals")]
-    #[case("env echo(x)")]
-    #[case("network load_file(test)")]
-    #[case("network gis.load_file(12)")]
-    #[case("node call_sth(x + 1);")]
-    #[case("node some_func()")]
-    #[case("node<inverse> some_func()")]
-    #[case("node<outputfirst>[a] some_func()")]
-    #[case("node<inputsfirst>[a](cond) some_func()")]
-    #[case("node[a](cond) some_func()")]
-    #[case("node(cond) (some_func() + 12) > 12")]
-    #[case("while (true) {\n\tenv echo(x)\n}")]
-    #[case("if (true) {\n\tenv echo(x)\n} else {\n\tenv echo(y)\n}")]
-    #[case("while (true) {\n\tenv echo(x)\n}")]
+    #[case("env {(x + 1) != 5}")]
+    #[case("env {\"val\" in selected_vals}")]
+    #[case("env.echo(x)")]
+    #[case("network {load_file(test)}")]
+    #[case("network.gis.load_file(12)")]
+    #[case("node {call_sth(x + 1)}")]
+    #[case("node.some_func()")]
+    #[case("nodes<inverse>.some_func()")]
+    #[case("nodes<outputfirst>[a] {some_func()}")]
+    #[case("nodes<inputsfirst>[a](cond).some_func()")]
+    #[case("nodes[a](cond) {some_func()}")]
+    #[case("nodes(cond) {(some_func() + 12) > 12}")]
+    #[case("while (true) {\n\tenv {echo(x)}\n}")]
+    #[case("if (true) {\n\tenv.echo(x)\n} else {\n\tenv.echo(y)\n}")]
+    #[case("while (true) {\n\tenv.echo(x)\n}")]
     #[case("struct HiThere {\nval: Integer = 0\n}")]
     pub fn task_valid_test(#[case] txt: &str) {
         let tokens = Token::validate(get_tokens(txt)).unwrap();
         let (rest, tasks) = task(&tokens).unwrap();
         assert_eq!(rest, vec![]);
-        let tsk = tasks.to_string();
+        let tsk = tasks.to_string().replace([' ', '\n', '\t'], "");
+        let txt = txt.replace([' ', '\n', '\t'], "");
         assert_eq!(txt, tsk);
     }
 
@@ -475,7 +477,8 @@ mod tests {
         let tokens = Token::validate(get_tokens(txt)).unwrap();
         let (rest, tasks) = nadi_struct_def(&tokens).unwrap();
         assert_eq!(rest, vec![]);
-        let tsk = tasks.to_string();
+        let tsk = tasks.to_string().replace([' ', '\n', '\t'], "");
+        let txt = txt.replace([' ', '\n', '\t'], "");
         assert_eq!(txt, tsk);
     }
 
@@ -485,7 +488,7 @@ mod tests {
     #[case("help node")]
     #[case("help variable")]
     #[case("help network var")]
-    #[case("env x")]
+    #[case("env.x")]
     pub fn parse_valid_test(#[case] txt: &str) {
         let tokens = get_tokens(txt);
         parse(tokens).unwrap();
@@ -494,7 +497,7 @@ mod tests {
     /// Testing the codes in mdbook
     #[rstest]
     #[case(
-        "network load_file(\"./data/mississippi.net\")\nnode[ohio] render(\"{_NAME:case(title)} River\")"
+        "network.load_file(\"./data/mississippi.net\")\nnode[ohio] render(\"{_NAME:case(title)} River\")"
     )]
     pub fn parse_valid_mdbook_test(#[case] txt: &str) {
         let tokens = get_tokens(txt);

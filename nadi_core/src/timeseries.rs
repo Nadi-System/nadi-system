@@ -1,6 +1,6 @@
 use crate::attrs::{type_name, Attribute, Date, DateTime, FromAttribute, Time};
 use crate::datafill::DataImputeError;
-use crate::expressions::{EvalError, EvalErrorType};
+use crate::expressions::{EvalError, EvalErrorType, ExprResult};
 use crate::tasks::{TaskContext, TaskCtxConsts};
 
 use abi_stable::{
@@ -402,7 +402,7 @@ impl Series {
     /// Map the function to the values
     pub fn map_values(
         self,
-        func: &dyn Fn(Attribute) -> Result<Option<Attribute>, EvalError>,
+        func: &dyn Fn(Option<Attribute>) -> Result<ExprResult, EvalError>,
     ) -> Result<Self, EvalError> {
         match self {
             Self::Masked(v, fv) => Ok(Self::Masked(v.map_values(func)?, fv)),
@@ -490,15 +490,12 @@ impl MaskedSeries {
 
     pub fn map_values(
         self,
-        func: &dyn Fn(Attribute) -> Result<Option<Attribute>, EvalError>,
+        func: &dyn Fn(Option<Attribute>) -> Result<ExprResult, EvalError>,
     ) -> Result<Self, EvalError> {
         Ok(Self::attributes(
             self.to_attributes()
                 .into_iter()
-                .map(|v| match v {
-                    RSome(a) => Ok(func(a)?.into()),
-                    RNone => Ok(RNone),
-                })
+                .map(|v| Ok(func(v.into_option())?.to_attribute().into()))
                 .collect::<Result<Vec<ROption<Attribute>>, EvalError>>()?,
         )
         .retype())
@@ -972,12 +969,12 @@ impl CompleteSeries {
     /// Returns Series as the function could return null, converting it to MaskedSeries
     pub fn map_values(
         self,
-        func: &dyn Fn(Attribute) -> Result<Option<Attribute>, EvalError>,
+        func: &dyn Fn(Option<Attribute>) -> Result<ExprResult, EvalError>,
     ) -> Result<Series, EvalError> {
         Ok(Series::from(MaskedSeries::attributes(
             self.to_attributes()
                 .into_iter()
-                .map(|a| func(a).map(ROption::from))
+                .map(|a| Ok(ROption::from(func(Some(a))?.to_attribute())))
                 .collect::<Result<Vec<ROption<Attribute>>, EvalError>>()?,
         ))
         .retype())
@@ -1196,6 +1193,17 @@ macro_rules! impl_from_series {
         impl From<RVec<$t>> for CompleteSeries {
             fn from(item: RVec<$t>) -> Self {
                 CompleteSeries::$x(item)
+            }
+        }
+
+        impl From<Vec<Option<$t>>> for MaskedSeries {
+            fn from(item: Vec<Option<$t>>) -> Self {
+                MaskedSeries::$x(RVec::from_iter(item.into_iter().map(ROption::from)))
+            }
+        }
+        impl From<RVec<ROption<$t>>> for MaskedSeries {
+            fn from(item: RVec<ROption<$t>>) -> Self {
+                MaskedSeries::$x(item)
             }
         }
     };

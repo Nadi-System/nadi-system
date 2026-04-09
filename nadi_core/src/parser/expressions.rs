@@ -1,6 +1,6 @@
 use crate::expressions::{
-    BiOperator, ExprWithContext, Expression, FunctionCall, InputVar, TaskPosition, UniOperator,
-    VarType,
+    BiOperator, ExprWithContext, Expression, FunctionCall, InputVar, SetVariable, TaskPosition,
+    UniOperator, VarType,
 };
 use crate::network::PropNodes;
 use crate::parser::{
@@ -25,6 +25,7 @@ pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> 
         expr_with_context,
         expr_set_variable,
         expr_maybe_range,
+        value(Expression::None, none),
         map(function_call, Expression::Function),
         map(template_val, Expression::Render),
         array_expr,
@@ -38,7 +39,7 @@ pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> 
             Expression::UserError,
         ),
         map(
-            preceded(kw_return, opt(after_space(complete_expression))),
+            preceded(kw_return, opt(after_space(maybe_silent_expression))),
             |e| Expression::Return(e.map(Box::new)),
         ),
         series,
@@ -60,9 +61,10 @@ pub fn expr_set_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expre
             task_dot_variable,
             maybe_space(assignment),
             maybe_space(complete_expression),
+            opt(semicolon),
         )),
-        |(vt, (var, indices), _, expr)| {
-            Expression::SetVariable(
+        |(vt, (var, indices), _, expr, silent)| {
+            Expression::SetVariable(SetVariable::new(
                 InputVar::new(
                     vt.clone(),
                     var.clone(),
@@ -70,8 +72,9 @@ pub fn expr_set_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expre
                     false,
                     inp.position(),
                 ),
-                Box::new(expr),
-            )
+                expr,
+                silent.is_some(),
+            ))
         },
     )(inp)
 }
@@ -119,17 +122,17 @@ pub fn array_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> 
 pub fn table_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
     let (rest, exprs) = delimited(
         brace_start,
-        maybe_newline(kw_args),
+        opt(maybe_newline(kw_args)),
         maybe_newline(brace_end),
     )(inp)?;
 
-    Ok((rest, Expression::Table(exprs.into_iter().collect())))
+    Ok((rest, Expression::Table(exprs.unwrap_or_default())))
 }
 
 pub fn expression_group<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
     delimited(
         paren_start,
-        maybe_newline(complete_expression),
+        maybe_newline(multi_expression),
         cut(err_ctx(
             &ParseErrorType::Unclosed(")"),
             maybe_newline(paren_end),
@@ -140,7 +143,7 @@ pub fn expression_group<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expres
 pub fn expression_block<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
     delimited(
         brace_start,
-        maybe_newline(complete_expression),
+        maybe_newline(multi_expression),
         cut(err_ctx(
             &ParseErrorType::Unclosed("}"),
             maybe_newline(brace_end),
@@ -281,16 +284,18 @@ pub fn nadi_struct_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, NadiSt
 }
 
 pub fn if_else_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
-    let (rest, (_, cond, iftrue, _, iffalse)) = tuple((
+    let (rest, (_, cond, iftrue, iffalse)) = tuple((
         kw_if,
         maybe_newline(expression_group),
         maybe_newline(expression_block),
-        maybe_newline(kw_else),
-        alt((after_space(if_else_expr), maybe_newline(expression_block))),
+        opt(preceded(
+            maybe_newline(kw_else),
+            alt((after_space(if_else_expr), maybe_newline(expression_block))),
+        )),
     ))(inp)?;
     Ok((
         rest,
-        Expression::IfElse(Box::new(cond), Box::new(iftrue), Box::new(iffalse)),
+        Expression::IfElse(Box::new(cond), Box::new(iftrue), iffalse.map(Box::new)),
     ))
 }
 
@@ -329,6 +334,25 @@ pub fn for_each_if_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expres
 
 pub fn complete_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
     alt((bi_operator_expr, expression_group, expression))(inp)
+}
+
+pub fn maybe_silent_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+    let (rest, (expr, silent)) = pair(complete_expression, opt(maybe_space(semicolon)))(inp)?;
+    Ok((
+        rest,
+        if silent.is_some() {
+            Expression::Silent(Box::new(expr))
+        } else {
+            expr
+        },
+    ))
+}
+
+pub fn multi_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+    map(
+        newline_separated(maybe_silent_expression),
+        Expression::Multi,
+    )(inp)
 }
 
 pub fn variable_type<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, VarType> {
@@ -390,7 +414,7 @@ pub fn input_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expressi
                         false,
                         inp.position(),
                     ));
-                    Expression::IfElse(Box::new(cond), Box::new(var), Box::new(val))
+                    Expression::IfElse(Box::new(cond), Box::new(var), Some(Box::new(val)))
                 } else {
                     Expression::Variable(InputVar::new(vt, var, indices, true, inp.position()))
                 }
@@ -695,6 +719,7 @@ mod tests {
             .unwrap()
             .eval(&FunctionType::Env, &context, None, None)
             .unwrap()
+            .to_attribute()
             .unwrap();
         assert_eq!(res, val);
     }
@@ -771,6 +796,7 @@ mod tests {
             .unwrap()
             .eval(&FunctionType::Env, &context, None, None)
             .unwrap()
+            .to_attribute()
             .unwrap();
         assert_eq!(res, val);
     }
