@@ -163,6 +163,10 @@ one_token!(kw_end, TaskToken::Keyword(TaskKeyword::End));
 one_token!(kw_clear, TaskToken::Keyword(TaskKeyword::Clear));
 one_token!(kw_exit, TaskToken::Keyword(TaskKeyword::Exit));
 one_token!(kw_return, TaskToken::Keyword(TaskKeyword::Return));
+one_token!(kw_break, TaskToken::Keyword(TaskKeyword::Break));
+one_token!(kw_continue, TaskToken::Keyword(TaskKeyword::Continue));
+one_token!(kw_loop, TaskToken::Keyword(TaskKeyword::Loop));
+one_token!(kw_progress, TaskToken::Keyword(TaskKeyword::Progress));
 
 /// Matches the next one that might have spaces before it
 pub fn err_ctx<'a, 'b: 'a, O, F>(

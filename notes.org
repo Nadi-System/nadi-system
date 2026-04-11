@@ -25,11 +25,19 @@ Basically we will have Top level expression groups based on matching parenthesis
 
 Equivalent of the variables but returns the map instead
 
-inputsmap
-outputsmap
-nodesmap
-leavesmap
-outletsmap
+inputsmap (im)
+outputsmap (om)
+nodesmap (nm)
+leavesmap (lm)
+rootsmap (rm)
+
+loop related keywords:
+
+break
+continue
+progress (prog)
+
+The progress keyword is used now to send the progress information, this removes the need to programmatically track the progress. The user can track progress now. Maybe we can add multiple progress steps later, but the user has the flexibility to calculate and use whatever system they use.
 
 
 * Context Expressions

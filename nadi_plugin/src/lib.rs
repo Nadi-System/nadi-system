@@ -263,7 +263,7 @@ fn nadi_func_inner(
 }
 
 /// Invalid argument names = task system keywords
-const INVALID_ARG_NAME: [&str; 51] = [
+const INVALID_ARG_NAME: [&str; 55] = [
     "clear",  // TaskKeyword::Clear
     "import", // TaskKeyword::Import
     "exec",   // TaskKeyword::Exec
@@ -308,13 +308,17 @@ const INVALID_ARG_NAME: [&str; 51] = [
     "loc",    // TaskKeyword::Local
     "struct", // TaskKeyword::Struct
     "function",
-    "func",   // TaskKeyword::Function
-    "return", // TaskKeyword::Return
-    "error",  // TaskKeyword::Error
-    "for",    // TaskKeyword::For
-    "map",    // TaskKeyword::Map
-    "attrs",  // TaskKeyword::Attrs
-    "loop",   // TaskKeyword::Loop
+    "func",     // TaskKeyword::Function
+    "return",   // TaskKeyword::Return
+    "break",    // TaskKeyword::Break
+    "continue", // TaskKeyword::Continue
+    "error",    // TaskKeyword::Error
+    "for",      // TaskKeyword::For
+    "map",      // TaskKeyword::Map
+    "attrs",    // TaskKeyword::Attrs
+    "loop",     // TaskKeyword::Loop
+    "progress",
+    "prog", // TaskKeyword::Progress
 ];
 
 fn check_args_kwargs_order(

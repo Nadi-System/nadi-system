@@ -1,6 +1,6 @@
 use crate::expressions::{
-    BiOperator, ExprWithContext, Expression, FunctionCall, InputVar, SetVariable, TaskPosition,
-    UniOperator, VarType,
+    BiOperator, ExprProgress, ExprWithContext, Expression, FunctionCall, InputVar, SetVariable,
+    TaskPosition, UniOperator, VarType,
 };
 use crate::network::PropNodes;
 use crate::parser::{
@@ -15,7 +15,7 @@ use crate::udf::{LocalExpr, UserFunction};
 use nom::{
     branch::alt,
     combinator::{cut, map, opt, value},
-    multi::{many1, separated_list0, separated_list1},
+    multi::{many0, many1, separated_list0, separated_list1},
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
 };
 
@@ -26,6 +26,7 @@ pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> 
         expr_set_variable,
         expr_maybe_range,
         value(Expression::None, none),
+        value(Expression::Continue, kw_continue),
         map(function_call, Expression::Function),
         map(template_val, Expression::Render),
         array_expr,
@@ -34,6 +35,9 @@ pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> 
         if_else_expr,
         try_catch_expr,
         for_each_if_expr,
+        while_expr,
+        loop_expr,
+        progress_expr,
         map(
             preceded(kw_error, after_space(string_val)),
             Expression::UserError,
@@ -41,6 +45,10 @@ pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> 
         map(
             preceded(kw_return, opt(after_space(maybe_silent_expression))),
             |e| Expression::Return(e.map(Box::new)),
+        ),
+        map(
+            preceded(kw_break, opt(after_space(maybe_silent_expression))),
+            |e| Expression::Break(e.map(Box::new)),
         ),
         series,
     ))(inp)
@@ -151,6 +159,21 @@ pub fn expression_block<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expres
     )(inp)
 }
 
+pub fn progress_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+    map(
+        tuple((
+            kw_progress,
+            maybe_space(alt((expression, expression_group))),
+            // somehow it wants a space here
+            maybe_space(colon),
+            maybe_space(alt((expression, expression_group))),
+            maybe_space(kw_in),
+            maybe_space(alt((expression, expression_group))),
+        )),
+        |(_, label, _, prog, _, total)| Expression::Progress(ExprProgress::new(label, prog, total)),
+    )(inp)
+}
+
 pub fn uni_operator_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
     let (rest, (op, expr)) = pair(
         alt((
@@ -224,10 +247,10 @@ impl BiOpExpr {
     }
 }
 
-fn bi_operator_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+pub fn complete_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
     let (rest, (first, args)) = pair(
         alt((expression, expression_group)),
-        many1(pair(
+        many0(pair(
             maybe_newline(bi_operator),
             maybe_newline(cut(err_ctx(
                 &ParseErrorType::IncompleteExpression,
@@ -235,10 +258,13 @@ fn bi_operator_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression
             ))),
         )),
     )(inp)?;
-    let expr = BiOpExpr { first, args };
-    let expr = expr.parse().ok_or(nom::Err::Error(
-        MatchErr::new(inp).ty(&ParseErrorType::IncompleteExpression),
-    ))?;
+    let expr = if args.is_empty() {
+        first
+    } else {
+        BiOpExpr { first, args }.parse().ok_or(nom::Err::Error(
+            MatchErr::new(inp).ty(&ParseErrorType::IncompleteExpression),
+        ))?
+    };
     Ok((rest, expr))
 }
 
@@ -321,7 +347,7 @@ pub fn for_each_if_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expres
         ),
         after_space(expression),
         maybe_newline(expression_block),
-        maybe_newline(opt(preceded(
+        opt(maybe_newline(preceded(
             kw_if,
             after_space(alt((expression_block, expression_group))),
         ))),
@@ -332,8 +358,17 @@ pub fn for_each_if_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expres
     ))
 }
 
-pub fn complete_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
-    alt((bi_operator_expr, expression_group, expression))(inp)
+pub fn while_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+    let (rest, (cond, expr)) = tuple((
+        preceded(kw_while, after_space(expression_group)),
+        maybe_newline(expression_block),
+    ))(inp)?;
+    Ok((rest, Expression::While(Box::new(cond), Box::new(expr))))
+}
+
+pub fn loop_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+    let (rest, expr) = preceded(kw_loop, after_space(expression_block))(inp)?;
+    Ok((rest, Expression::Loop(Box::new(expr))))
 }
 
 pub fn maybe_silent_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {

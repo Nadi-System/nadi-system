@@ -39,6 +39,8 @@ impl From<EvalError> for PyErr {
             EvalErrorType::NoReturnValue(_) => PyRuntimeError::new_err(err),
             EvalErrorType::InvalidContext(_) => PyRuntimeError::new_err(err),
             EvalErrorType::InvalidReturn(_) => PyRuntimeError::new_err(err),
+            EvalErrorType::InvalidBreak(_) => PyRuntimeError::new_err(err),
+            EvalErrorType::InvalidContinue => PyRuntimeError::new_err(err),
             EvalErrorType::PathNotFound(_, _, _) => PyRuntimeError::new_err(err),
             EvalErrorType::AttributeError(_) => PyRuntimeError::new_err(err),
             EvalErrorType::NodeAttributeError(_, _) => PyRuntimeError::new_err(err),

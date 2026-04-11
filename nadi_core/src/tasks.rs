@@ -1487,14 +1487,17 @@ pub enum TaskKeyword {
     Struct,
     Function,
     Return,
+    Break,
+    Continue,
     Error,
     For,
+    Loop,
+    Progress,
     // reserved
     Networks,
     NetworksMap,
     Map,
     Attrs,
-    Loop,
 }
 
 impl std::str::FromStr for TaskKeyword {
@@ -1538,10 +1541,13 @@ impl std::str::FromStr for TaskKeyword {
             "struct" => TaskKeyword::Struct,
             "function" | "func" => TaskKeyword::Function,
             "return" => TaskKeyword::Return,
+            "break" => TaskKeyword::Break,
+            "continue" => TaskKeyword::Continue,
             "error" => TaskKeyword::Error,
             "map" => TaskKeyword::Map,
             "attrs" => TaskKeyword::Attrs,
             "loop" => TaskKeyword::Loop,
+            "progress" | "prog" => TaskKeyword::Progress,
             "for" => TaskKeyword::For,
             k => return Err(format!("{k} is not a keyword")),
         })
@@ -1591,10 +1597,13 @@ impl std::fmt::Display for TaskKeyword {
                 TaskKeyword::Struct => "struct",
                 TaskKeyword::Function => "function",
                 TaskKeyword::Return => "return",
+                TaskKeyword::Break => "break",
+                TaskKeyword::Continue => "continue",
                 TaskKeyword::Error => "error",
                 TaskKeyword::Map => "map",
                 TaskKeyword::Attrs => "attrs",
                 TaskKeyword::Loop => "loop",
+                TaskKeyword::Progress => "progress",
                 TaskKeyword::For => "for",
             }
         )
@@ -1642,10 +1651,13 @@ impl TaskKeyword {
             TaskKeyword::Struct => "struct definition",
             TaskKeyword::Function => "function definition",
             TaskKeyword::Return => "return statement inside function",
+            TaskKeyword::Break => "return statement inside a loop",
+            TaskKeyword::Continue => "continue to next loop",
             TaskKeyword::Error => "raises an error while evaluating",
             TaskKeyword::Map => "map array to a function",
             TaskKeyword::Attrs => "attrs of a node or network",
             TaskKeyword::Loop => "a generic loop",
+            TaskKeyword::Progress => "report progress",
             TaskKeyword::For => "for loop",
         }
         .to_string()

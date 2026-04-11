@@ -138,6 +138,10 @@ pub enum EvalErrorType {
     InvalidContext(&'static str),
     /// Return Statement that returns a value, but if it's outside function this is error
     InvalidReturn(ExprResult),
+    /// Break statement outside of for or while loop
+    InvalidBreak(ExprResult),
+    /// Continue statement outside of for or while loop
+    InvalidContinue,
     /// Node with the name doesn't exit
     NodeNotFound(String),
     /// Node functions run on a non-node context
@@ -231,6 +235,8 @@ impl EvalErrorType {
             Self::InvalidContext(s) => return format!("Invalid Context: {s}"),
             // if return is inside a function it is caught and the value is returned
             Self::InvalidReturn(_) => "Return statement outside of function",
+            Self::InvalidBreak(_) => "Break statement outside of loop",
+            Self::InvalidContinue => "Continue statement outside of loop",
             Self::NodeNotFound(n) => return format!("Node: {n:?} not found"),
             Self::NotANodeContext => "Not inside a node context, cannot use node attributes",
             Self::PathNotFound(s, e, t) => {
@@ -351,6 +357,61 @@ impl ExprResult {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExprProgress {
+    label: Box<Expression>,
+    prog: Box<Expression>,
+    total: Box<Expression>,
+}
+
+// TODO: Make a ExprContext with ft, ctx, local and node. Make it have borrowed and owned variants, so that we don't have to clone every expression, that is taking a lot of processing. Once we fix that, we probably can process a lot of nodes without having to load them to the memory. Maybe make for, while, loop not return values, so they can be used for running things and setting things up. If you need to generate values you can use the for syntax, but inside a list in python list generator style, while on that, add support for *args, and **kwargs syntax on function call.
+impl ExprProgress {
+    pub fn new(label: Expression, prog: Expression, total: Expression) -> Self {
+        Self {
+            label: Box::new(label),
+            prog: Box::new(prog),
+            total: Box::new(total),
+        }
+    }
+    pub fn exec(
+        &self,
+        ft: &FunctionType,
+        ctx: &TaskContext,
+        local: Option<&AttrMap>,
+        node: Option<&Node>,
+    ) -> Result<(), EvalError> {
+        let label = self.label.resolve_eval_value(ft, ctx, local, node)?;
+        let prog = self.prog.resolve_eval_value(ft, ctx, local, node)?;
+        let total = self.total.resolve_eval_value(ft, ctx, local, node)?;
+
+        let label = String::try_from_attr(&label)
+            .map_err(EvalErrorType::AttributeError)
+            .map_err(EvalErrorType::no_pos)?;
+        let prog = usize::try_from_attr(&prog)
+            .map_err(EvalErrorType::AttributeError)
+            .map_err(EvalErrorType::no_pos)?;
+        let total = usize::try_from_attr(&total)
+            .map_err(EvalErrorType::AttributeError)
+            .map_err(EvalErrorType::no_pos)?;
+        _ = ctx.channel.send(TaskMessage::Progress(label, prog, total));
+        Ok(())
+    }
+
+    pub fn has_variables(&self) -> bool {
+        self.label.has_variables() || self.prog.has_variables() || self.total.has_variables()
+    }
+}
+
+impl std::fmt::Display for ExprProgress {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "progress {}: {} in {}",
+            self.label, self.prog, self.total
+        )
+    }
+}
+
 /// Expression for the task system
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
@@ -358,6 +419,8 @@ pub enum Expression {
     None,
     /// Result of expression
     Result(ExprResult),
+    /// Progress report
+    Progress(ExprProgress),
     /// Literal attribute values like `2`, `true`, etc
     Literal(Attribute),
     /// Variable (dot separated, optionally with context)
@@ -399,17 +462,25 @@ pub enum Expression {
     IfElse(Box<Expression>, Box<Expression>, Option<Box<Expression>>),
     /// try-catch blocks
     TryCatch(Box<Expression>, Box<Expression>),
-    /// for loop blocks that filters and runs through an expression
+    /// for loop block that filters and runs through an expression
     ForEachIf(
         String,
         Box<Expression>,
         Box<Expression>,
         Option<Box<Expression>>,
     ),
+    /// while loop block
+    While(Box<Expression>, Box<Expression>),
+    /// generic loop block
+    Loop(Box<Expression>),
     /// Multiple expressions
     Multi(Vec<Expression>),
     /// Return the value if inside a function
     Return(Option<Box<Expression>>),
+    /// Break from the current expression
+    Break(Option<Box<Expression>>),
+    /// Continue to next loop
+    Continue,
     /// Get the series as Attributes
     Series(Option<VarType>, bool, String),
     /// Get a value from the series
@@ -420,6 +491,7 @@ impl std::fmt::Display for Expression {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::None => write!(f, "{}", NONE_VALUE),
+            Self::Progress(p) => std::fmt::Display::fmt(p, f),
             Self::Result(r) => std::fmt::Display::fmt(r, f),
             Self::Literal(a) => std::fmt::Display::fmt(a, f),
             Self::Variable(v) => std::fmt::Display::fmt(v, f),
@@ -525,6 +597,8 @@ impl std::fmt::Display for Expression {
                     Ok(())
                 }
             }
+            Self::While(cond, expr) => write!(f, "while ({cond}) {{{expr}}}"),
+            Self::Loop(expr) => write!(f, "loop {{{expr}}}"),
             Self::Multi(exprs) => {
                 write!(
                     f,
@@ -538,6 +612,9 @@ impl std::fmt::Display for Expression {
             }
             Self::Return(None) => write!(f, "return"),
             Self::Return(Some(expr)) => write!(f, "return {expr}"),
+            Self::Break(None) => write!(f, "break"),
+            Self::Break(Some(expr)) => write!(f, "break {expr}"),
+            Self::Continue => write!(f, "continue"),
             Self::Series(Some(vt), ts, name) => {
                 write!(f, "{vt}{}{name}", if *ts { "$$" } else { "$" })
             }
@@ -558,6 +635,7 @@ impl Expression {
         match self {
             Self::None => false,
             Self::Result(_) => false,
+            Self::Progress(_) => false,
             Self::Literal(_) => false,
             Self::WithContext(_) => false,
             Self::Range(..) => false,
@@ -576,9 +654,13 @@ impl Expression {
             Self::BiOp(_, _, _) => true,
             Self::IfElse(_, _, _) => true,
             Self::TryCatch(_, _) => true,
-            Self::ForEachIf(..) => true,
+            Self::ForEachIf(..) => false,
+            Self::While(..) => false,
+            Self::Loop(..) => false,
             Self::Multi(_) => true,
             Self::Return(_) => false,
+            Self::Break(_) => false,
+            Self::Continue => false,
             Self::Series(..) => false,
             Self::SeriesValue(..) => false,
         }
@@ -589,6 +671,7 @@ impl Expression {
         match self {
             Self::None => false,
             Self::Result(_) => false,
+            Self::Progress(_) => false,
             Self::Literal(_) => false,
             Self::WithContext(e) => e.expr.mutates(),
             Self::Range(..) => false,
@@ -610,9 +693,16 @@ impl Expression {
                 a.mutates() || b.as_ref().map(|b| b.mutates()).unwrap_or_default()
             }
             Self::TryCatch(a, b) => a.mutates() || b.mutates(),
-            Self::ForEachIf(..) => false,
+            Self::ForEachIf(_, _, a, b) => {
+                a.mutates() || b.as_ref().map(|b| b.mutates()).unwrap_or_default()
+            }
+            // if while and loop does not mutate, then it is an infinite loop (even if breaks are present)
+            Self::While(_, a) => a.mutates(),
+            Self::Loop(e) => e.mutates(),
             Self::Multi(exprs) => exprs.iter().any(|e| e.mutates()),
             Self::Return(_) => false,
+            Self::Break(_) => false,
+            Self::Continue => false,
             Self::Series(..) => false,
             Self::SeriesValue(..) => false,
         }
@@ -623,6 +713,7 @@ impl Expression {
         match self {
             Self::None => false,
             Self::Result(_) => false,
+            Self::Progress(p) => p.has_variables(),
             Self::Literal(_) => false,
             Self::ResolveError(_) => false,
             Self::UserError(_) => false,
@@ -661,9 +752,14 @@ impl Expression {
             }
             Self::TryCatch(e1, e2) => e1.has_variables() || e2.has_variables(),
             Self::ForEachIf(..) => true, // TODO: it will have local var, so we need to test if it has var by getting a list of variables.
+            Self::While(..) => true,     // TODO: loop without var is dangerous
+            Self::Loop(..) => true,      // TODO: loop without var is dangerous
             Self::Multi(exprs) => exprs.iter().any(|e| e.has_variables()),
             Self::Return(None) => false,
             Self::Return(Some(expr)) => expr.has_variables(),
+            Self::Break(None) => false,
+            Self::Break(Some(expr)) => expr.has_variables(),
+            Self::Continue => false,
             Self::Series(..) => true,
             Self::SeriesValue(..) => true,
         }
@@ -681,6 +777,7 @@ impl Expression {
         match self {
             Self::None => Ok(Self::None),
             Self::Result(r) => Ok(Self::Result(r)),
+            Self::Progress(p) => Ok(Self::Progress(p)),
             Self::Literal(v) => {
                 // shouldn't happen
                 eprintln!("WARN: Logic Error, literal shouldn't be considered a variable");
@@ -762,6 +859,11 @@ impl Expression {
                     None
                 },
             )),
+            Self::While(cond, expr) => Ok(Self::While(
+                Box::new(cond.simplify(ft, ctx)?),
+                Box::new(expr.simplify(ft, ctx)?),
+            )),
+            Self::Loop(expr) => Ok(Self::Loop(Box::new(expr.simplify(ft, ctx)?))),
             Self::TryCatch(expr1, expr2) => match expr1.simplify(ft, ctx) {
                 Ok(blk) => Ok(Self::TryCatch(
                     Box::new(blk),
@@ -787,6 +889,9 @@ impl Expression {
             )),
             Self::Return(None) => Ok(Self::Return(None)),
             Self::Return(Some(expr)) => Ok(Self::Return(Some(Box::new(expr.simplify(ft, ctx)?)))),
+            Self::Break(None) => Ok(Self::Break(None)),
+            Self::Break(Some(expr)) => Ok(Self::Break(Some(Box::new(expr.simplify(ft, ctx)?)))),
+            Self::Continue => Ok(Self::Continue),
             Self::Series(vt, ts, name) => Ok(Self::Series(vt, ts, name)),
             Self::SeriesValue(vt, ts, name, ind) => Ok(Self::SeriesValue(vt, ts, name, ind)),
         }
@@ -828,13 +933,6 @@ impl Expression {
             .and_then(|e| e.eval_mut(ft, ctx, local, node))
     }
 
-    /// Resolve the variables in the expression for the given context
-    ///
-    /// This is an important process where the variables are extracted
-    /// and a literal expression is made to be evaluated. This takes
-    /// the function type (env/node/network) and possibly current node
-    /// and resolves the variables. Unresolved error is kept as a
-    /// Valid [`Expression`] on this step for lazy evaluation.
     pub fn resolve(
         &self,
         ft: &FunctionType,
@@ -846,6 +944,7 @@ impl Expression {
         match self {
             Self::None => Ok(Self::None),
             Self::Result(r) => Ok(Self::Result(r.clone())),
+            Self::Progress(p) => Ok(Self::Progress(p.clone())),
             Self::ResolveError(_) => Ok(self.clone()),
             Self::UserError(_) => Ok(self.clone()),
             Self::Literal(_) => Ok(self.clone()),
@@ -1011,6 +1110,8 @@ impl Expression {
                     None
                 },
             )),
+            Self::While(cond, expr) => Ok(Self::While(cond.clone(), expr.clone())),
+            Self::Loop(expr) => Ok(Self::Loop(expr.clone())),
             Self::TryCatch(expr1, expr2) => match expr1.resolve(ft, ctx, local, node) {
                 Ok(blk) => Ok(Self::TryCatch(
                     Box::new(blk),
@@ -1035,6 +1136,11 @@ impl Expression {
             Self::Return(Some(expr)) => Ok(Self::Return(Some(Box::new(
                 expr.resolve(ft, ctx, local, node)?,
             )))),
+            Self::Break(None) => Ok(Self::Break(None)),
+            Self::Break(Some(expr)) => Ok(Self::Break(Some(Box::new(
+                expr.resolve(ft, ctx, local, node)?,
+            )))),
+            Self::Continue => Ok(Self::Continue),
             Self::Series(vt, ts, name) => match get_series(ft, ctx, node, vt, name, *ts)? {
                 Series::Complete(sr) => Ok(Self::Literal(sr.to_attributes().into())),
                 Series::Masked(sr, RSome(fill)) => Ok(Self::Literal(
@@ -1074,7 +1180,12 @@ impl Expression {
         match self {
             Self::None => Ok(ExprResult::None),
             Self::Result(r) => Ok(r.clone()),
+            Self::Progress(p) => {
+                p.exec(ft, ctx, local, node)?;
+                Ok(ExprResult::None)
+            }
             Self::Function(fc) => Ok(fc.eval(ft, ctx, local, node)?.into()),
+            Self::Variable(vt) => vt.resolve(ft, ctx, local, node)?.eval(ft, ctx, local, node),
             Self::SetVariable(sv) => {
                 sv.eval(ft, ctx, local, node)?;
                 Ok(ExprResult::None)
@@ -1089,6 +1200,10 @@ impl Expression {
                 } else {
                     Ok(ExprResult::None)
                 }
+            }
+            // without mutation this is basically infinite loop
+            Self::While(_, _) | Self::Loop(_) => {
+                Err(EvalErrorType::LogicalError("Infinite loop").no_pos())
             }
             Self::TryCatch(expr1, expr2) => match expr1.eval(ft, ctx, local, node) {
                 Ok(val) => Ok(val),
@@ -1143,6 +1258,7 @@ impl Expression {
                 }
                 Ok(ExprResult::None)
             }
+            Self::WithContext(e) => e.resolve(ctx, local, node)?.eval(ft, ctx, local, node),
             e => e.eval_value(ft, ctx, local, node).map(ExprResult::Val),
         }
     }
@@ -1158,6 +1274,10 @@ impl Expression {
         match self {
             Self::None => Ok(ExprResult::None),
             Self::Result(r) => Ok(r.clone()),
+            Self::Progress(p) => {
+                p.exec(ft, ctx, local, node)?;
+                Ok(ExprResult::None)
+            }
             Self::Function(fc) => Ok(fc.eval_mut(ft, ctx, local, node)?),
             Self::SetVariable(sv) => {
                 sv.eval_mut(ft, ctx, local, node)?;
@@ -1174,6 +1294,32 @@ impl Expression {
                     Ok(ExprResult::None)
                 }
             }
+            Self::While(cond, expr) => {
+                loop {
+                    let cond = cond.resolve_eval_value(ft, ctx, local, node)?;
+                    let cond = bool::from_attr(&cond).ok_or(EvalErrorType::NotABool.no_pos())?;
+                    if !cond {
+                        break;
+                    }
+                    if let Err(e) = expr.resolve_eval_mut(ft, ctx, local, node) {
+                        match e.ty {
+                            EvalErrorType::InvalidBreak(e) => return Ok(e),
+                            EvalErrorType::InvalidContinue => continue,
+                            _ => return Err(e),
+                        }
+                    }
+                }
+                Ok(ExprResult::None)
+            }
+            Self::Loop(expr) => loop {
+                if let Err(e) = expr.resolve_eval_mut(ft, ctx, local, node) {
+                    match e.ty {
+                        EvalErrorType::InvalidBreak(e) => return Ok(e),
+                        EvalErrorType::InvalidContinue => continue,
+                        _ => return Err(e),
+                    }
+                }
+            },
             Self::TryCatch(expr1, expr2) => match expr1.eval_mut(ft, ctx, local, node) {
                 Ok(val) => Ok(val),
                 _ => expr2.eval_mut(ft, ctx, local, node),
@@ -1241,6 +1387,10 @@ impl Expression {
     ) -> Result<Attribute, EvalError> {
         match self {
             Self::None => Err(EvalErrorType::EmptyValue(None).no_pos()),
+            Self::Progress(p) => {
+                p.exec(ft, ctx, local, node)?;
+                Err(EvalErrorType::EmptyValue(None).no_pos())
+            }
             Self::Result(r) => r
                 .clone()
                 .to_attribute()
@@ -1292,7 +1442,7 @@ impl Expression {
                 } else {
                     1
                 };
-                let vals: Vec<_> = (b..e).step_by(s).map(Attribute::Integer).collect();
+                let vals: Vec<_> = (b..=e).step_by(s).map(Attribute::Integer).collect();
                 Ok(Attribute::Array(vals.into()))
             }
             Self::Array(exprs) => {
@@ -1372,6 +1522,10 @@ impl Expression {
                     )
                 }
             }
+            // without mutation this is basically infinite loop
+            Self::While(_, _) | Self::Loop(_) => {
+                Err(EvalErrorType::LogicalError("Infinite loop").no_pos())
+            }
             Self::TryCatch(expr1, expr2) => match expr1.eval_value(ft, ctx, local, node) {
                 Ok(val) => Ok(val),
                 _ => expr2.eval_value(ft, ctx, local, node),
@@ -1417,6 +1571,12 @@ impl Expression {
                 let ret = expr.eval(ft, ctx, local, node)?;
                 Err(EvalErrorType::InvalidReturn(ret).no_pos())
             }
+            Self::Break(None) => Err(EvalErrorType::InvalidBreak(ExprResult::None).no_pos()),
+            Self::Break(Some(expr)) => {
+                let ret = expr.eval(ft, ctx, local, node)?;
+                Err(EvalErrorType::InvalidBreak(ret).no_pos())
+            }
+            Self::Continue => Err(EvalErrorType::InvalidContinue.no_pos()),
             // these should be resolved away
             Self::Series(..) => todo!(),
             Self::SeriesValue(..) => todo!(),

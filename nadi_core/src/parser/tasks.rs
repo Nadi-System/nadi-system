@@ -8,7 +8,10 @@ use crate::{
     parser::{
         components::*,
         errors::MatchErr,
-        expressions::{complete_expression, expression_group, function_def, variable_type},
+        expressions::{
+            complete_expression, expression_group, function_def, maybe_silent_expression,
+            variable_type,
+        },
         network::{node_name, str_path},
         tokenizer::{RawToken, Token},
         ParseError, ParseErrorType,
@@ -391,7 +394,7 @@ pub fn task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
         map(while_task, Task::WhileLoop),
         map(hook_task, Task::Hook),
         map(import_task, Task::Import),
-        map(complete_expression, Task::Expr),
+        map(maybe_silent_expression, Task::Expr),
         help_task,
         value(Task::Clear, kw_clear),
         value(Task::Exit, kw_exit),
@@ -417,6 +420,7 @@ pub fn parse(tokens: Vec<RawToken>) -> Result<Vec<Task>, ParseError> {
             } else {
                 match trailing_newlines(maybe_newline(task))(rest).finish() {
                     Ok((rest, _)) => {
+                        eprintln!("{rest:?}");
                         Err(ParseError::new(&tokens, rest, ParseErrorType::SyntaxError))
                     }
                     Err(err) => Err(ParseError::new(&tokens, err.internal.input, err.ty)),

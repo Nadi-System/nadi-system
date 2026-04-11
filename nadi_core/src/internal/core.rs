@@ -560,6 +560,14 @@ mod core {
 
     /// get the current date time
     #[env_func]
+    fn timediff(start: DateTime, end: DateTime) -> f64 {
+        let st: chrono::NaiveDateTime = start.into();
+        let en: chrono::NaiveDateTime = end.into();
+        (en - st).as_seconds_f64()
+    }
+
+    /// get the current date time
+    #[env_func]
     fn now() -> DateTime {
         let now = chrono::Local::now();
         let date: Date = now.date_naive().into();
