@@ -406,7 +406,7 @@ impl std::fmt::Display for ExprProgress {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "progress {}: {} in {}",
+            "progress {} = {} in {}",
             self.label, self.prog, self.total
         )
     }

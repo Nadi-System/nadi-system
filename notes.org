@@ -80,3 +80,66 @@ nodes {
 }
 ```
 
+
+
+* Context based eval
+
+Expr Context should have
+
+{Env, Node, Nodes, Network, Local, etc}
+
+TaskContext reference (mut/not mut?)
+
+Local variables (local variables should be local to the context, or function) Should we only make them available for functions?
+
+h
+
+
+trait Eval: Display + Clone {
+  fn eval(self, ctx: &Ctx);
+  fn eval_mut(self, ctx: &mut Ctx) {
+   self.eval(ctx)
+}
+}
+
+WithPos<T: Eval> {
+  inner: T,
+  pos: (usize, usize),
+}
+
+
+struct Expression {
+  ty: ExprType,
+  ctx: ExprContext,
+}
+
+enum ExprType {
+   None,
+   Value(Attribute),
+   Result(ExprResult),
+   BiOp(e),
+   UniOp(e),
+   Import(e),
+   IfElse(e),
+   While(e),
+   Loop(e),
+   ForEach(e),
+   Progress(e),
+   Array(e),
+   ArrayGen(e),
+   Map(e),
+   MapGen(e),
+   SetVar(e),
+   Var(e),
+   Render(e),
+   WithContext(e),
+   Range(e),
+   UserError(e),
+   Function(e),
+   Silent(e),
+   TryCatch(e),
+   Return(e),
+   Break(e),
+   Continue,
+   Multi(e),
+}

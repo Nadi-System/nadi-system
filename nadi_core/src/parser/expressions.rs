@@ -165,7 +165,7 @@ pub fn progress_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expressio
             kw_progress,
             maybe_space(alt((expression, expression_group))),
             // somehow it wants a space here
-            maybe_space(colon),
+            maybe_space(assignment),
             maybe_space(alt((expression, expression_group))),
             maybe_space(kw_in),
             maybe_space(alt((expression, expression_group))),
