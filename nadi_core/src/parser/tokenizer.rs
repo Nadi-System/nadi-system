@@ -1,4 +1,4 @@
-use crate::expressions::TaskPosition;
+use crate::expressions::Position;
 use crate::parser::highlight::{Highlight, NadiFileType};
 use crate::parser::string::parse_string;
 use crate::parser::{ParseError as TaskParseError, ParseErrorType};
@@ -26,13 +26,13 @@ pub struct Token<'a> {
     pub start: (usize, usize),
 }
 
-impl<'a> TaskPosition for Token<'a> {
+impl<'a> Position for Token<'a> {
     fn position(&self) -> (usize, usize) {
         self.start
     }
 }
 
-impl<'a, 'b> TaskPosition for &'b [Token<'a>] {
+impl<'a, 'b> Position for &'b [Token<'a>] {
     fn position(&self) -> (usize, usize) {
         if let Some(t) = self.first() {
             t.position()

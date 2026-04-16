@@ -38,7 +38,7 @@ pub mod prelude {
         AttrMap, AttrSlice, Attribute, FromAttribute, FromAttributeRelaxed, HasAttributes,
     };
     pub use crate::eval::{EvalError, EvalErrorType};
-    pub use crate::expressions::Expression;
+    pub use crate::expressions::{ExprType, ResolvedExpr};
     pub use crate::network::{Network, Propagation};
     pub use crate::node::{Node, NodeInner};
     pub use crate::template::{Template, TemplateError};

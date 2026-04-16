@@ -1,6 +1,7 @@
 use crate::attrs::{type_name, Attribute, Date, DateTime, FromAttribute, Time};
 use crate::datafill::DataImputeError;
-use crate::expressions::{EvalError, EvalErrorType, ExprResult};
+use crate::eval::{EvalError, EvalErrorType};
+use crate::expressions::ExprResult;
 use crate::tasks::{TaskContext, TaskCtxConsts};
 
 use abi_stable::{

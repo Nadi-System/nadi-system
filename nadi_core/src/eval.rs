@@ -1,15 +1,110 @@
 use crate::attrs::{AttrMap, Attribute};
-use crate::expressions::{ExprContext, ExprResult};
+use crate::expressions::{ExprContext, ExprResult, Position};
+use crate::node::Node;
+use crate::structs::NadiAttrType;
 use crate::tasks::FunctionType;
 use crate::tasks::TaskContext;
+use crate::template::{Template, TemplateError};
 use std::borrow::Cow;
 
-pub struct EvalCtx<'a, 'b> {
-    expr_ctx: Cow<'a, ExprContext>,
-    local: Option<Cow<'b, AttrMap>>,
+#[derive(Clone, Debug)]
+pub struct EvalCtx<'a> {
+    pub(crate) expr_ctx: Cow<'a, ExprContext>,
+    pub(crate) local: Option<Cow<'a, AttrMap>>,
 }
 
-impl Default for EvalCtx<'_, '_> {
+impl<'a> PartialEq for EvalCtx<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.expr_ctx.as_ref() == other.expr_ctx.as_ref()
+    }
+}
+
+impl<'a> EvalCtx<'a> {
+    pub fn to_owned(self) -> EvalCtx<'static> {
+        EvalCtx {
+            expr_ctx: match self.expr_ctx {
+                Cow::Owned(o) => Cow::Owned(o),
+                Cow::Borrowed(b) => Cow::Owned(b.clone()),
+            },
+            local: self.local.map(|l| match l {
+                Cow::Owned(o) => Cow::Owned(o),
+                Cow::Borrowed(b) => Cow::Owned(b.clone()),
+            }),
+        }
+    }
+
+    pub fn curr_node(&self) -> Option<&Node> {
+        if let ExprContext::Node(n) = self.expr_ctx.as_ref() {
+            Some(n)
+        } else {
+            None
+        }
+    }
+
+    pub fn at_node(&'a self, node: Node) -> EvalCtx<'a> {
+        EvalCtx {
+            expr_ctx: Cow::Owned(ExprContext::Node(node)),
+            // FIX CLONE
+            local: self.local.clone(),
+        }
+    }
+
+    pub fn as_env(&'a self) -> EvalCtx<'a> {
+        EvalCtx {
+            expr_ctx: Cow::Owned(ExprContext::Env),
+            // FIX CLONE
+            local: self.local.clone(),
+        }
+    }
+
+    pub fn as_network(&'a self) -> EvalCtx<'a> {
+        EvalCtx {
+            expr_ctx: Cow::Owned(ExprContext::Network),
+            // FIX CLONE
+            local: self.local.clone(),
+        }
+    }
+
+    pub fn with_local(&self, local: AttrMap) -> EvalCtx<'a> {
+        EvalCtx {
+            expr_ctx: self.expr_ctx.clone(),
+            local: Some(Cow::Owned(local)),
+        }
+    }
+}
+
+impl Eval for Template {
+    fn eval(&self, ctx: &TaskContext, ectx: &EvalCtx) -> Result<ExprResult, EvalError> {
+        let map_res = |res: Result<String, TemplateError>| match res {
+            Ok(s) => Ok(ExprResult::Val(s.into())),
+            Err(e) => Err(EvalErrorType::RenderError(e.to_string()).no_pos()),
+        };
+        match ectx.expr_ctx.as_ref() {
+            ExprContext::Local => match ectx.local.as_ref() {
+                Some(l) => map_res(self.render(l.as_ref())),
+                None => map_res(self.render(&ctx.env)),
+            },
+            ExprContext::Env => map_res(self.render(&ctx.env)),
+            ExprContext::Network => map_res(self.render(&ctx.network)),
+            ExprContext::Node(n) => map_res(self.render(&n.lock())),
+            ExprContext::Nodes(nds) => nds
+                .iter()
+                .map(|n| map_res(self.render(&n.lock())))
+                .collect::<Result<Vec<ExprResult>, _>>()
+                .map(ExprResult::Arr),
+            ExprContext::NodesMap(nds) => nds
+                .iter()
+                .map(|n| {
+                    let name = n.lock().name().to_string();
+                    map_res(self.render(&n.lock())).map(|v| (name, v))
+                })
+                .collect::<Result<Vec<(String, ExprResult)>, _>>()
+                .map(ExprResult::Map),
+        }
+    }
+}
+
+impl Default for EvalCtx<'_> {
     fn default() -> Self {
         Self {
             expr_ctx: Cow::Owned(ExprContext::default()),
@@ -18,7 +113,7 @@ impl Default for EvalCtx<'_, '_> {
     }
 }
 
-pub trait Eval: std::fmt::Display + Clone {
+pub trait Eval: Clone {
     fn eval(&self, ctx: &TaskContext, ectx: &EvalCtx) -> Result<ExprResult, EvalError>;
 
     fn eval_mut(&self, ctx: &mut TaskContext, ectx: &EvalCtx) -> Result<ExprResult, EvalError> {
@@ -28,7 +123,11 @@ pub trait Eval: std::fmt::Display + Clone {
     fn eval_value(&self, ctx: &TaskContext, ectx: &EvalCtx) -> Result<Attribute, EvalError> {
         self.eval(ctx, ectx)?
             .to_attribute()
-            .ok_or(EvalErrorType::EmptyValue.no_pos())
+            .ok_or(EvalErrorType::EmptyValue(None).no_pos())
+    }
+
+    fn nested(&self) -> bool {
+        false
     }
 }
 
@@ -90,10 +189,10 @@ impl From<EvalErrorType> for EvalError {
 }
 
 impl EvalErrorType {
-    pub fn at<T: TaskPosition>(self, pos: &T) -> EvalError {
+    pub fn at<T: Position>(self, obj: T) -> EvalError {
         EvalError {
             ty: self,
-            position: vec![pos.position()],
+            position: vec![obj.position()],
             node: None,
         }
     }

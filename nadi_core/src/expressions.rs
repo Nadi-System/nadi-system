@@ -1,50 +1,242 @@
 use crate::attrs::{AttrMap, Attribute, FromAttribute, HasAttributes};
-use crate::eval::{EvalCtx, EvalError, EvalErrorType};
+use crate::eval::{Eval, EvalCtx, EvalError, EvalErrorType};
 use crate::functions::FunctionCtx;
 use crate::network::Propagation;
 use crate::node::{Node, NodeInner};
 use crate::structs::{NadiAttrType, NadiStructExpr};
-use crate::tasks::{FunctionType, TaskContext, TaskKeyword, TaskMessage};
+use crate::tasks::{FunctionType, Task, TaskContext, TaskKeyword, TaskMessage};
 use crate::template::Template;
 use crate::timeseries::{CompleteSeries, HasSeries, HasTimeSeries, MaskedSeries, Series};
 use crate::udf::UserFunction;
 use abi_stable::std_types::{RHashMap, RNone, RSome, RString, Tuple2};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub static NONE_VALUE: &str = "<None>";
 
-struct Expression<'a, 'b> {
-    ty: ExprType<'a, 'b>,
-    pos: (usize, usize),
-    silent: bool,
-    ctx: Option<EvalCtx<'a, 'b>>,
+pub trait Position {
+    fn position(&self) -> (usize, usize);
 }
 
-impl Expression<'_, '_> {
-    pub fn new(ty: ExprType, pos: (usize, usize), silent: bool) -> Self {
-        Self {
-            ty,
-            pos,
-            silent,
-            ctx: None,
+#[derive(Debug, Clone, PartialEq)]
+pub struct RawExpr {
+    expr: ExprType<RawExpr>,
+    position: (usize, usize),
+}
+
+impl Eval for RawExpr {
+    fn nested(&self) -> bool {
+        match self.expr {
+            ExprType::UniOp(..) | ExprType::BiOp(..) => true,
+            _ => false,
         }
     }
 
-    pub fn position(&self) -> (usize, usize) {
-        self.pos
+    fn eval(&self, _ctx: &TaskContext, _ectx: &EvalCtx) -> Result<ExprResult, EvalError> {
+        Err(EvalErrorType::LogicalError("the expression is not resolved").pos(self.position))
+    }
+
+    fn eval_mut(&self, ctx: &mut TaskContext, ectx: &EvalCtx) -> Result<ExprResult, EvalError> {
+        let res = self.clone().resolve(&ctx, ectx.clone())?;
+        res.eval_mut(ctx, ectx)
+    }
+}
+
+impl std::fmt::Display for RawExpr {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.expr, f)
+    }
+}
+
+impl RawExpr {
+    pub fn resolve<'a, 'b>(
+        self,
+        ctx: &'b TaskContext,
+        ectx: EvalCtx<'a>,
+    ) -> Result<ResolvedExpr<'a>, EvalError> {
+        let expr: ExprType<ResolvedExpr> = match self.expr {
+            ExprType::None => ExprType::None,
+            ExprType::Value(r) => ExprType::Value(r),
+            ExprType::Result(r) => ExprType::Result(r),
+            ExprType::Progress(p) => ExprType::Progress(ExprProgress::new(
+                p.label.resolve(ctx, ectx.clone())?,
+                p.prog.resolve(ctx, ectx.clone())?,
+                p.total.resolve(ctx, ectx.clone())?,
+            )),
+            ExprType::Function(fc) => {
+                ExprType::Function(resolve_function_calls(fc, ctx, ectx.clone())?)
+            }
+            ExprType::Var(vt) => ExprType::Var(vt),
+            ExprType::SetVar(sv) => ExprType::SetVar(SetVariable::new(
+                sv.var,
+                sv.expr.resolve(ctx, ectx.clone())?,
+                sv.silent,
+            )),
+            ExprType::IfElse(cond, expr1, Some(expr2)) => ExprType::IfElse(
+                Box::new(cond.resolve(ctx, ectx.clone())?),
+                Box::new(expr1.resolve(ctx, ectx.clone())?),
+                Some(Box::new(expr2.resolve(ctx, ectx.clone())?)),
+            ),
+            ExprType::IfElse(cond, expr1, None) => ExprType::IfElse(
+                Box::new(cond.resolve(ctx, ectx.clone())?),
+                Box::new(expr1.resolve(ctx, ectx.clone())?),
+                None,
+            ),
+            ExprType::While(cond, expr1) => ExprType::While(
+                Box::new(cond.resolve(ctx, ectx.clone())?),
+                Box::new(expr1.resolve(ctx, ectx.clone())?),
+            ),
+            ExprType::Loop(expr1) => ExprType::Loop(Box::new(expr1.resolve(ctx, ectx.clone())?)),
+            ExprType::TryCatch(expr1, expr2) => ExprType::TryCatch(
+                Box::new(expr1.resolve(ctx, ectx.clone())?),
+                Box::new(expr2.resolve(ctx, ectx.clone())?),
+            ),
+            ExprType::Multi(exprs) => ExprType::Multi(
+                exprs
+                    .into_iter()
+                    .map(|e| e.resolve(ctx, ectx.clone()))
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
+            ExprType::Array(exprs) => ExprType::Array(
+                exprs
+                    .into_iter()
+                    .map(|e| e.resolve(ctx, ectx.clone()))
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
+            ExprType::Map(exprs) => ExprType::Map(
+                exprs
+                    .into_iter()
+                    .map(|(k, e)| e.resolve(ctx, ectx.clone()).map(|v| (k, v)))
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
+            ExprType::Silent(e) => ExprType::Silent(Box::new(e.resolve(ctx, ectx.clone())?)),
+            ExprType::WithContext(e) => return resolve_expr_w_ctx(e, ctx, ectx.clone()),
+            ExprType::Range(b, Some(s), e) => ExprType::Range(
+                Box::new(b.resolve(ctx, ectx.clone())?),
+                Some(Box::new(s.resolve(ctx, ectx.clone())?)),
+                Box::new(e.resolve(ctx, ectx.clone())?),
+            ),
+            ExprType::Range(b, None, e) => ExprType::Range(
+                Box::new(b.resolve(ctx, ectx.clone())?),
+                None,
+                Box::new(e.resolve(ctx, ectx.clone())?),
+            ),
+            ExprType::Render(t) => ExprType::Render(t),
+            ExprType::UserError(s) => ExprType::UserError(s),
+            ExprType::UniOp(op, expr) => {
+                ExprType::UniOp(op, Box::new(expr.resolve(ctx, ectx.clone())?))
+            }
+            ExprType::BiOp(op, expr1, expr2) => ExprType::BiOp(
+                op,
+                Box::new(expr1.resolve(ctx, ectx.clone())?),
+                Box::new(expr2.resolve(ctx, ectx.clone())?),
+            ),
+            ExprType::Return(None) => ExprType::Return(None),
+            ExprType::Return(Some(expr)) => {
+                ExprType::Return(Some(Box::new(expr.resolve(ctx, ectx.clone())?)))
+            }
+            ExprType::Break(None) => ExprType::Break(None),
+            ExprType::Break(Some(expr)) => {
+                ExprType::Break(Some(Box::new(expr.resolve(ctx, ectx.clone())?)))
+            }
+            ExprType::Continue => ExprType::Continue,
+            _ => {
+                return Err(EvalErrorType::NotImplementedError(
+                    "resolving logic not implemented yet for these",
+                )
+                .no_pos());
+            }
+        };
+        Ok(ResolvedExpr {
+            expr,
+            position: self.position,
+            context: ectx.clone(),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResolvedExpr<'a> {
+    expr: ExprType<ResolvedExpr<'a>>,
+    position: (usize, usize),
+    context: EvalCtx<'a>,
+}
+
+impl std::fmt::Display for ResolvedExpr<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.expr, f)
+    }
+}
+
+impl RawExpr {
+    pub fn new(expr: ExprType<Self>, position: (usize, usize)) -> Self {
+        Self { expr, position }
+    }
+}
+
+impl Position for RawExpr {
+    fn position(&self) -> (usize, usize) {
+        self.position
+    }
+}
+
+impl ResolvedExpr<'_> {
+    pub fn err_ctx(&self, err: EvalError) -> EvalError {
+        err.pos(self.position)
+    }
+
+    // pub fn to_owned(self) -> ResolvedExpr<'static> {
+    //     ResolvedExpr {
+    //         expr: self.expr.to_owned(),
+    //         position: self.position,
+    //         context: self.context.to_owned(),
+    //     }
+    // }
+}
+
+impl Position for ResolvedExpr<'_> {
+    fn position(&self) -> (usize, usize) {
+        self.position
+    }
+}
+
+impl Eval for ResolvedExpr<'_> {
+    fn eval_mut(&self, ctx: &mut TaskContext, _ectx: &EvalCtx) -> Result<ExprResult, EvalError> {
+        self.expr
+            .eval_mut(ctx, &self.context)
+            .map_err(|e| self.err_ctx(e))
+    }
+
+    fn eval(&self, ctx: &TaskContext, _ectx: &EvalCtx) -> Result<ExprResult, EvalError> {
+        self.expr
+            .eval(ctx, &self.context)
+            .map_err(|e| self.err_ctx(e))
     }
 }
 
 /// Result of an expression, because it could involve None values
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExprResult {
+    /// Empty value
     None,
+    /// Empty due to error, show as None, function as error
+    ///
+    /// If a value is to be used somewhere, then it will be treated as
+    /// error, but if simply shown in the top most expression this
+    /// acts as None
+    NoneErr(Box<EvalError>),
+    /// Valid value
     Val(Attribute),
+    /// Image output
     Image(String),
+    /// File output
     File(String),
+    /// Documentation
     Doc(String),
+    /// Array of results
     Arr(Vec<ExprResult>),
+    /// Map of results
     Map(Vec<(String, ExprResult)>),
 }
 
@@ -61,6 +253,7 @@ impl std::fmt::Display for ExprResult {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::None => write!(f, "{}", NONE_VALUE),
+            Self::NoneErr(_) => write!(f, "{}", NONE_VALUE),
             Self::Val(a) => write!(f, "{a}"),
             Self::Image(s) => write!(f, "<image:{s:?}>"),
             Self::File(s) => write!(f, "<file:{s:?}>"),
@@ -88,7 +281,7 @@ impl std::fmt::Display for ExprResult {
 impl ExprResult {
     pub fn to_attribute(self) -> Option<Attribute> {
         match self {
-            Self::None => None,
+            Self::None | Self::NoneErr(_) => None,
             Self::Val(a) => Some(a),
             Self::Image(s) => Some(s.into()),
             Self::File(s) => Some(s.into()),
@@ -107,256 +300,92 @@ impl ExprResult {
     }
 
     pub fn value(self) -> Result<Attribute, EvalError> {
-        self.to_attribute()
-            .ok_or(EvalErrorType::EmptyValue(None).no_pos())
-    }
-}
-
-pub enum ExprType<'a, 'b> {
-    None,
-    Value(Attribute),
-    Result(ExprResult),
-    Progress(ExprProgress<'a, 'b>),
-    BiOp(BiOperator, Box<Expression<'a, 'b>>, Box<Expression<'a, 'b>>),
-    UniOp(UniOperator, Box<Expression<'a, 'b>>),
-    #[cfg(feature = "parser")]
-    Import(ImportExpr),
-    IfElse(
-        Box<Expression<'a, 'b>>,
-        Box<Expression<'a, 'b>>,
-        Option<Box<Expression<'a, 'b>>>,
-    ),
-    While(Box<Expression<'a, 'b>>, Box<Expression<'a, 'b>>),
-    Loop(Box<Expression<'a, 'b>>),
-    ForEach(String, Box<Expression<'a, 'b>>, Box<Expression<'a, 'b>>),
-    Array(Vec<Expression<'a, 'b>>),
-    ArrayGen(Box<Expression<'a, 'b>>, String, Box<Expression<'a, 'b>>),
-    Map(Vec<(String, Expression<'a, 'b>)>),
-    MapGen(
-        Box<Expression<'a, 'b>>,
-        Box<Expression<'a, 'b>>,
-        String,
-        String,
-        Box<Expression<'a, 'b>>,
-    ),
-    SetVar(SetVariable),
-    Var(InputVar),
-    Render(Template),
-    WithContext(ExprWithContext),
-    Range(
-        Box<Expression<'a, 'b>>,
-        Box<Expression<'a, 'b>>,
-        Box<Expression<'a, 'b>>,
-    ),
-    UserError(String),
-    Function(FunctionCall),
-    Silent(Box<Expression<'a, 'b>>),
-    TryCatch(Box<Expression<'a, 'b>>, Box<Expression<'a, 'b>>),
-    Return(Option<Box<Expression<'a, 'b>>>),
-    Break(Option<Box<Expression<'a, 'b>>>),
-    Continue,
-    Multi(Vec<Expression<'a, 'b>>),
-}
-
-#[cfg(feature = "parser")]
-/// Expression that is an import statement
-#[derive(Clone, PartialEq, Debug)]
-pub struct ImportExpr {
-    /// name of the plugin/nadi file
-    pub name: String,
-    /// path to the plugin/nadi code
-    pub path: Option<PathBuf>,
-    // /// Functions to import
-    // functions: ImportFunctions,
-    /// Execute tasks while importing functions
-    pub tasks: bool,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ExprProgress<'a, 'b> {
-    label: Box<Expression<'a, 'b>>,
-    prog: Box<Expression<'a, 'b>>,
-    total: Box<Expression<'a, 'b>>,
-}
-
-impl ExprProgress {
-    pub fn new(label: Expression, prog: Expression, total: Expression) -> Self {
-        Self {
-            label: Box::new(label),
-            prog: Box::new(prog),
-            total: Box::new(total),
+        if let Self::NoneErr(e) = self {
+            Err(*e)
+        } else {
+            self.to_attribute()
+                .ok_or(EvalErrorType::EmptyValue(None).no_pos())
         }
     }
-
-    pub fn has_variables(&self) -> bool {
-        self.label.has_variables() || self.prog.has_variables() || self.total.has_variables()
-    }
 }
 
-impl Eval for ExprProgress {
-    fn eval(&self, ctx: &TaskContext, ectx: EvalCtx) -> Result<ExprResult, EvalError> {
-        let label = self.label.resolve_eval_value(ft, ctx, local, node)?;
-        let prog = self.prog.resolve_eval_value(ft, ctx, local, node)?;
-        let total = self.total.resolve_eval_value(ft, ctx, local, node)?;
-
-        let label = String::try_from_attr(&label)
-            .map_err(EvalErrorType::AttributeError)
-            .map_err(EvalErrorType::no_pos)?;
-        let prog = usize::try_from_attr(&prog)
-            .map_err(EvalErrorType::AttributeError)
-            .map_err(EvalErrorType::no_pos)?;
-        let total = usize::try_from_attr(&total)
-            .map_err(EvalErrorType::AttributeError)
-            .map_err(EvalErrorType::no_pos)?;
-        _ = ctx.channel.send(TaskMessage::Progress(label, prog, total));
-        Ok(())
-    }
-}
-
-impl std::fmt::Display for ExprProgress {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "progress {} = {} in {}",
-            self.label, self.prog, self.total
-        )
-    }
-}
-
-/// Expression for the task system
 #[derive(Debug, Clone, PartialEq)]
-pub enum Expression {
-    /// None value
+pub enum ExprType<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq> {
+    /// Empty Value
     None,
-    /// Result of expression
+    /// Literal Value
+    Value(Attribute),
+    /// Result of another expression
     Result(ExprResult),
-    /// Progress report
-    Progress(ExprProgress),
-    /// Literal attribute values like `2`, `true`, etc
-    Literal(Attribute),
-    /// Variable (dot separated, optionally with context)
-    Variable(InputVar),
-    /// Assignment Expression
-    SetVariable(SetVariable),
-    /// String Template to Render in given context
+    /// Progress signal
+    Progress(ExprProgress<T>),
+    /// get variable
+    Var(InputVar),
+    /// set variable (assignment)
+    SetVar(SetVariable<T>),
+    /// render a string template
     Render(Template),
-    /// Expression with context information
-    WithContext(ExprWithContext),
-    /// Range of numbers, only integers for now
-    Range(Box<Expression>, Option<Box<Expression>>, Box<Expression>),
+    /// unary operator
+    UniOp(UniOperator, Box<T>),
+    /// Binary operator
+    BiOp(BiOperator, Box<T>, Box<T>),
+    #[cfg(feature = "parser")]
+    /// import other tasks file
+    Import(ImportExpr),
+    /// if else statemnet
+    IfElse(Box<T>, Box<T>, Option<Box<T>>),
+    /// while loop
+    While(Box<T>, Box<T>),
+    /// generic loop
+    Loop(Box<T>),
+    /// for loop
+    ForEach(String, Box<T>, Box<T>),
     /// array expression
-    Array(Vec<Expression>),
-    /// attrmap expression using vec to preserve order
-    Table(Vec<(String, Expression)>),
-    /// Struct Expressions are hashmap expression with name
-    StructExpr(NadiStructExpr),
-    /// Error in variable resolve process. Will propagation if evaluation is tried.
-    ///
-    /// This is for cases where the evaluation might short circuit,
-    /// ifelse etc, this lets the error be ignored during resolve step
-    /// but raised during eval step. That way the error can be ignored
-    /// if the evaluation doesn't hit it,
-    ResolveError(EvalError),
-    /// User raised errors
+    Array(Vec<T>),
+    /// array generator expression
+    ArrayGen(Box<T>, String, Box<T>),
+    /// map expression
+    Map(Vec<(String, T)>),
+    /// map generator expression
+    MapGen(Box<T>, Box<T>, String, String, Box<T>),
+    /// context block
+    WithContext(ExprWithContext<T>),
+    /// integer range
+    Range(Box<T>, Option<Box<T>>, Box<T>),
+    /// user error raising
     UserError(String),
-    /// Function call
-    Function(FunctionCall),
-    /// Multiple function calls after resolving `nodes` and `inputs` type context
-    MultiFunction(Vec<FunctionCall>),
-    /// Expression that are silenced (using ;)
-    Silent(Box<Expression>),
-    /// With Unary operators e.g. `-``, `!true`
-    UniOp(UniOperator, Box<Expression>),
-    /// With Binary operator e.g. `1 + 3`
-    BiOp(BiOperator, Box<Expression>, Box<Expression>),
-    /// if-else statement
-    IfElse(Box<Expression>, Box<Expression>, Option<Box<Expression>>),
-    /// try-catch blocks
-    TryCatch(Box<Expression>, Box<Expression>),
-    /// for loop block that filters and runs through an expression
-    ForEachIf(
-        String,
-        Box<Expression>,
-        Box<Expression>,
-        Option<Box<Expression>>,
-    ),
-    /// while loop block
-    While(Box<Expression>, Box<Expression>),
-    /// generic loop block
-    Loop(Box<Expression>),
-    /// Multiple expressions
-    Multi(Vec<Expression>),
-    /// Return the value if inside a function
-    Return(Option<Box<Expression>>),
-    /// Break from the current expression
-    Break(Option<Box<Expression>>),
-    /// Continue to next loop
+    /// function calls
+    Function(FunctionCall<T>),
+    /// silenced expression
+    Silent(Box<T>),
+    /// try catch block
+    TryCatch(Box<T>, Box<T>),
+    /// return statement
+    Return(Option<Box<T>>),
+    /// break statement
+    Break(Option<Box<T>>),
+    /// continue statement
     Continue,
-    /// Get the series as Attributes
+    /// multiple expressions
+    Multi(Vec<T>),
+    /// Series as Attributes
     Series(Option<VarType>, bool, String),
-    /// Get a value from the series
+    /// Value from a series
     SeriesValue(Option<VarType>, bool, String, usize),
 }
 
-impl std::fmt::Display for Expression {
+impl<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq + Eval> std::fmt::Display
+    for ExprType<T>
+{
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::None => write!(f, "{}", NONE_VALUE),
-            Self::Progress(p) => std::fmt::Display::fmt(p, f),
+            Self::Value(p) => std::fmt::Display::fmt(p, f),
             Self::Result(r) => std::fmt::Display::fmt(r, f),
-            Self::Literal(a) => std::fmt::Display::fmt(a, f),
-            Self::Variable(v) => std::fmt::Display::fmt(v, f),
-            Self::SetVariable(v) => std::fmt::Display::fmt(v, f),
+            Self::Progress(p) => std::fmt::Display::fmt(p, f),
+            Self::Var(v) => std::fmt::Display::fmt(v, f),
+            Self::SetVar(v) => std::fmt::Display::fmt(v, f),
             Self::Render(v) => write!(f, "r{v:?}"),
-            Self::WithContext(e) => write!(f, "{e}"),
-            Self::Range(b, s, e) => {
-                if let Some(s) = s {
-                    write!(f, "{b}:{s}:{e}")
-                } else {
-                    write!(f, "{b}:{e}")
-                }
-            }
-            Self::Array(exprs) => {
-                write!(
-                    f,
-                    "[{}]",
-                    exprs
-                        .iter()
-                        .map(|e| e.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-            }
-            Self::Table(exprs) => {
-                write!(
-                    f,
-                    "{{{}}}",
-                    exprs
-                        .iter()
-                        .map(|(k, e)| format!("{k} = {e}"))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-            }
-            Self::StructExpr(e) => write!(f, "{e}"),
-            Self::ResolveError(e) => write!(f, "error {:?}", e.to_string()),
-            Self::UserError(e) => write!(f, "error {:?}", e),
-            Self::Function(fc) => std::fmt::Display::fmt(fc, f),
-            // multifunction is only generated after resolvingg
-            // function; so this shouldn't be used much, but I'm
-            // representing it as array of function, even though it
-            // cann't be loaded with this syntax from tasks file
-            Self::MultiFunction(fcs) => {
-                write!(f, "array(")?;
-                for (i, fc) in fcs.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    std::fmt::Display::fmt(fc, f)?;
-                }
-                write!(f, ")")
-            }
-            Self::Silent(e) => write!(f, "{e};"),
             Self::UniOp(op, expr) => {
                 if expr.nested() {
                     write!(f, "{} ({})", op, expr)
@@ -379,6 +408,8 @@ impl std::fmt::Display for Expression {
                     expr2.to_string()
                 },
             ),
+            #[cfg(feature = "parser")]
+            Self::Import(i) => std::fmt::Display::fmt(i, f),
             Self::IfElse(cond, expr1, expr2) => {
                 if let Some(expr2) = expr2 {
                     write!(f, "if ({}) {{{}}} else {{{}}}", cond, expr1, expr2)
@@ -386,8 +417,13 @@ impl std::fmt::Display for Expression {
                     write!(f, "if ({}) {{{}}}", cond, expr1)
                 }
             }
-            Self::TryCatch(expr1, expr2) => write!(f, "try {{{}}} catch {{{}}}", expr1, expr2),
-            Self::ForEachIf(var, expr1, expr2, cond) => {
+            Self::While(cond, expr) => {
+                write!(f, "while ({}) {{{}}}", cond, expr)
+            }
+            Self::Loop(expr) => {
+                write!(f, "loop {{{}}}", expr)
+            }
+            Self::ForEach(var, expr1, expr2) => {
                 write!(
                     f,
                     "for {var} in {} {{{}}}",
@@ -397,19 +433,51 @@ impl std::fmt::Display for Expression {
                         expr1.to_string()
                     },
                     expr2
-                )?;
-                if let Some(c) = cond {
-                    if c.nested() {
-                        write!(f, "if ({})", c)
-                    } else {
-                        write!(f, "if {}", c)
-                    }
+                )
+            }
+            Self::Array(exprs) => {
+                write!(
+                    f,
+                    "[{}]",
+                    exprs
+                        .iter()
+                        .map(|e| e.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
+            Self::ArrayGen(expr1, v, expr2) => write!(f, "[{} for {} in {}]", expr1, v, expr2),
+            Self::Map(exprs) => {
+                write!(
+                    f,
+                    "{{{}}}",
+                    exprs
+                        .iter()
+                        .map(|(k, e)| format!("{k} = {e}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
+            Self::MapGen(expr1, expr2, v1, v2, expr) => {
+                write!(f, "{{{}={} for {},{} in {}}}", expr1, expr2, v1, v2, expr)
+            }
+            Self::WithContext(e) => write!(f, "{e}"),
+            Self::Range(b, s, e) => {
+                if let Some(s) = s {
+                    write!(f, "{b}:{s}:{e}")
                 } else {
-                    Ok(())
+                    write!(f, "{b}:{e}")
                 }
             }
-            Self::While(cond, expr) => write!(f, "while ({cond}) {{{expr}}}"),
-            Self::Loop(expr) => write!(f, "loop {{{expr}}}"),
+            Self::Function(fc) => std::fmt::Display::fmt(fc, f),
+            Self::UserError(e) => write!(f, "error {:?}", e),
+            Self::Silent(e) => write!(f, "{e};"),
+            Self::TryCatch(expr1, expr2) => write!(f, "try {{{}}} catch {{{}}}", expr1, expr2),
+            Self::Return(None) => write!(f, "return"),
+            Self::Return(Some(expr)) => write!(f, "return {expr}"),
+            Self::Break(None) => write!(f, "break"),
+            Self::Break(Some(expr)) => write!(f, "break {expr}"),
+            Self::Continue => write!(f, "continue"),
             Self::Multi(exprs) => {
                 write!(
                     f,
@@ -421,11 +489,6 @@ impl std::fmt::Display for Expression {
                         .join("\n")
                 )
             }
-            Self::Return(None) => write!(f, "return"),
-            Self::Return(Some(expr)) => write!(f, "return {expr}"),
-            Self::Break(None) => write!(f, "break"),
-            Self::Break(Some(expr)) => write!(f, "break {expr}"),
-            Self::Continue => write!(f, "continue"),
             Self::Series(Some(vt), ts, name) => {
                 write!(f, "{vt}{}{name}", if *ts { "$$" } else { "$" })
             }
@@ -440,813 +503,133 @@ impl std::fmt::Display for Expression {
     }
 }
 
-impl Expression {
-    /// check if the expression is nested (needs parenthesis)
-    pub fn nested(&self) -> bool {
+impl Eval for ExprType<ResolvedExpr<'_>> {
+    fn eval_mut(&self, ctx: &mut TaskContext, ectx: &EvalCtx) -> Result<ExprResult, EvalError> {
         match self {
-            Self::None => false,
-            Self::Result(_) => false,
-            Self::Progress(_) => false,
-            Self::Literal(_) => false,
-            Self::WithContext(_) => false,
-            Self::Range(..) => false,
-            Self::Array(_) => false,
-            Self::Table(_) => false,
-            Self::ResolveError(_) => false,
-            Self::UserError(_) => false,
-            Self::Variable(_) => false,
-            Self::SetVariable(..) => false,
-            Self::StructExpr(_) => false,
-            Self::Render(_) => false,
-            Self::Function(_) => false,
-            Self::MultiFunction(_) => false,
-            Self::Silent(e) => e.nested(),
-            Self::UniOp(_, _) => true,
-            Self::BiOp(_, _, _) => true,
-            Self::IfElse(_, _, _) => true,
-            Self::TryCatch(_, _) => true,
-            Self::ForEachIf(..) => false,
-            Self::While(..) => false,
-            Self::Loop(..) => false,
-            Self::Multi(_) => true,
-            Self::Return(_) => false,
-            Self::Break(_) => false,
-            Self::Continue => false,
-            Self::Series(..) => false,
-            Self::SeriesValue(..) => false,
-        }
-    }
-
-    /// check if the expression mutates values
-    pub fn mutates(&self) -> bool {
-        match self {
-            Self::None => false,
-            Self::Result(_) => false,
-            Self::Progress(_) => false,
-            Self::Literal(_) => false,
-            Self::WithContext(e) => e.expr.mutates(),
-            Self::Range(..) => false,
-            Self::Array(_) => false,
-            Self::Table(_) => false,
-            Self::ResolveError(_) => false,
-            Self::UserError(_) => false,
-            Self::Variable(_) => false,
-            Self::SetVariable(..) => true,
-            Self::StructExpr(_) => false,
-            Self::Render(_) => false,
-            // TODO: check each one; coz it depends on the function
-            Self::Function(_) => true,
-            Self::MultiFunction(_) => true,
-            Self::Silent(e) => e.mutates(),
-            Self::UniOp(_, _) => false,
-            Self::BiOp(_, _, _) => false,
-            Self::IfElse(_, a, b) => {
-                a.mutates() || b.as_ref().map(|b| b.mutates()).unwrap_or_default()
-            }
-            Self::TryCatch(a, b) => a.mutates() || b.mutates(),
-            Self::ForEachIf(_, _, a, b) => {
-                a.mutates() || b.as_ref().map(|b| b.mutates()).unwrap_or_default()
-            }
-            // if while and loop does not mutate, then it is an infinite loop (even if breaks are present)
-            Self::While(_, a) => a.mutates(),
-            Self::Loop(e) => e.mutates(),
-            Self::Multi(exprs) => exprs.iter().any(|e| e.mutates()),
-            Self::Return(_) => false,
-            Self::Break(_) => false,
-            Self::Continue => false,
-            Self::Series(..) => false,
-            Self::SeriesValue(..) => false,
-        }
-    }
-
-    /// check if the expression contains variables or not
-    pub fn has_variables(&self) -> bool {
-        match self {
-            Self::None => false,
-            Self::Result(_) => false,
-            Self::Progress(p) => p.has_variables(),
-            Self::Literal(_) => false,
-            Self::ResolveError(_) => false,
-            Self::UserError(_) => false,
-            Self::Variable(_) => true,
-            Self::SetVariable(..) => true,
-            Self::WithContext(e) => e.expr.has_variables(),
-            Self::Range(b, s, e) => {
-                b.has_variables()
-                    || e.has_variables()
-                    || if let Some(s) = s {
-                        s.has_variables()
-                    } else {
-                        false
-                    }
-            }
-            Self::Array(ar) => ar.iter().any(|a| a.has_variables()),
-            Self::Table(tb) => tb.iter().any(|a| a.1.has_variables()),
-            Self::StructExpr(e) => e.has_variables(),
-            // Could also do true here, as render stirng without variable is converted to a string
-            Self::Render(templ) => templ.has_variables(),
-            Self::Function(fc) => {
-                fc.args.iter().any(|e| e.has_variables())
-                    || fc.kwargs.iter().any(|e| e.1.has_variables())
-            }
-            Self::MultiFunction(fcs) => fcs.iter().any(|fc| {
-                fc.args.iter().any(|e| e.has_variables())
-                    || fc.kwargs.iter().any(|e| e.1.has_variables())
-            }),
-            Self::Silent(e) => e.has_variables(),
-            Self::UniOp(_, e) => e.has_variables(),
-            Self::BiOp(_, e1, e2) => e1.has_variables() || e2.has_variables(),
-            Self::IfElse(c, e1, e2) => {
-                c.has_variables()
-                    || e1.has_variables()
-                    || e2.as_ref().map(|e| e.has_variables()).unwrap_or_default()
-            }
-            Self::TryCatch(e1, e2) => e1.has_variables() || e2.has_variables(),
-            Self::ForEachIf(..) => true, // TODO: it will have local var, so we need to test if it has var by getting a list of variables.
-            Self::While(..) => true,     // TODO: loop without var is dangerous
-            Self::Loop(..) => true,      // TODO: loop without var is dangerous
-            Self::Multi(exprs) => exprs.iter().any(|e| e.has_variables()),
-            Self::Return(None) => false,
-            Self::Return(Some(expr)) => expr.has_variables(),
-            Self::Break(None) => false,
-            Self::Break(Some(expr)) => expr.has_variables(),
-            Self::Continue => false,
-            Self::Series(..) => true,
-            Self::SeriesValue(..) => true,
-        }
-    }
-
-    /// This simplifies the expression by evaluating the nested expressions without variables
-    ///
-    /// It makes it easier to catch any mistakes and reduce the
-    /// complexity while evaluating expressions later with actual
-    /// attribute variables.
-    pub fn simplify(self, ft: &FunctionType, ctx: &TaskContext) -> Result<Expression, EvalError> {
-        if !self.has_variables() {
-            return self.eval(ft, ctx, None, None).map(Expression::Result);
-        }
-        match self {
-            Self::None => Ok(Self::None),
-            Self::Result(r) => Ok(Self::Result(r)),
-            Self::Progress(p) => Ok(Self::Progress(p)),
-            Self::Literal(v) => {
-                // shouldn't happen
-                eprintln!("WARN: Logic Error, literal shouldn't be considered a variable");
-                Ok(Self::Literal(v))
-            }
-            Self::Variable(v) => Ok(Self::Variable(v)),
-            Self::SetVariable(mut e) => {
-                e.expr = Box::new(e.expr.simplify(ft, ctx)?);
-                Ok(Self::SetVariable(e))
-            }
-            Self::StructExpr(mut st) => {
-                st.values = st
-                    .values
-                    .into_iter()
-                    .map(|Tuple2(k, v)| v.simplify(ft, ctx).map(|r| Tuple2(k, r)))
-                    .collect::<Result<_, EvalError>>()?;
-                Ok(Self::StructExpr(st))
-            }
-            Self::Render(v) => match v.lit() {
-                Some(s) => Ok(Self::Literal(Attribute::String(s.into()))),
-                None => Ok(Self::Render(v)),
-            },
-            Self::WithContext(mut e) => {
-                e.expr = Box::new(e.expr.simplify(e.ty.to_functiontype(), ctx)?);
-                Ok(Self::WithContext(e))
-            }
-            Self::Range(b, s, e) => {
-                let b = b.simplify(ft, ctx)?;
-                let e = e.simplify(ft, ctx)?;
-                let s = if let Some(s) = s {
-                    Some(Box::new(s.simplify(ft, ctx)?))
-                } else {
-                    None
-                };
-                Ok(Self::Range(Box::new(b), s, Box::new(e)))
-            }
-            Self::Array(exprs) => {
-                let vals: Vec<Expression> = exprs
-                    .into_iter()
-                    .map(|v| v.simplify(ft, ctx))
-                    .collect::<Result<_, _>>()?;
-                Ok(Expression::Array(vals))
-            }
-            Self::Table(exprs) => {
-                let vals: Vec<(String, Expression)> = exprs
-                    .into_iter()
-                    .map(|(k, v)| v.simplify(ft, ctx).map(|v| (k, v)))
-                    .collect::<Result<_, _>>()?;
-                Ok(Expression::Table(vals))
-            }
-            // this should also be handled on has_variables()
-            Self::ResolveError(e) => Err(e),
-            Self::UserError(s) => Err(EvalErrorType::UserError(s).no_pos()),
-            Self::Function(mut fc) => {
-                fc.simplify(ft, ctx)?;
-                Ok(Self::Function(fc))
-            }
-            Self::MultiFunction(fcs) => fcs
-                .into_iter()
-                .map(|mut fc| {
-                    fc.simplify(ft, ctx)?;
-                    Ok(fc)
-                })
-                .collect::<Result<Vec<FunctionCall>, EvalError>>()
-                .map(Self::MultiFunction),
-            Self::Silent(e) => Ok(Self::Silent(Box::new(e.simplify(ft, ctx)?))),
-            Self::UniOp(op, expr) => Ok(Self::UniOp(op, Box::new(expr.simplify(ft, ctx)?))),
-            Self::BiOp(op, expr1, expr2) => Ok(Self::BiOp(
-                op,
-                Box::new(expr1.simplify(ft, ctx)?),
-                Box::new(expr2.simplify(ft, ctx)?),
-            )),
-            Self::IfElse(cond, expr1, expr2) => Ok(Self::IfElse(
-                Box::new(cond.simplify(ft, ctx)?),
-                Box::new(expr1.simplify(ft, ctx)?),
-                if let Some(expr2) = expr2 {
-                    Some(Box::new(expr2.simplify(ft, ctx)?))
-                } else {
-                    None
-                },
-            )),
-            Self::While(cond, expr) => Ok(Self::While(
-                Box::new(cond.simplify(ft, ctx)?),
-                Box::new(expr.simplify(ft, ctx)?),
-            )),
-            Self::Loop(expr) => Ok(Self::Loop(Box::new(expr.simplify(ft, ctx)?))),
-            Self::TryCatch(expr1, expr2) => match expr1.simplify(ft, ctx) {
-                Ok(blk) => Ok(Self::TryCatch(
-                    Box::new(blk),
-                    Box::new(expr2.simplify(ft, ctx)?),
-                )),
-                _ => expr2.simplify(ft, ctx),
-            },
-            Self::ForEachIf(var, expr1, expr2, cond) => Ok(Self::ForEachIf(
-                var,
-                Box::new(expr1.simplify(ft, ctx)?),
-                Box::new(expr2.simplify(ft, ctx)?),
-                if let Some(c) = cond {
-                    Some(Box::new(c.simplify(ft, ctx)?))
-                } else {
-                    None
-                },
-            )),
-            Self::Multi(exprs) => Ok(Self::Multi(
-                exprs
-                    .into_iter()
-                    .map(|e| e.simplify(ft, ctx))
-                    .collect::<Result<Vec<_>, EvalError>>()?,
-            )),
-            Self::Return(None) => Ok(Self::Return(None)),
-            Self::Return(Some(expr)) => Ok(Self::Return(Some(Box::new(expr.simplify(ft, ctx)?)))),
-            Self::Break(None) => Ok(Self::Break(None)),
-            Self::Break(Some(expr)) => Ok(Self::Break(Some(Box::new(expr.simplify(ft, ctx)?)))),
-            Self::Continue => Ok(Self::Continue),
-            Self::Series(vt, ts, name) => Ok(Self::Series(vt, ts, name)),
-            Self::SeriesValue(vt, ts, name, ind) => Ok(Self::SeriesValue(vt, ts, name, ind)),
-        }
-    }
-
-    /// Call [`Self::resolve`] then [`Self::eval`]
-    pub fn resolve_eval(
-        &self,
-        ft: &FunctionType,
-        ctx: &TaskContext,
-        local: Option<&AttrMap>,
-        node: Option<&Node>,
-    ) -> Result<ExprResult, EvalError> {
-        self.resolve(ft, ctx, local, node)
-            .and_then(|e| e.eval(ft, ctx, local, node))
-    }
-
-    /// Call [`Self::resolve`] then [`Self::eval_value`]
-    pub fn resolve_eval_value(
-        &self,
-        ft: &FunctionType,
-        ctx: &TaskContext,
-        local: Option<&AttrMap>,
-        node: Option<&Node>,
-    ) -> Result<Attribute, EvalError> {
-        self.resolve(ft, ctx, local, node)
-            .and_then(|e| e.eval_value(ft, ctx, local, node))
-    }
-
-    /// Call [`Self::resolve`] then [`Self::eval_mut`]
-    pub fn resolve_eval_mut(
-        &self,
-        ft: &FunctionType,
-        ctx: &mut TaskContext,
-        local: Option<&AttrMap>,
-        node: Option<&Node>,
-    ) -> Result<ExprResult, EvalError> {
-        self.resolve(ft, ctx, local, node)
-            .and_then(|e| e.eval_mut(ft, ctx, local, node))
-    }
-
-    pub fn resolve(
-        &self,
-        ft: &FunctionType,
-        ctx: &TaskContext,
-        local: Option<&AttrMap>,
-        node: Option<&Node>,
-    ) -> Result<Expression, EvalError> {
-        // eprintln!("Resolving [{ft}]: {self}");
-        match self {
-            Self::None => Ok(Self::None),
-            Self::Result(r) => Ok(Self::Result(r.clone())),
-            Self::Progress(p) => Ok(Self::Progress(p.clone())),
-            Self::ResolveError(_) => Ok(self.clone()),
-            Self::UserError(_) => Ok(self.clone()),
-            Self::Literal(_) => Ok(self.clone()),
-            Self::WithContext(e) => e.resolve(ctx, local, node),
-            Self::Range(b, s, e) => {
-                let b = b.resolve(ft, ctx, local, node)?;
-                let e = e.resolve(ft, ctx, local, node)?;
-                let s = if let Some(s) = s {
-                    Some(Box::new(s.resolve(ft, ctx, local, node)?))
-                } else {
-                    None
-                };
-                Ok(Self::Range(Box::new(b), s, Box::new(e)))
-            }
-            Self::Array(exprs) => {
-                let vals: Vec<Expression> = exprs
-                    .iter()
-                    .map(|v| v.resolve(ft, ctx, local, node))
-                    .collect::<Result<_, _>>()?;
-                Ok(Expression::Array(vals))
-            }
-            Self::Table(exprs) => {
-                let vals: Vec<(String, Expression)> = exprs
-                    .iter()
-                    .map(|(k, v)| v.resolve(ft, ctx, local, node).map(|v| (k.to_string(), v)))
-                    .collect::<Result<_, _>>()?;
-                Ok(Expression::Table(vals))
-            }
-            Self::Variable(vt) => vt.resolve(ft, ctx, local, node),
-            // set variable can be multiple nodes; so we can not resolve here
-            Self::SetVariable(e) => e.with_ctx(ft, ctx, node).map(Self::SetVariable),
-
-            Self::StructExpr(st) => {
-                let values = st
-                    .values
-                    .iter()
-                    .map(|Tuple2(k, v)| {
-                        v.resolve(ft, ctx, local, node)
-                            .map(|v| Tuple2(k.clone(), v))
-                    })
-                    .collect::<Result<_, EvalError>>()?;
-                Ok(Self::StructExpr(NadiStructExpr {
-                    name: st.name.clone(),
-                    values,
-                }))
-            }
-            Self::Render(t) => {
-                let res = match ft {
-                    FunctionType::Env => t.render(&ctx.env),
-                    FunctionType::Network => t.render(&ctx.network),
-                    FunctionType::Node => match node {
-                        Some(n) => t.render(
-                            &n.try_lock()
-                                .into_option()
-                                .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?,
-                        ),
-                        None => {
-                            return Err(EvalErrorType::LogicalError(
-                                "Node function ran without Node value",
-                            )
-                            .no_pos());
-                        }
-                    },
-                };
-                match res {
-                    Ok(s) => Ok(Self::Literal(Attribute::String(s.into()))),
-                    Err(e) => Ok(Self::ResolveError(
-                        EvalErrorType::RenderError(e.to_string()).no_pos(),
-                    )),
-                }
-            }
-            Self::Function(fc) => match &fc.ty {
-                Some(VarType::Nodes(prop)) => {
-                    let fcs = ctx
-                        .propagation(*prop.clone())?
-                        .iter()
-                        .map(|n| fc.resolve(ft, ctx, local, Some(n)))
-                        .collect::<Result<Vec<FunctionCall>, EvalError>>()?;
-                    Ok(Self::MultiFunction(fcs))
-                }
-                Some(VarType::Leaves) => {
-                    let fcs = ctx
-                        .network
-                        .leaves()
-                        .map(|n| fc.resolve(ft, ctx, local, Some(n)))
-                        .collect::<Result<Vec<FunctionCall>, EvalError>>()?;
-                    Ok(Self::MultiFunction(fcs))
-                }
-                Some(VarType::Roots) => {
-                    let fcs = ctx
-                        .network
-                        .outlets()
-                        .map(|n| fc.resolve(ft, ctx, local, Some(n)))
-                        .collect::<Result<Vec<FunctionCall>, EvalError>>()?;
-                    Ok(Self::MultiFunction(fcs))
-                }
-                Some(VarType::Inputs) => {
-                    let fcs = node
-                        .ok_or(
-                            EvalErrorType::LogicalError("Inputs Function tried without Node value")
-                                .pos(fc.position()),
-                        )?
-                        .try_lock()
-                        .into_option()
-                        .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(fc.position()))?
-                        .inputs()
-                        .iter()
-                        .map(|n| fc.resolve(ft, ctx, local, Some(n)))
-                        .collect::<Result<Vec<FunctionCall>, EvalError>>()?;
-                    Ok(Self::MultiFunction(fcs))
-                }
-                Some(VarType::Output) => {
-                    let v = match node
-                        .ok_or(
-                            EvalErrorType::LogicalError("Output Function tried without Node value")
-                                .pos(fc.position()),
-                        )?
-                        .try_lock()
-                        .into_option()
-                        .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(fc.position()))?
-                        .output()
-                        .into_option()
-                    {
-                        Some(o) => Self::Function(fc.resolve(ft, ctx, local, Some(o))?),
-                        None => {
-                            Expression::ResolveError(EvalErrorType::NoOutputNode.pos(fc.position()))
-                        }
-                    };
-                    Ok(v)
-                }
-                Some(VarType::Root) => {
-                    let v = match ctx.network.root() {
-                        Some(o) => Self::Function(fc.resolve(ft, ctx, local, Some(o))?),
-                        None => {
-                            Expression::ResolveError(EvalErrorType::NoRootNode.pos(fc.position()))
-                        }
-                    };
-                    Ok(v)
-                }
-                _ => fc.resolve(ft, ctx, local, node).map(Self::Function),
-            },
-            Self::MultiFunction(fcs) => fcs
-                .iter()
-                .map(|fc| fc.resolve(ft, ctx, local, node))
-                .collect::<Result<Vec<FunctionCall>, EvalError>>()
-                .map(Self::MultiFunction),
-            Self::Silent(e) => Ok(Self::Silent(Box::new(e.resolve(ft, ctx, local, node)?))),
-            Self::UniOp(op, expr) => Ok(Self::UniOp(
-                op.clone(),
-                Box::new(expr.resolve(ft, ctx, local, node)?),
-            )),
-            Self::BiOp(op, expr1, expr2) => Ok(Self::BiOp(
-                op.clone(),
-                Box::new(expr1.resolve(ft, ctx, local, node)?),
-                Box::new(expr2.resolve(ft, ctx, local, node)?),
-            )),
-            Self::IfElse(cond, expr1, expr2) => Ok(Self::IfElse(
-                Box::new(cond.resolve(ft, ctx, local, node)?),
-                Box::new(expr1.resolve(ft, ctx, local, node)?),
-                if let Some(expr2) = expr2 {
-                    Some(Box::new(expr2.resolve(ft, ctx, local, node)?))
-                } else {
-                    None
-                },
-            )),
-            Self::While(cond, expr) => Ok(Self::While(cond.clone(), expr.clone())),
-            Self::Loop(expr) => Ok(Self::Loop(expr.clone())),
-            Self::TryCatch(expr1, expr2) => match expr1.resolve(ft, ctx, local, node) {
-                Ok(blk) => Ok(Self::TryCatch(
-                    Box::new(blk),
-                    Box::new(expr2.resolve(ft, ctx, local, node)?),
-                )),
-                _ => expr2.resolve(ft, ctx, local, node),
-            },
-            Self::ForEachIf(var, expr1, expr2, cond) => Ok(Self::ForEachIf(
-                var.clone(),
-                Box::new(expr1.resolve(ft, ctx, local, node)?),
-                // can't resolve these two yet since they have local variables
-                expr2.clone(),
-                cond.clone(),
-            )),
-            Self::Multi(exprs) => Ok(Self::Multi(
-                exprs
-                    .into_iter()
-                    .map(|e| e.resolve(ft, ctx, local, node))
-                    .collect::<Result<Vec<_>, EvalError>>()?,
-            )),
-            Self::Return(None) => Ok(Self::Return(None)),
-            Self::Return(Some(expr)) => Ok(Self::Return(Some(Box::new(
-                expr.resolve(ft, ctx, local, node)?,
-            )))),
-            Self::Break(None) => Ok(Self::Break(None)),
-            Self::Break(Some(expr)) => Ok(Self::Break(Some(Box::new(
-                expr.resolve(ft, ctx, local, node)?,
-            )))),
-            Self::Continue => Ok(Self::Continue),
-            Self::Series(vt, ts, name) => match get_series(ft, ctx, node, vt, name, *ts)? {
-                Series::Complete(sr) => Ok(Self::Literal(sr.to_attributes().into())),
-                Series::Masked(sr, RSome(fill)) => Ok(Self::Literal(
-                    sr.to_attributes()
-                        .into_iter()
-                        .map(|a| a.unwrap_or_else(|| fill.clone()))
-                        .collect::<Vec<Attribute>>()
-                        .into(),
-                )),
-                Series::Masked(_, RNone) => Err(EvalErrorType::AttributeError(
-                    "Masked Series without Fill value".into(),
-                )
-                .no_pos()),
-            },
-            Self::SeriesValue(vt, ts, name, ind) => {
-                // this is inefficient as it clones the series; but
-                // the inputs type can not be obtained as ref, so
-                // can't write a generic function to get this at the
-                // moment
-                match get_series(ft, ctx, node, vt, name, *ts)?.get_attribute(*ind) {
-                    Some(Some(val)) => Ok(Self::Literal(val)),
-                    Some(None) => Err(EvalErrorType::EmptyValue(None).no_pos()),
-                    None => Err(EvalErrorType::IndexError.no_pos()),
-                }
-            }
-        }
-    }
-
-    /// Evaluate the expression
-    pub fn eval(
-        &self,
-        ft: &FunctionType,
-        ctx: &TaskContext,
-        local: Option<&AttrMap>,
-        node: Option<&Node>,
-    ) -> Result<ExprResult, EvalError> {
-        match self {
-            Self::None => Ok(ExprResult::None),
-            Self::Result(r) => Ok(r.clone()),
-            Self::Progress(p) => {
-                p.exec(ft, ctx, local, node)?;
-                Ok(ExprResult::None)
-            }
-            Self::Function(fc) => Ok(fc.eval(ft, ctx, local, node)?.into()),
-            Self::Variable(vt) => vt.resolve(ft, ctx, local, node)?.eval(ft, ctx, local, node),
-            Self::SetVariable(sv) => {
-                sv.eval(ft, ctx, local, node)?;
+            Self::Function(fc) => Ok(fc.eval(ctx, ectx)?.into()),
+            Self::SetVar(sv) => {
+                sv.eval_mut(ctx, ectx)?;
                 Ok(ExprResult::None)
             }
             Self::IfElse(cond, expr1, expr2) => {
-                let cond = cond.eval_value(ft, ctx, local, node)?;
+                let cond = cond.eval_value(ctx, ectx)?;
                 let cond = bool::from_attr(&cond).ok_or(EvalErrorType::NotABool.no_pos())?;
                 if cond {
-                    expr1.eval(ft, ctx, local, node)
+                    expr1.eval_mut(ctx, ectx)
                 } else if let Some(expr2) = expr2 {
-                    expr2.eval(ft, ctx, local, node)
+                    expr2.eval_mut(ctx, ectx)
                 } else {
                     Ok(ExprResult::None)
                 }
             }
-            // without mutation this is basically infinite loop
-            Self::While(_, _) | Self::Loop(_) => {
-                Err(EvalErrorType::LogicalError("Infinite loop").no_pos())
-            }
-            Self::TryCatch(expr1, expr2) => match expr1.eval(ft, ctx, local, node) {
+            Self::TryCatch(expr1, expr2) => match expr1.eval_mut(ctx, ectx) {
                 Ok(val) => Ok(val),
-                _ => expr2.eval(ft, ctx, local, node),
+                _ => expr2.eval_mut(ctx, ectx),
             },
             Self::Multi(exprs) => {
                 let mut res = ExprResult::None;
                 for e in exprs {
-                    res = e.eval(ft, ctx, local, node)?;
+                    res = e.eval_mut(ctx, ectx)?;
                 }
                 Ok(res)
             }
             Self::Array(exprs) => {
                 let vals: Vec<ExprResult> = exprs
                     .iter()
-                    .map(|v| v.eval(ft, ctx, local, node))
+                    .map(|v| v.eval_mut(ctx, ectx))
                     .collect::<Result<_, _>>()?;
                 Ok(ExprResult::Arr(vals))
             }
-            Self::Table(exprs) => {
+            Self::Map(exprs) => {
                 let vals: Vec<(String, ExprResult)> = exprs
                     .iter()
-                    .map(|(k, v)| v.eval(ft, ctx, local, node).map(|v| (k.to_string(), v)))
+                    .map(|(k, v)| v.eval_mut(ctx, ectx).map(|v| (k.to_string(), v)))
                     .collect::<Result<_, _>>()?;
                 Ok(ExprResult::Map(vals))
             }
             Self::Silent(e) => {
-                e.eval(ft, ctx, local, node)?;
+                e.eval_mut(ctx, ectx)?;
                 Ok(ExprResult::None)
             }
-            Self::ForEachIf(var, expr1, expr2, cond) => {
-                let parent = match expr1.eval_value(ft, ctx, local, node)? {
-                    Attribute::Array(ar) => ar,
-                    _ => return Err(EvalErrorType::NotAnArray.no_pos()),
-                };
-                let mut results = Vec::with_capacity(parent.len());
-                for val in parent {
-                    // I think in future we want a data type that
-                    // saved reference of parent locales
-                    let mut loc = local.cloned().unwrap_or_default();
-                    loc.insert(var.to_string().into(), val.clone());
-                    if let Some(c) = cond {
-                        let var = c.resolve_eval_value(ft, ctx, Some(&loc), node)?;
-                        match var {
-                            Attribute::Bool(true) => (),
-                            Attribute::Bool(false) => continue,
-                            _ => return Err(EvalErrorType::NotABool.no_pos()),
-                        }
-                    }
-                    let val = expr2.resolve_eval(ft, ctx, Some(&loc), node)?;
-                    results.push(val);
-                }
-                Ok(ExprResult::None)
-            }
-            Self::WithContext(e) => e.resolve(ctx, local, node)?.eval(ft, ctx, local, node),
-            e => e.eval_value(ft, ctx, local, node).map(ExprResult::Val),
+            Self::WithContext(e) => e.expr.eval_mut(ctx, &e.expr.context),
+            _ => self.eval(ctx, ectx),
         }
     }
 
-    /// Evaluate the expression with mutable context
-    pub fn eval_mut(
-        &self,
-        ft: &FunctionType,
-        ctx: &mut TaskContext,
-        local: Option<&AttrMap>,
-        node: Option<&Node>,
-    ) -> Result<ExprResult, EvalError> {
+    fn eval(&self, ctx: &TaskContext, ectx: &EvalCtx) -> Result<ExprResult, EvalError> {
         match self {
             Self::None => Ok(ExprResult::None),
+            Self::Value(r) => Ok(ExprResult::Val(r.clone())),
             Self::Result(r) => Ok(r.clone()),
             Self::Progress(p) => {
-                p.exec(ft, ctx, local, node)?;
+                p.eval(ctx, ectx)?;
                 Ok(ExprResult::None)
             }
-            Self::Function(fc) => Ok(fc.eval_mut(ft, ctx, local, node)?),
-            Self::SetVariable(sv) => {
-                sv.eval_mut(ft, ctx, local, node)?;
+            Self::Function(fc) => Ok(fc.eval(ctx, ectx)?.into()),
+            Self::Var(vt) => Ok(vt.eval(ctx, ectx)?.into()),
+            Self::SetVar(sv) => {
+                sv.eval(ctx, ectx)?;
                 Ok(ExprResult::None)
             }
             Self::IfElse(cond, expr1, expr2) => {
-                let cond = cond.eval_value(ft, ctx, local, node)?;
+                let cond = cond.eval_value(ctx, ectx)?;
                 let cond = bool::from_attr(&cond).ok_or(EvalErrorType::NotABool.no_pos())?;
                 if cond {
-                    expr1.eval_mut(ft, ctx, local, node)
+                    expr1.eval(ctx, ectx)
                 } else if let Some(expr2) = expr2 {
-                    expr2.eval_mut(ft, ctx, local, node)
+                    expr2.eval(ctx, ectx)
                 } else {
                     Ok(ExprResult::None)
                 }
             }
-            Self::While(cond, expr) => {
-                loop {
-                    let cond = cond.resolve_eval_value(ft, ctx, local, node)?;
-                    let cond = bool::from_attr(&cond).ok_or(EvalErrorType::NotABool.no_pos())?;
-                    if !cond {
-                        break;
-                    }
-                    if let Err(e) = expr.resolve_eval_mut(ft, ctx, local, node) {
-                        match e.ty {
-                            EvalErrorType::InvalidBreak(e) => return Ok(e),
-                            EvalErrorType::InvalidContinue => continue,
-                            _ => return Err(e),
-                        }
-                    }
-                }
-                Ok(ExprResult::None)
-            }
-            Self::Loop(expr) => loop {
-                if let Err(e) = expr.resolve_eval_mut(ft, ctx, local, node) {
-                    match e.ty {
-                        EvalErrorType::InvalidBreak(e) => return Ok(e),
-                        EvalErrorType::InvalidContinue => continue,
-                        _ => return Err(e),
-                    }
-                }
-            },
-            Self::TryCatch(expr1, expr2) => match expr1.eval_mut(ft, ctx, local, node) {
+            Self::While(_, _) | Self::Loop(_) => Err(EvalErrorType::LogicalError(
+                "while and loop in immutable context leads into an infinite loop",
+            )
+            .no_pos()),
+            Self::TryCatch(expr1, expr2) => match expr1.eval(ctx, ectx) {
                 Ok(val) => Ok(val),
-                _ => expr2.eval_mut(ft, ctx, local, node),
+                _ => expr2.eval(ctx, ectx),
             },
             Self::Multi(exprs) => {
                 let mut res = ExprResult::None;
                 for e in exprs {
-                    res = e.eval_mut(ft, ctx, local, node)?;
+                    res = e.eval(ctx, ectx)?;
                 }
                 Ok(res)
             }
             Self::Array(exprs) => {
                 let vals: Vec<ExprResult> = exprs
                     .iter()
-                    .map(|v| v.eval_mut(ft, ctx, local, node))
+                    .map(|v| v.eval(ctx, ectx))
                     .collect::<Result<_, _>>()?;
                 Ok(ExprResult::Arr(vals))
             }
-            Self::Table(exprs) => {
+            Self::Map(exprs) => {
                 let vals: Vec<(String, ExprResult)> = exprs
                     .iter()
-                    .map(|(k, v)| v.eval_mut(ft, ctx, local, node).map(|v| (k.to_string(), v)))
+                    .map(|(k, v)| v.eval(ctx, ectx).map(|v| (k.to_string(), v)))
                     .collect::<Result<_, _>>()?;
                 Ok(ExprResult::Map(vals))
             }
             Self::Silent(e) => {
-                e.eval_mut(ft, ctx, local, node)?;
+                e.eval(ctx, ectx)?;
                 Ok(ExprResult::None)
             }
-            Self::ForEachIf(var, expr1, expr2, cond) => {
-                let parent = match expr1.eval_value(ft, ctx, local, node)? {
-                    Attribute::Array(ar) => ar,
-                    _ => return Err(EvalErrorType::NotAnArray.no_pos()),
-                };
-                let mut results = Vec::with_capacity(parent.len());
-                for val in parent {
-                    // I think in future we want a data type that
-                    // saved reference of parent locales
-                    let mut loc = local.cloned().unwrap_or_default();
-                    loc.insert(var.to_string().into(), val.clone());
-                    if let Some(c) = cond {
-                        let var = c.resolve_eval_value(ft, ctx, Some(&loc), node)?;
-                        match var {
-                            Attribute::Bool(true) => (),
-                            Attribute::Bool(false) => continue,
-                            _ => return Err(EvalErrorType::NotABool.no_pos()),
-                        }
-                    }
-                    let val = expr2.resolve_eval_mut(ft, ctx, Some(&loc), node)?;
-                    results.push(val);
-                }
-                Ok(ExprResult::None)
-            }
-            e => e.eval_value(ft, ctx, local, node).map(ExprResult::Val),
-        }
-    }
-
-    /// Evaluate the expression and return a value
-    pub fn eval_value(
-        &self,
-        ft: &FunctionType,
-        ctx: &TaskContext,
-        local: Option<&AttrMap>,
-        node: Option<&Node>,
-    ) -> Result<Attribute, EvalError> {
-        match self {
-            Self::None => Err(EvalErrorType::EmptyValue(None).no_pos()),
-            Self::Progress(p) => {
-                p.exec(ft, ctx, local, node)?;
-                Err(EvalErrorType::EmptyValue(None).no_pos())
-            }
-            Self::Result(r) => r
-                .clone()
-                .to_attribute()
-                .ok_or(EvalErrorType::EmptyValue(None).no_pos()),
-            Self::Literal(v) => Ok(v.clone()),
-            Self::Variable(vt) => {
-                // local variables might not be resolved, so let's
-                // resolve them again here
-                if vt.ty.is_none() {
-                    if let Some(loc) = local {
-                        if let Ok(v) = vt.attr_nested(loc) {
-                            return v.ok_or(
-                                EvalErrorType::EmptyValue(Some(
-                                    vt.indices
-                                        .iter()
-                                        .last()
-                                        .map(|i| i.name())
-                                        .unwrap_or(vt.name.to_string()),
-                                ))
-                                .no_pos(),
-                            );
-                        }
-                    }
-                }
-                vt.resolve(ft, ctx, local, node)?
-                    .eval_value(ft, ctx, local, node)
-            }
-            Self::SetVariable(..) => {
-                Err(EvalErrorType::InvalidContext("can not set variable here").no_pos())
-            }
-            // expression with context should be resolved to normal expression
-            Self::WithContext(_) => Err(EvalErrorType::UnresolvedVariable.no_pos()),
+            // This is already resolved context, so it is fine to just evaluate
+            Self::WithContext(e) => e.expr.eval(ctx, &e.expr.context),
             Self::Range(b, s, e) => {
-                let b = b.eval_value(ft, ctx, local, node)?;
+                let b = b.eval_value(ctx, ectx)?;
                 let b = i64::from_attr(&b).ok_or(EvalErrorType::InvalidAttributeType(
                     NadiAttrType::Integer,
                     b.dtype(),
                 ))?;
-                let e = e.eval_value(ft, ctx, local, node)?;
+                let e = e.eval_value(ctx, ectx)?;
                 let e = i64::from_attr(&e).ok_or(EvalErrorType::InvalidAttributeType(
                     NadiAttrType::Integer,
                     e.dtype(),
                 ))?;
                 let s = if let Some(s) = s {
-                    let s = s.eval_value(ft, ctx, local, node)?;
+                    let s = s.eval_value(ctx, ectx)?;
                     usize::from_attr(&s).ok_or(EvalErrorType::InvalidAttributeType(
                         NadiAttrType::Integer,
                         s.dtype(),
@@ -1255,144 +638,180 @@ impl Expression {
                     1
                 };
                 let vals: Vec<_> = (b..=e).step_by(s).map(Attribute::Integer).collect();
-                Ok(Attribute::Array(vals.into()))
+                Ok(ExprResult::Val(Attribute::Array(vals.into())))
             }
-            Self::Array(exprs) => {
-                let vals: Vec<Attribute> = exprs
-                    .iter()
-                    .map(|v| v.eval_value(ft, ctx, local, node))
-                    .collect::<Result<_, _>>()?;
-                Ok(Attribute::Array(vals.into()))
-            }
-            Self::Table(exprs) => {
-                let vals: HashMap<RString, Attribute> = exprs
-                    .iter()
-                    .map(|(k, v)| {
-                        v.eval_value(ft, ctx, local, node)
-                            .map(|v| (k.to_string().into(), v))
-                    })
-                    .collect::<Result<_, _>>()?;
-                Ok(Attribute::Table(vals.into()))
-            }
-            Self::StructExpr(st) => {
-                let values = st
-                    .values
-                    .iter()
-                    .map(|Tuple2(k, v)| {
-                        v.eval_value(ft, ctx, local, node)
-                            .map(|v| Tuple2(k.clone(), v))
-                    })
-                    .collect::<Result<RHashMap<RString, Attribute>, EvalError>>()?;
-                Ok(Attribute::Table(values))
-            }
-            // Resolve should have converted Render to Lit(String)
-            Self::Render(_) => Err(EvalErrorType::UnresolvedVariable.no_pos()),
-            Self::ResolveError(e) => Err(e.clone()),
+            Self::Render(t) => t.eval(ctx, ectx),
             Self::UserError(s) => Err(EvalErrorType::UserError(s.clone()).no_pos()),
-            Self::Function(fc) => match fc.eval(ft, ctx, local, node)? {
-                ExprResult::None => {
-                    Err(EvalErrorType::NoReturnValue(fc.name.to_string()).pos(fc.position()))
-                }
-                v => v.value(),
-            },
-            Self::MultiFunction(fcs) => fcs
-                .iter()
-                .map(|fc| match fc.eval(ft, ctx, local, node)? {
-                    ExprResult::None => {
-                        Err(EvalErrorType::NoReturnValue(fc.name.to_string()).pos(fc.position()))
-                    }
-                    v => v.value(),
-                })
-                .collect::<Result<Vec<Attribute>, EvalError>>()
-                .map(|ar| Attribute::Array(ar.into())),
-            Self::Silent(e) => {
-                e.eval(ft, ctx, local, node)?;
-                Err(EvalErrorType::EmptyValue(None).no_pos())
-            }
-            Self::UniOp(op, expr) => op.eval(expr.eval_value(ft, ctx, local, node)?),
+            Self::UniOp(op, expr) => op.eval(expr.eval_value(ctx, ectx)?).map(ExprResult::Val),
             Self::BiOp(op, expr1, expr2) => {
-                let first = expr1.eval_value(ft, ctx, local, node)?;
+                let first = expr1.eval_value(ctx, ectx)?;
                 // short circuit logical operations to prevent eval error
                 match (op, &first) {
-                    (BiOperator::And, Attribute::Bool(false)) => return Ok(false.into()),
-                    (BiOperator::Or, Attribute::Bool(true)) => return Ok(true.into()),
+                    (BiOperator::And, Attribute::Bool(false)) => {
+                        return Ok(ExprResult::Val(false.into()));
+                    }
+                    (BiOperator::Or, Attribute::Bool(true)) => {
+                        return Ok(ExprResult::Val(true.into()));
+                    }
                     _ => (),
                 }
-                op.eval(first, expr2.eval_value(ft, ctx, local, node)?)
+                op.eval(first, expr2.eval_value(ctx, ectx)?)
+                    .map(ExprResult::Val)
             }
-            Self::IfElse(cond, expr1, expr2) => {
-                let cond = cond.eval_value(ft, ctx, local, node)?;
-                let cond = bool::from_attr(&cond).ok_or(EvalErrorType::NotABool.no_pos())?;
-                if cond {
-                    expr1.eval_value(ft, ctx, local, node)
-                } else if let Some(expr2) = expr2 {
-                    expr2.eval_value(ft, ctx, local, node)
-                } else {
-                    Err(
-                        EvalErrorType::InvalidContext("if block without else returned none")
-                            .no_pos(),
-                    )
-                }
-            }
-            // without mutation this is basically infinite loop
-            Self::While(_, _) | Self::Loop(_) => {
-                Err(EvalErrorType::LogicalError("Infinite loop").no_pos())
-            }
-            Self::TryCatch(expr1, expr2) => match expr1.eval_value(ft, ctx, local, node) {
-                Ok(val) => Ok(val),
-                _ => expr2.eval_value(ft, ctx, local, node),
-            },
-            Self::ForEachIf(var, expr1, expr2, cond) => {
-                let parent = match expr1.eval_value(ft, ctx, local, node)? {
-                    Attribute::Array(ar) => ar,
-                    _ => return Err(EvalErrorType::NotAnArray.no_pos()),
-                };
-                let mut results = Vec::with_capacity(parent.len());
-                for val in parent {
-                    // I think in future we want a data type that
-                    // saved reference of parent locales
-                    let mut loc = local.cloned().unwrap_or_default();
-                    loc.insert(var.to_string().into(), val.clone());
-                    if let Some(c) = cond {
-                        let var = c.resolve_eval_value(ft, ctx, Some(&loc), node)?;
-                        match var {
-                            Attribute::Bool(true) => (),
-                            Attribute::Bool(false) => continue,
-                            _ => return Err(EvalErrorType::NotABool.no_pos()),
-                        }
-                    }
-                    let val = expr2.resolve_eval_value(ft, ctx, Some(&loc), node)?;
-                    results.push(val);
-                }
-                Ok(Attribute::Array(results.into()))
-            }
-            Self::Multi(exprs) => {
-                let mut res = ExprResult::None;
-                for e in exprs {
-                    res = e.eval(ft, ctx, local, node)?;
-                }
-                res.to_attribute()
-                    .ok_or(EvalErrorType::EmptyValue(None).no_pos())
-            }
-            // return is done through errors due to easier propagation
-            // to parent expressions. If the expression is inside a
-            // function it will be caught and returned as the result
-            // of the function evaluation
             Self::Return(None) => Err(EvalErrorType::InvalidReturn(ExprResult::None).no_pos()),
             Self::Return(Some(expr)) => {
-                let ret = expr.eval(ft, ctx, local, node)?;
+                let ret = expr.eval(ctx, ectx)?;
                 Err(EvalErrorType::InvalidReturn(ret).no_pos())
             }
             Self::Break(None) => Err(EvalErrorType::InvalidBreak(ExprResult::None).no_pos()),
             Self::Break(Some(expr)) => {
-                let ret = expr.eval(ft, ctx, local, node)?;
+                let ret = expr.eval(ctx, ectx)?;
                 Err(EvalErrorType::InvalidBreak(ret).no_pos())
             }
             Self::Continue => Err(EvalErrorType::InvalidContinue.no_pos()),
-            // these should be resolved away
-            Self::Series(..) => todo!(),
-            Self::SeriesValue(..) => todo!(),
+            _ => Err(
+                EvalErrorType::NotImplementedError("this expression is not implemented").no_pos(),
+            ),
         }
+    }
+
+    /// check if the expression is nested (needs parenthesis)
+    fn nested(&self) -> bool {
+        match self {
+            Self::Silent(e) => e.nested(),
+            Self::UniOp(_, _) => true,
+            Self::BiOp(_, _, _) => true,
+            Self::IfElse(_, _, _) => true,
+            Self::TryCatch(_, _) => true,
+            Self::Multi(_) => true,
+            _ => false,
+        }
+    }
+}
+
+#[cfg(feature = "parser")]
+/// Expression that is an import statement
+#[derive(Clone, PartialEq, Debug)]
+pub struct ImportExpr {
+    /// name of the plugin/nadi file
+    pub name: String,
+    /// path to the plugin/nadi code
+    pub path: Option<PathBuf>,
+    // /// Functions to import
+    // functions: ImportFunctions,
+    /// Execute tasks while importing functions
+    pub tasks: bool,
+}
+
+#[cfg(feature = "parser")]
+impl std::fmt::Display for ImportExpr {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let key = if self.tasks { "exec" } else { "import" };
+        if let Some(p) = &self.path {
+            write!(f, "{key} {} from {p:?}", self.name)
+        } else {
+            write!(f, "{key} {}", self.name)
+        }
+    }
+}
+
+#[cfg(feature = "parser")]
+impl ImportExpr {
+    pub fn path(&self) -> Option<PathBuf> {
+        if let Some(p) = &self.path {
+            return Some(p.clone());
+        }
+        let name = &self.name;
+        let path = PathBuf::from(format!("{name}.tasks"));
+        if path.exists() {
+            return Some(path);
+        }
+        None
+    }
+}
+
+#[cfg(feature = "parser")]
+impl Eval for ImportExpr {
+    fn eval(&self, _ctx: &TaskContext, _ectx: &EvalCtx) -> Result<ExprResult, EvalError> {
+        Err(EvalErrorType::InvalidContext("this needs to be run in mutable context").no_pos())
+    }
+    fn eval_mut(&self, ctx: &mut TaskContext, _ectx: &EvalCtx) -> Result<ExprResult, EvalError> {
+        if let Some(path) = self.path() {
+            let txt = std::fs::read_to_string(path).unwrap();
+            let tokens = crate::parser::tokenizer::get_tokens(&txt);
+            let tasks = crate::parser::tasks::parse(tokens)
+                .map_err(|e| EvalErrorType::ParseError(e.to_string()).no_pos())?;
+            if self.tasks {
+                for fc in tasks {
+                    ctx.execute(fc)?;
+                }
+            } else {
+                for mut fc in tasks {
+                    let mut exec = false;
+                    if let Task::Function(fc) = &mut fc {
+                        if let Some(name) = &mut fc.name {
+                            *name = format!("{}.{}", self.name, name);
+                            exec = true;
+                        }
+                    }
+                    if exec {
+                        ctx.execute(fc)?;
+                    }
+                }
+            }
+            Ok(ExprResult::None)
+        } else {
+            // In this case look at the available plugins and
+            // load the functions from there to this context.
+            Err(EvalErrorType::NotImplementedError("import other than tasks").no_pos())
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExprProgress<T> {
+    label: Box<T>,
+    prog: Box<T>,
+    total: Box<T>,
+}
+
+impl<T> ExprProgress<T> {
+    pub fn new(label: T, prog: T, total: T) -> Self {
+        Self {
+            label: Box::new(label),
+            prog: Box::new(prog),
+            total: Box::new(total),
+        }
+    }
+}
+
+impl<T: Clone + Eval> Eval for ExprProgress<T> {
+    fn eval(&self, ctx: &TaskContext, ectx: &EvalCtx) -> Result<ExprResult, EvalError> {
+        let label = self.label.eval_value(ctx, ectx)?;
+        let prog = self.prog.eval_value(ctx, ectx)?;
+        let total = self.total.eval_value(ctx, ectx)?;
+
+        let label = String::try_from_attr(&label)
+            .map_err(EvalErrorType::AttributeError)
+            .map_err(EvalErrorType::no_pos)?;
+        let prog = usize::try_from_attr(&prog)
+            .map_err(EvalErrorType::AttributeError)
+            .map_err(EvalErrorType::no_pos)?;
+        let total = usize::try_from_attr(&total)
+            .map_err(EvalErrorType::AttributeError)
+            .map_err(EvalErrorType::no_pos)?;
+        _ = ctx.channel.send(TaskMessage::Progress(label, prog, total));
+        Ok(ExprResult::None)
+    }
+}
+
+impl<T: std::fmt::Display> std::fmt::Display for ExprProgress<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "progress {} = {} in {}",
+            self.label, self.prog, self.total
+        )
     }
 }
 
@@ -1490,10 +909,14 @@ impl BiOperator {
     }
 
     /// Generate Expression using a stackof expressions
-    pub fn expr_from_stack(self, stack: &mut Vec<Expression>) -> Option<Expression> {
+    pub fn expr_from_stack(self, stack: &mut Vec<RawExpr>) -> Option<RawExpr> {
         let right = stack.pop()?;
         let left = stack.pop()?;
-        Some(Expression::BiOp(self, Box::new(left), Box::new(right)))
+        let pos = left.position();
+        Some(RawExpr::new(
+            ExprType::BiOp(self, Box::new(left), Box::new(right)),
+            pos,
+        ))
     }
 
     /// Evaluate the expression
@@ -1628,6 +1051,12 @@ pub struct InputVar {
     pub start: (usize, usize),
 }
 
+impl Position for InputVar {
+    fn position(&self) -> (usize, usize) {
+        self.start
+    }
+}
+
 impl std::fmt::Display for InputVar {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
@@ -1749,34 +1178,26 @@ impl InputVar {
             None => ft.get_expr_context(node),
         }
     }
+}
 
-    /// Resolve the variable given the context
-    ///
-    /// it returns expression intead of Attribute because we want to
-    /// return Expression::ResolveError
-    pub fn resolve(
-        &self,
-        ft: &FunctionType,
-        ctx: &TaskContext,
-        local: Option<&AttrMap>,
-        node: Option<&Node>,
-    ) -> Result<Expression, EvalError> {
-        let expr_ctx = match self.get_expr_context(ft, ctx, node) {
-            Ok(k) => k,
-            // check also basically checks if the current vartype is valid or invalid
-            Err(_) if self.check => return Ok(Expression::Literal(false.into())),
-            Err(e) => return Err(e.pos(self.position())),
-        };
+impl Eval for InputVar {
+    fn eval(&self, ctx: &TaskContext, ectx: &EvalCtx) -> Result<ExprResult, EvalError> {
         // if type is none then first priotize local
         if self.ty.is_none() {
-            if let Some(l) = local {
-                if let Ok(Some(v)) = self.attr_nested(l) {
-                    return Ok(Expression::Result(ExprResult::Val(v)));
+            if let Some(l) = &ectx.local {
+                if let Ok(Some(v)) = self.attr_nested(l.as_ref()) {
+                    return Ok(ExprResult::Val(v));
                 }
             }
         }
-        let attr = match expr_ctx {
-            ExprContext::Local => self.attr_nested(local.unwrap_or(ctx.env.attr_map())),
+        let attr = match ectx.expr_ctx.as_ref() {
+            ExprContext::Local => {
+                let am: &AttrMap = match ectx.local.as_ref() {
+                    Some(l) => l.as_ref(),
+                    None => ctx.env.attr_map(),
+                };
+                self.attr_nested(am)
+            }
             ExprContext::Env => self.attr_nested(&ctx.env),
             ExprContext::Network => self.attr_nested(&ctx.network),
             ExprContext::Node(n) => self.attr_nested(
@@ -1797,7 +1218,7 @@ impl InputVar {
                         vars.push(a.map_err(|e| e.pos(self.position()))?.into());
                     }
                 }
-                return Ok(Expression::Result(ExprResult::Arr(vars)));
+                return Ok(ExprResult::Arr(vars));
             }
             ExprContext::NodesMap(nds) => {
                 let res: Vec<(String, ExprResult)> = nds
@@ -1817,17 +1238,17 @@ impl InputVar {
                         ))
                     })
                     .collect::<Result<_, EvalError>>()?;
-                return Ok(Expression::Result(ExprResult::Map(res)));
+                return Ok(ExprResult::Map(res));
             }
         };
 
         if self.check {
-            Ok(Expression::Literal(matches!(attr, Ok(Some(_))).into()))
+            Ok(ExprResult::Val(matches!(attr, Ok(Some(_))).into()))
         } else {
             match attr {
-                Ok(Some(v)) => Ok(Expression::Result(ExprResult::Val(v))),
-                Ok(None) => Ok(Expression::Result(ExprResult::None)),
-                Err(e) => Ok(Expression::ResolveError(e.pos(self.position()))),
+                Ok(Some(v)) => Ok(ExprResult::Val(v)),
+                Ok(None) => Ok(ExprResult::None),
+                Err(e) => Err(e.pos(self.position())),
             }
         }
     }
@@ -1902,7 +1323,7 @@ impl VarType {
     }
 
     /// Convert to [`FunctionType`]
-    pub fn to_functiontype(&self) -> &'static FunctionType {
+    pub fn to_functiontype(&self) -> &FunctionType {
         match self {
             VarType::Node(_) => &FunctionType::Node,
             VarType::Network => &FunctionType::Network,
@@ -2034,22 +1455,26 @@ impl std::fmt::Display for VarType {
 
 /// A function call in the task system
 #[derive(Clone)]
-pub struct FunctionCall {
+pub struct FunctionCall<T> {
     /// Type of the function (nodes, inputs, and output are node function)
     pub ty: Option<VarType>,
-    /// Current node: useful to store node to act on, for output/inputs/nodes variety
-    pub node: Option<Node>,
     /// Name of the function
     pub name: String,
     /// Positional Arguments
-    pub args: Vec<Expression>,
+    pub args: Vec<T>,
     /// Keyword Arguments
-    pub kwargs: HashMap<String, Expression>,
+    pub kwargs: HashMap<String, T>,
     /// start position of the function call
     pub start: (usize, usize),
 }
 
-impl PartialEq for FunctionCall {
+impl<T> Position for FunctionCall<T> {
+    fn position(&self) -> (usize, usize) {
+        self.start
+    }
+}
+
+impl<T: PartialEq> PartialEq for FunctionCall<T> {
     fn eq(&self, other: &Self) -> bool {
         self.ty == other.ty
             && self.name == other.name
@@ -2058,7 +1483,7 @@ impl PartialEq for FunctionCall {
     }
 }
 
-impl std::fmt::Debug for FunctionCall {
+impl<T: std::fmt::Debug> std::fmt::Debug for FunctionCall<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.debug_struct("FunctionCall")
             .field("ty", &self.ty)
@@ -2069,7 +1494,7 @@ impl std::fmt::Debug for FunctionCall {
     }
 }
 
-impl std::fmt::Display for FunctionCall {
+impl<T: std::fmt::Display> std::fmt::Display for FunctionCall<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let args = self
             .args
@@ -2096,19 +1521,46 @@ impl std::fmt::Display for FunctionCall {
     }
 }
 
-impl FunctionCall {
+/// Resolve the variables in the functioncall
+///
+/// Recursively resolves the expressions in the function arguments
+pub fn resolve_function_calls<'a, 'b>(
+    fc: FunctionCall<RawExpr>,
+    ctx: &'a TaskContext,
+    ectx: EvalCtx<'b>,
+) -> Result<FunctionCall<ResolvedExpr<'b>>, EvalError> {
+    let mut args = Vec::with_capacity(fc.args.len());
+    let pos = fc.position();
+    for a in fc.args {
+        args.push(a.resolve(ctx, ectx.clone()).map_err(|e| e.pos(pos))?);
+    }
+    let mut kwargs = HashMap::with_capacity(fc.kwargs.len());
+    for (k, a) in fc.kwargs {
+        kwargs.insert(
+            k.clone(),
+            a.resolve(ctx, ectx.clone()).map_err(|e| e.pos(pos))?,
+        );
+    }
+    Ok(FunctionCall {
+        ty: fc.ty.clone(),
+        name: fc.name.clone(),
+        args,
+        kwargs,
+        start: fc.start,
+    })
+}
+
+impl<T> FunctionCall<T> {
     /// New functioncall
     pub fn new(
         ty: Option<VarType>,
-        node: Option<Node>,
         name: String,
-        args: Vec<Expression>,
-        kwargs: HashMap<String, Expression>,
+        args: Vec<T>,
+        kwargs: HashMap<String, T>,
         start: (usize, usize),
     ) -> Self {
         Self {
             ty,
-            node,
             name,
             args,
             kwargs,
@@ -2116,89 +1568,29 @@ impl FunctionCall {
         }
     }
 
-    /// Simplify the expressions in the functioncall without variables
-    ///
-    /// Recursively simplifies the expressions in the function arguments
-    pub fn simplify(&mut self, ft: &FunctionType, ctx: &TaskContext) -> Result<(), EvalError> {
-        let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
-        let mut args = Vec::with_capacity(self.args.len());
-        for a in &self.args {
-            args.push(
-                a.clone()
-                    .simplify(ft, ctx)
-                    .map_err(|e| e.pos(self.position()))?,
-            );
-        }
-        let mut kwargs = HashMap::with_capacity(self.kwargs.len());
-        for (k, a) in &self.kwargs {
-            kwargs.insert(
-                k.clone(),
-                a.clone()
-                    .simplify(ft, ctx)
-                    .map_err(|e| e.pos(self.position()))?,
-            );
-        }
-        self.args = args;
-        self.kwargs = kwargs;
-        Ok(())
-    }
-
-    /// Resolve the variables in the functioncall
-    ///
-    /// Recursively resolves the expressions in the function arguments
-    pub fn resolve(
+    fn get_expr_context(
         &self,
         ft: &FunctionType,
         ctx: &TaskContext,
-        local: Option<&AttrMap>,
         node: Option<&Node>,
-    ) -> Result<Self, EvalError> {
-        let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
-        let node = match &self.ty {
-            // if node name is given explicitely it overrides everything
-            Some(VarType::Node(Some(n))) => Some(
-                ctx.network
-                    .node_by_name(n)
-                    .ok_or(EvalErrorType::NodeNotFound(n.to_string()).pos(self.position()))?,
-            ),
-            _ => self.node.as_ref().or(node),
-        };
-        let mut args = Vec::with_capacity(self.args.len());
-        for a in &self.args {
-            args.push(
-                a.resolve(ft, ctx, local, node)
-                    .map_err(|e| e.pos(self.position()))?,
-            );
+    ) -> Result<ExprContext, EvalErrorType> {
+        match &self.ty {
+            Some(ty) => ty.get_expr_context(ctx, node),
+            None => ft.get_expr_context(node),
         }
-        let mut kwargs = HashMap::with_capacity(self.kwargs.len());
-        for (k, a) in &self.kwargs {
-            kwargs.insert(
-                k.clone(),
-                a.resolve(ft, ctx, local, node)
-                    .map_err(|e| e.pos(self.position()))?,
-            );
-        }
-        Ok(FunctionCall {
-            ty: self.ty.clone(),
-            node: node.cloned(),
-            name: self.name.clone(),
-            args,
-            kwargs,
-            start: self.start,
-        })
     }
+}
 
+impl<'a> FunctionCall<ResolvedExpr<'a>> {
     pub fn function_ctx(
         &self,
-        ft: &FunctionType,
         ctx: &TaskContext,
-        local: Option<&AttrMap>,
-        node: Option<&Node>,
+        ectx: &EvalCtx,
     ) -> Result<FunctionCtx, EvalError> {
         let mut args = Vec::with_capacity(self.args.len());
         for a in &self.args {
             args.push(
-                a.eval_value(ft, ctx, local, node)
+                a.eval_value(ctx, ectx)
                     .map_err(|e| e.pos(self.position()))?,
             );
         }
@@ -2206,185 +1598,114 @@ impl FunctionCall {
         for (k, a) in &self.kwargs {
             kwargs.insert(
                 k.clone(),
-                a.eval_value(ft, ctx, local, node)
+                a.eval_value(ctx, ectx)
                     .map_err(|e| e.pos(self.position()))?,
             );
         }
         Ok(FunctionCtx::from_arg_kwarg(args, kwargs))
     }
+}
 
-    /// Eval the function in a mutable context
-    pub fn eval_mut(
-        &self,
-        ft: &FunctionType,
-        ctx: &mut TaskContext,
-        local: Option<&AttrMap>,
-        node: Option<&Node>,
-    ) -> Result<ExprResult, EvalError> {
-        let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
-        let node = self.node.as_ref().or(node);
-        let fctx = self.function_ctx(ft, ctx, local, node)?;
-        self.run_w_ctx_mut(ft, ctx, fctx, node, None)
-    }
-
-    /// Eval the function in immutable context
-    pub fn eval(
-        &self,
-        ft: &FunctionType,
-        ctx: &TaskContext,
-        local: Option<&AttrMap>,
-        node: Option<&Node>,
-    ) -> Result<ExprResult, EvalError> {
-        let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
-        let node = self.node.as_ref().or(node);
-        let fctx = self.function_ctx(ft, ctx, local, node)?;
-        self.run_w_ctx(ft, ctx, fctx, node, None)
-    }
-
-    /// Run the function with given context
-    pub fn run_w_ctx(
-        &self,
-        ft: &FunctionType,
-        tctx: &TaskContext,
-        fctx: FunctionCtx,
-        node: Option<&Node>,
-        original: Option<FunctionType>,
-    ) -> Result<ExprResult, EvalError> {
-        let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
-        let node = self.node.as_ref().or(node);
-        match ft {
-            FunctionType::Env => {
-                match tctx.udf(&self.name).cloned() {
-                    // priority for the locally defined function
-                    Some(func) if ft == &FunctionType::Env => Ok(func.eval(tctx, fctx)?.into()),
-                    _ => match tctx.functions.env(&self.name) {
-                        Some(f) => f.call(&fctx).expr_res().map_err(|s| {
-                            EvalErrorType::FunctionError(self.name.to_string(), s)
-                                .pos(self.position())
-                        }),
-                        None => Err(EvalErrorType::FunctionNotFound(
-                            Some(original.unwrap_or_else(|| ft.clone())),
-                            self.name.to_string(),
-                        )
-                        .pos(self.position())),
-                    },
-                }
-            }
-            FunctionType::Node => match tctx.functions.node(&self.name) {
-                Some(f) => {
-                    let n = node
-                        .ok_or(
-                            EvalErrorType::LogicalError("Node function called without node")
-                                .pos(self.position()),
-                        )?
-                        .try_lock()
-                        .into_option()
-                        .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(self.position()))?;
-                    f.call(&n, &fctx).expr_res().map_err(|s| {
-                        EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
-                    })
-                }
-                // if the function is not called by explicit type then also test environment function
-                None if self.ty.is_none() => {
-                    self.run_w_ctx(&FunctionType::Env, tctx, fctx, node, Some(ft.clone()))
-                }
-                None => Err(EvalErrorType::FunctionNotFound(
-                    Some(original.unwrap_or_else(|| ft.clone())),
-                    self.name.to_string(),
-                )
-                .pos(self.position())),
-            },
-            FunctionType::Network => match tctx.functions.network(&self.name) {
-                Some(f) => f.call(&tctx.network, &fctx).expr_res().map_err(|s| {
-                    EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
-                }),
-                // if the function is not called by explicit type then also test environment function
-                None if self.ty.is_none() => {
-                    self.run_w_ctx(&FunctionType::Env, tctx, fctx, node, Some(ft.clone()))
-                }
-                None => Err(EvalErrorType::FunctionNotFound(
-                    Some(original.unwrap_or_else(|| ft.clone())),
-                    self.name.to_string(),
-                )
-                .pos(self.position())),
-            },
-        }
-    }
-
-    /// Run the function with given immutable context
-    pub fn run_w_ctx_mut(
-        &self,
-        ft: &FunctionType,
-        tctx: &mut TaskContext,
-        fctx: FunctionCtx,
-        node: Option<&Node>,
-        original: Option<FunctionType>,
-    ) -> Result<ExprResult, EvalError> {
-        let ft = self.ty.as_ref().map(VarType::to_functiontype).unwrap_or(ft);
-        let node = self.node.as_ref().or(node);
-        match ft {
-            FunctionType::Env => match tctx.udf(&self.name).cloned() {
+impl Eval for FunctionCall<ResolvedExpr<'_>> {
+    fn eval(&self, ctx: &TaskContext, ectx: &EvalCtx) -> Result<ExprResult, EvalError> {
+        let func_ctx = self.function_ctx(ctx, ectx)?;
+        match ectx.expr_ctx.as_ref() {
+            ExprContext::Local | ExprContext::Env => match ctx.udf(&self.name).cloned() {
                 // priority for the locally defined function
-                Some(func) if ft == &FunctionType::Env => Ok(func.eval(tctx, fctx)?.into()),
-                _ => match tctx.functions.env(&self.name) {
-                    Some(f) => f.call(&fctx).expr_res().map_err(|s| {
+                Some(func) => Ok(func.eval(ctx, ectx, func_ctx)?.into()),
+                _ => match ctx.functions.env(&self.name) {
+                    Some(f) => f.call(&func_ctx).res().map_err(|s| {
                         EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
                     }),
                     None => Err(EvalErrorType::FunctionNotFound(
-                        Some(original.unwrap_or_else(|| ft.clone())),
+                        Some(ectx.expr_ctx.as_ref().function_type().clone()),
                         self.name.to_string(),
                     )
                     .pos(self.position())),
                 },
             },
-            FunctionType::Node => match tctx.functions.node(&self.name) {
+            ExprContext::Network => match ctx.functions.network(&self.name) {
+                Some(f) => f.call(&ctx.network, &func_ctx).res().map_err(|s| {
+                    EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
+                }),
+                // if the function is not called by explicit type then also test environment function
+                None if self.ty.is_none() => self.eval(ctx, &ectx.as_env()),
+                None => Err(EvalErrorType::FunctionNotFound(
+                    Some(ectx.expr_ctx.as_ref().function_type().clone()),
+                    self.name.to_string(),
+                )
+                .pos(self.position())),
+            },
+            ExprContext::Node(node) => match ctx.functions.node(&self.name) {
                 Some(f) => {
-                    let mut n = node
-                        .ok_or(
-                            EvalErrorType::LogicalError("Node function called without node")
-                                .pos(self.position()),
-                        )?
+                    let n = node
                         .try_lock()
                         .into_option()
                         .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(self.position()))?;
-                    let res = f.call_mut(&mut n, &fctx).expr_res().map_err(|s| {
+                    f.call(&n, &func_ctx).res().map_err(|s| {
                         EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
-                    });
-                    _ = tctx.channel.send(TaskMessage::Changed);
-                    res
+                    })
                 }
                 // if the function is not called by explicit type then also test environment function
-                None if self.ty.is_none() => {
-                    self.run_w_ctx(&FunctionType::Env, tctx, fctx, node, Some(ft.clone()))
-                }
+                None if self.ty.is_none() => self.eval(ctx, &ectx.as_env()),
                 None => Err(EvalErrorType::FunctionNotFound(
-                    Some(original.unwrap_or_else(|| ft.clone())),
+                    Some(ectx.expr_ctx.as_ref().function_type().clone()),
                     self.name.to_string(),
                 )
                 .pos(self.position())),
             },
-            FunctionType::Network => match tctx.functions.network(&self.name) {
+            ExprContext::Nodes(_nds) | ExprContext::NodesMap(_nds) => todo!(),
+        }
+    }
+
+    fn eval_mut(&self, ctx: &mut TaskContext, ectx: &EvalCtx) -> Result<ExprResult, EvalError> {
+        let func_ctx = self.function_ctx(ctx, ectx)?;
+        match ectx.expr_ctx.as_ref() {
+            ExprContext::Local | ExprContext::Env => match ctx.udf(&self.name).cloned() {
+                // priority for the locally defined function
+                Some(func) => Ok(func.eval(ctx, ectx, func_ctx)?.into()),
+                _ => match ctx.functions.env(&self.name) {
+                    Some(f) => f.call(&func_ctx).res().map_err(|s| {
+                        EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
+                    }),
+                    None => Err(EvalErrorType::FunctionNotFound(
+                        Some(ectx.expr_ctx.as_ref().function_type().clone()),
+                        self.name.to_string(),
+                    )
+                    .pos(self.position())),
+                },
+            },
+            ExprContext::Network => match ctx.functions.network(&self.name) {
+                Some(f) => f.call_mut(&mut ctx.network, &func_ctx).res().map_err(|s| {
+                    EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
+                }),
+                // if the function is not called by explicit type then also test environment function
+                None if self.ty.is_none() => self.eval(ctx, &ectx.as_env()),
+                None => Err(EvalErrorType::FunctionNotFound(
+                    Some(ectx.expr_ctx.as_ref().function_type().clone()),
+                    self.name.to_string(),
+                )
+                .pos(self.position())),
+            },
+            ExprContext::Node(node) => match ctx.functions.node(&self.name) {
                 Some(f) => {
-                    let res = f
-                        .call_mut(&mut tctx.network, &fctx)
-                        .expr_res()
-                        .map_err(|s| {
-                            EvalErrorType::FunctionError(self.name.to_string(), s)
-                                .pos(self.position())
-                        });
-                    _ = tctx.channel.send(TaskMessage::Changed);
-                    res
+                    let mut n = node
+                        .try_lock()
+                        .into_option()
+                        .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(self.position()))?;
+                    f.call_mut(&mut n, &func_ctx).res().map_err(|s| {
+                        EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
+                    })
                 }
                 // if the function is not called by explicit type then also test environment function
-                None if self.ty.is_none() => {
-                    self.run_w_ctx(&FunctionType::Env, tctx, fctx, node, Some(ft.clone()))
-                }
+                None if self.ty.is_none() => self.eval(ctx, &ectx.as_env()),
                 None => Err(EvalErrorType::FunctionNotFound(
-                    Some(original.unwrap_or_else(|| ft.clone())),
+                    Some(ectx.expr_ctx.as_ref().function_type().clone()),
                     self.name.to_string(),
                 )
                 .pos(self.position())),
             },
+            ExprContext::Nodes(_nds) | ExprContext::NodesMap(_nds) => todo!(),
         }
     }
 }
@@ -2409,7 +1730,7 @@ impl std::fmt::Display for MapFunction {
 #[derive(Clone, PartialEq, Debug)]
 pub enum SeriesExpression {
     /// Expression evaluates to an attribute, but the attribute must be an array
-    AttrExpr(Expression),
+    AttrExpr(RawExpr),
     /// Another Series, simply copy
     // if single or zip them if multiple (add type for that)
     Series(Option<VarType>, bool, String),
@@ -2448,16 +1769,17 @@ impl SeriesExpression {
         node: Option<&Node>,
     ) -> Result<Series, EvalError> {
         match self {
-            Self::AttrExpr(expr) => match expr.resolve_eval(ft, ctx, local, node)? {
-                ExprResult::Arr(ar) => Ok(MaskedSeries::from(
-                    ar.into_iter()
-                        .map(ExprResult::to_attribute)
-                        .collect::<Vec<Option<Attribute>>>(),
-                )
-                .retype()
-                .into()),
-                _ => Err(EvalErrorType::NotAnArray.no_pos()),
-            },
+            Self::AttrExpr(_) => todo!(),
+            // Self::AttrExpr(expr) => match expr.resolve_eval(ft, ctx, local, node)? {
+            //     ExprResult::Arr(ar) => Ok(MaskedSeries::from(
+            //         ar.into_iter()
+            //             .map(ExprResult::to_attribute)
+            //             .collect::<Vec<Option<Attribute>>>(),
+            //     )
+            //     .retype()
+            //     .into()),
+            //     _ => Err(EvalErrorType::NotAnArray.no_pos()),
+            // },
             Self::Series(ty, ts, sr) => get_series(ft, ctx, node, ty, sr, *ts),
             Self::SeriesMap(ty, ts, sr, func) => {
                 let sr = get_series(ft, ctx, node, ty, sr, *ts)?;
@@ -2470,7 +1792,7 @@ impl SeriesExpression {
                                 FunctionCtx::from_arg_kwarg(vec![], HashMap::new())
                             };
                             // eval udf with node/network context
-                            udf.eval_inline(ft, ctx, fctx, node)
+                            udf.eval(ctx, &EvalCtx::default(), fctx)
                         };
                         sr.map_values(&func_call)
                     }
@@ -2483,9 +1805,9 @@ impl SeriesExpression {
                             };
                             match ctx.udf(name).cloned() {
                                 // priority for the locally defined function; evaluated in local context
-                                Some(func) => func.eval(ctx, fctx),
+                                Some(func) => func.eval(ctx, &EvalCtx::default(), fctx),
                                 _ => match ctx.functions.env(name) {
-                                    Some(f) => f.call(&fctx).expr_res().map_err(|e| {
+                                    Some(f) => f.call(&fctx).res().map_err(|e| {
                                         EvalErrorType::FunctionError(
                                             name.to_string(),
                                             e.to_string(),
@@ -2643,13 +1965,15 @@ fn get_node_series_or_ts(n: &Node, name: &str, ts: bool) -> Result<Series, EvalE
 
 /// Expression with some context
 #[derive(Debug, Clone, PartialEq)]
-pub struct ExprWithContext {
+pub struct ExprWithContext<T: std::fmt::Debug + Clone + PartialEq> {
     pub ty: VarType,
     // TODO: make it a vec of expression later
-    pub expr: Box<Expression>,
+    pub expr: Box<T>,
 }
 
-impl std::fmt::Display for ExprWithContext {
+impl<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq> std::fmt::Display
+    for ExprWithContext<T>
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -2663,57 +1987,67 @@ impl std::fmt::Display for ExprWithContext {
     }
 }
 
-impl ExprWithContext {
-    pub fn new(ty: VarType, expr: Expression) -> Self {
+// FIX: when there is setvariable inside the context expression, then we can not resolve in advance, or resolve into array and tables
+// e.g.: nodes { node.x = 8 }
+
+fn resolve_expr_w_ctx<'a, 'b>(
+    expr: ExprWithContext<RawExpr>,
+    ctx: &'a TaskContext,
+    ectx: EvalCtx<'b>,
+) -> Result<ResolvedExpr<'b>, EvalError> {
+    let expr_ctx = expr
+        .ty
+        .get_expr_context(ctx, ectx.curr_node())
+        .map_err(|e| e.no_pos())?;
+    let mut context = ectx.clone();
+    context.expr_ctx = Cow::Owned(expr_ctx.clone());
+    match expr_ctx {
+        ExprContext::Local => todo!(),
+        ExprContext::Node(n) => expr.expr.resolve(ctx, ectx.at_node(n).to_owned()),
+        ExprContext::Nodes(nds) => {
+            let exprs = nds
+                .into_iter()
+                .map(|n| expr.expr.clone().resolve(ctx, ectx.at_node(n).to_owned()))
+                .collect::<Result<Vec<ResolvedExpr>, EvalError>>()?;
+            // FIX: how to know whether the user is looking for array or statement?
+            let et = ExprType::Array(exprs);
+            Ok(ResolvedExpr {
+                position: expr.expr.position(),
+                expr: et,
+                context,
+            })
+        }
+        ExprContext::NodesMap(nds) => {
+            let exprs = nds
+                .into_iter()
+                .map(|n| {
+                    let name = n
+                        .try_lock()
+                        .into_option()
+                        .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
+                        .name()
+                        .to_string();
+                    let expr = expr.expr.clone().resolve(ctx, ectx.at_node(n).to_owned())?;
+                    Ok((name, expr))
+                })
+                .collect::<Result<Vec<(String, ResolvedExpr)>, EvalError>>()?;
+            let et = ExprType::Map(exprs);
+            Ok(ResolvedExpr {
+                position: expr.expr.position(),
+                expr: et,
+                context,
+            })
+        }
+        ExprContext::Env => expr.expr.resolve(ctx, ectx.as_env().to_owned()),
+        ExprContext::Network => expr.expr.resolve(ctx, ectx.as_network().to_owned()),
+    }
+}
+
+impl<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq + Position> ExprWithContext<T> {
+    pub fn new(ty: VarType, expr: T) -> Self {
         Self {
             ty,
             expr: Box::new(expr),
-        }
-    }
-
-    pub fn resolve(
-        &self,
-        ctx: &TaskContext,
-        local: Option<&RHashMap<RString, Attribute>>,
-        node: Option<&Node>,
-    ) -> Result<Expression, EvalError> {
-        // FIX: when there is setvariable inside the context expression, then we can not resolve in advance, or resolve into array and tables
-        // e.g.: nodes { node.x = 8 }
-        let expr_ctx = self
-            .ty
-            .get_expr_context(ctx, node)
-            .map_err(|e| e.no_pos())?;
-        match expr_ctx {
-            ExprContext::Local => todo!(),
-            ExprContext::Node(n) => self.expr.resolve(&FunctionType::Node, ctx, local, Some(&n)),
-            ExprContext::Nodes(nds) => {
-                let exprs = nds
-                    .iter()
-                    .map(|n| self.expr.resolve(&FunctionType::Node, ctx, local, Some(n)))
-                    .collect::<Result<Vec<Expression>, EvalError>>()?;
-                // FIX: how to know whether the user is looking for array or statement?
-                Ok(Expression::Array(exprs))
-            }
-            ExprContext::NodesMap(nds) => {
-                let exprs = nds
-                    .iter()
-                    .map(|n| {
-                        let name = n
-                            .try_lock()
-                            .into_option()
-                            .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
-                            .name()
-                            .to_string();
-                        let expr = self
-                            .expr
-                            .resolve(&FunctionType::Node, ctx, local, Some(&n))?;
-                        Ok((name, expr))
-                    })
-                    .collect::<Result<Vec<(String, Expression)>, EvalError>>()?;
-                Ok(Expression::Table(exprs))
-            }
-            ExprContext::Env => self.expr.resolve(&FunctionType::Env, ctx, local, node),
-            ExprContext::Network => self.expr.resolve(&FunctionType::Network, ctx, local, node),
         }
     }
 }
@@ -2738,6 +2072,35 @@ pub enum ExprContext {
     NodesMap(Vec<Node>),
 }
 
+impl ExprContext {
+    pub fn function_type(&self) -> &FunctionType {
+        match self {
+            Self::Local | Self::Env => &FunctionType::Env,
+            Self::Network => &FunctionType::Network,
+            Self::Node(_) | Self::Nodes(_) | Self::NodesMap(_) => &FunctionType::Node,
+        }
+    }
+}
+
+impl PartialEq for ExprContext {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Local, Self::Local) => true,
+            (Self::Env, Self::Env) => true,
+            (Self::Network, Self::Network) => true,
+            (Self::Node(n1), Self::Node(n2)) => {
+                let n1 = n1.lock().name().to_string();
+                let n2 = n2.lock().name().to_string();
+                n1 == n2
+            }
+            // TODO
+            (Self::Nodes(_nds1), Self::Nodes(_nds2)) => false,
+            (Self::NodesMap(_nds1), Self::NodesMap(_nds2)) => false,
+            _ => false,
+        }
+    }
+}
+
 impl std::fmt::Debug for ExprContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -2753,14 +2116,14 @@ impl std::fmt::Debug for ExprContext {
 }
 
 #[derive(Clone)]
-pub struct SetVariable {
+pub struct SetVariable<T> {
     var: InputVar,
-    expr: Box<Expression>,
+    expr: Box<T>,
     silent: bool,
     ctx: Option<ExprContext>,
 }
 
-impl std::fmt::Debug for SetVariable {
+impl<T: std::fmt::Debug> std::fmt::Debug for SetVariable<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SetVariable")
             .field("var", &self.var)
@@ -2771,20 +2134,20 @@ impl std::fmt::Debug for SetVariable {
     }
 }
 
-impl PartialEq for SetVariable {
+impl<T: PartialEq> PartialEq for SetVariable<T> {
     fn eq(&self, other: &Self) -> bool {
         self.var == other.var && self.expr == other.expr && self.silent == other.silent
     }
 }
 
-impl std::fmt::Display for SetVariable {
+impl<T: std::fmt::Display> std::fmt::Display for SetVariable<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} = {}", self.var, self.expr)
     }
 }
 
-impl SetVariable {
-    pub fn new(var: InputVar, expr: Expression, silent: bool) -> Self {
+impl<T: Clone> SetVariable<T> {
+    pub fn new(var: InputVar, expr: T, silent: bool) -> Self {
         Self {
             var,
             expr: Box::new(expr),
@@ -2805,100 +2168,66 @@ impl SetVariable {
         // eprintln!("Found: {:?}", e.ctx);
         Ok(e)
     }
+}
 
-    // NOTE: might have to only resolve while evaluating, and also after evaluating the previous expressions, skipping resolve and calling it after wards seems like a good idea to not fail
-    fn eval(
-        &self,
-        ft: &FunctionType,
-        ctx: &TaskContext,
-        local: Option<&AttrMap>,
-        node: Option<&Node>,
-    ) -> Result<(), EvalError> {
-        let expr_ctx = match &self.ctx {
-            Some(s) => s.clone(),
-            None => self.var.get_expr_context(ft, &ctx, node)?,
-        };
-        match expr_ctx {
+impl<T: Clone + Eval> Eval for SetVariable<T> {
+    fn eval(&self, ctx: &TaskContext, ectx: &EvalCtx) -> Result<ExprResult, EvalError> {
+        match self.ctx.as_ref().unwrap_or(ectx.expr_ctx.as_ref()) {
             ExprContext::Local => Err(EvalErrorType::InvalidVariableType.no_pos()),
             ExprContext::Env | ExprContext::Network => {
                 // env and network can only be modified if the context is in mutable state
                 Err(EvalErrorType::InvalidVariableType.no_pos())
             }
             ExprContext::Node(n) => {
-                let val =
-                    self.expr
-                        .resolve_eval_value(&FunctionType::Node, ctx, local, Some(&n))?;
+                let val = self.expr.eval_value(ctx, ectx)?;
                 self.var.set_attr_nested(n.lock().attr_map_mut(), val)?;
                 _ = ctx.channel.send(TaskMessage::Changed);
-                Ok(())
+                Ok(ExprResult::None)
             }
             ExprContext::Nodes(nds) => {
                 for n in nds {
-                    let val =
-                        self.expr
-                            .resolve_eval_value(&FunctionType::Node, ctx, local, Some(&n))?;
+                    let val = self.expr.eval_value(ctx, &ectx.at_node(n.clone()))?;
                     self.var.set_attr_nested(n.lock().attr_map_mut(), val)?;
                 }
                 _ = ctx.channel.send(TaskMessage::Changed);
-                Ok(())
+
+                Ok(ExprResult::None)
             }
             ExprContext::NodesMap(_) => Err(EvalErrorType::InvalidVariableType.no_pos()),
         }
     }
 
-    fn eval_mut(
-        &self,
-        ft: &FunctionType,
-        ctx: &mut TaskContext,
-        local: Option<&AttrMap>,
-        node: Option<&Node>,
-    ) -> Result<(), EvalError> {
-        {
-            let expr_ctx = match &self.ctx {
-                Some(s) => s.clone(),
-                None => self.var.get_expr_context(ft, &ctx, node)?,
-            };
-            match expr_ctx {
-                ExprContext::Local => Err(EvalErrorType::InvalidVariableType.no_pos()),
-                ExprContext::Env => {
-                    let val = self
-                        .expr
-                        .resolve_eval_value(&FunctionType::Env, ctx, local, node)?;
-                    self.var.set_attr_nested(ctx.env.attr_map_mut(), val)?;
-                    _ = ctx.channel.send(TaskMessage::Changed);
-                    Ok(())
-                }
-                ExprContext::Network => {
-                    let val =
-                        self.expr
-                            .resolve_eval_value(&FunctionType::Network, ctx, local, node)?;
-                    self.var.set_attr_nested(ctx.network.attr_map_mut(), val)?;
-                    _ = ctx.channel.send(TaskMessage::Changed);
-                    Ok(())
-                }
-                ExprContext::Node(n) => {
-                    let val =
-                        self.expr
-                            .resolve_eval_value(&FunctionType::Node, ctx, local, Some(&n))?;
-                    self.var.set_attr_nested(n.lock().attr_map_mut(), val)?;
-                    _ = ctx.channel.send(TaskMessage::Changed);
-                    Ok(())
-                }
-                ExprContext::Nodes(nds) => {
-                    for n in nds {
-                        let val = self.expr.resolve_eval_value(
-                            &FunctionType::Node,
-                            ctx,
-                            local,
-                            Some(&n),
-                        )?;
-                        self.var.set_attr_nested(n.lock().attr_map_mut(), val)?;
-                    }
-                    _ = ctx.channel.send(TaskMessage::Changed);
-                    Ok(())
-                }
-                ExprContext::NodesMap(_) => Err(EvalErrorType::InvalidVariableType.no_pos()),
+    fn eval_mut(&self, ctx: &mut TaskContext, ectx: &EvalCtx) -> Result<ExprResult, EvalError> {
+        match self.ctx.as_ref().unwrap_or(ectx.expr_ctx.as_ref()) {
+            ExprContext::Local => Err(EvalErrorType::InvalidVariableType.no_pos()),
+            ExprContext::Env => {
+                let val = self.expr.eval_value(ctx, ectx)?;
+                self.var.set_attr_nested(ctx.env.attr_map_mut(), val)?;
+                _ = ctx.channel.send(TaskMessage::Changed);
+                Ok(ExprResult::None)
             }
+            ExprContext::Network => {
+                let val = self.expr.eval_value(ctx, ectx)?;
+                self.var.set_attr_nested(ctx.network.attr_map_mut(), val)?;
+                _ = ctx.channel.send(TaskMessage::Changed);
+                Ok(ExprResult::None)
+            }
+            ExprContext::Node(n) => {
+                let val = self.expr.eval_value(ctx, ectx)?;
+                self.var.set_attr_nested(n.lock().attr_map_mut(), val)?;
+                _ = ctx.channel.send(TaskMessage::Changed);
+                Ok(ExprResult::None)
+            }
+            ExprContext::Nodes(nds) => {
+                for n in nds {
+                    let val = self.expr.eval_value(ctx, &ectx.at_node(n.clone()))?;
+                    self.var.set_attr_nested(n.lock().attr_map_mut(), val)?;
+                }
+                _ = ctx.channel.send(TaskMessage::Changed);
+
+                Ok(ExprResult::None)
+            }
+            ExprContext::NodesMap(_) => Err(EvalErrorType::InvalidVariableType.no_pos()),
         }
     }
 }

@@ -1,6 +1,6 @@
 use crate::expressions::{
-    BiOperator, ExprProgress, ExprWithContext, Expression, FunctionCall, InputVar, SetVariable,
-    TaskPosition, UniOperator, VarType,
+    BiOperator, ExprProgress, ExprType, ExprWithContext, FunctionCall, InputVar, Position, RawExpr,
+    SetVariable, UniOperator, VarType,
 };
 use crate::network::PropNodes;
 use crate::parser::{
@@ -11,7 +11,7 @@ use crate::parser::{
 };
 use crate::structs::NadiStructExpr;
 use crate::tasks::TaskKeyword;
-use crate::udf::{LocalExpr, UserFunction};
+use crate::udf::UserFunction;
 use nom::{
     branch::alt,
     combinator::{cut, map, opt, value},
@@ -19,60 +19,82 @@ use nom::{
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
 };
 
-pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+fn set_pos(ty: ExprType<RawExpr>, tk: &[Token<'_>]) -> RawExpr {
+    RawExpr {
+        expr: ty,
+        position: tk.position(),
+    }
+}
+
+/// Matches the next one that might have spaces, newlines or comments before it
+pub fn raw_expr<'a, 'b: 'a, F>(mut f: F) -> impl FnMut(&'a [Token<'b>]) -> MatchRes<'a, 'b, RawExpr>
+where
+    F: nom::Parser<&'a [Token<'b>], ExprType<RawExpr>, MatchErr<'a, 'b>>,
+{
+    move |i: &'a [Token<'b>]| match f.parse(i) {
+        Ok((rest, o)) => Ok((
+            rest,
+            RawExpr {
+                expr: o,
+                // it could crash things
+                position: i.position(),
+            },
+        )),
+        Err(e) => Err(e),
+    }
+}
+
+pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
     alt((
-        map(nadi_struct_expr, Expression::StructExpr),
+        // map(nadi_struct_expr, Expression::StructExpr),
         expr_with_context,
         expr_set_variable,
         expr_maybe_range,
-        value(Expression::None, none),
-        value(Expression::Continue, kw_continue),
-        map(function_call, Expression::Function),
-        map(template_val, Expression::Render),
+        value(ExprType::None, none),
+        value(ExprType::Continue, kw_continue),
+        map(function_call, ExprType::Function),
+        map(template_val, ExprType::Render),
         array_expr,
         table_expr,
         uni_operator_expr,
         if_else_expr,
         try_catch_expr,
-        for_each_if_expr,
+        for_each_expr,
         while_expr,
         loop_expr,
         progress_expr,
         map(
             preceded(kw_error, after_space(string_val)),
-            Expression::UserError,
+            ExprType::UserError,
         ),
         map(
             preceded(kw_return, opt(after_space(maybe_silent_expression))),
-            |e| Expression::Return(e.map(Box::new)),
+            |e| ExprType::Return(e.map(Box::new)),
         ),
         map(
             preceded(kw_break, opt(after_space(maybe_silent_expression))),
-            |e| Expression::Break(e.map(Box::new)),
+            |e| ExprType::Break(e.map(Box::new)),
         ),
         series,
     ))(inp)
 }
 
-pub fn expr_with_context<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
-    let (rest, (vt, expr)) = pair(variable_type, maybe_space(expression_block))(inp)?;
-    Ok((
-        rest,
-        Expression::WithContext(ExprWithContext::new(vt, expr)),
-    ))
+pub fn expr_with_context<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
+    let (rest, (vt, expr)) = pair(variable_type, maybe_space(raw_expr(expression_block)))(inp)?;
+    Ok((rest, ExprType::WithContext(ExprWithContext::new(vt, expr))))
 }
 
-pub fn expr_set_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+pub fn expr_set_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
     map(
         tuple((
             opt(terminated(variable_type, dot)),
             task_dot_variable,
             maybe_space(assignment),
-            maybe_space(complete_expression),
+            maybe_space(raw_expr(complete_expression)),
             opt(semicolon),
         )),
         |(vt, (var, indices), _, expr, silent)| {
-            Expression::SetVariable(SetVariable::new(
+            ExprType::SetVar(SetVariable::new(
                 InputVar::new(
                     vt.clone(),
                     var.clone(),
@@ -87,28 +109,36 @@ pub fn expr_set_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expre
     )(inp)
 }
 
-pub fn expr_maybe_range<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+pub fn expr_literal<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
+    map(primitives, ExprType::Value)(inp)
+}
+
+pub fn expr_maybe_range<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
     let (rest, (start, step, end)) = tuple((
-        alt((input_variable, map(primitives, Expression::Literal))),
+        alt((input_variable, expr_literal)),
         opt(preceded(
             colon,
-            maybe_space(alt((input_variable, map(primitives, Expression::Literal)))),
+            maybe_space(raw_expr(alt((input_variable, expr_literal)))),
         )),
         opt(preceded(
             colon,
-            maybe_space(alt((input_variable, map(primitives, Expression::Literal)))),
+            maybe_space(raw_expr(alt((input_variable, expr_literal)))),
         )),
     ))(inp)?;
     if let Some(step) = step {
         if let Some(end) = end {
             Ok((
                 rest,
-                Expression::Range(Box::new(start), Some(Box::new(step)), Box::new(end)),
+                ExprType::Range(
+                    Box::new(set_pos(start, inp)),
+                    Some(Box::new(step)),
+                    Box::new(end),
+                ),
             ))
         } else {
             Ok((
                 rest,
-                Expression::Range(Box::new(start), None, Box::new(step)),
+                ExprType::Range(Box::new(set_pos(start, inp)), None, Box::new(step)),
             ))
         }
     } else {
@@ -117,27 +147,30 @@ pub fn expr_maybe_range<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expres
     }
 }
 
-pub fn array_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+pub fn array_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
     let (rest, exprs) = delimited(
         bracket_start,
-        separated_list0(maybe_space(comma), maybe_newline(complete_expression)),
+        separated_list0(
+            maybe_space(comma),
+            maybe_newline(raw_expr(complete_expression)),
+        ),
         maybe_newline(bracket_end),
     )(inp)?;
 
-    Ok((rest, Expression::Array(exprs)))
+    Ok((rest, ExprType::Array(exprs)))
 }
 
-pub fn table_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+pub fn table_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
     let (rest, exprs) = delimited(
         brace_start,
         opt(maybe_newline(kw_args)),
         maybe_newline(brace_end),
     )(inp)?;
 
-    Ok((rest, Expression::Table(exprs.unwrap_or_default())))
+    Ok((rest, ExprType::Map(exprs.unwrap_or_default())))
 }
 
-pub fn expression_group<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+pub fn expression_group<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
     delimited(
         paren_start,
         maybe_newline(multi_expression),
@@ -148,7 +181,7 @@ pub fn expression_group<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expres
     )(inp)
 }
 
-pub fn expression_block<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+pub fn expression_block<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
     delimited(
         brace_start,
         maybe_newline(multi_expression),
@@ -159,31 +192,31 @@ pub fn expression_block<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expres
     )(inp)
 }
 
-pub fn progress_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+pub fn progress_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
     map(
         tuple((
             kw_progress,
-            maybe_space(alt((expression, expression_group))),
+            maybe_space(raw_expr(alt((expression, expression_group)))),
             // somehow it wants a space here
             maybe_space(assignment),
-            maybe_space(alt((expression, expression_group))),
+            maybe_space(raw_expr(alt((expression, expression_group)))),
             maybe_space(kw_in),
-            maybe_space(alt((expression, expression_group))),
+            maybe_space(raw_expr(alt((expression, expression_group)))),
         )),
-        |(_, label, _, prog, _, total)| Expression::Progress(ExprProgress::new(label, prog, total)),
+        |(_, label, _, prog, _, total)| ExprType::Progress(ExprProgress::new(label, prog, total)),
     )(inp)
 }
 
-pub fn uni_operator_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+pub fn uni_operator_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
     let (rest, (op, expr)) = pair(
         alt((
             value(UniOperator::Not, not),
             value(UniOperator::Negative, dash),
             value(UniOperator::Positive, plus),
         )),
-        maybe_newline(alt((expression_group, expression))),
+        maybe_newline(raw_expr(alt((expression_group, expression)))),
     )(inp)?;
-    Ok((rest, Expression::UniOp(op, Box::new(expr))))
+    Ok((rest, ExprType::UniOp(op, Box::new(expr))))
 }
 
 /// Helper structure that contains a *flat* representation of a binary operator
@@ -196,8 +229,8 @@ pub fn uni_operator_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expre
 /// Example: `a + b * c - d`  ->  `first = a` and
 /// `args = [(Add, b), (Multiply, c), (Substract, d)]`
 struct BiOpExpr {
-    first: Expression,
-    args: Vec<(BiOperator, Expression)>,
+    first: RawExpr,
+    args: Vec<(BiOperator, RawExpr)>,
 }
 
 impl BiOpExpr {
@@ -214,11 +247,13 @@ impl BiOpExpr {
     ///   - or
     ///   - and
     ///
-    fn parse(self) -> Option<Expression> {
+    fn parse(self) -> Option<ExprType<RawExpr>> {
         // Two stacks used by the shunting-yard algorithm.
-        let mut operand_stack: Vec<Expression> = Vec::new();
+        let mut operand_stack: Vec<RawExpr> = Vec::new();
         let mut operator_stack: Vec<BiOperator> = Vec::new();
 
+        // we don't have position for each operand, maybe we need to store it somewhere
+        let position = self.first.position();
         operand_stack.push(self.first);
         for (op, expr) in self.args {
             // While the top of the operator stack has higher or equal
@@ -237,31 +272,37 @@ impl BiOpExpr {
             operator_stack.push(op);
             operand_stack.push(expr);
         }
+
         // Drain the remaining operators.
         while let Some(op) = operator_stack.pop() {
             let res = op.expr_from_stack(&mut operand_stack)?;
             operand_stack.push(res);
         }
 
-        operand_stack.pop()
+        Some(ExprType::Multi(operand_stack))
     }
 }
 
-pub fn complete_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+pub fn complete_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
     let (rest, (first, args)) = pair(
         alt((expression, expression_group)),
         many0(pair(
             maybe_newline(bi_operator),
             maybe_newline(cut(err_ctx(
                 &ParseErrorType::IncompleteExpression,
-                alt((expression, expression_group)),
+                raw_expr(alt((expression, expression_group))),
             ))),
         )),
     )(inp)?;
     let expr = if args.is_empty() {
         first
     } else {
-        BiOpExpr { first, args }.parse().ok_or(nom::Err::Error(
+        BiOpExpr {
+            first: set_pos(first, inp),
+            args,
+        }
+        .parse()
+        .ok_or(nom::Err::Error(
             MatchErr::new(inp).ty(&ParseErrorType::IncompleteExpression),
         ))?
     };
@@ -296,7 +337,10 @@ pub fn nadi_struct_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, NadiSt
             maybe_space(brace_start),
             maybe_newline(newline_separated(tuple((
                 variable_name,
-                preceded(maybe_space(assignment), maybe_space(complete_expression)),
+                preceded(
+                    maybe_space(assignment),
+                    maybe_space(raw_expr(complete_expression)),
+                ),
                 maybe_space(comma),
             )))),
             maybe_newline(brace_end),
@@ -309,84 +353,85 @@ pub fn nadi_struct_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, NadiSt
     Ok((rest, nstr))
 }
 
-pub fn if_else_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+pub fn if_else_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
     let (rest, (_, cond, iftrue, iffalse)) = tuple((
         kw_if,
-        maybe_newline(expression_group),
-        maybe_newline(expression_block),
+        maybe_newline(raw_expr(expression_group)),
+        maybe_newline(raw_expr(expression_block)),
         opt(preceded(
             maybe_newline(kw_else),
-            alt((after_space(if_else_expr), maybe_newline(expression_block))),
+            alt((
+                after_space(raw_expr(if_else_expr)),
+                maybe_newline(raw_expr(expression_block)),
+            )),
         )),
     ))(inp)?;
     Ok((
         rest,
-        Expression::IfElse(Box::new(cond), Box::new(iftrue), iffalse.map(Box::new)),
+        ExprType::IfElse(Box::new(cond), Box::new(iftrue), iffalse.map(Box::new)),
     ))
 }
 
-pub fn try_catch_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+pub fn try_catch_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
     let (rest, (_, try_blk, _, catch_blk)) = tuple((
         kw_try,
-        maybe_newline(expression_block),
+        maybe_newline(raw_expr(expression_block)),
         maybe_newline(kw_catch),
-        maybe_newline(expression_block),
+        maybe_newline(raw_expr(expression_block)),
     ))(inp)?;
     Ok((
         rest,
-        Expression::TryCatch(Box::new(try_blk), Box::new(catch_blk)),
+        ExprType::TryCatch(Box::new(try_blk), Box::new(catch_blk)),
     ))
 }
 
-pub fn for_each_if_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
-    let (rest, (var, expr1, expr2, cond)) = tuple((
+pub fn for_each_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
+    let (rest, (var, expr1, expr2)) = tuple((
         delimited(
             kw_for,
             after_space(map(variable, |v| v.content.to_string())),
             after_space(kw_in),
         ),
-        after_space(expression),
-        maybe_newline(expression_block),
-        opt(maybe_newline(preceded(
-            kw_if,
-            after_space(alt((expression_block, expression_group))),
-        ))),
+        after_space(raw_expr(expression)),
+        maybe_newline(raw_expr(expression_block)),
     ))(inp)?;
     Ok((
         rest,
-        Expression::ForEachIf(var, Box::new(expr1), Box::new(expr2), cond.map(Box::new)),
+        ExprType::ForEach(var, Box::new(expr1), Box::new(expr2)),
     ))
 }
 
-pub fn while_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+pub fn while_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
     let (rest, (cond, expr)) = tuple((
-        preceded(kw_while, after_space(expression_group)),
-        maybe_newline(expression_block),
+        preceded(kw_while, after_space(raw_expr(expression_group))),
+        maybe_newline(raw_expr(expression_block)),
     ))(inp)?;
-    Ok((rest, Expression::While(Box::new(cond), Box::new(expr))))
+    Ok((rest, ExprType::While(Box::new(cond), Box::new(expr))))
 }
 
-pub fn loop_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
-    let (rest, expr) = preceded(kw_loop, after_space(expression_block))(inp)?;
-    Ok((rest, Expression::Loop(Box::new(expr))))
+pub fn loop_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
+    let (rest, expr) = preceded(kw_loop, after_space(raw_expr(expression_block)))(inp)?;
+    Ok((rest, ExprType::Loop(Box::new(expr))))
 }
 
-pub fn maybe_silent_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+pub fn maybe_silent_expression<'a, 'b>(
+    inp: &'a [Token<'b>],
+) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
     let (rest, (expr, silent)) = pair(complete_expression, opt(maybe_space(semicolon)))(inp)?;
     Ok((
         rest,
         if silent.is_some() {
-            Expression::Silent(Box::new(expr))
+            ExprType::Silent(Box::new(set_pos(expr, inp)))
         } else {
             expr
         },
     ))
 }
 
-pub fn multi_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+pub fn multi_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
     map(
-        newline_separated(maybe_silent_expression),
-        Expression::Multi,
+        newline_separated(raw_expr(maybe_silent_expression)),
+        ExprType::Multi,
     )(inp)
 }
 
@@ -422,62 +467,61 @@ pub fn variable_type<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, VarType> 
     }
 }
 
-pub fn input_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+pub fn input_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
     map(
         tuple((
             opt(terminated(variable_type, dot)),
             task_dot_variable,
             opt(maybe_space(pair(
                 question,
-                opt(maybe_space(alt((expression, expression_group)))),
+                opt(maybe_space(raw_expr(alt((expression, expression_group))))),
             ))),
         )),
         |(vt, (var, indices), q)| {
             if let Some((_, val)) = q {
                 if let Some(val) = val {
-                    let cond = Expression::Variable(InputVar::new(
+                    let cond = ExprType::Variable(InputVar::new(
                         vt.clone(),
                         var.clone(),
                         indices.clone(),
                         true,
                         inp.position(),
                     ));
-                    let var = Expression::Variable(InputVar::new(
-                        vt,
-                        var,
-                        indices,
-                        false,
-                        inp.position(),
-                    ));
-                    Expression::IfElse(Box::new(cond), Box::new(var), Some(Box::new(val)))
+                    let var =
+                        ExprType::Variable(InputVar::new(vt, var, indices, false, inp.position()));
+                    ExprType::IfElse(
+                        Box::new(set_pos(cond, inp)),
+                        Box::new(set_pos(var, inp)),
+                        Some(Box::new(val)),
+                    )
                 } else {
-                    Expression::Variable(InputVar::new(vt, var, indices, true, inp.position()))
+                    ExprType::Variable(InputVar::new(vt, var, indices, true, inp.position()))
                 }
             } else {
-                Expression::Variable(InputVar::new(vt, var, indices, false, inp.position()))
+                ExprType::Variable(InputVar::new(vt, var, indices, false, inp.position()))
             }
         },
     )(inp)
 }
 
-pub fn kw_arg<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, (String, Expression)> {
+pub fn kw_arg<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, (String, RawExpr)> {
     separated_pair(
         // no dot variable in kwargs pair
         map(variable, |t| t.content.to_string()),
         maybe_space(assignment),
         cut(err_ctx(
             &ParseErrorType::MissingValue,
-            maybe_space(complete_expression),
+            maybe_space(raw_expr(complete_expression)),
         )),
     )(inp)
 }
 
-pub fn kw_args<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<(String, Expression)>> {
+pub fn kw_args<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<(String, RawExpr)>> {
     separated_list1(comma, maybe_newline(kw_arg))(inp)
 }
 
-pub fn pos_args<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<Expression>> {
-    separated_list1(comma, maybe_newline(complete_expression))(inp)
+pub fn pos_args<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<RawExpr>> {
+    separated_list1(comma, maybe_newline(raw_expr(complete_expression)))(inp)
 }
 
 pub fn pos_vars<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<String>> {
@@ -487,8 +531,8 @@ pub fn pos_vars<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<String>> {
     )(inp)
 }
 
-type FuncDefArgKwarg = (Vec<String>, Vec<(String, Expression)>);
-type FuncCallArgKwarg = (Vec<Expression>, Vec<(String, Expression)>);
+type FuncDefArgKwarg = (Vec<String>, Vec<(String, RawExpr)>);
+type FuncCallArgKwarg = (Vec<RawExpr>, Vec<(String, RawExpr)>);
 
 pub fn funcdef_args<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FuncDefArgKwarg> {
     err_ctx(
@@ -545,7 +589,7 @@ pub fn func_args<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FuncCallArgKw
                 paren_start,
                 pair(
                     many1(terminated(
-                        maybe_newline(complete_expression),
+                        maybe_newline(raw_expr(complete_expression)),
                         maybe_newline(comma),
                     )),
                     maybe_newline(kw_args),
@@ -556,7 +600,7 @@ pub fn func_args<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FuncCallArgKw
     )(inp)
 }
 
-pub fn function_call<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionCall> {
+pub fn function_call<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionCall<RawExpr>> {
     let (rest, (ty, name, (args, kwargs))) = tuple((
         opt(terminated(variable_type, dot)),
         function,
@@ -566,7 +610,6 @@ pub fn function_call<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionC
         rest,
         FunctionCall::new(
             ty,
-            None,
             name.content.to_string(),
             args,
             kwargs.into_iter().collect(),
@@ -575,25 +618,10 @@ pub fn function_call<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionC
     ))
 }
 
-pub fn local_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, LocalExpr> {
-    let (rest, (var, expr, sc)) = tuple((
-        opt(terminated(variable, maybe_space(assignment))),
-        maybe_space(complete_expression),
-        opt(semicolon),
-    ))(inp)?;
-    Ok((
-        rest,
-        match var {
-            Some(v) => LocalExpr::Assign(v.content.to_string(), expr, sc.is_some()),
-            None => LocalExpr::Expr(expr, sc.is_some()),
-        },
-    ))
-}
-
-pub fn function_body<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<LocalExpr>> {
+pub fn function_body<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<RawExpr>> {
     delimited(
         brace_start,
-        newline_separated(local_expr),
+        newline_separated(raw_expr(complete_expression)),
         cut(err_ctx(
             &ParseErrorType::Unclosed("}"),
             maybe_newline(brace_end),
@@ -606,7 +634,7 @@ pub fn function_def<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, UserFuncti
         kw_func,
         maybe_space(opt(function)),
         maybe_space(cut(funcdef_args)),
-        maybe_newline(function_body),
+        maybe_newline(raw_expr(map(function_body, ExprType::Multi))),
     ))(inp)?;
     Ok((
         rest,
@@ -614,7 +642,7 @@ pub fn function_def<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, UserFuncti
     ))
 }
 
-pub fn series<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
+pub fn series<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
     let (rest, (vt, (ts, name), ind)) = tuple((
         opt(variable_type),
         preceded(
@@ -628,8 +656,8 @@ pub fn series<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
         )),
     ))(inp)?;
     let sr = match ind {
-        Some(ind) => Expression::SeriesValue(vt, ts.is_some(), name, ind),
-        None => Expression::Series(vt, ts.is_some(), name),
+        Some(ind) => ExprType::SeriesValue(vt, ts.is_some(), name, ind),
+        None => ExprType::Series(vt, ts.is_some(), name),
     };
     Ok((rest, sr))
 }
@@ -638,7 +666,7 @@ pub fn series<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Expression> {
 mod tests {
     use super::*;
     use crate::attrs::{Attribute, HasAttributes};
-    use crate::expressions::EvalErrorType;
+    use crate::eval::EvalErrorType;
     use crate::functions::NadiFunctions;
     use crate::network::Network;
     use crate::parser::tokenizer::get_tokens;

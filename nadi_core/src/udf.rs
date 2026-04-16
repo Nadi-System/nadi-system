@@ -1,77 +1,17 @@
 use crate::attrs::{AttrMap, Attribute};
-use crate::expressions::{EvalError, EvalErrorType, ExprResult, Expression};
+use crate::eval::{Eval, EvalCtx, EvalError, EvalErrorType};
+use crate::expressions::{ExprResult, RawExpr};
 use crate::functions::FunctionCtx;
 use crate::node::Node;
 use crate::tasks::{FunctionType, TaskContext};
 use abi_stable::std_types::{RNone, RSome, RVec};
 
 #[derive(Clone, PartialEq, Debug)]
-pub enum LocalExpr {
-    Expr(Expression, bool),
-    Assign(String, Expression, bool),
-}
-
-impl std::fmt::Display for LocalExpr {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Self::Expr(e, b) => write!(f, "{e}{}", if *b { ";" } else { "" }),
-            Self::Assign(v, e, b) => write!(f, "{v} = {e}{}", if *b { ";" } else { "" }),
-        }
-    }
-}
-
-impl LocalExpr {
-    pub fn expr(&self) -> &Expression {
-        match self {
-            Self::Expr(expr, _) => expr,
-            Self::Assign(_, expr, _) => expr,
-        }
-    }
-
-    pub fn var(&self) -> Option<&str> {
-        match self {
-            Self::Expr(_, _) => None,
-            Self::Assign(var, _, _) => Some(var.as_str()),
-        }
-    }
-
-    pub fn eval(
-        &self,
-        ft: &FunctionType,
-        locals: &mut AttrMap,
-        ctx: &TaskContext,
-        node: Option<&Node>,
-    ) -> Result<ExprResult, EvalError> {
-        match self {
-            Self::Expr(expr, quiet) => {
-                // evaluate it even if we don't return a value because
-                // it could be a function that has some side effect
-                let res = expr.resolve_eval(ft, ctx, Some(locals), node)?;
-                if *quiet {
-                    Ok(ExprResult::None)
-                } else {
-                    Ok(res)
-                }
-            }
-            Self::Assign(var, expr, quiet) => {
-                let val = expr.resolve_eval_value(ft, ctx, Some(locals), node)?;
-                locals.insert(var.to_string().into(), val.clone());
-                if *quiet {
-                    Ok(ExprResult::None)
-                } else {
-                    Ok(ExprResult::Val(val))
-                }
-            }
-        }
-    }
-}
-
-#[derive(Clone, PartialEq, Debug)]
 pub struct UserFunction {
     pub(crate) name: Option<String>,
     args: Vec<String>,
-    kwargs: Vec<(String, Expression)>,
-    exprs: Vec<LocalExpr>,
+    kwargs: Vec<(String, RawExpr)>,
+    exprs: RawExpr,
 }
 
 impl std::fmt::Display for UserFunction {
@@ -88,10 +28,6 @@ impl std::fmt::Display for UserFunction {
             self.name.as_deref().unwrap_or_default(),
             args.join(","),
             self.exprs
-                .iter()
-                .map(|e| { format!("\t{}\n", e) })
-                .collect::<Vec<String>>()
-                .join("")
         )
     }
 }
@@ -108,8 +44,8 @@ impl UserFunction {
     pub fn new(
         name: Option<String>,
         args: Vec<String>,
-        kwargs: Vec<(String, Expression)>,
-        exprs: Vec<LocalExpr>,
+        kwargs: Vec<(String, RawExpr)>,
+        exprs: RawExpr,
     ) -> Self {
         Self {
             name,
@@ -119,45 +55,68 @@ impl UserFunction {
         }
     }
 
-    pub fn eval(&self, ctx: &TaskContext, fctx: FunctionCtx) -> Result<ExprResult, EvalError> {
-        self.eval_inline(&FunctionType::Env, ctx, fctx, None)
-    }
-
     // TODO: check if running this with ft: env can make it work even if there is "node" variable, because node is Some(_)
     // TODO: Need to resolve in a way that even if function type is Env, if variable type is Node, and node is Some node
     // This is so that we don't need the loc.x part here
     // node$t2 = $t -> func (x) {loc.x + node.ORDER}
 
-    pub fn eval_inline(
+    pub fn eval(
         &self,
-        ft: &FunctionType,
         ctx: &TaskContext,
+        ectx: &EvalCtx,
         fctx: FunctionCtx,
-        node: Option<&Node>,
     ) -> Result<ExprResult, EvalError> {
-        let mut locals = self.resolve_locals(ctx, fctx.args, fctx.kwargs)?;
-        let mut ret_expr = ExprResult::None;
-        for expr in &self.exprs {
-            match expr.eval(ft, &mut locals, ctx, node) {
-                Ok(v) => {
-                    ret_expr = v;
+        let locals = self.resolve_locals(ctx, ectx, fctx.args, fctx.kwargs)?;
+        let ectx = ectx.with_local(locals);
+        match self
+            .exprs
+            .clone()
+            .resolve(ctx, ectx.clone())?
+            .eval(ctx, &ectx)
+        {
+            Ok(v) => return Ok(v),
+            // early return is returned as an error so it can be
+            // caught here
+            Err(e) => {
+                if let EvalErrorType::InvalidReturn(val) = e.ty {
+                    return Ok(val);
+                } else {
+                    return Err(e);
                 }
-                // early return is returned as an error so it can be
-                // caught here
-                Err(e) => {
-                    if let EvalErrorType::InvalidReturn(val) = e.ty {
-                        return Ok(val);
-                    } else {
-                        return Err(e);
-                    }
-                }
-            };
+            }
         }
-        Ok(ret_expr)
     }
 
-    pub fn eval_val(&self, ctx: &TaskContext, fctx: FunctionCtx) -> Result<Attribute, EvalError> {
-        self.eval(ctx, fctx)?.to_attribute().ok_or(
+    // pub fn eval_mut(
+    //     &self,
+    //     ctx: &mut TaskContext,
+    //     ectx: &EvalCtx,
+    //     fctx: FunctionCtx,
+    // ) -> Result<ExprResult, EvalError> {
+    //     let locals = self.resolve_locals(ctx, ectx, fctx.args, fctx.kwargs)?;
+    //     let ectx = ectx.with_local(locals);
+    //     let res = { self.exprs.clone().resolve(ctx, &ectx)? };
+    //     match res.eval_mut(ctx, &ectx) {
+    //         Ok(v) => return Ok(v),
+    //         // early return is returned as an error so it can be
+    //         // caught here
+    //         Err(e) => {
+    //             if let EvalErrorType::InvalidReturn(val) = e.ty {
+    //                 return Ok(val);
+    //             } else {
+    //                 return Err(e);
+    //             }
+    //         }
+    //     }
+    // }
+
+    pub fn eval_val(
+        &self,
+        ctx: &TaskContext,
+        ectx: &EvalCtx,
+        fctx: FunctionCtx,
+    ) -> Result<Attribute, EvalError> {
+        self.eval(ctx, ectx, fctx)?.to_attribute().ok_or(
             EvalErrorType::NoReturnValue(self.name.as_deref().unwrap_or("Anonymous").to_string())
                 .no_pos(),
         )
@@ -173,6 +132,7 @@ impl UserFunction {
     pub fn resolve_locals(
         &self,
         ctx: &TaskContext,
+        ectx: &EvalCtx,
         args: RVec<Attribute>,
         mut kwargs: AttrMap,
     ) -> Result<AttrMap, EvalError> {
@@ -203,7 +163,9 @@ impl UserFunction {
                     RSome(v) => locals.insert(k.to_string().into(), v),
                     RNone => locals.insert(
                         k.to_string().into(),
-                        expr.resolve_eval_value(&FunctionType::Env, ctx, Some(&locals), None)?,
+                        expr.clone()
+                            .resolve(ctx, ectx.clone())?
+                            .eval_value(ctx, ectx)?,
                     ),
                 };
             }
@@ -234,7 +196,9 @@ impl UserFunction {
                     RSome(v) => locals.insert(k.to_string().into(), v),
                     RNone => locals.insert(
                         k.to_string().into(),
-                        expr.resolve_eval_value(&FunctionType::Env, ctx, Some(&locals), None)?,
+                        expr.clone()
+                            .resolve(ctx, ectx.clone())?
+                            .eval_value(ctx, ectx)?,
                     ),
                 };
             }

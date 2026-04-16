@@ -136,25 +136,21 @@ impl From<NadiStruct> for Attribute {
 
 #[derive(Clone, Debug, PartialEq)]
 /// Expression to build a struct
-pub struct NadiStructExpr {
+pub struct NadiStructExpr<T> {
     pub name: String,
-    pub values: RHashMap<RString, Expression>,
+    pub values: RHashMap<RString, T>,
 }
 
-impl NadiStructExpr {
+impl<T> NadiStructExpr<T> {
     pub fn with_name(name: String) -> Self {
         Self {
             name: name.into(),
             values: RHashMap::new(),
         }
     }
-
-    pub fn has_variables(&self) -> bool {
-        self.values.values().any(|v| v.has_variables())
-    }
 }
 
-impl std::fmt::Display for NadiStructExpr {
+impl<T: std::fmt::Display> std::fmt::Display for NadiStructExpr<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,

@@ -1,12 +1,13 @@
 use crate::attrs::{AttrMap, HasAttributes};
-use crate::expressions::{EvalErrorType, Expression};
+use crate::eval::EvalErrorType;
+use crate::expressions::RawExpr;
 use crate::node::{new_node, Node};
 use crate::timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap};
 use abi_stable::std_types::{RDuration, Tuple2};
 use abi_stable::{
     std_types::{
         RHashMap,
-        ROption::{self, RNone, RSome},
+        ROption::{RNone, RSome},
         RString, RVec,
     },
     StableAbi,
@@ -812,7 +813,7 @@ pub enum PropCondition {
     #[default]
     All,
     /// Expression to evaluate into a bool to check
-    Expr(Expression),
+    Expr(RawExpr),
     // TODO
     // Head(usize),
     // Tail(usize),

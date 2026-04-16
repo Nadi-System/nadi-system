@@ -1,4 +1,5 @@
-use crate::expressions::{EvalErrorType, ExprResult};
+use crate::eval::EvalErrorType;
+use crate::expressions::ExprResult;
 use crate::structs::NadiAttrType;
 use crate::tasks::{TaskContext, TaskCtxConsts};
 use crate::template::Template;
@@ -362,6 +363,7 @@ impl TaskContext {
                     if prettify_map { "\n" } else { "" },
                 )
             }
+            r => r.to_string(),
         })
     }
 

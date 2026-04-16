@@ -1,6 +1,8 @@
+use crate::eval::{Eval, EvalCtx, EvalError, EvalErrorType};
 use crate::expressions::{
-    EvalError, EvalErrorType, ExprContext, ExprResult, Expression, SeriesExpression, TaskPosition,
+    ExprContext, ExprResult, ExprType, RawExpr, ResolvedExpr, SeriesExpression,
 };
+
 use crate::functions::{FuncArg, FuncArgType, NadiFunctions};
 use crate::network::{PropCondition, PropOrder};
 use crate::prelude::*;
@@ -233,14 +235,7 @@ impl TaskContext {
 
     /// execute a task in the task context, possible with hook
     pub fn execute(&mut self, task: Task) -> Result<Option<String>, EvalError> {
-        match task {
-            Task::Eval(_) => {
-                let val = self.execute_single(task)?;
-                self.run_hooks();
-                Ok(val)
-            }
-            t => self.execute_single(t),
-        }
+        self.execute_single(task)
     }
 
     /// execute a task in the task context
@@ -263,116 +258,13 @@ impl TaskContext {
                 self.structs.insert(sdef.name.to_string(), sdef);
                 Ok(None)
             }
-            #[cfg(feature = "parser")]
-            Task::Import(imp) => {
-                if let Some(path) = imp.path() {
-                    let txt = std::fs::read_to_string(path).unwrap();
-                    let tokens = crate::parser::tokenizer::get_tokens(&txt);
-                    let tasks = crate::parser::tasks::parse(tokens)
-                        .map_err(|e| EvalErrorType::ParseError(e.to_string()).no_pos())?;
-                    if imp.tasks {
-                        for fc in tasks {
-                            self.execute(fc)?;
-                        }
-                    } else {
-                        for mut fc in tasks {
-                            let mut exec = false;
-                            if let Task::Function(fc) = &mut fc {
-                                if let Some(name) = &mut fc.name {
-                                    *name = format!("{}.{}", imp.name, name);
-                                    exec = true;
-                                }
-                            }
-                            if exec {
-                                self.execute(fc)?;
-                            }
-                        }
-                    }
-                } else {
-                    // In this case look at the available plugins and
-                    // load the functions from there to this context.
-                    todo!()
-                }
-                Ok(None)
+            Task::Expr(expr) => {
+                let ectx = EvalCtx::default();
+                expr.eval_mut(self, &ectx).map(|a| self.show_res(&a, 0))
             }
-            Task::Expr(expr) => expr
-                .resolve_eval_mut(&FunctionType::Env, self, None, None)
-                .map(|a| self.show_res(&a, 0)),
             Task::Hook(tasks) => {
                 self.hook = tasks;
                 Ok(None)
-            }
-            Task::Eval(et) => self.eval_task(et),
-            Task::Attr(at) => self.attr_task(at).map(Some),
-            Task::Conditional(ct) => {
-                let cond = ct.cond.resolve(&FunctionType::Env, self, None, None)?;
-                let res = cond.eval_value(&FunctionType::Env, self, None, None)?;
-                match bool::try_from_attr(&res)
-                    .map_err(|e| EvalErrorType::AttributeError(e).pos(ct.position()))?
-                {
-                    true => {
-                        let total = ct.iftrue.len();
-                        for (p, task) in ct.iftrue.into_iter().enumerate() {
-                            let _ = self.channel.send(TaskMessage::Progress(
-                                task.to_string(),
-                                p,
-                                total,
-                            ));
-                            if let Some(a) = self.execute(task.clone())? {
-                                let _ = self.channel.send(TaskMessage::Info(a));
-                            }
-                        }
-                    }
-                    false => {
-                        let total = ct.iffalse.len();
-                        for (p, task) in ct.iffalse.into_iter().enumerate() {
-                            let _ = self.channel.send(TaskMessage::Progress(
-                                task.to_string(),
-                                p,
-                                total,
-                            ));
-                            if let Some(a) = self.execute(task.clone())? {
-                                let _ = self.channel.send(TaskMessage::Info(a));
-                            }
-                        }
-                    }
-                }
-                Ok(None)
-            }
-            Task::WhileLoop(lt) => {
-                let max_iter = TaskCtxConsts::max_iterations(self);
-                let mut progress = 0;
-                let mut exit = false;
-                for i in 0..max_iter {
-                    let _ = self.channel.send(TaskMessage::Progress(
-                        format!("Loop: {}", i + 1),
-                        progress,
-                        max_iter,
-                    ));
-                    let cond = lt.cond.resolve(&FunctionType::Env, self, None, None)?;
-                    let res = cond.eval_value(&FunctionType::Env, self, None, None)?;
-                    match bool::try_from_attr(&res)
-                        .map_err(|e| EvalErrorType::AttributeError(e).pos(lt.position()))?
-                    {
-                        true => {
-                            for task in &lt.tasks {
-                                if let Some(a) = self.execute(task.clone())? {
-                                    let _ = self.channel.send(TaskMessage::Info(a));
-                                }
-                                progress += 1;
-                            }
-                        }
-                        false => {
-                            exit = true;
-                            break;
-                        }
-                    }
-                }
-                if exit {
-                    Ok(None)
-                } else {
-                    Err(EvalErrorType::MaxIteratorError(max_iter).pos(lt.position()))
-                }
             }
             Task::GetSeries(gst) => self.get_series_task(gst).map(Some),
             Task::SetSeries(sst) => {
@@ -476,421 +368,6 @@ impl TaskContext {
         }
     }
 
-    /// evaluate a task and possibly get return value in terms of string.
-    pub fn eval_task(&mut self, task: EvalTask) -> Result<Option<String>, EvalError> {
-        match task.ty {
-            FunctionType::Env => match task
-                .input
-                .resolve_eval(&FunctionType::Env, self, None, None)
-                .map(|r| r.to_attribute())
-                .map_err(|e| e.pos(task.position()))?
-            {
-                Some(a) => {
-                    if let Some(attr) = &task.attr {
-                        // assert the type if explicitely provided
-                        if let Some(ty) = &attr.1 {
-                            if !a.is_type(&ty) {
-                                if task.attr.is_some() {
-                                    return Err(EvalErrorType::InvalidAttributeType(
-                                        ty.clone(),
-                                        a.dtype(),
-                                    )
-                                    .no_pos());
-                                }
-                            }
-                        }
-                        if let Some(old) = self
-                            .env
-                            .set_attr_nested(&task.attr_pre, &attr.0, a.clone())
-                            .map_err(|e| EvalErrorType::AttributeError(e).no_pos())?
-                        {
-                            if task.silent {
-                                Ok(None)
-                            } else {
-                                Ok(Some(format!(
-                                    "{} -> {}",
-                                    self.show_attr(&old, 0),
-                                    self.show_attr(&a, 0)
-                                )))
-                            }
-                        } else {
-                            Ok(None)
-                        }
-                    } else if task.silent {
-                        Ok(None)
-                    } else {
-                        Ok(Some(self.show_attr(&a, 0)))
-                    }
-                }
-                None => Ok(None),
-            },
-            FunctionType::Node => {
-                // this is the only task that needs parallization,
-                let parallize = TaskCtxConsts::parallize_nodes(self)
-                    & match task.propagation {
-                        // if a propagation order is given it needs to be run at that order
-                        Some(ref p) => matches!(p.order, PropOrder::Auto),
-                        None => true,
-                    };
-                if parallize {
-                    // Implementation not possible because we call
-                    // functions from loaded .so files, that are not
-                    // thread safe
-                    // Err(EvalErrorType::LogicalError(
-                    //     "Parallel Execution not supported at the moment",
-                    // )
-                    // .at(&task))
-                    self.run_nodes_task_parallel(task)
-                } else {
-                    self.run_nodes_task(task)
-                }
-            }
-            FunctionType::Network => {
-                match task
-                    .input
-                    .resolve_eval_mut(&FunctionType::Network, self, None, None)
-                    .map(|r| r.to_attribute())
-                    .map_err(|e| e.pos(task.position()))?
-                {
-                    Some(a) => {
-                        if let Some(attr) = &task.attr {
-                            // assert the type if explicitely provided
-                            if let Some(ty) = &attr.1 {
-                                if !a.is_type(&ty) {
-                                    if task.attr.is_some() {
-                                        return Err(EvalErrorType::InvalidAttributeType(
-                                            ty.clone(),
-                                            a.dtype(),
-                                        )
-                                        .no_pos());
-                                    }
-                                }
-                            }
-                            if let Some(old) = self
-                                .network
-                                .set_attr_nested(&task.attr_pre, &attr.0, a.clone())
-                                .map_err(|e| EvalErrorType::AttributeError(e).no_pos())?
-                            {
-                                if task.silent {
-                                    Ok(None)
-                                } else {
-                                    Ok(Some(format!(
-                                        "{} -> {}",
-                                        self.show_attr(&old, 0),
-                                        self.show_attr(&a, 0)
-                                    )))
-                                }
-                            } else {
-                                Ok(None)
-                            }
-                        } else if task.silent {
-                            Ok(None)
-                        } else {
-                            Ok(Some(self.show_attr(&a, 0)))
-                        }
-                    }
-                    None => Ok(None),
-                }
-            }
-        }
-    }
-
-    fn run_nodes_task(&mut self, task: EvalTask) -> Result<Option<String>, EvalError> {
-        let nodes = self.propagation(task.propagation.unwrap_or_default())?;
-        let total = nodes.len();
-        let max_nodes_len = TaskCtxConsts::max_nodes_length(self);
-        let trunc = total > max_nodes_len;
-        let mut progress = 0;
-        let mut attrs = Vec::with_capacity(total);
-        for n in nodes {
-            let name = n
-                .try_lock()
-                .into_option()
-                .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(task.start))?
-                .name()
-                .to_string();
-            let res = match task
-                .input
-                // add node name to this error
-                .resolve_eval_mut(&FunctionType::Node, self, None, Some(&n))
-                .map_err(|e| e.pos(task.start).node(name.clone()))?
-            {
-                ExprResult::None => {
-                    progress += 1;
-                    continue;
-                }
-                r => r,
-            };
-            let mut n = n
-                .try_lock()
-                .into_option()
-                .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(task.start))?;
-            progress += 1;
-            let _ = self
-                .channel
-                .send(TaskMessage::Progress(name.clone(), progress, total));
-            // because we did progress +=1 above we need <=
-            let update = !task.silent & (progress <= max_nodes_len);
-            if let Some(attr) = &task.attr {
-                let res = match res.to_attribute() {
-                    Some(r) => r,
-                    None => {
-                        progress += 1;
-                        continue;
-                    }
-                };
-                // assert the type if explicitely provided
-                if let Some(ty) = &attr.1 {
-                    if !res.is_type(&ty) {
-                        if task.attr.is_some() {
-                            return Err(EvalErrorType::InvalidAttributeType(
-                                ty.clone(),
-                                res.dtype(),
-                            )
-                            .no_pos()
-                            .node(name));
-                        }
-                        continue;
-                    }
-                }
-                let old = n
-                    .set_attr_nested(&task.attr_pre, &attr.0, res.clone())
-                    .map_err(|e| EvalErrorType::AttributeError(e).no_pos().node(name.clone()))?;
-                if update {
-                    if let Some(o) = old {
-                        attrs.push(format!(
-                            "  {} = {} -> {}",
-                            name,
-                            self.show_attr(&o, 0),
-                            self.show_attr(&res, 0)
-                        ));
-                    }
-                }
-            } else if update {
-                attrs.push(format!(
-                    "  {} = {}",
-                    name,
-                    self.show_res(&res, 0)
-                        .unwrap_or(crate::expressions::NONE_VALUE.into())
-                ));
-            }
-        }
-        if task.silent || attrs.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(format!(
-                "{{\n{}\n{}}}",
-                attrs.join(",\n"),
-                if trunc { "...truncated\n" } else { "" }
-            )))
-        }
-    }
-
-    // // Can not compile because of the sabi_trait object not being Send, idk if it can be fixed
-    fn run_nodes_task_parallel(&mut self, task: EvalTask) -> Result<Option<String>, EvalError> {
-        let nodes = self.propagation(task.propagation.unwrap_or_default())?;
-        let total = nodes.len();
-        let expressions: Arc<Mutex<Vec<(String, Node, Expression)>>> = Arc::new(Mutex::new(
-            nodes
-                .into_iter()
-                .map(|n| {
-                    let name = n
-                        .try_lock()
-                        .into_option()
-                        .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(task.start))?
-                        .name()
-                        .to_string();
-                    task.input
-                        // add node name to this error
-                        .resolve(&FunctionType::Node, self, None, Some(&n))
-                        .map_err(|e| e.pos(task.start).node(name.clone()))
-                        .map(|e| (name, n, e))
-                })
-                .collect::<Result<Vec<(String, Node, Expression)>, EvalError>>()?,
-        ));
-
-        #[allow(clippy::type_complexity)]
-        let (tx, rx): (
-            Sender<(String, Result<ExprResult, EvalError>)>,
-            Receiver<(String, Result<ExprResult, EvalError>)>,
-        ) = channel();
-
-        let mut attrs = Vec::with_capacity(total);
-        let max_nodes_len = TaskCtxConsts::max_nodes_length(self);
-        let trunc = total > max_nodes_len;
-        thread::scope(|s| -> Result<(), EvalError> {
-            let cores = TaskCtxConsts::parallel_cores(self);
-            // just to make it work for now
-            let mut children = Vec::with_capacity(cores);
-            let tctx = Arc::new(&*self);
-            for _ in 0..cores {
-                let ctx = tx.clone();
-                let expr_lst = expressions.clone();
-                let tc = tctx.clone();
-                let child = s.spawn(move || -> Result<(), anyhow::Error> {
-                    loop {
-                        let expr = expr_lst
-                            .lock()
-                            .map_err(|e| anyhow::Error::msg(e.to_string()))?
-                            .pop();
-                        if let Some((name, n, expr)) = expr {
-                            let res = expr.eval(&FunctionType::Node, &tc, None, Some(&n));
-                            ctx.send((name, res))?
-                        } else {
-                            break;
-                        }
-                    }
-                    Ok::<(), anyhow::Error>(())
-                });
-
-                children.push(child);
-            }
-            // since we cloned it, only the cloned ones are dropped when
-            // the thread ends
-            drop(tx);
-
-            let mut progress = 0;
-            for (name, res) in rx {
-                let res = match res.map(|r| r.to_attribute()) {
-                    Ok(Some(r)) => r,
-                    Ok(None) => {
-                        progress += 1;
-                        if task.attr.is_some() {
-                            // remove them from the queue (might have extra computations)
-                            expressions.lock().unwrap().clear();
-                            return Err(EvalErrorType::NoReturnValue(
-                                "input expression".to_string(),
-                            )
-                            .no_pos()
-                            .node(name));
-                        }
-                        continue;
-                    }
-                    Err(e) => {
-                        // remove them from the queue (might have extra computations)
-                        expressions.lock().unwrap().clear();
-                        return Err(e);
-                    }
-                };
-                let node = self
-                    .network
-                    .node_by_name(&name)
-                    .expect("Should have this node in the network")
-                    .clone();
-                let mut n = node
-                    .try_lock()
-                    .into_option()
-                    .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(task.start))?;
-                progress += 1;
-                let _ = self
-                    .channel
-                    .send(TaskMessage::Progress(name.clone(), progress, total));
-                // because we did progress +=1 above we need <=
-                let update = !task.silent & (progress <= max_nodes_len);
-                if let Some(attr) = &task.attr {
-                    // assert the type if explicitely provided
-                    if let Some(ty) = &attr.1 {
-                        if !res.is_type(&ty) {
-                            if task.attr.is_some() {
-                                // remove them from the queue (might have extra computations)
-                                expressions.lock().unwrap().clear();
-                                return Err(EvalErrorType::InvalidAttributeType(
-                                    ty.clone(),
-                                    res.dtype(),
-                                )
-                                .no_pos()
-                                .node(name));
-                            }
-                            continue;
-                        }
-                    }
-                    let old = n
-                        .set_attr_nested(&task.attr_pre, &attr.0, res.clone())
-                        .map_err(|e| {
-                            EvalErrorType::AttributeError(e).no_pos().node(name.clone())
-                        })?;
-                    if update {
-                        if let Some(o) = old {
-                            attrs.push(format!(
-                                "  {} = {} -> {}",
-                                name,
-                                self.show_attr(&o, 0),
-                                self.show_attr(&res, 0)
-                            ));
-                        }
-                    }
-                } else if update {
-                    attrs.push(format!("  {} = {}", name, self.show_attr(&res, 0)));
-                }
-            }
-            // by this time all threads should be complete (otherwise the loop does not end)
-            for child in children {
-                let _ = child.join();
-            }
-            Ok(())
-        })?;
-        if task.silent || attrs.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(format!(
-                "{{\n{}\n{}}}",
-                attrs.join(",\n"),
-                if trunc { "...truncated\n" } else { "" }
-            )))
-        }
-    }
-
-    /// evaluate an attribute task
-    pub fn attr_task(&self, task: AttrTask) -> Result<String, EvalError> {
-        match task.ty {
-            FunctionType::Env => self
-                .env
-                .attr_nested(&task.attr_pre, &task.attr)
-                .map_err(|e| EvalErrorType::AttributeError(e).pos(task.position()))?
-                .map(|a| self.show_attr(a, 0))
-                .ok_or(EvalErrorType::AttributeNotFound.pos(task.position())),
-            FunctionType::Node => {
-                let nodes = self.propagation(task.propagation.clone().unwrap_or_default())?;
-                let max_nodes_len = TaskCtxConsts::max_nodes_length(self);
-                let trunc = nodes.len() > max_nodes_len;
-                let attrs = nodes
-                    .iter()
-                    .take(max_nodes_len)
-                    .map(|n| {
-                        let n = n.lock();
-                        let name = n.name().to_string();
-                        Ok(format!(
-                            "  {} = {}",
-                            name,
-                            if let Some(a) =
-                                n.attr_nested(&task.attr_pre, &task.attr).map_err(|e| {
-                                    EvalErrorType::AttributeError(e)
-                                        .pos(task.position())
-                                        .node(name.clone())
-                                })?
-                            {
-                                self.show_attr(a, 0)
-                            } else {
-                                crate::expressions::NONE_VALUE.to_string()
-                            }
-                        ))
-                    })
-                    .collect::<Result<Vec<String>, EvalError>>()?;
-                Ok(format!(
-                    "{{\n{}\n{}}}",
-                    attrs.join(",\n"),
-                    if trunc { "...truncated\n" } else { "" }
-                ))
-            }
-            FunctionType::Network => self
-                .network
-                .attr_nested(&task.attr_pre, &task.attr)
-                .map_err(|e| EvalErrorType::AttributeError(e).pos(task.position()))?
-                .map(|a| self.show_attr(a, 0))
-                .ok_or(EvalErrorType::AttributeNotFound.pos(task.position())),
-        }
-    }
-
     /// get help
     pub fn help(
         &self,
@@ -959,12 +436,14 @@ impl TaskContext {
             PropCondition::All => Ok(nodes),
             PropCondition::Expr(expr) => {
                 let mut sel_nodes = Vec::with_capacity(self.network.nodes().count());
-                // simplify to save computation (not tested/benchmarked)
-                let expr = expr.simplify(&FunctionType::Node, self)?;
                 // expression is evaluated for each node
+                let ectx = EvalCtx::default();
                 for n in nodes {
-                    let cond = expr.resolve(&FunctionType::Node, self, None, Some(&n))?;
-                    let res = cond.eval_value(&FunctionType::Node, self, None, Some(&n))?;
+                    let ectx = ectx.at_node(n.clone());
+                    let res = expr
+                        .clone()
+                        .resolve(self, ectx.clone())?
+                        .eval_value(self, &ectx)?;
                     match bool::try_from_attr(&res) {
                         Ok(true) => sel_nodes.push(n),
                         Ok(false) => (),
@@ -1028,231 +507,6 @@ impl FunctionType {
             Self::Network => Ok(ExprContext::Network),
             Self::Env => Ok(ExprContext::Env),
         }
-    }
-}
-
-/// Task representing evaluation of expression or functions
-#[derive(Clone, PartialEq, Debug)]
-pub struct EvalTask {
-    /// type of function
-    pub ty: FunctionType,
-    /// node propagation for node function
-    pub propagation: Option<Propagation>,
-    /// prefix for set attribute
-    pub attr_pre: Vec<String>,
-    /// attribute to set the result of the expression
-    pub attr: Option<(String, Option<NadiAttrType>)>,
-    /// input expression
-    pub input: Expression,
-    /// do not show the results to stdout/terminal
-    pub silent: bool,
-    /// start position of the task
-    pub start: (usize, usize),
-}
-
-impl std::fmt::Display for EvalTask {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let outattr = if let Some(attr) = &self.attr {
-            format!(
-                ".{}{} =",
-                self.attr_pre
-                    .iter()
-                    .map(|s| s.as_str())
-                    .chain([attr.0.as_str()])
-                    .collect::<Vec<&str>>()
-                    .join("."),
-                if let Some(ty) = &attr.1 {
-                    format!(": {ty}")
-                } else {
-                    "".to_string()
-                }
-            )
-        } else {
-            "".to_string()
-        };
-        write!(
-            f,
-            "{}{}{} {}{}",
-            self.ty,
-            self.propagation
-                .as_ref()
-                .map(|p| p.to_string())
-                .unwrap_or_default(),
-            outattr,
-            self.input,
-            if self.silent { ";" } else { Default::default() }
-        )
-    }
-}
-
-/// Task representing getting of attribute value
-#[derive(Clone, PartialEq, Debug)]
-pub struct AttrTask {
-    /// type of function
-    pub ty: FunctionType,
-    /// node propagation for node function
-    pub propagation: Option<Propagation>,
-    /// prefix for set attribute
-    pub attr_pre: Vec<String>,
-    /// attribute to get
-    pub attr: String,
-    /// start position of the task
-    pub start: (usize, usize),
-}
-
-impl std::fmt::Display for AttrTask {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let outattr = format!(
-            ".{}",
-            self.attr_pre
-                .iter()
-                .map(|s| s.as_str())
-                .chain([self.attr.as_str()])
-                .collect::<Vec<&str>>()
-                .join(".")
-        );
-        write!(
-            f,
-            "{}{}{}",
-            self.ty,
-            self.propagation
-                .as_ref()
-                .map(|p| p.to_string())
-                .unwrap_or_default(),
-            outattr
-        )
-    }
-}
-
-/// Task representing conditional task
-#[derive(Clone, PartialEq, Debug)]
-pub struct CondTask {
-    /// condition to evaluate and test
-    pub cond: Expression,
-    /// tasks to run if condition is true
-    pub iftrue: Vec<Task>,
-    /// tasks to run if condition is false
-    pub iffalse: Vec<Task>,
-    /// start position of the task
-    pub start: (usize, usize),
-}
-
-impl CondTask {
-    /// The given task has the capacity to change the task context
-    pub fn can_mutate(&self) -> bool {
-        self.iftrue.iter().any(|t| t.can_mutate()) || self.iffalse.iter().any(|t| t.can_mutate())
-    }
-}
-
-impl std::fmt::Display for CondTask {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let tasks = self
-            .iftrue
-            .iter()
-            .map(|p| p.to_string())
-            .collect::<Vec<String>>()
-            .join("\n");
-        if self.iffalse.is_empty() {
-            write!(f, "if ({}) {{\n  {}\n}}", self.cond, tasks,)
-        } else {
-            write!(
-                f,
-                "if ({}) {{\n  {}\n}} else {{\n  {}\n}}",
-                self.cond,
-                tasks,
-                self.iffalse
-                    .iter()
-                    .map(|p| p.to_string())
-                    .collect::<Vec<String>>()
-                    .join("\n")
-            )
-        }
-    }
-}
-
-/// Task representing a while loop
-#[derive(Clone, PartialEq, Debug)]
-pub struct WhileTask {
-    /// condition to evaluate and test before each evaluation
-    pub cond: Expression,
-    /// tasks to execute each time
-    pub tasks: Vec<Task>,
-    /// start position of the task
-    pub start: (usize, usize),
-}
-
-impl WhileTask {
-    /// The given task has the capacity to change the task context
-    pub fn can_mutate(&self) -> bool {
-        self.tasks.iter().any(|t| t.can_mutate())
-    }
-}
-
-impl std::fmt::Display for WhileTask {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "while ({}) {{\n  {}\n}}",
-            self.cond,
-            self.tasks
-                .iter()
-                .map(|p| p.to_string())
-                .collect::<Vec<String>>()
-                .join("\n"),
-        )
-    }
-}
-
-// /// Functions to import
-// ///
-// /// None will import the plugin but functions need dot syntax
-// /// All will import all functions to be used directly
-// /// Some will only import the listed functions to be used directly
-// #[derive(Clone, PartialEq, Debug)]
-// pub enum ImportFunctions {
-//     None,
-//     All,
-//     Some(Vec<String>),
-// }
-
-#[cfg(feature = "parser")]
-/// Task that is an import statement
-#[derive(Clone, PartialEq, Debug)]
-pub struct ImportTask {
-    /// name of the plugin/nadi file
-    pub name: String,
-    /// path to the plugin/nadi code
-    pub path: Option<PathBuf>,
-    // /// Functions to import
-    // functions: ImportFunctions,
-    /// Execute tasks while importing functions
-    pub tasks: bool,
-}
-
-#[cfg(feature = "parser")]
-impl std::fmt::Display for ImportTask {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let key = if self.tasks { "exec" } else { "import" };
-        if let Some(p) = &self.path {
-            write!(f, "{key} {} from {p:?}", self.name)
-        } else {
-            write!(f, "{key} {}", self.name)
-        }
-    }
-}
-
-#[cfg(feature = "parser")]
-impl ImportTask {
-    pub fn path(&self) -> Option<PathBuf> {
-        if let Some(p) = &self.path {
-            return Some(p.clone());
-        }
-        let name = &self.name;
-        let path = PathBuf::from(format!("{name}.tasks"));
-        if path.exists() {
-            return Some(path);
-        }
-        None
     }
 }
 
@@ -1328,14 +582,6 @@ impl std::fmt::Display for SetSeriesTask {
 /// Execution body of the Task System
 #[derive(Clone, PartialEq, Debug)]
 pub enum Task {
-    /// Evaluate the expression (possible set values)
-    Eval(EvalTask),
-    /// get an attribute
-    Attr(AttrTask),
-    /// conditionally execute tasks
-    Conditional(CondTask),
-    /// execute tasks in a loop
-    WhileLoop(WhileTask),
     /// Tasks to run after each eval execution
     Hook(Vec<Task>),
     /// get function help information
@@ -1345,10 +591,7 @@ pub enum Task {
     /// Struct definition
     StructDef(NadiStruct),
     /// Evaluate the expression
-    Expr(Expression),
-    #[cfg(feature = "parser")]
-    /// Import functions from a tasks file
-    Import(ImportTask),
+    Expr(RawExpr),
     /// Get a series/timeseries from the node/network/env
     GetSeries(GetSeriesTask),
     /// Set a series/timeseries to the node/network/env
@@ -1370,17 +613,11 @@ impl Task {
     /// The given task has the capacity to change the network/node/env
     pub fn can_mutate(&self) -> bool {
         match self {
-            Task::Eval(_) => true,
-            Task::Attr(_) => false,
-            Task::Conditional(c) => c.can_mutate(),
-            Task::WhileLoop(w) => w.can_mutate(),
             Task::Hook(ht) => ht.iter().any(|t| t.can_mutate()),
             Task::Help(_, _) => false,
             Task::Function(_) => false,
             Task::StructDef(_) => false,
             Task::Expr(_) => false,
-            #[cfg(feature = "parser")]
-            Task::Import(_) => true,
             Task::GetSeries(_) => false,
             Task::SetSeries(_) => true,
             Task::Network => false,
@@ -1393,17 +630,11 @@ impl Task {
     /// Message for the current task's functionality
     pub fn message(&self) -> &'static str {
         match self {
-            Task::Eval(_) => "Evaluate the expression",
-            Task::Attr(_) => "Query the variable",
-            Task::Conditional(_) => "Conditional evaluation of tasks",
-            Task::WhileLoop(_) => "Repeat the tasks while the condition is true",
             Task::Hook(_) => "Evaluate these tasks after each eval task",
             Task::Help(_, _) => "Show help",
             Task::Function(_) => "Define a new user function",
             Task::StructDef(_) => "Defines a new user struct",
             Task::Expr(_) => "Evaluate expression",
-            #[cfg(feature = "parser")]
-            Task::Import(_) => "Import functions from the file",
             Task::GetSeries(_) => "Query Series/TimeSeries values",
             Task::SetSeries(_) => "Set Series/TimeSeries values",
             Task::Network => "Show current Network Details",
@@ -1417,10 +648,6 @@ impl Task {
 impl std::fmt::Display for Task {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Self::Eval(et) => std::fmt::Display::fmt(et, f),
-            Self::Attr(at) => std::fmt::Display::fmt(at, f),
-            Self::Conditional(t) => std::fmt::Display::fmt(t, f),
-            Self::WhileLoop(t) => std::fmt::Display::fmt(t, f),
             Self::Hook(tasks) => write!(
                 f,
                 "hook {{\n{}\n}}",
@@ -1437,8 +664,6 @@ impl std::fmt::Display for Task {
             Task::Function(fdef) => write!(f, "{fdef}"),
             Task::StructDef(sdef) => write!(f, "{sdef}"),
             Task::Expr(expr) => write!(f, "{expr}"),
-            #[cfg(feature = "parser")]
-            Task::Import(imp) => write!(f, "{imp}"),
             Task::GetSeries(gst) => write!(f, "{gst}"),
             Task::SetSeries(sst) => write!(f, "{sst}"),
             Self::Network => write!(f, "network"),
