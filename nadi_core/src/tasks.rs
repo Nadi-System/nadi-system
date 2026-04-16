@@ -13,7 +13,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-// /// Result of a Task when executed
+// /// Result of a Task when executed => move to expression result => move to function return
 // pub enum TaskResult {
 //     None,
 //     Value(Attribute),

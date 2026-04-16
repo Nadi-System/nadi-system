@@ -33,21 +33,19 @@ pub enum FunctionRet {
     None,
     Some(Attribute),
     Error(RString),
+    Image(RString),
+    File(RString),
+    Doc(RString),
 }
 
 impl FunctionRet {
-    pub fn res(self) -> Result<Option<Attribute>, String> {
-        match self {
-            Self::None => Ok(None),
-            Self::Some(a) => Ok(Some(a)),
-            Self::Error(e) => Err(e.to_string()),
-        }
-    }
-
-    pub fn expr_res(self) -> Result<ExprResult, String> {
+    pub fn res(self) -> Result<ExprResult, String> {
         match self {
             Self::None => Ok(ExprResult::None),
             Self::Some(a) => Ok(ExprResult::Val(a)),
+            Self::Image(a) => Ok(ExprResult::Image(a.to_string())),
+            Self::File(a) => Ok(ExprResult::File(a.to_string())),
+            Self::Doc(a) => Ok(ExprResult::Doc(a.to_string())),
             Self::Error(e) => Err(e.to_string()),
         }
     }

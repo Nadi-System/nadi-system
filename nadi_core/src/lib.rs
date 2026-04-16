@@ -1,6 +1,7 @@
 pub mod attrs;
 pub mod calc;
 pub mod datafill;
+pub mod eval;
 pub mod expressions;
 pub mod functions;
 pub mod network;
@@ -36,7 +37,8 @@ pub mod prelude {
     pub use crate::attrs::{
         AttrMap, AttrSlice, Attribute, FromAttribute, FromAttributeRelaxed, HasAttributes,
     };
-    pub use crate::expressions::{EvalError, EvalErrorType, Expression};
+    pub use crate::eval::{EvalError, EvalErrorType};
+    pub use crate::expressions::Expression;
     pub use crate::network::{Network, Propagation};
     pub use crate::node::{Node, NodeInner};
     pub use crate::template::{Template, TemplateError};
