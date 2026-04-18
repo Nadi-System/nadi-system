@@ -1,15 +1,15 @@
 use crate::{
-    expressions::{MapFunction, SeriesExpression},
+    expressions::{MapFunction, Position, SeriesExpression},
     network::{PropCondition, PropNodes, PropOrder, Propagation},
     structs::{NadiAttrType, NadiStruct},
-    tasks::{AttrTask, CondTask, EvalTask, FunctionType, ImportTask, Task, WhileTask},
+    tasks::{FunctionType, Task},
 };
 use crate::{
     parser::{
         components::*,
         errors::MatchErr,
         expressions::{
-            complete_expression, expression_group, function_def, maybe_silent_expression,
+            complete_expression, expression_group, function_def, maybe_silent_expression, raw_expr,
             variable_type,
         },
         network::{node_name, str_path},
@@ -74,7 +74,7 @@ pub fn propagation<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Option<Prop
         opt(map(
             delimited(
                 paren_start,
-                maybe_newline(complete_expression),
+                maybe_newline(raw_expr(complete_expression)),
                 maybe_newline(paren_end),
             ),
             PropCondition::Expr,
@@ -103,32 +103,6 @@ pub fn function_type<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionT
             MatchErr::new(inp).ty(&ParseErrorType::InvalidKeyword),
         )),
     }
-}
-
-pub fn attr_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, AttrTask> {
-    let (rest, (ty, propagation, mut attr_pre)) =
-        tuple((function_type, propagation, preceded(opt(dot), dot_variable)))(inp)?;
-
-    match (&ty, propagation.is_some()) {
-        (FunctionType::Node, true) => (),
-        (_, true) => {
-            return Err(nom::Err::Error(
-                MatchErr::new(function_type(inp)?.0).ty(&ParseErrorType::PropagationNotSupported),
-            ));
-        }
-        _ => (),
-    }
-    let attr = attr_pre.pop().expect("should have at least one component");
-    Ok((
-        rest,
-        AttrTask {
-            ty,
-            attr_pre,
-            attr,
-            propagation,
-            start: inp.position(),
-        },
-    ))
 }
 
 // todo add support for user types as well (structs)
@@ -182,44 +156,6 @@ pub fn typed_var<'a, 'b>(
     )(inp)
 }
 
-pub fn eval_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, EvalTask> {
-    let (rest, (ty, propagation, attr, input, sc)) = tuple((
-        function_type,
-        propagation,
-        opt(delimited(opt(dot), typed_var, maybe_space(assignment))),
-        maybe_newline(complete_expression),
-        opt(semicolon),
-    ))(inp)?;
-    match (&ty, propagation.is_some()) {
-        (FunctionType::Node, true) => (),
-        (_, true) => {
-            return Err(nom::Err::Error(
-                MatchErr::new(function_type(inp)?.0).ty(&ParseErrorType::PropagationNotSupported),
-            ));
-        }
-        _ => (),
-    }
-    let (attr_pre, attr) = match attr {
-        None => (vec![], None),
-        Some((mut v, aty)) => {
-            let name = v.pop().map(|v| (v, aty));
-            (v, name)
-        }
-    };
-    Ok((
-        rest,
-        EvalTask {
-            ty,
-            attr_pre,
-            attr,
-            propagation,
-            input,
-            silent: sc.is_some(),
-            start: inp.position(),
-        },
-    ))
-}
-
 pub fn help_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
     map(
         tuple((
@@ -234,60 +170,9 @@ pub fn help_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
     )(inp)
 }
 
-pub fn cond_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, CondTask> {
-    let (rest, (cond, iftrue, iffalse)) = tuple((
-        preceded(kw_if, maybe_space(expression_group)),
-        maybe_newline(tasks_block),
-        opt(maybe_newline(preceded(kw_else, maybe_newline(tasks_block)))),
-    ))(inp)?;
-    Ok((
-        rest,
-        CondTask {
-            cond,
-            iftrue,
-            iffalse: iffalse.unwrap_or_default(),
-            start: inp.position(),
-        },
-    ))
-}
-
 pub fn hook_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<Task>> {
     let (rest, tasks) = preceded(kw_hook, maybe_space(tasks_block))(inp)?;
     Ok((rest, tasks))
-}
-
-pub fn while_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, WhileTask> {
-    let (rest, (cond, tasks)) = tuple((
-        preceded(kw_while, maybe_space(expression_group)),
-        maybe_newline(tasks_block),
-    ))(inp)?;
-    Ok((
-        rest,
-        WhileTask {
-            cond,
-            tasks,
-            start: inp.position(),
-        },
-    ))
-}
-
-pub fn import_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ImportTask> {
-    let (rest, (tasks, name, path)) = tuple((
-        alt((value(true, kw_exec), value(false, kw_import))),
-        after_space(variable),
-        opt(preceded(
-            after_space(kw_from),
-            after_space(map(string_val, PathBuf::from)),
-        )),
-    ))(inp)?;
-    Ok((
-        rest,
-        ImportTask {
-            name: name.content.to_string(),
-            path,
-            tasks,
-        },
-    ))
 }
 
 pub fn get_series_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, GetSeriesTask> {
@@ -344,7 +229,7 @@ pub fn series_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Serie
                 None => SeriesExpression::Series(vt, ts.is_some(), name.content.to_string()),
             },
         ),
-        map(complete_expression, SeriesExpression::AttrExpr),
+        map(raw_expr(complete_expression), SeriesExpression::AttrExpr),
     ))(inp)
 }
 pub fn set_series_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, SetSeriesTask> {
@@ -394,7 +279,7 @@ pub fn task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
         // map(while_task, Task::WhileLoop),
         map(hook_task, Task::Hook),
         // map(import_task, Task::Import),
-        map(maybe_silent_expression, Task::Expr),
+        map(raw_expr(maybe_silent_expression), Task::Expr),
         help_task,
         value(Task::Clear, kw_clear),
         value(Task::Exit, kw_exit),

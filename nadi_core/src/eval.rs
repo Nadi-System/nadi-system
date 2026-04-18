@@ -34,11 +34,7 @@ impl<'a> EvalCtx<'a> {
     }
 
     pub fn curr_node(&self) -> Option<&Node> {
-        if let ExprContext::Node(n) = self.expr_ctx.as_ref() {
-            Some(n)
-        } else {
-            None
-        }
+        self.expr_ctx.as_ref().curr_node()
     }
 
     pub fn at_node(&'a self, node: Node) -> EvalCtx<'a> {
@@ -69,6 +65,13 @@ impl<'a> EvalCtx<'a> {
         EvalCtx {
             expr_ctx: self.expr_ctx.clone(),
             local: Some(Cow::Owned(local)),
+        }
+    }
+
+    pub fn with_expr_ctx(&self, expr_ctx: Cow<'a, ExprContext>) -> EvalCtx<'a> {
+        EvalCtx {
+            expr_ctx,
+            local: self.local.clone(),
         }
     }
 }

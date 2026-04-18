@@ -1,4 +1,4 @@
-use crate::expressions::{EvalError, EvalErrorType};
+use crate::eval::{EvalError, EvalErrorType};
 #[cfg(feature = "parser")]
 use crate::parser::ParseError;
 use crate::template::TemplateError;

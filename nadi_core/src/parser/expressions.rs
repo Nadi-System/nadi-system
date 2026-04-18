@@ -20,10 +20,7 @@ use nom::{
 };
 
 fn set_pos(ty: ExprType<RawExpr>, tk: &[Token<'_>]) -> RawExpr {
-    RawExpr {
-        expr: ty,
-        position: tk.position(),
-    }
+    RawExpr::new(ty, tk.position())
 }
 
 /// Matches the next one that might have spaces, newlines or comments before it
@@ -34,11 +31,11 @@ where
     move |i: &'a [Token<'b>]| match f.parse(i) {
         Ok((rest, o)) => Ok((
             rest,
-            RawExpr {
-                expr: o,
+            RawExpr::new(
+                o,
                 // it could crash things
-                position: i.position(),
-            },
+                i.position(),
+            ),
         )),
         Err(e) => Err(e),
     }
@@ -68,11 +65,17 @@ pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<Raw
             ExprType::UserError,
         ),
         map(
-            preceded(kw_return, opt(after_space(maybe_silent_expression))),
+            preceded(
+                kw_return,
+                opt(after_space(raw_expr(maybe_silent_expression))),
+            ),
             |e| ExprType::Return(e.map(Box::new)),
         ),
         map(
-            preceded(kw_break, opt(after_space(maybe_silent_expression))),
+            preceded(
+                kw_break,
+                opt(after_space(raw_expr(maybe_silent_expression))),
+            ),
             |e| ExprType::Break(e.map(Box::new)),
         ),
         series,
@@ -330,7 +333,7 @@ pub fn bi_operator<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, BiOperator>
     ))(inp)
 }
 
-pub fn nadi_struct_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, NadiStructExpr> {
+pub fn nadi_struct_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, NadiStructExpr<RawExpr>> {
     let (rest, (name, fields)) = tuple((
         variable_name,
         delimited(
@@ -480,25 +483,24 @@ pub fn input_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType
         |(vt, (var, indices), q)| {
             if let Some((_, val)) = q {
                 if let Some(val) = val {
-                    let cond = ExprType::Variable(InputVar::new(
+                    let cond = ExprType::Var(InputVar::new(
                         vt.clone(),
                         var.clone(),
                         indices.clone(),
                         true,
                         inp.position(),
                     ));
-                    let var =
-                        ExprType::Variable(InputVar::new(vt, var, indices, false, inp.position()));
+                    let var = ExprType::Var(InputVar::new(vt, var, indices, false, inp.position()));
                     ExprType::IfElse(
                         Box::new(set_pos(cond, inp)),
                         Box::new(set_pos(var, inp)),
                         Some(Box::new(val)),
                     )
                 } else {
-                    ExprType::Variable(InputVar::new(vt, var, indices, true, inp.position()))
+                    ExprType::Var(InputVar::new(vt, var, indices, true, inp.position()))
                 }
             } else {
-                ExprType::Variable(InputVar::new(vt, var, indices, false, inp.position()))
+                ExprType::Var(InputVar::new(vt, var, indices, false, inp.position()))
             }
         },
     )(inp)
