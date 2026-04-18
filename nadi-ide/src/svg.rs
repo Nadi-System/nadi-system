@@ -27,6 +27,7 @@ impl Default for SvgView {
 #[derive(Debug, Clone)]
 pub enum Message {
     OpenFile,
+    OpenThisFile(String),
     FileOpened(Result<(PathBuf, Arc<String>), Error>),
     Refresh,
     ThemeChange(bool),
@@ -50,6 +51,14 @@ impl SvgView {
                 } else {
                     self.is_loading = true;
                     Task::perform(open_file(), Message::FileOpened)
+                }
+            }
+            Message::OpenThisFile(img) => {
+                if self.is_loading {
+                    Task::none()
+                } else {
+                    self.is_loading = true;
+                    Task::perform(load_file(img), Message::FileOpened)
                 }
             }
             Message::FileOpened(result) => {

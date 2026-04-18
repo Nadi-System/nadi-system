@@ -11,7 +11,7 @@ use nadi_ide::editor::{self, Editor};
 use nadi_ide::help::{self, MdHelp};
 use nadi_ide::icons;
 use nadi_ide::style;
-use nadi_ide::svg::SvgView;
+use nadi_ide::svg::{Message as SvgMessage, SvgView};
 use nadi_ide::terminal::{self, Terminal};
 use std::path::PathBuf;
 
@@ -109,6 +109,9 @@ impl MainWindow {
                 }
                 nadi_ide::terminal::Message::ComplResult(compls) => {
                     return Task::done(editor::Message::ComplResult(compls)).map(Message::Editor);
+                }
+                nadi_ide::terminal::Message::OpenImage(img) => {
+                    return Task::done(SvgMessage::OpenThisFile(img)).map(Message::SvgView);
                 }
                 _ => return self.terminal.update(m).map(Message::Terminal),
             },

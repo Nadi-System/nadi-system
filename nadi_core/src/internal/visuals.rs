@@ -7,6 +7,7 @@ mod visuals {
     use nadi_core::abi_stable::std_types::RSome;
     use nadi_core::attr_map;
     use nadi_core::attrs::Date;
+    use nadi_core::functions::FunctionRet;
     use nadi_core::nadi_plugin::FromAttribute;
     use nadi_core::nadi_plugin::{env_func, network_func};
     use nadi_core::prelude::*;
@@ -135,7 +136,7 @@ mod visuals {
         height: Option<f64>,
         bgcolor: Option<String>,
         settings: Settings,
-    ) -> anyhow::Result<()> {
+    ) -> FunctionRet {
         let (nodes, edges) = nodes_and_edges(net, &label, &settings);
 
         let count = net.nodes_count();
@@ -163,8 +164,10 @@ mod visuals {
                     .set("fill", col),
             );
         }
-        svg::save(outfile, &doc.add(edges).add(nodes))?;
-        Ok(())
+        match svg::save(outfile, &doc.add(edges).add(nodes)) {
+            Ok(_) => FunctionRet::Image(outfile.to_string_lossy().into()),
+            Err(e) => FunctionRet::Error(e.to_string().into()),
+        }
     }
 
     #[allow(clippy::too_many_arguments)]

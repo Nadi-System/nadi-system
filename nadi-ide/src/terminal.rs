@@ -179,6 +179,7 @@ pub enum Message {
     // handled in main
     AttrFound((String, AttrMap)),
     ComplResult(Vec<Completion>),
+    OpenImage(String),
 }
 
 impl Terminal {
@@ -395,6 +396,9 @@ impl Terminal {
                                 "Executing Tasks: {:.2}% ({})",
                                 self.progress.1, self.progress.0
                             ));
+                        }
+                        TaskCtxMessage::Update(TaskMessage::Image(img)) => {
+                            return Task::perform(async { img }, Message::OpenImage);
                         }
                         // TODO instead of term being an editor, will
                         // make it rich text and manage these better

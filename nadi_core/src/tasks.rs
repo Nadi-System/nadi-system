@@ -79,6 +79,8 @@ pub enum TaskMessage {
     Info(String),
     /// Value changed (mut function or expression called)
     Changed,
+    /// Image Generated
+    Image(String),
 }
 
 impl TaskMessage {
@@ -90,6 +92,7 @@ impl TaskMessage {
             Self::Warning(msg) => eprintln!("WARN: {msg}"),
             Self::Info(msg) => eprintln!("INFO: {msg}"),
             Self::Changed => (),
+            Self::Image(msg) => eprintln!("IMG: {msg}"),
         }
     }
 }

@@ -1,7 +1,7 @@
 use crate::eval::EvalErrorType;
 use crate::expressions::ExprResult;
 use crate::structs::NadiAttrType;
-use crate::tasks::{TaskContext, TaskCtxConsts};
+use crate::tasks::{TaskContext, TaskCtxConsts, TaskMessage};
 use crate::template::Template;
 use crate::valid_var;
 use abi_stable::{
@@ -319,6 +319,10 @@ impl TaskContext {
         Some(match res {
             ExprResult::None => return None,
             ExprResult::Val(a) => self.show_attr(a, depth + 1),
+            ExprResult::Image(a) => {
+                _ = self.channel.send(TaskMessage::Image(a.clone()));
+                return None;
+            }
             ExprResult::Arr(v) => {
                 let max_attr_len = TaskCtxConsts::max_attrs_length(self);
                 let trunc = v.len() > max_attr_len;
