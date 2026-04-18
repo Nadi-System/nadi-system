@@ -2,7 +2,7 @@ use crate::expressions::{
     BiOperator, ExprProgress, ExprType, ExprWithContext, FunctionCall, InputVar, Position, RawExpr,
     SetVariable, UniOperator, VarType,
 };
-use crate::network::PropNodes;
+use crate::network::{PropCondition, PropNodes, PropOrder};
 use crate::parser::{
     components::*,
     errors::{MatchErr, ParseErrorType},
@@ -41,14 +41,11 @@ where
     }
 }
 
-pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
+/// expressions that can potentially return value
+pub fn value_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
     alt((
-        // map(nadi_struct_expr, Expression::StructExpr),
         expr_with_context,
-        expr_set_variable,
         expr_maybe_range,
-        value(ExprType::None, none),
-        value(ExprType::Continue, kw_continue),
         map(function_call, ExprType::Function),
         map(template_val, ExprType::Render),
         array_expr,
@@ -59,6 +56,16 @@ pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<Raw
         for_each_expr,
         while_expr,
         loop_expr,
+    ))(inp)
+}
+
+pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
+    alt((
+        // map(nadi_struct_expr, Expression::StructExpr),
+        expr_set_variable,
+        value_expression,
+        value(ExprType::Continue, kw_continue),
+        value(ExprType::None, none),
         progress_expr,
         map(
             preceded(kw_error, after_space(string_val)),
@@ -83,7 +90,14 @@ pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<Raw
 }
 
 pub fn expr_with_context<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
-    let (rest, (vt, expr)) = pair(variable_type, maybe_space(raw_expr(expression_block)))(inp)?;
+    let (rest, (vt, expr)) = pair(
+        variable_type,
+        alt((
+            maybe_space(raw_expr(expression_block)),
+            // this is for backward compatibility
+            after_space(raw_expr(complete_expression)),
+        )),
+    )(inp)?;
     Ok((rest, ExprType::WithContext(ExprWithContext::new(vt, expr))))
 }
 
@@ -98,13 +112,7 @@ pub fn expr_set_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprT
         )),
         |(vt, (var, indices), _, expr, silent)| {
             ExprType::SetVar(SetVariable::new(
-                InputVar::new(
-                    vt.clone(),
-                    var.clone(),
-                    indices.clone(),
-                    false,
-                    inp.position(),
-                ),
+                InputVar::new(vt.clone(), var.clone(), indices.clone(), inp.position()),
                 expr,
                 silent.is_some(),
             ))
@@ -256,7 +264,7 @@ impl BiOpExpr {
         let mut operator_stack: Vec<BiOperator> = Vec::new();
 
         // we don't have position for each operand, maybe we need to store it somewhere
-        let position = self.first.position();
+        // let position = self.first.position();
         operand_stack.push(self.first);
         for (op, expr) in self.args {
             // While the top of the operator stack has higher or equal
@@ -294,6 +302,34 @@ pub fn complete_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Exp
             maybe_newline(cut(err_ctx(
                 &ParseErrorType::IncompleteExpression,
                 raw_expr(alt((expression, expression_group))),
+            ))),
+        )),
+    )(inp)?;
+    let expr = if args.is_empty() {
+        first
+    } else {
+        BiOpExpr {
+            first: set_pos(first, inp),
+            args,
+        }
+        .parse()
+        .ok_or(nom::Err::Error(
+            MatchErr::new(inp).ty(&ParseErrorType::IncompleteExpression),
+        ))?
+    };
+    Ok((rest, expr))
+}
+
+pub fn complete_value_expression<'a, 'b>(
+    inp: &'a [Token<'b>],
+) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
+    let (rest, (first, args)) = pair(
+        alt((value_expression, expression_group)),
+        many0(pair(
+            maybe_newline(bi_operator),
+            maybe_newline(cut(err_ctx(
+                &ParseErrorType::IncompleteExpression,
+                raw_expr(alt((value_expression, expression_group))),
             ))),
         )),
     )(inp)?;
@@ -443,23 +479,30 @@ pub fn variable_type<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, VarType> 
     let node = match (&kw, &prop) {
         // make sure node variable type has only one node name instead
         // of any other propagation
-        (TaskKeyword::Node, Some(p)) => match &p.nodes {
-            PropNodes::All => None,
-            PropNodes::List(lst) => {
-                if let [n] = lst.as_slice() {
-                    Some(n.to_string())
-                } else {
-                    return Err(nom::Err::Error(
+        (TaskKeyword::Node, Some(p)) => {
+            if p.order != PropOrder::default() || p.condition != PropCondition::default() {
+                return Err(nom::Err::Failure(
+                    MatchErr::new(inp).ty(&ParseErrorType::InvalidPropagation),
+                ));
+            };
+            match &p.nodes {
+                PropNodes::All => None,
+                PropNodes::List(lst) => {
+                    if let [n] = lst.as_slice() {
+                        Some(n.to_string())
+                    } else {
+                        return Err(nom::Err::Failure(
+                            MatchErr::new(inp).ty(&ParseErrorType::InvalidPropagation),
+                        ));
+                    }
+                }
+                PropNodes::Path(_) => {
+                    return Err(nom::Err::Failure(
                         MatchErr::new(inp).ty(&ParseErrorType::InvalidPropagation),
                     ));
                 }
             }
-            PropNodes::Path(_) => {
-                return Err(nom::Err::Error(
-                    MatchErr::new(inp).ty(&ParseErrorType::InvalidPropagation),
-                ));
-            }
-        },
+        }
         _ => None,
     };
     match VarType::from_keyword(&kw, prop, node) {
@@ -481,26 +524,20 @@ pub fn input_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType
             ))),
         )),
         |(vt, (var, indices), q)| {
+            let var = ExprType::Var(InputVar::new(vt, var, indices, inp.position()));
             if let Some((_, val)) = q {
+                let var = set_pos(var, inp);
                 if let Some(val) = val {
-                    let cond = ExprType::Var(InputVar::new(
-                        vt.clone(),
-                        var.clone(),
-                        indices.clone(),
-                        true,
-                        inp.position(),
-                    ));
-                    let var = ExprType::Var(InputVar::new(vt, var, indices, false, inp.position()));
                     ExprType::IfElse(
-                        Box::new(set_pos(cond, inp)),
-                        Box::new(set_pos(var, inp)),
+                        Box::new(set_pos(ExprType::Check(Box::new(var.clone())), inp)),
+                        Box::new(var),
                         Some(Box::new(val)),
                     )
                 } else {
-                    ExprType::Var(InputVar::new(vt, var, indices, true, inp.position()))
+                    ExprType::Check(Box::new(var))
                 }
             } else {
-                ExprType::Var(InputVar::new(vt, var, indices, false, inp.position()))
+                var
             }
         },
     )(inp)
@@ -513,7 +550,7 @@ pub fn kw_arg<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, (String, RawExpr
         maybe_space(assignment),
         cut(err_ctx(
             &ParseErrorType::MissingValue,
-            maybe_space(raw_expr(complete_expression)),
+            maybe_space(raw_expr(complete_value_expression)),
         )),
     )(inp)
 }
@@ -523,7 +560,8 @@ pub fn kw_args<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<(String, Ra
 }
 
 pub fn pos_args<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<RawExpr>> {
-    separated_list1(comma, maybe_newline(raw_expr(complete_expression)))(inp)
+    // complete value expr doesn't have the SetVar that could consume keyword arg
+    separated_list1(comma, maybe_newline(raw_expr(complete_value_expression)))(inp)
 }
 
 pub fn pos_vars<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<String>> {
@@ -591,7 +629,7 @@ pub fn func_args<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FuncCallArgKw
                 paren_start,
                 pair(
                     many1(terminated(
-                        maybe_newline(raw_expr(complete_expression)),
+                        maybe_newline(raw_expr(complete_value_expression)),
                         maybe_newline(comma),
                     )),
                     maybe_newline(kw_args),
@@ -668,7 +706,7 @@ pub fn series<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr
 mod tests {
     use super::*;
     use crate::attrs::{Attribute, HasAttributes};
-    use crate::eval::EvalErrorType;
+    use crate::eval::{Eval, EvalCtx, EvalErrorType};
     use crate::functions::NadiFunctions;
     use crate::network::Network;
     use crate::parser::tokenizer::get_tokens;
@@ -777,15 +815,10 @@ mod tests {
     #[case("10 // 5 + 2", 4.into())]
     pub fn compl_expr_eval_test(context: TaskContext, #[case] txt: &str, #[case] val: Attribute) {
         let tokens = Token::validate(get_tokens(txt)).unwrap();
-        let (rest, expr) = complete_expression(&tokens).unwrap();
+        let (rest, expr) = raw_expr(complete_expression)(&tokens).unwrap();
         assert_eq!(rest, vec![]);
-        let res = expr
-            .resolve(&FunctionType::Env, &context, None, None)
-            .unwrap()
-            .eval(&FunctionType::Env, &context, None, None)
-            .unwrap()
-            .to_attribute()
-            .unwrap();
+        let ectx = EvalCtx::default();
+        let res = expr.eval_value(&context, &ectx).unwrap();
         assert_eq!(res, val);
     }
 
@@ -854,15 +887,10 @@ mod tests {
     #[case("!!(false & true)", false.into())]
     pub fn compl_expr_eval_test_2(context: TaskContext, #[case] txt: &str, #[case] val: Attribute) {
         let tokens = Token::validate(get_tokens(txt)).unwrap();
-        let (rest, expr) = complete_expression(&tokens).unwrap();
+        let (rest, expr) = raw_expr(complete_expression)(&tokens).unwrap();
         assert_eq!(rest, vec![]);
-        let res = expr
-            .resolve(&FunctionType::Env, &context, None, None)
-            .unwrap()
-            .eval(&FunctionType::Env, &context, None, None)
-            .unwrap()
-            .to_attribute()
-            .unwrap();
+        let ectx = EvalCtx::default();
+        let res = expr.eval_value(&context, &ectx).unwrap();
         assert_eq!(res, val);
     }
     // testing the simplify process
@@ -883,15 +911,18 @@ mod tests {
         // let context = task_context();
 
         let tokens = Token::validate(get_tokens(txt)).unwrap();
-        let (rest, expr) = complete_expression(&tokens).unwrap();
+        let (rest, expr) = raw_expr(complete_expression)(&tokens).unwrap();
         assert_eq!(rest, vec![]);
-        let res = expr.simplify(&FunctionType::Env, &context).unwrap();
+        let ectx = EvalCtx::default();
+        let res1 = expr.eval_value(&context, &ectx).unwrap();
 
-        let tokens2 = Token::validate(get_tokens(simpl)).unwrap();
-        let (rest2, expr2) = complete_expression(&tokens2).unwrap();
-        assert_eq!(rest2, vec![]);
+        let tokens = Token::validate(get_tokens(simpl)).unwrap();
+        let (rest, expr) = raw_expr(complete_expression)(&tokens).unwrap();
+        assert_eq!(rest, vec![]);
+        let ectx = EvalCtx::default();
+        let res2 = expr.eval_value(&context, &ectx).unwrap();
 
-        assert_eq!(res, expr2);
+        assert_eq!(res1, res2);
     }
 
     // testing the simplify process
@@ -907,9 +938,10 @@ mod tests {
         #[case] err: EvalErrorType,
     ) {
         let tokens = Token::validate(get_tokens(txt)).unwrap();
-        let (rest, expr) = complete_expression(&tokens).unwrap();
+        let (rest, expr) = raw_expr(complete_expression)(&tokens).unwrap();
         assert_eq!(rest, vec![]);
-        let res = expr.simplify(&FunctionType::Env, &context);
-        assert_eq!(res, Err(err.no_pos()));
+        let ectx = EvalCtx::default();
+        let res = expr.eval(&context, &ectx).err().unwrap();
+        assert_eq!(res.ty, err);
     }
 }

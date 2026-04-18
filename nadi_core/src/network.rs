@@ -284,12 +284,27 @@ impl Network {
         order: &PropOrder,
         prop: &PropNodes,
     ) -> Result<Vec<Node>, EvalErrorType> {
-        match prop {
-            PropNodes::All => Ok(self.nodes_order(order)),
-            PropNodes::List(lst) => {
+        match (prop, order) {
+            (PropNodes::All, o) => Ok(self.nodes_order(o)),
+            // preserve the list order if order not given explicitly
+            (PropNodes::List(lst), PropOrder::Auto) => {
+                let nodes: Vec<_> = lst.iter().map(|n| self.node_by_name(n.as_str())).collect();
+                if nodes.iter().any(Option::is_none) {
+                    let not_found: Vec<&str> = lst
+                        .iter()
+                        .zip(nodes)
+                        .filter(|(_, o)| o.is_none())
+                        .map(|(n, _)| n.as_str())
+                        .collect();
+                    Err(EvalErrorType::NodeNotFound(not_found.join(", ")))
+                } else {
+                    Ok(nodes.into_iter().filter_map(|o| o.cloned()).collect())
+                }
+            }
+            (PropNodes::List(lst), o) => {
                 let mut sel_lst: HashSet<&str> = lst.iter().map(|n| n.as_str()).collect();
                 let res = self
-                    .nodes_order(order)
+                    .nodes_order(o)
                     .into_iter()
                     .filter(|n| sel_lst.remove(n.lock().name()))
                     .collect();
@@ -301,7 +316,7 @@ impl Network {
                     ))
                 }
             }
-            PropNodes::Path(p) => self.nodes_path(order, p),
+            (PropNodes::Path(p), o) => self.nodes_path(o, p),
         }
     }
 

@@ -120,8 +120,8 @@ mod command {
 
     ```task
     network load_str("a -> b");
-    node command("echo 'nadi:var:sth=\"{NAME}\"'");
-    node assert_eq(sth, NAME)
+    nodes command("echo 'nadi:var:sth=\"{NAME}\"'");
+    nodes assert_eq(sth, NAME)
     ```
 
         */
@@ -233,7 +233,7 @@ mod command {
     ```task
     network load_str("a -> b");
     network parallel("echo 'nadi:var:sth=\"{NAME}\"'");
-    node assert_eq(sth, NAME)
+    nodes assert_eq(sth, NAME)
     ```
 
     */

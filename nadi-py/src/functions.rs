@@ -46,6 +46,9 @@ impl PyNodeFunction {
         match self.func.call_mut(&mut node.0.lock(), &ctx) {
             FunctionRet::None => Ok(None),
             FunctionRet::Some(v) => Ok(Some(v.into())),
+            FunctionRet::Image(v) | FunctionRet::File(v) | FunctionRet::Doc(v) => {
+                Ok(Some(Attribute::String(v).into()))
+            }
             FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
         }
     }
@@ -100,6 +103,9 @@ impl PyNetworkFunction {
         match self.func.call_mut(&mut network.0, &ctx) {
             FunctionRet::None => Ok(None),
             FunctionRet::Some(v) => Ok(Some(v.into())),
+            FunctionRet::Image(v) | FunctionRet::File(v) | FunctionRet::Doc(v) => {
+                Ok(Some(Attribute::String(v).into()))
+            }
             FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
         }
     }
@@ -153,6 +159,9 @@ impl PyEnvFunction {
         match self.func.call(&ctx) {
             FunctionRet::None => Ok(None),
             FunctionRet::Some(v) => Ok(Some(v.into())),
+            FunctionRet::Image(v) | FunctionRet::File(v) | FunctionRet::Doc(v) => {
+                Ok(Some(Attribute::String(v).into()))
+            }
             FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
         }
     }
@@ -218,6 +227,9 @@ impl PyNadiFunctions {
         match func.call_mut(&mut node.0.lock(), &ctx) {
             FunctionRet::None => Ok(None),
             FunctionRet::Some(v) => Ok(Some(v.into())),
+            FunctionRet::Image(v) | FunctionRet::File(v) | FunctionRet::Doc(v) => {
+                Ok(Some(Attribute::String(v).into()))
+            }
             FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
         }
     }
@@ -243,6 +255,9 @@ impl PyNadiFunctions {
         match func.call_mut(&mut network.0, &ctx) {
             FunctionRet::None => Ok(None),
             FunctionRet::Some(v) => Ok(Some(v.into())),
+            FunctionRet::Image(v) | FunctionRet::File(v) | FunctionRet::Doc(v) => {
+                Ok(Some(Attribute::String(v).into()))
+            }
             FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
         }
     }
@@ -267,6 +282,9 @@ impl PyNadiFunctions {
         match func.call(&ctx) {
             FunctionRet::None => Ok(None),
             FunctionRet::Some(v) => Ok(Some(v.into())),
+            FunctionRet::Image(v) | FunctionRet::File(v) | FunctionRet::Doc(v) => {
+                Ok(Some(Attribute::String(v).into()))
+            }
             FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
         }
     }

@@ -24,11 +24,11 @@ mod attrs {
     ///
     /// ```task
     /// network load_str("A -> B\n B -> D");
-    /// node[A -> D] set_attrs(a2d = true)
+    /// nodes[A -> D] set_attrs(a2d = true)
     ///     ```
     /// This is equivalent to the following:
     /// ```task
-    /// node[A->D].a2d = true;
+    /// nodes[A->D].a2d = true;
     /// ```
     #[node_func]
     fn set_attrs(
@@ -47,7 +47,7 @@ mod attrs {
     ///
     /// ```task
     /// network load_str("a -> b");
-    /// node set_attrs(val = true);
+    /// nodes set_attrs(val = true);
     /// node[a] del_attrs(["val"]);
     /// node[a] assert_eq(val?, false)
     /// node[b] assert_eq(val?, true)
@@ -68,7 +68,7 @@ mod attrs {
     ///
     /// ```task
     /// network load_str("A -> B\n B -> D");
-    /// node assert_eq(get_attr("NAME"), NAME);
+    /// nodes assert_eq(get_attr("NAME"), NAME);
     /// ```
     #[node_func]
     fn get_attr(
@@ -85,8 +85,8 @@ mod attrs {
     ///
     /// ```task
     /// network load_str("A -> B\n B -> D");
-    /// node assert_eq(get_attrs("NAME"), array(NAME));
-    /// node assert_eq(get_attrs("NAME", "ORDER"), array(NAME, ORDER));
+    /// nodes assert_eq(get_attrs("NAME"), array(NAME));
+    /// nodes assert_eq(get_attrs("NAME", "ORDER"), array(NAME, ORDER));
     /// ```
     #[node_func]
     fn get_attrs(
@@ -106,9 +106,9 @@ mod attrs {
     ///
     /// ```task
     /// network load_str("A -> B\n B -> D");
-    /// node.x = 90;
-    /// node assert(has_attr("x"))
-    /// node assert(!has_attr("y"))
+    /// nodes.x = 90;
+    /// nodes assert(has_attr("x"))
+    /// nodes assert(!has_attr("y"))
     /// ```
     #[node_func]
     fn has_attr(
@@ -127,9 +127,9 @@ mod attrs {
     ///
     /// ```task
     /// network load_str("A -> B\n B -> D");
-    /// node.x = 90;
-    /// node assert_eq(first_attr(["y", "x"]), 90)
-    /// node assert_eq(first_attr(["x", "NAME"]), 90)
+    /// nodes.x = 90;
+    /// nodes assert_eq(first_attr(["y", "x"]), 90)
+    /// nodes assert_eq(first_attr(["x", "NAME"]), 90)
     /// ```
     #[node_func]
     fn first_attr(
@@ -173,7 +173,7 @@ mod attrs {
     /// ```task
     /// network load_str("a -> b");
     /// env.some_condition = true;
-    /// node set_attrs_ifelse(
+    /// nodes set_attrs_ifelse(
     ///     env.some_condition,
     ///     val1 = [1, 2],
     ///     val2 = ["a", "b"]
@@ -184,7 +184,7 @@ mod attrs {
     /// This is equivalent to using the if-else expression directly,
     ///
     /// ```task
-    /// node.val1 = if (env.some_condition) {1} else {2};
+    /// nodes.val1 = if (env.some_condition) {1} else {2};
     /// env assert_eq(nodes.val1, [1, 1])
     /// ```
     ///
@@ -216,7 +216,7 @@ mod attrs {
     ///
     /// ```task
     /// network load_str("a -> b");
-    /// node set_attrs_render(val1 = "Node: {NAME}");
+    /// nodes set_attrs_render(val1 = "Node: {NAME}");
     /// node[a] assert_eq(val1, "Node: a")
     /// ```
     #[node_func]
@@ -247,8 +247,8 @@ mod attrs {
     ///
     /// ```task
     /// network load_str("a -> b");
-    /// node load_toml_render("label = \"Node: {NAME}\"")
-    /// node assert_eq(label, render("Node: {NAME}"))
+    /// nodes load_toml_render("label = \"Node: {NAME}\"")
+    /// nodes assert_eq(label, render("Node: {NAME}"))
     /// ```
     #[node_func(echo = false)]
     fn load_toml_render(

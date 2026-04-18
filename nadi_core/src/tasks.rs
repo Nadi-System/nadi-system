@@ -924,7 +924,7 @@ mod tests {
         #[values(
             "node", "network", "env", "exit", "end", "help", "inputs", "output", "nodes", "root",
             "local", "if", "else", "while", "in", "match", "function", "map", "attrs", "loop",
-            "for", "outlets", "leaves"
+            "for", "roots", "leaves"
         )]
         tk: &str,
     ) {

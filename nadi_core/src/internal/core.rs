@@ -46,7 +46,7 @@ mod core {
     /// network assert_eq(count(), 0)
     /// network load_str("a -> b")
     /// network assert_eq(count(), 2)
-    /// node.sel = INDEX < 1
+    /// nodes.sel = INDEX < 1
     /// network assert_eq(count(nodes.sel), 1)
     /// ```
     #[network_func]
@@ -138,7 +138,7 @@ mod core {
     ///
     /// ```task
     /// env.x = attrmap(a=1, b=2)
-    /// node assert_eq(insert(x, c, 3), attrmap(a=1, b=2, c=3))
+    /// nodes assert_eq(insert(x, c, 3), attrmap(a=1, b=2, c=3))
     /// ```
     #[env_func]
     fn insert(mut map: AttrMap, key: RString, value: Attribute) -> AttrMap {
@@ -150,7 +150,7 @@ mod core {
     ///
     /// ```task
     /// network load_str("a -> b\n b -> d\n c -> d")
-    /// node assert_eq(inputs_count(), length(inputs._))
+    /// nodes assert_eq(inputs_count(), length(inputs._))
     /// ```
     #[node_func]
     fn inputs_count(node: &NodeInner) -> usize {
@@ -162,7 +162,7 @@ mod core {
     /// This is equivalent to using the `inputs` keyword
     /// ```task
     /// network load_str("a -> b\n b -> d\n c -> d")
-    /// node assert_eq(inputs_attr("NAME"), inputs.NAME)
+    /// nodes assert_eq(inputs_attr("NAME"), inputs.NAME)
     /// ```
     #[node_func(attr = "NAME")]
     fn inputs_attr(
@@ -182,7 +182,7 @@ mod core {
     ///
     /// ```task
     /// network load_str("a -> b\n b -> d\n c -> d")
-    /// node assert_eq(node[b].inputs_map("NAME"), {a="a"})
+    /// nodes assert_eq(node[b].inputs_map("NAME"), {a="a"})
     /// ```
     #[node_func(attr = "NAME")]
     fn inputs_map(
@@ -210,7 +210,7 @@ mod core {
     ///
     /// ```task
     /// network load_str("a -> b\n b -> d\n c -> d")
-    /// node assert_eq(has_output(), output._?)
+    /// nodes assert_eq(has_output(), output._?)
     /// ```
     #[node_func]
     fn has_output(node: &NodeInner) -> bool {
@@ -222,7 +222,7 @@ mod core {
     /// This is equivalent to using the `output` keyword
     /// ```task
     /// network load_str("a -> b\n b -> d\n c -> d")
-    /// node(output._?) assert_eq(output_attr("NAME"), output.NAME)
+    /// nodes(output._?) assert_eq(output_attr("NAME"), output.NAME)
     /// ```
     #[node_func(attr = "NAME")]
     fn output_attr(

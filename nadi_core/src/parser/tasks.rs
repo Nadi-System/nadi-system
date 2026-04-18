@@ -335,7 +335,7 @@ mod tests {
     #[case("node.x")]
     #[case("network.x")]
     #[case("inputs.x")]
-    #[case("env {(x + 1) != 5}")]
+    #[case("env {(x + 1) != 5}")] //
     #[case("env {\"val\" in selected_vals}")]
     #[case("env.echo(x)")]
     #[case("network {load_file(test)}")]
@@ -346,7 +346,7 @@ mod tests {
     #[case("nodes<outputfirst>[a] {some_func()}")]
     #[case("nodes<inputsfirst>[a](cond).some_func()")]
     #[case("nodes[a](cond) {some_func()}")]
-    #[case("nodes(cond) {(some_func() + 12) > 12}")]
+    #[case("nodes(cond) {(some_func() + 12) > 12}")] //
     #[case("while (true) {\n\tenv {echo(x)}\n}")]
     #[case("if (true) {\n\tenv.echo(x)\n} else {\n\tenv.echo(y)\n}")]
     #[case("while (true) {\n\tenv.echo(x)\n}")]
@@ -386,7 +386,7 @@ mod tests {
     /// Testing the codes in mdbook
     #[rstest]
     #[case(
-        "network.load_file(\"./data/mississippi.net\")\nnode[ohio] render(\"{_NAME:case(title)} River\")"
+        "network.load_file(\"./data/mississippi.net\")\nnode[ohio].render(\"{_NAME:case(title)} River\")"
     )]
     pub fn parse_valid_mdbook_test(#[case] txt: &str) {
         let tokens = get_tokens(txt);

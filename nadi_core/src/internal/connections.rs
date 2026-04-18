@@ -114,7 +114,7 @@ mod conn {
     /// Take a subset of network by only including the selected nodes
     /// ```task
     /// network load_str("a -> b\n b->c");
-    /// node[a->b].sth = true;
+    /// nodes[a->b].sth = true;
     /// node[c].sth = false;
     /// network subset(nodes.sth);
     /// env assert_eq(nodes.NAME, ["b", "a"])

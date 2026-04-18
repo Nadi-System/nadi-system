@@ -4,7 +4,7 @@ use crate::functions::FunctionCtx;
 use crate::network::Propagation;
 use crate::node::{Node, NodeInner};
 use crate::structs::{NadiAttrType, NadiStructExpr};
-use crate::tasks::{FunctionType, Task, TaskContext, TaskKeyword, TaskMessage};
+use crate::tasks::{FunctionType, Task, TaskContext, TaskCtxConsts, TaskKeyword, TaskMessage};
 use crate::template::Template;
 use crate::timeseries::{CompleteSeries, HasSeries, HasTimeSeries, MaskedSeries, Series};
 use crate::udf::UserFunction;
@@ -27,19 +27,23 @@ pub struct RawExpr {
 
 impl Eval for RawExpr {
     fn nested(&self) -> bool {
-        match self.expr {
-            ExprType::UniOp(..) | ExprType::BiOp(..) => true,
-            _ => false,
-        }
+        self.expr.is_nested()
     }
 
-    fn eval(&self, _ctx: &TaskContext, _ectx: &EvalCtx) -> Result<ExprResult, EvalError> {
-        Err(EvalErrorType::LogicalError("the expression is not resolved").pos(self.position))
+    fn eval(&self, ctx: &TaskContext, ectx: &EvalCtx) -> Result<ExprResult, EvalError> {
+        let res = self
+            .clone()
+            .resolve(&ctx, ectx.clone())
+            .map_err(|e| e.pos(self.position()))?;
+        res.eval(ctx, ectx).map_err(|e| e.pos(self.position()))
     }
 
     fn eval_mut(&self, ctx: &mut TaskContext, ectx: &EvalCtx) -> Result<ExprResult, EvalError> {
-        let res = self.clone().resolve(&ctx, ectx.clone())?;
-        res.eval_mut(ctx, ectx)
+        let res = self
+            .clone()
+            .resolve(&ctx, ectx.clone())
+            .map_err(|e| e.pos(self.position()))?;
+        res.eval_mut(ctx, ectx).map_err(|e| e.pos(self.position()))
     }
 }
 
@@ -68,11 +72,7 @@ impl RawExpr {
                 ExprType::Function(resolve_function_calls(fc, ctx, ectx.clone())?)
             }
             ExprType::Var(vt) => ExprType::Var(vt),
-            ExprType::SetVar(sv) => ExprType::SetVar(SetVariable::new(
-                sv.var,
-                sv.expr.resolve(ctx, ectx.clone())?,
-                sv.silent,
-            )),
+            ExprType::SetVar(sv) => return resolve_set_variable(sv, ctx, ectx.clone()),
             ExprType::IfElse(cond, expr1, Some(expr2)) => ExprType::IfElse(
                 Box::new(cond.resolve(ctx, ectx.clone())?),
                 Box::new(expr1.resolve(ctx, ectx.clone())?),
@@ -111,6 +111,10 @@ impl RawExpr {
                     .collect::<Result<Vec<_>, _>>()?,
             ),
             ExprType::Silent(e) => ExprType::Silent(Box::new(e.resolve(ctx, ectx.clone())?)),
+            ExprType::Check(e) => match e.resolve(ctx, ectx.clone()) {
+                Ok(r) => ExprType::Check(Box::new(r)),
+                Err(_) => ExprType::Result(ExprResult::Val(false.into())),
+            },
             ExprType::WithContext(e) => return resolve_expr_w_ctx(e, ctx, ectx.clone()),
             ExprType::Range(b, Some(s), e) => ExprType::Range(
                 Box::new(b.resolve(ctx, ectx.clone())?),
@@ -212,6 +216,10 @@ impl Eval for ResolvedExpr<'_> {
         self.expr
             .eval(ctx, &self.context)
             .map_err(|e| self.err_ctx(e))
+    }
+
+    fn nested(&self) -> bool {
+        self.expr.is_nested()
     }
 }
 
@@ -358,6 +366,8 @@ pub enum ExprType<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq> {
     Function(FunctionCall<T>),
     /// silenced expression
     Silent(Box<T>),
+    /// Check if expression returns a valid value
+    Check(Box<T>),
     /// try catch block
     TryCatch(Box<T>, Box<T>),
     /// return statement
@@ -472,6 +482,13 @@ impl<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq + Eval> std::fmt
             Self::Function(fc) => std::fmt::Display::fmt(fc, f),
             Self::UserError(e) => write!(f, "error {:?}", e),
             Self::Silent(e) => write!(f, "{e};"),
+            Self::Check(e) => {
+                if e.nested() {
+                    write!(f, "({e})?")
+                } else {
+                    write!(f, "{e}?")
+                }
+            }
             Self::TryCatch(expr1, expr2) => write!(f, "try {{{}}} catch {{{}}}", expr1, expr2),
             Self::Return(None) => write!(f, "return"),
             Self::Return(Some(expr)) => write!(f, "return {expr}"),
@@ -522,6 +539,52 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
                     Ok(ExprResult::None)
                 }
             }
+            Self::While(cond, expr) => {
+                let max_it = TaskCtxConsts::max_iterations(ctx);
+                let mut it = 0;
+                loop {
+                    let cond = cond.eval_value(ctx, ectx)?;
+                    let cond = bool::from_attr(&cond).ok_or(EvalErrorType::NotABool.no_pos())?;
+                    if cond {
+                        match expr.eval_mut(ctx, ectx) {
+                            Ok(_) => (),
+                            Err(e) => match e.ty {
+                                EvalErrorType::InvalidBreak(b) => return Ok(b),
+                                EvalErrorType::InvalidContinue => continue,
+                                _ => return Err(e),
+                            },
+                        }
+                    } else {
+                        break;
+                    }
+                    it += 1;
+                    if it > max_it {
+                        // basically to prevent infinite loop from user
+                        return Err(EvalErrorType::MaxIteratorError(it).no_pos());
+                    }
+                }
+                Ok(ExprResult::None)
+            }
+            Self::Loop(expr) => {
+                let max_it = TaskCtxConsts::max_iterations(ctx);
+                let mut it = 0;
+                loop {
+                    // only breaks through the break statement in code
+                    match expr.eval_mut(ctx, ectx) {
+                        Ok(_) => (),
+                        Err(e) => match e.ty {
+                            EvalErrorType::InvalidBreak(b) => return Ok(b),
+                            EvalErrorType::InvalidContinue => continue,
+                            _ => return Err(e),
+                        },
+                    }
+                    it += 1;
+                    if it > max_it {
+                        // basically to prevent infinite loop from user
+                        return Err(EvalErrorType::MaxIteratorError(it).no_pos());
+                    }
+                }
+            }
             Self::TryCatch(expr1, expr2) => match expr1.eval_mut(ctx, ectx) {
                 Ok(val) => Ok(val),
                 _ => expr2.eval_mut(ctx, ectx),
@@ -551,6 +614,13 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
                 e.eval_mut(ctx, ectx)?;
                 Ok(ExprResult::None)
             }
+            Self::Check(e) => Ok(ExprResult::Val(
+                match e.eval_mut(ctx, ectx) {
+                    Ok(ExprResult::None) | Ok(ExprResult::NoneErr(_)) | Err(_) => false,
+                    Ok(_) => true,
+                }
+                .into(),
+            )),
             Self::WithContext(e) => e.expr.eval_mut(ctx, &e.expr.context),
             _ => self.eval(ctx, ectx),
         }
@@ -615,6 +685,13 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
                 e.eval(ctx, ectx)?;
                 Ok(ExprResult::None)
             }
+            Self::Check(e) => Ok(ExprResult::Val(
+                match e.eval(ctx, ectx) {
+                    Ok(ExprResult::None) | Ok(ExprResult::NoneErr(_)) | Err(_) => false,
+                    Ok(_) => true,
+                }
+                .into(),
+            )),
             // This is already resolved context, so it is fine to just evaluate
             Self::WithContext(e) => e.expr.eval(ctx, &e.expr.context),
             Self::Range(b, s, e) => {
@@ -677,6 +754,13 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
 
     /// check if the expression is nested (needs parenthesis)
     fn nested(&self) -> bool {
+        self.is_nested()
+    }
+}
+
+impl<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq + Eval> ExprType<T> {
+    /// check if the expression is nested (needs parenthesis)
+    fn is_nested(&self) -> bool {
         match self {
             Self::Silent(e) => e.nested(),
             Self::UniOp(_, _) => true,
@@ -1045,8 +1129,6 @@ pub struct InputVar {
     pub name: String,
     /// suffix of the variable names/indices
     pub indices: Vec<InputVarIndex>,
-    /// Only check the presence of a value
-    pub check: bool,
     /// start position of the variable
     pub start: (usize, usize),
 }
@@ -1061,7 +1143,7 @@ impl std::fmt::Display for InputVar {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "{}{}{}{}",
+            "{}{}{}",
             self.ty
                 .as_ref()
                 .map(|t| format!("{}.", t))
@@ -1072,7 +1154,6 @@ impl std::fmt::Display for InputVar {
                 .map(|p| format!(".{p}"))
                 .collect::<Vec<String>>()
                 .join(""),
-            if self.check { "?" } else { Default::default() },
         )
     }
 }
@@ -1083,14 +1164,12 @@ impl InputVar {
         ty: Option<VarType>,
         name: String,
         indices: Vec<InputVarIndex>,
-        check: bool,
         start: (usize, usize),
     ) -> Self {
         Self {
             ty,
             name,
             indices,
-            check,
             start,
         }
     }
@@ -1217,11 +1296,7 @@ impl Eval for InputVar {
                         self.attr_nested(&i.try_lock().into_option().ok_or(
                             EvalErrorType::MutexError(file!(), line!()).pos(self.position()),
                         )?);
-                    if self.check {
-                        vars.push(ExprResult::Val(matches!(a, Ok(Some(_))).into()));
-                    } else {
-                        vars.push(a.map_err(|e| e.pos(self.position()))?.into());
-                    }
+                    vars.push(a.map_err(|e| e.pos(self.position()))?.into());
                 }
                 return Ok(ExprResult::Arr(vars));
             }
@@ -1235,11 +1310,7 @@ impl Eval for InputVar {
                         let a = self.attr_nested(&n);
                         Ok((
                             n.name().to_string(),
-                            if self.check {
-                                ExprResult::Val(Attribute::Bool(matches!(a, Ok(Some(_)))))
-                            } else {
-                                ExprResult::from(a.map_err(|e| e.pos(self.position()))?)
-                            },
+                            ExprResult::from(a.map_err(|e| e.pos(self.position()))?),
                         ))
                     })
                     .collect::<Result<_, EvalError>>()?;
@@ -1247,14 +1318,10 @@ impl Eval for InputVar {
             }
         };
 
-        if self.check {
-            Ok(ExprResult::Val(matches!(attr, Ok(Some(_))).into()))
-        } else {
-            match attr {
-                Ok(Some(v)) => Ok(ExprResult::Val(v)),
-                Ok(None) => Ok(ExprResult::None),
-                Err(e) => Err(e.pos(self.position())),
-            }
+        match attr {
+            Ok(Some(v)) => Ok(ExprResult::Val(v)),
+            Ok(None) => Ok(ExprResult::None),
+            Err(e) => Err(e.pos(self.position())),
         }
     }
 }
@@ -2197,6 +2264,60 @@ impl<T: std::fmt::Display> std::fmt::Display for SetVariable<T> {
     }
 }
 
+fn resolve_set_variable<'a, 'b>(
+    expr: SetVariable<RawExpr>,
+    ctx: &'a TaskContext,
+    ectx: EvalCtx<'b>,
+) -> Result<ResolvedExpr<'b>, EvalError> {
+    let e = expr.ctx.as_ref().unwrap_or(ectx.expr_ctx.as_ref());
+    let new_expr_ctx = expr
+        .var
+        .get_expr_context(e.function_type(), ctx, e.curr_node())?;
+    let new_ectx = ectx.with_expr_ctx(Cow::Owned(new_expr_ctx.clone()));
+    let etc = match new_expr_ctx {
+        ExprContext::Local => todo!(),
+        ExprContext::Env => new_ectx.as_env().to_owned(),
+        ExprContext::Network => new_ectx.as_network().to_owned(),
+        ExprContext::Node(n) => new_ectx.at_node(n).to_owned(),
+        ExprContext::Nodes(nds) | ExprContext::NodesMap(nds) => {
+            let exprs = nds
+                .into_iter()
+                .map(|n| {
+                    let context = new_ectx.at_node(n.clone()).to_owned();
+                    let mut vt = expr.var.clone();
+                    _ = vt.ty.replace(VarType::Node(None));
+                    Ok(ResolvedExpr {
+                        expr: ExprType::SetVar(SetVariable::new(
+                            vt,
+                            expr.expr.clone().resolve(ctx, context.clone())?,
+                            expr.silent,
+                        )),
+                        position: expr.expr.position(),
+                        context,
+                    })
+                })
+                .collect::<Result<Vec<ResolvedExpr>, EvalError>>()?;
+            // FIX: how to know whether the user is looking for array or statement?
+            let et = ExprType::Multi(exprs);
+            return Ok(ResolvedExpr {
+                position: expr.expr.position(),
+                expr: et,
+                context: new_ectx,
+            });
+        }
+    };
+
+    Ok(ResolvedExpr {
+        expr: ExprType::SetVar(SetVariable::new(
+            expr.var,
+            expr.expr.clone().resolve(ctx, etc.clone())?,
+            expr.silent,
+        )),
+        position: expr.expr.position(),
+        context: etc,
+    })
+}
+
 impl<T: Clone> SetVariable<T> {
     pub fn new(var: InputVar, expr: T, silent: bool) -> Self {
         Self {
@@ -2207,15 +2328,10 @@ impl<T: Clone> SetVariable<T> {
         }
     }
 
-    pub fn with_ctx(
-        &self,
-        ft: &FunctionType,
-        ctx: &TaskContext,
-        node: Option<&Node>,
-    ) -> Result<Self, EvalError> {
+    pub fn with_ctx(&self, ctx: ExprContext) -> Result<Self, EvalError> {
         // eprintln!("Resolving: {self:?}");
         let mut e = self.clone();
-        e.ctx = Some(e.ctx.unwrap_or(e.var.get_expr_context(ft, ctx, node)?));
+        e.ctx = Some(ctx);
         // eprintln!("Found: {:?}", e.ctx);
         Ok(e)
     }
