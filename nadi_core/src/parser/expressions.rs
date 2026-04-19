@@ -1,6 +1,6 @@
 use crate::expressions::{
-    BiOperator, ExprProgress, ExprType, ExprWithContext, FunctionCall, InputVar, Position, RawExpr,
-    SetVariable, UniOperator, VarType,
+    BiOperator, ExprProgress, ExprType, ExprWithContext, FunctionCall, ImportExpr, InputVar,
+    Position, RawExpr, SetVariable, UniOperator, VarType,
 };
 use crate::network::{PropCondition, PropNodes, PropOrder};
 use crate::parser::{
@@ -18,6 +18,7 @@ use nom::{
     multi::{many0, many1, separated_list0, separated_list1},
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
 };
+use std::path::PathBuf;
 
 fn set_pos(ty: ExprType<RawExpr>, tk: &[Token<'_>]) -> RawExpr {
     RawExpr::new(ty, tk.position())
@@ -64,6 +65,7 @@ pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<Raw
         // map(nadi_struct_expr, Expression::StructExpr),
         expr_set_variable,
         value_expression,
+        import_expr,
         value(ExprType::Continue, kw_continue),
         value(ExprType::None, none),
         progress_expr,
@@ -87,6 +89,25 @@ pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<Raw
         ),
         series,
     ))(inp)
+}
+
+pub fn import_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
+    let (rest, (tasks, name, path)) = tuple((
+        alt((value(true, kw_exec), value(false, kw_import))),
+        after_space(variable),
+        opt(preceded(
+            after_space(kw_from),
+            after_space(map(string_val, PathBuf::from)),
+        )),
+    ))(inp)?;
+    Ok((
+        rest,
+        ExprType::Import(ImportExpr {
+            name: name.content.to_string(),
+            path,
+            tasks,
+        }),
+    ))
 }
 
 pub fn expr_with_context<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
