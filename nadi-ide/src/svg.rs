@@ -7,19 +7,27 @@ use std::sync::Arc;
 pub struct SvgView {
     pub light_theme: bool,
     file: Option<PathBuf>,
+    files: Vec<String>,
+    curr_ind: usize,
     is_loading: bool,
     handle: svg::Handle,
     embedded: bool,
+    err: Option<String>,
 }
+
+const DEFAULT_SVG: &[u8; 1791] = include_bytes!("../images/placeholder.svg");
 
 impl Default for SvgView {
     fn default() -> Self {
         Self {
             light_theme: false,
             file: None,
+            files: vec![],
+            curr_ind: 0,
             is_loading: false,
-            handle: svg::Handle::from_memory(include_bytes!("../images/placeholder.svg")),
+            handle: svg::Handle::from_memory(DEFAULT_SVG),
             embedded: false,
+            err: None,
         }
     }
 }
@@ -31,6 +39,9 @@ pub enum Message {
     FileOpened(Result<(PathBuf, Arc<String>), Error>),
     Refresh,
     ThemeChange(bool),
+    NextImage,
+    PrevImage,
+    ClearImages,
 }
 
 impl SvgView {
@@ -53,13 +64,44 @@ impl SvgView {
                     Task::perform(open_file(), Message::FileOpened)
                 }
             }
+            Message::ClearImages => {
+                self.curr_ind = 0;
+                self.files = vec![];
+                self.handle = svg::Handle::from_memory(DEFAULT_SVG);
+                Task::none()
+            }
             Message::OpenThisFile(img) => {
                 if self.is_loading {
                     Task::none()
                 } else {
                     self.is_loading = true;
+                    self.curr_ind = self.files.len();
+                    self.files.push(img.clone());
+                    self.file = Some(img.clone().into());
                     Task::perform(load_file(img), Message::FileOpened)
                 }
+            }
+            Message::NextImage => {
+                if (self.curr_ind + 1) < self.files.len() {
+                    self.curr_ind += 1;
+                    if let Some(v) = self.files.get(self.curr_ind) {
+                        self.is_loading = true;
+                        let v = v.to_string();
+                        return Task::perform(load_file(v), Message::FileOpened);
+                    }
+                }
+                Task::none()
+            }
+            Message::PrevImage => {
+                if self.curr_ind > 0 {
+                    self.curr_ind -= 1;
+                    if let Some(v) = self.files.get(self.curr_ind) {
+                        self.is_loading = true;
+                        let v = v.to_string();
+                        return Task::perform(load_file(v), Message::FileOpened);
+                    }
+                }
+                Task::none()
             }
             Message::FileOpened(result) => {
                 self.is_loading = false;
@@ -68,8 +110,12 @@ impl SvgView {
                         self.file = Some(path);
                         self.handle =
                             svg::Handle::from_memory(String::clone(&contents).into_bytes());
+                        self.err = None;
                     }
-                    Err(e) => println!("{e:?}"),
+                    Err(e) => {
+                        self.err = Some(format!("{e:?}"));
+                        self.handle = svg::Handle::from_memory(DEFAULT_SVG);
+                    }
                 }
                 Task::none()
             }
@@ -90,14 +136,29 @@ impl SvgView {
         let mut controls = row![
             icons::action(icons::open_icon(), "Open SVG", Some(Message::OpenFile)),
             icons::action(icons::refresh_icon(), "Refresh", Some(Message::Refresh)),
-            horizontal()
+            icons::danger_action(
+                icons::trash_icon(),
+                "Clear Images",
+                Some(Message::ClearImages)
+            ),
+            horizontal(),
+            icons::action(
+                icons::left_icon(),
+                "Previous Image",
+                (self.curr_ind > 0).then(|| Message::PrevImage)
+            ),
+            icons::action(
+                icons::right_icon(),
+                "Next Image",
+                ((self.curr_ind + 1) < self.files.len()).then(|| Message::NextImage)
+            ),
         ]
         .spacing(10)
         .padding(10);
         if !self.embedded {
             controls = controls.push(toggler(self.light_theme).on_toggle(Message::ThemeChange));
         }
-        let status = row![
+        let mut status = row![
             text(
                 self.file
                     .as_ref()
@@ -106,6 +167,14 @@ impl SvgView {
             ),
             horizontal()
         ];
+        if let Some(e) = &self.err {
+            status = status.push(text(e).color(iced::Color {
+                r: 1.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            }));
+        }
         // if let Some(h) = &self.handle {
         column![
             controls,
@@ -117,7 +186,16 @@ impl SvgView {
                 )
                 .style(|_| {
                     container::Style::default().shadow(iced::Shadow {
-                        color: iced::Color::BLACK,
+                        color: if self.err.is_none() {
+                            iced::Color::BLACK
+                        } else {
+                            iced::Color {
+                                r: 1.0,
+                                g: 0.0,
+                                b: 0.0,
+                                a: 1.0,
+                            }
+                        },
                         offset: iced::Vector::new(3.0, 3.0),
                         blur_radius: 10.0,
                     })

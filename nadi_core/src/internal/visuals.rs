@@ -4,7 +4,7 @@ use nadi_plugin::nadi_internal_plugin;
 mod visuals {
     use anyhow::Context;
     use chrono::NaiveDate;
-    use nadi_core::abi_stable::std_types::RSome;
+    use nadi_core::abi_stable::std_types::{RSome, RString, RVec};
     use nadi_core::attr_map;
     use nadi_core::attrs::Date;
     use nadi_core::functions::FunctionRet;
@@ -121,6 +121,16 @@ mod visuals {
             }
         }
         (nodes, edges)
+    }
+
+    #[env_func]
+    fn svg_open(path: RString) -> FunctionRet {
+        FunctionRet::Image(path)
+    }
+
+    #[env_func]
+    fn svg_open_multi(paths: RVec<RString>) -> FunctionRet {
+        FunctionRet::Images(paths)
     }
 
     /// Exports the network as a svg

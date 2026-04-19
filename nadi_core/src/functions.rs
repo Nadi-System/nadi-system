@@ -2,19 +2,20 @@
 #![allow(non_local_definitions)] // warning from sabi_trait macro
 use crate::attrs::{AttrMap, AttrSlice};
 use crate::expressions::ExprResult;
-use crate::plugins::{NadiPlugin, load_library_safe};
+use crate::plugins::{load_library_safe, NadiPlugin};
 use crate::prelude::*;
-use crate::table::{ColumnAlign, contents_2_md};
+use crate::table::{contents_2_md, ColumnAlign};
 use crate::tasks::FunctionType;
 use abi_stable::std_types::Tuple2;
 use abi_stable::{
-    StableAbi, sabi_trait,
+    sabi_trait,
     std_types::{
+        map::REntry,
         RBox, RErr, RHashMap, ROk,
         ROption::{self, RNone, RSome},
         RResult, RString, RVec,
-        map::REntry,
     },
+    StableAbi,
 };
 use colored::Colorize;
 use std::collections::HashMap;
@@ -33,6 +34,7 @@ pub enum FunctionRet {
     Some(Attribute),
     Error(RString),
     Image(RString),
+    Images(RVec<RString>),
     File(RString),
     Doc(RString),
 }
@@ -43,6 +45,9 @@ impl FunctionRet {
             Self::None => Ok(ExprResult::None),
             Self::Some(a) => Ok(ExprResult::Val(a)),
             Self::Image(a) => Ok(ExprResult::Image(a.to_string())),
+            Self::Images(a) => Ok(ExprResult::Images(
+                a.into_iter().map(|v| v.to_string()).collect(),
+            )),
             Self::File(a) => Ok(ExprResult::File(a.to_string())),
             Self::Doc(a) => Ok(ExprResult::Doc(a.to_string())),
             Self::Error(e) => Err(e.to_string()),

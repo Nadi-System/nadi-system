@@ -8,7 +8,7 @@ use crate::structs::NadiStruct;
 use crate::timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap};
 use crate::udf::UserFunction;
 use std::collections::HashMap;
-use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::mpsc::{channel, Receiver, Sender};
 
 // /// Result of a Task when executed => move to expression result => move to function return
 // pub enum TaskResult {
@@ -64,6 +64,7 @@ task_ctx_consts!(
     prettify_map, "PRETTIFY_MAP", bool => true;
     prettify_all_map, "PRETTIFY_ALL_MAP", bool => false;
     track_change, "TRACK_CHANGE", bool => true;
+    show_images, "SHOW_IMAGES", bool => true;
 );
 
 /// Message that can be sent from the task
@@ -87,7 +88,7 @@ impl TaskMessage {
             Self::Warning(msg) => eprintln!("WARN: {msg}"),
             Self::Info(msg) => eprintln!("INFO: {msg}"),
             Self::Changed => (),
-            Self::Image(msg) => eprintln!("IMG: {msg}"),
+            Self::Image(_msg) => (), //eprintln!("IMG: {msg}"),
         }
     }
 }

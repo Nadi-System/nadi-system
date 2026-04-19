@@ -444,17 +444,11 @@ impl Editor {
                     self.is_loading = true;
 
                     let mut text = self.content.text();
-
-                    // // only on 0.14
-                    // if let Some(ending) = self.content.line_ending() {
-                    //     if !text.ends_with(ending.as_str()) {
-                    //         text.push_str(ending.as_str());
-                    //     }
-                    // }
-                    if !text.ends_with('\n') {
-                        text.push('\n');
+                    if let Some(ending) = self.content.line_ending() {
+                        if !text.ends_with(ending.as_str()) {
+                            text.push_str(ending.as_str());
+                        }
                     }
-
                     Task::perform(save_file(self.file.clone(), text), Message::FileSaved)
                 }
             }

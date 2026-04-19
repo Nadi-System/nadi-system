@@ -238,6 +238,8 @@ pub enum ExprResult {
     Val(Attribute),
     /// Image output
     Image(String),
+    /// Multiple Images output
+    Images(Vec<String>),
     /// File output
     File(String),
     /// Documentation
@@ -264,6 +266,7 @@ impl std::fmt::Display for ExprResult {
             Self::NoneErr(_) => write!(f, "{}", NONE_VALUE),
             Self::Val(a) => write!(f, "{a}"),
             Self::Image(s) => write!(f, "<image:{s:?}>"),
+            Self::Images(s) => write!(f, "<images:{s:?}>"),
             Self::File(s) => write!(f, "<file:{s:?}>"),
             Self::Doc(s) => write!(f, "<doc:{s:?}>"),
             Self::Arr(ar) => write!(
@@ -292,6 +295,7 @@ impl ExprResult {
             Self::None | Self::NoneErr(_) => None,
             Self::Val(a) => Some(a),
             Self::Image(s) => Some(s.into()),
+            Self::Images(s) => Some(s.into()),
             Self::File(s) => Some(s.into()),
             Self::Doc(s) => Some(s.into()),
             Self::Arr(ar) => ar

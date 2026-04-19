@@ -320,7 +320,19 @@ impl TaskContext {
             ExprResult::None => return None,
             ExprResult::Val(a) => self.show_attr(a, depth + 1),
             ExprResult::Image(a) => {
-                _ = self.channel.send(TaskMessage::Image(a.clone()));
+                let show_img = TaskCtxConsts::show_images(self);
+                if show_img {
+                    _ = self.channel.send(TaskMessage::Image(a.clone()));
+                }
+                return None;
+            }
+            ExprResult::Images(a) => {
+                let show_img = TaskCtxConsts::show_images(self);
+                if show_img {
+                    for img in a {
+                        _ = self.channel.send(TaskMessage::Image(img.clone()));
+                    }
+                }
                 return None;
             }
             ExprResult::Arr(v) => {
@@ -1392,6 +1404,25 @@ where
     }
 
     fn try_from_attr(value: &Attribute) -> Result<Vec<T>, String> {
+        match value {
+            Attribute::Array(v) => v.iter().map(FromAttribute::try_from_attr).collect(),
+            _ => Err(format!(
+                "Incorrect Type: got {} instead of Array",
+                value.type_name()
+            )),
+        }
+    }
+}
+
+impl<T> FromAttribute for RVec<T>
+where
+    T: FromAttribute,
+{
+    fn from_attr(value: &Attribute) -> Option<RVec<T>> {
+        FromAttribute::try_from_attr(value).ok()
+    }
+
+    fn try_from_attr(value: &Attribute) -> Result<RVec<T>, String> {
         match value {
             Attribute::Array(v) => v.iter().map(FromAttribute::try_from_attr).collect(),
             _ => Err(format!(
