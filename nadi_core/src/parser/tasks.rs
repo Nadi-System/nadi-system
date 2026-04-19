@@ -9,8 +9,7 @@ use crate::{
         components::*,
         errors::MatchErr,
         expressions::{
-            complete_expression, expression_group, function_def, maybe_silent_expression, raw_expr,
-            variable_type,
+            complete_expression, function_def, maybe_silent_expression, raw_expr, variable_type,
         },
         network::{node_name, str_path},
         tokenizer::{RawToken, Token},
@@ -26,7 +25,6 @@ use nom::{
     sequence::{delimited, pair, preceded, tuple},
     Finish,
 };
-use std::path::PathBuf;
 use std::str::FromStr;
 
 pub fn prop_order<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, PropOrder> {

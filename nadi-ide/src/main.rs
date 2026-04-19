@@ -76,7 +76,7 @@ struct MainWindow {
 impl Default for MainWindow {
     fn default() -> Self {
         let (panes, _) = pane_grid::State::new(Pane::new());
-        let funcs = Some(NadiFunctions::new());
+        let funcs = Some(NadiFunctions::internals_w_plugins());
         Self {
             light_theme: false,
             panes,

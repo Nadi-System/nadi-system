@@ -66,6 +66,9 @@ struct CliArgs {
     /// Install the given nadi plugin
     #[arg(short, long)]
     install_plugin: Option<PathBuf>,
+    /// Install the given nadi plugin
+    #[arg(short = 'I', long)]
+    internals_only: bool,
     /// Create the files for a new nadi_plugin
     #[arg(short = 'P', long)]
     new_plugin: Option<String>,
@@ -112,7 +115,11 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let functions = NadiFunctions::new();
+    let functions = if args.internals_only {
+        NadiFunctions::internals()
+    } else {
+        NadiFunctions::internals_w_plugins()
+    };
     if args.show {
         show_tasks(&args.tasks.unwrap());
     } else if let Some(dir) = args.generate_doc {

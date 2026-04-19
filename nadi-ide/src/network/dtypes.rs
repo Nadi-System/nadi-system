@@ -203,7 +203,7 @@ fn position_nodes(nds: Vec<Node>, x: f32, mut y: f32, pos: &mut Vec<NodeData>) {
         let nd = &mut pos[ind];
         let wt = n.weight();
         nd.pos = (x, y + wt as f32 / 2.0);
-        position_nodes(n.inputs().iter().cloned().collect(), x + 1.0, y, pos);
+        position_nodes(n.inputs().to_vec(), x + 1.0, y, pos);
         y += wt as f32;
     }
 }

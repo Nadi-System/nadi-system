@@ -5,7 +5,7 @@ mod conn {
     use crate::parser::tokenizer::valid_variable_name;
     use crate::prelude::*;
     use anyhow::Context;
-    use nadi_plugin::{env_func, network_func, node_func};
+    use nadi_plugin::{network_func, node_func};
     use std::fs::File;
     use std::io::{BufWriter, Write};
     use std::path::PathBuf;

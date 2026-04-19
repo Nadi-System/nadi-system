@@ -2,12 +2,11 @@ use nadi_plugin::nadi_internal_plugin;
 
 #[nadi_internal_plugin]
 mod random {
-    use crate::prelude::*;
+
     use nadi_plugin::env_func;
     use rand::rngs::SmallRng;
     use rand::RngExt;
     use rand::SeedableRng;
-    use std::str::FromStr;
 
     /// Random bool given uniform probability
     #[env_func(prob = 0.5)]

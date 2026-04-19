@@ -67,7 +67,7 @@ impl MdHelp {
     pub fn new(functions: Option<NadiFunctions>) -> Self {
         Self {
             light_theme: false,
-            functions: functions.unwrap_or_else(NadiFunctions::new),
+            functions: functions.unwrap_or_else(NadiFunctions::internals_w_plugins),
             state: None,
             search: String::new(),
             markdown: markdown::parse(MAIN_HELP).collect(),

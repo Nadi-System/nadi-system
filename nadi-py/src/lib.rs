@@ -49,7 +49,7 @@ pub fn register_function_modules(py: Python, parent: &Bound<'_, PyModule>) -> Py
     funcs.add_submodule(&env)?;
     parent.add_submodule(&funcs)?;
 
-    let nadi_funcs = NadiFunctions::new();
+    let nadi_funcs = NadiFunctions::internals_w_plugins();
     for f in nadi_funcs.node_alias() {
         let name = f.0.as_str();
         let f = nadi_funcs

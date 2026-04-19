@@ -47,7 +47,7 @@ impl PyTaskContext {
             Ok(v) => {
                 // This will be better once we return values from task
                 // execution instead of strings
-                let vals: Vec<String> = v.into_iter().filter_map(|t| t).collect();
+                let vals: Vec<String> = v.into_iter().flatten().collect();
                 if vals.is_empty() {
                     Ok(None)
                 } else {

@@ -203,7 +203,7 @@ impl PyNadiFunctions {
     #[new]
     /// Construct new `NadiFunctions` loading the plugins
     fn new() -> Self {
-        Self(NadiFunctions::new())
+        Self(NadiFunctions::internals_w_plugins())
     }
 
     #[pyo3(signature = (function, node, *args, **kwargs))]

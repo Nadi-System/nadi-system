@@ -144,7 +144,7 @@ pub struct NadiStructExpr<T> {
 impl<T> NadiStructExpr<T> {
     pub fn with_name(name: String) -> Self {
         Self {
-            name: name.into(),
+            name: name,
             values: RHashMap::new(),
         }
     }

@@ -2,8 +2,7 @@ use crate::attrs::{AttrMap, Attribute};
 use crate::eval::{Eval, EvalCtx, EvalError, EvalErrorType};
 use crate::expressions::{ExprResult, RawExpr};
 use crate::functions::FunctionCtx;
-use crate::node::Node;
-use crate::tasks::{FunctionType, TaskContext};
+use crate::tasks::TaskContext;
 use abi_stable::std_types::{RNone, RSome, RVec};
 
 #[derive(Clone, PartialEq, Debug)]
@@ -74,14 +73,14 @@ impl UserFunction {
             .resolve(ctx, ectx.clone())?
             .eval(ctx, &ectx)
         {
-            Ok(v) => return Ok(v),
+            Ok(v) => Ok(v),
             // early return is returned as an error so it can be
             // caught here
             Err(e) => {
                 if let EvalErrorType::InvalidReturn(val) = e.ty {
-                    return Ok(val);
+                    Ok(val)
                 } else {
-                    return Err(e);
+                    Err(e)
                 }
             }
         }

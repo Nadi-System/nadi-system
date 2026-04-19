@@ -696,9 +696,9 @@ fn completions<'a, I: Iterator<Item = (&'a RString, &'static ComplType)>>(
     start: &str,
 ) -> Vec<Completion> {
     let compl: Vec<_> = candidates
-        .filter(|k| k.0.starts_with(&start))
+        .filter(|k| k.0.starts_with(start))
         .map(|k| Completion {
-            label: k.1.label(&k.0),
+            label: k.1.label(k.0),
             delete: 0,
             content: format!("{}{}", k.0, k.1.end()),
             insert_from: start.len(),

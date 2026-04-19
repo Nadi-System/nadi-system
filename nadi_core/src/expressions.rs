@@ -3,12 +3,12 @@ use crate::eval::{Eval, EvalCtx, EvalError, EvalErrorType};
 use crate::functions::FunctionCtx;
 use crate::network::Propagation;
 use crate::node::{Node, NodeInner};
-use crate::structs::{NadiAttrType, NadiStructExpr};
+use crate::structs::NadiAttrType;
 use crate::tasks::{FunctionType, Task, TaskContext, TaskCtxConsts, TaskKeyword, TaskMessage};
 use crate::template::Template;
-use crate::timeseries::{CompleteSeries, HasSeries, HasTimeSeries, MaskedSeries, Series};
+use crate::timeseries::{CompleteSeries, HasSeries, HasTimeSeries, Series};
 use crate::udf::UserFunction;
-use abi_stable::std_types::{RHashMap, RNone, RSome, RString, Tuple2};
+use abi_stable::std_types::{RNone, RSome, RString};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -33,7 +33,7 @@ impl Eval for RawExpr {
     fn eval(&self, ctx: &TaskContext, ectx: &EvalCtx) -> Result<ExprResult, EvalError> {
         let res = self
             .clone()
-            .resolve(&ctx, ectx.clone())
+            .resolve(ctx, ectx.clone())
             .map_err(|e| e.pos(self.position()))?;
         res.eval(ctx, ectx).map_err(|e| e.pos(self.position()))
     }
@@ -41,7 +41,7 @@ impl Eval for RawExpr {
     fn eval_mut(&self, ctx: &mut TaskContext, ectx: &EvalCtx) -> Result<ExprResult, EvalError> {
         let res = self
             .clone()
-            .resolve(&ctx, ectx.clone())
+            .resolve(ctx, ectx.clone())
             .map_err(|e| e.pos(self.position()))?;
         res.eval_mut(ctx, ectx).map_err(|e| e.pos(self.position()))
     }
@@ -54,9 +54,9 @@ impl std::fmt::Display for RawExpr {
 }
 
 impl RawExpr {
-    pub fn resolve<'a, 'b>(
+    pub fn resolve<'a>(
         self,
-        ctx: &'b TaskContext,
+        ctx: &TaskContext,
         ectx: EvalCtx<'a>,
     ) -> Result<ResolvedExpr<'a>, EvalError> {
         let expr: ExprType<ResolvedExpr> = match self.expr {
@@ -523,7 +523,7 @@ impl<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq + Eval> std::fmt
 impl Eval for ExprType<ResolvedExpr<'_>> {
     fn eval_mut(&self, ctx: &mut TaskContext, ectx: &EvalCtx) -> Result<ExprResult, EvalError> {
         match self {
-            Self::Function(fc) => Ok(fc.eval_mut(ctx, ectx)?.into()),
+            Self::Function(fc) => Ok(fc.eval_mut(ctx, ectx)?),
             Self::SetVar(sv) => {
                 sv.eval_mut(ctx, ectx)?;
                 Ok(ExprResult::None)
@@ -635,8 +635,8 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
                 p.eval(ctx, ectx)?;
                 Ok(ExprResult::None)
             }
-            Self::Function(fc) => Ok(fc.eval(ctx, ectx)?.into()),
-            Self::Var(vt) => Ok(vt.eval(ctx, ectx)?.into()),
+            Self::Function(fc) => Ok(fc.eval(ctx, ectx)?),
+            Self::Var(vt) => Ok(vt.eval(ctx, ectx)?),
             Self::SetVar(sv) => {
                 sv.eval(ctx, ectx)?;
                 Ok(ExprResult::None)
@@ -1175,9 +1175,9 @@ impl InputVar {
     }
 
     /// Get the attribute value based on the nested indices
-    pub fn attr_nested<'b, T: HasAttributes>(
+    pub fn attr_nested<T: HasAttributes>(
         &self,
-        attrmap: &'b T,
+        attrmap: &T,
     ) -> Result<Option<Attribute>, EvalErrorType> {
         let mut at = match attrmap.attr(&self.name) {
             None if self.indices.is_empty() => return Ok(None),
@@ -1205,9 +1205,9 @@ impl InputVar {
     }
 
     /// Set the attribute to the value based on the nested indices
-    pub fn set_attr_nested<'b, T: HasAttributes>(
+    pub fn set_attr_nested<T: HasAttributes>(
         &self,
-        attrmap: &'b mut T,
+        attrmap: &mut T,
         val: Attribute,
     ) -> Result<(), EvalErrorType> {
         match self.indices.as_slice() {
@@ -1469,7 +1469,7 @@ impl VarType {
                 Some(r) => Ok(ExprContext::Node(r.clone())),
                 None => Err(EvalErrorType::NoRootNode),
             },
-            (VarType::Node(Some(n)), _) => match ctx.network.node_by_name(&n) {
+            (VarType::Node(Some(n)), _) => match ctx.network.node_by_name(n) {
                 Some(n) => Ok(ExprContext::Node(n.clone())),
                 None => Err(EvalErrorType::NodeNotFound(n.to_string())),
             },
@@ -1483,10 +1483,10 @@ impl VarType {
                 RNone => Err(EvalErrorType::NoOutputNode),
             },
             (VarType::Inputs | VarType::InputsMap, Some(n)) => {
-                nodes_func(n.lock().inputs().iter().cloned().collect())
+                nodes_func(n.lock().inputs().to_vec())
             }
             (VarType::Outputs | VarType::OutputsMap, Some(n)) => {
-                nodes_func(n.lock().outputs().iter().cloned().collect())
+                nodes_func(n.lock().outputs().to_vec())
             }
             (_, None) => Err(EvalErrorType::NotANodeContext),
         }
@@ -1596,9 +1596,9 @@ impl<T: std::fmt::Display> std::fmt::Display for FunctionCall<T> {
 /// Resolve the variables in the functioncall
 ///
 /// Recursively resolves the expressions in the function arguments
-pub fn resolve_function_calls<'a, 'b>(
+pub fn resolve_function_calls<'b>(
     fc: FunctionCall<RawExpr>,
-    ctx: &'a TaskContext,
+    ctx: &TaskContext,
     ectx: EvalCtx<'b>,
 ) -> Result<FunctionCall<ResolvedExpr<'b>>, EvalError> {
     let mut args = Vec::with_capacity(fc.args.len());
@@ -1691,7 +1691,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                 let func_ctx = self.function_ctx(ctx, &ectx)?;
                 match ctx.udf(&self.name).cloned() {
                     // priority for the locally defined function
-                    Some(func) => Ok(func.eval(ctx, &ectx, func_ctx)?.into()),
+                    Some(func) => Ok(func.eval(ctx, &ectx, func_ctx)?),
                     _ => match ctx.functions.env(&self.name) {
                         Some(f) => f.call(&func_ctx).res().map_err(|s| {
                             EvalErrorType::FunctionError(self.name.to_string(), s)
@@ -1760,7 +1760,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                 let func_ctx = self.function_ctx(ctx, &ectx)?;
                 match ctx.udf(&self.name).cloned() {
                     // priority for the locally defined function
-                    Some(func) => Ok(func.eval(ctx, &ectx, func_ctx)?.into()),
+                    Some(func) => Ok(func.eval(ctx, &ectx, func_ctx)?),
                     _ => match ctx.functions.env(&self.name) {
                         Some(f) => f.call(&func_ctx).res().map_err(|s| {
                             EvalErrorType::FunctionError(self.name.to_string(), s)
@@ -1961,7 +1961,7 @@ fn get_series(
                 .try_lock()
                 .into_option()
                 .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?;
-            let n: &NodeInner = &n;
+            let n: &NodeInner = n;
             get_series_or_ts(n, name, ts)
         }
         // Nodes series will error out on masked series with gaps, use nodesmap keywords
@@ -1981,7 +1981,6 @@ fn get_series(
             for ser in inp_series {
                 match ser {
                     Series::Masked(ms, _) => {
-                        if ms.has_gaps() {}
                         let cs = ms
                             .complete()
                             .ok_or(EvalErrorType::EmptyValue(None).no_pos())?;
@@ -2100,9 +2099,9 @@ impl<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq> std::fmt::Displ
 // FIX: when there is setvariable inside the context expression, then we can not resolve in advance, or resolve into array and tables
 // e.g.: nodes { node.x = 8 }
 
-fn resolve_expr_w_ctx<'a, 'b>(
+fn resolve_expr_w_ctx<'b>(
     expr: ExprWithContext<RawExpr>,
-    ctx: &'a TaskContext,
+    ctx: &TaskContext,
     ectx: EvalCtx<'b>,
 ) -> Result<ResolvedExpr<'b>, EvalError> {
     let expr_ctx = expr
@@ -2264,9 +2263,9 @@ impl<T: std::fmt::Display> std::fmt::Display for SetVariable<T> {
     }
 }
 
-fn resolve_set_variable<'a, 'b>(
+fn resolve_set_variable<'b>(
     expr: SetVariable<RawExpr>,
-    ctx: &'a TaskContext,
+    ctx: &TaskContext,
     ectx: EvalCtx<'b>,
 ) -> Result<ResolvedExpr<'b>, EvalError> {
     let e = expr.ctx.as_ref().unwrap_or(ectx.expr_ctx.as_ref());

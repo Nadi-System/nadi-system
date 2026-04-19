@@ -1,19 +1,14 @@
 use crate::eval::{Eval, EvalCtx, EvalError, EvalErrorType};
-use crate::expressions::{
-    ExprContext, ExprResult, ExprType, RawExpr, ResolvedExpr, SeriesExpression,
-};
+use crate::expressions::{ExprContext, RawExpr, SeriesExpression};
 
 use crate::functions::{FuncArg, FuncArgType, NadiFunctions};
-use crate::network::{PropCondition, PropOrder};
+use crate::network::PropCondition;
 use crate::prelude::*;
-use crate::structs::{NadiAttrType, NadiStruct};
+use crate::structs::NadiStruct;
 use crate::timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap};
 use crate::udf::UserFunction;
 use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::{Arc, Mutex};
-use std::thread;
+use std::sync::mpsc::{Receiver, Sender, channel};
 
 // /// Result of a Task when executed => move to expression result => move to function return
 // pub enum TaskResult {
@@ -141,6 +136,12 @@ pub struct TaskContextEnv {
     pub(crate) timeseries: TsMap,
 }
 
+impl Default for TaskContextEnv {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TaskContextEnv {
     pub fn new() -> Self {
         Self {
@@ -209,7 +210,7 @@ impl TaskContext {
     pub fn new(net: Option<Network>, channel: Sender<TaskMessage>) -> Self {
         Self {
             network: net.unwrap_or_default(),
-            functions: NadiFunctions::new(),
+            functions: NadiFunctions::internals_w_plugins(),
             structs: HashMap::new(),
             udf: HashMap::new(),
             env: TaskContextEnv::new(),

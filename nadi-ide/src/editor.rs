@@ -182,7 +182,7 @@ impl Completion {
 
     fn apply_multiple(compls: &[Completion], content: &mut text_editor::Content) {
         match compls {
-            [] => return,
+            [] => (),
             [m] => m.apply(content),
             [m, rest @ ..] => {
                 if rest.iter().any(|c| c.delete != m.delete) {
@@ -306,7 +306,7 @@ impl Editor {
             last_edit: Instant::now(),
             error: None,
             embedded: false,
-            functions: functions.unwrap_or_else(NadiFunctions::new),
+            functions: functions.unwrap_or_else(NadiFunctions::internals_w_plugins),
         }
     }
 
@@ -675,7 +675,7 @@ impl Editor {
                 self.completions
                     .iter()
                     .enumerate()
-                    .map(|(i, c)| c.view(i % 2 == 0).into()),
+                    .map(|(i, c)| c.view(i % 2 == 0)),
             )
             .spacing(5)
             .width(Fill),
@@ -884,11 +884,7 @@ async fn get_completion_for(text: String, mark: Position) -> Option<String> {
         Some(p) => chrs[(p + 1)..].iter().collect(),
         None => task_str.to_string(),
     };
-    if chrs.is_empty() {
-        return None;
-    } else {
-        Some(chrs)
-    }
+    if chrs.is_empty() { None } else { Some(chrs) }
 }
 
 async fn func_at_mark(text: String, mark: Position) -> Option<(FunctionType, String)> {
