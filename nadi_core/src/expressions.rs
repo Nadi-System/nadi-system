@@ -108,11 +108,12 @@ impl RawExpr {
                 Box::new(expr1.resolve(ctx, ectx.clone())?),
                 Box::new(expr2.resolve(ctx, ectx.clone())?),
             ),
-            ExprType::Multi(exprs) => ExprType::Multi(
+            ExprType::Multi(exprs, b) => ExprType::Multi(
                 exprs
                     .into_iter()
                     .map(|e| e.resolve(ctx, ectx.clone()))
                     .collect::<Result<Vec<_>, _>>()?,
+                b,
             ),
             ExprType::Array(exprs) => ExprType::Array(
                 exprs
@@ -422,7 +423,7 @@ pub enum ExprType<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq> {
     /// continue statement
     Continue,
     /// multiple expressions
-    Multi(Vec<T>),
+    Multi(Vec<T>, bool),
     /// Series as Attributes
     Series(Option<VarType>, bool, String),
     /// Value from a series
@@ -540,15 +541,16 @@ impl<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq + Eval> std::fmt
             Self::Break(None) => write!(f, "break"),
             Self::Break(Some(expr)) => write!(f, "break {expr}"),
             Self::Continue => write!(f, "continue"),
-            Self::Multi(exprs) => {
+            Self::Multi(exprs, b) => {
                 write!(
                     f,
-                    "{}",
+                    "{}{}",
                     exprs
                         .iter()
                         .map(|e| e.to_string())
                         .collect::<Vec<_>>()
-                        .join("\n")
+                        .join("\n"),
+                    if *b { ";" } else { "" }
                 )
             }
             Self::Series(Some(vt), ts, name) => {
@@ -651,12 +653,16 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
                 Ok(val) => Ok(val),
                 _ => expr2.eval_mut(ctx, ectx, loc),
             },
-            Self::Multi(exprs) => {
+            Self::Multi(exprs, silent) => {
                 let mut res = ExprResult::None;
                 for e in exprs {
                     res = e.eval_mut(ctx, ectx, loc)?;
                 }
-                Ok(res)
+                if *silent {
+                    Ok(ExprResult::None)
+                } else {
+                    Ok(res)
+                }
             }
             Self::Array(exprs) => {
                 let vals: Vec<ExprResult> = exprs
@@ -782,12 +788,16 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
                 Ok(val) => Ok(val),
                 _ => expr2.eval(ctx, ectx, loc),
             },
-            Self::Multi(exprs) => {
+            Self::Multi(exprs, silent) => {
                 let mut res = ExprResult::None;
                 for e in exprs {
                     res = e.eval(ctx, ectx, loc)?;
                 }
-                Ok(res)
+                if *silent {
+                    Ok(ExprResult::None)
+                } else {
+                    Ok(res)
+                }
             }
             Self::Array(exprs) => {
                 let vals: Vec<ExprResult> = exprs
@@ -925,7 +935,7 @@ impl<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq + Eval> ExprType
             Self::BiOp(_, _, _) => true,
             Self::IfElse(_, _, _) => true,
             Self::TryCatch(_, _) => true,
-            Self::Multi(_) => true,
+            Self::Multi(..) => true,
             _ => false,
         }
     }
@@ -2335,21 +2345,20 @@ pub struct ExprWithContext<T: std::fmt::Debug + Clone + PartialEq> {
     pub ty: VarType,
     // TODO: make it a vec of expression later
     pub expr: Box<T>,
+    pub silent: bool,
+    pub parallel: bool,
 }
 
 impl<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq> std::fmt::Display
     for ExprWithContext<T>
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} {{{}}}",
-            self.ty,
-            self.expr // .iter()
-                      // .map(|e| e.to_string())
-                      // .collect::<Vec<_>>()
-                      // .join("\t\n")
-        )
+        match (self.silent, self.parallel) {
+            (true, false) => write!(f, "{} do {{{}}}", self.ty, self.expr),
+            (true, true) => write!(f, "{} dopar {{{}}}", self.ty, self.expr),
+            (false, true) => write!(f, "{} par {{{}}}", self.ty, self.expr),
+            (false, false) => write!(f, "{} {{{}}}", self.ty, self.expr),
+        }
     }
 }
 
@@ -2369,6 +2378,8 @@ fn resolve_expr_w_ctx<'b>(
     context.expr_ctx = Cow::Owned(expr_ctx.clone());
     match expr_ctx {
         ExprContext::Local => expr.expr.resolve(ctx, EvalCtx::local()),
+        ExprContext::Env => expr.expr.resolve(ctx, EvalCtx::env()),
+        ExprContext::Network => expr.expr.resolve(ctx, EvalCtx::network()),
         ExprContext::Node(n) => expr.expr.resolve(ctx, EvalCtx::at_node(n).to_owned()),
         ExprContext::Nodes(nds) => {
             let exprs = nds
@@ -2380,7 +2391,11 @@ fn resolve_expr_w_ctx<'b>(
                 })
                 .collect::<Result<Vec<ResolvedExpr>, EvalError>>()?;
             // FIX: how to know whether the user is looking for array or statement?
-            let et = ExprType::Array(exprs);
+            let et = if expr.silent {
+                ExprType::Multi(exprs, true)
+            } else {
+                ExprType::Array(exprs)
+            };
             Ok(ResolvedExpr {
                 position: expr.expr.position(),
                 expr: et,
@@ -2411,16 +2426,16 @@ fn resolve_expr_w_ctx<'b>(
                 context,
             })
         }
-        ExprContext::Env => expr.expr.resolve(ctx, EvalCtx::env()),
-        ExprContext::Network => expr.expr.resolve(ctx, EvalCtx::network()),
     }
 }
 
 impl<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq + Position> ExprWithContext<T> {
-    pub fn new(ty: VarType, expr: T) -> Self {
+    pub fn new(ty: VarType, expr: T, silent: bool, parallel: bool) -> Self {
         Self {
             ty,
             expr: Box::new(expr),
+            silent,
+            parallel,
         }
     }
 }
@@ -2558,7 +2573,7 @@ fn resolve_set_variable<'b>(
                 })
                 .collect::<Result<Vec<ResolvedExpr>, EvalError>>()?;
             // FIX: how to know whether the user is looking for array or statement?
-            let et = ExprType::Multi(exprs);
+            let et = ExprType::Multi(exprs, true);
             return Ok(ResolvedExpr {
                 position: expr.expr.position(),
                 expr: et,

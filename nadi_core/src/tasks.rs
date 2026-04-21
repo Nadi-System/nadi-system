@@ -728,6 +728,9 @@ pub enum TaskKeyword {
     For,
     Loop,
     Progress,
+    Do,
+    DoPar,
+    Par,
     // reserved
     Networks,
     NetworksMap,
@@ -784,6 +787,9 @@ impl std::str::FromStr for TaskKeyword {
             "loop" => TaskKeyword::Loop,
             "progress" | "prog" => TaskKeyword::Progress,
             "for" => TaskKeyword::For,
+            "do" => TaskKeyword::Do,
+            "dopar" => TaskKeyword::DoPar,
+            "par" => TaskKeyword::Par,
             k => return Err(format!("{k} is not a keyword")),
         })
     }
@@ -840,6 +846,9 @@ impl std::fmt::Display for TaskKeyword {
                 TaskKeyword::Loop => "loop",
                 TaskKeyword::Progress => "progress",
                 TaskKeyword::For => "for",
+                TaskKeyword::Do => "do",
+                TaskKeyword::DoPar => "dopar",
+                TaskKeyword::Par => "par",
             }
         )
     }
@@ -894,6 +903,9 @@ impl TaskKeyword {
             TaskKeyword::Loop => "a generic loop",
             TaskKeyword::Progress => "report progress",
             TaskKeyword::For => "for loop",
+            TaskKeyword::Do => "execute the expression ignoring value",
+            TaskKeyword::DoPar => "parallel version of do",
+            TaskKeyword::Par => "parallel execution",
         }
         .to_string()
     }

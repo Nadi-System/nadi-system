@@ -111,15 +111,26 @@ pub fn import_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<Ra
 }
 
 pub fn expr_with_context<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
-    let (rest, (vt, expr)) = pair(
+    let (rest, (vt, op, expr)) = tuple((
         variable_type,
+        opt(alt((
+            value((true, false), after_space(kw_do)),
+            value((true, true), after_space(kw_dopar)),
+            // parallel but not silent: not implemented yet
+            value((false, true), after_space(kw_par)),
+        ))),
         alt((
             maybe_space(raw_expr(expression_block)),
             // this is for backward compatibility
             after_space(raw_expr(complete_expression)),
         )),
-    )(inp)?;
-    Ok((rest, ExprType::WithContext(ExprWithContext::new(vt, expr))))
+    ))(inp)?;
+    let (silent, parallel) = op.unwrap_or((false, false));
+
+    Ok((
+        rest,
+        ExprType::WithContext(ExprWithContext::new(vt, expr, silent, parallel)),
+    ))
 }
 
 pub fn expr_set_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
@@ -348,7 +359,7 @@ impl BiOpExpr {
             operand_stack.push(res);
         }
 
-        Some(ExprType::Multi(operand_stack))
+        Some(ExprType::Multi(operand_stack, false))
     }
 }
 
@@ -526,10 +537,9 @@ pub fn maybe_silent_expression<'a, 'b>(
 }
 
 pub fn multi_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
-    map(
-        newline_separated(raw_expr(maybe_silent_expression)),
-        ExprType::Multi,
-    )(inp)
+    map(newline_separated(raw_expr(maybe_silent_expression)), |m| {
+        ExprType::Multi(m, false)
+    })(inp)
 }
 
 pub fn variable_type<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, VarType> {
@@ -732,7 +742,7 @@ pub fn function_def<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, UserFuncti
         kw_func,
         maybe_space(opt(function)),
         maybe_space(cut(funcdef_args)),
-        maybe_newline(raw_expr(map(function_body, ExprType::Multi))),
+        maybe_newline(raw_expr(map(function_body, |v| ExprType::Multi(v, false)))),
     ))(inp)?;
     Ok((
         rest,

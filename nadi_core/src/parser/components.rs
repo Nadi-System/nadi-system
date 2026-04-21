@@ -7,11 +7,11 @@ use crate::tasks::TaskKeyword;
 use crate::template::Template;
 use nadi_core::attrs::{Attribute, Date, DateTime, Time};
 use nom::{
+    IResult,
     branch::alt,
     combinator::{map, opt, value},
     multi::{many0, many1, separated_list0, separated_list1},
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
-    IResult,
 };
 use std::str::FromStr;
 
@@ -167,6 +167,9 @@ one_token!(kw_break, TaskToken::Keyword(TaskKeyword::Break));
 one_token!(kw_continue, TaskToken::Keyword(TaskKeyword::Continue));
 one_token!(kw_loop, TaskToken::Keyword(TaskKeyword::Loop));
 one_token!(kw_progress, TaskToken::Keyword(TaskKeyword::Progress));
+one_token!(kw_do, TaskToken::Keyword(TaskKeyword::Do));
+one_token!(kw_dopar, TaskToken::Keyword(TaskKeyword::DoPar));
+one_token!(kw_par, TaskToken::Keyword(TaskKeyword::Par));
 
 /// Matches the next one that might have spaces before it
 pub fn err_ctx<'a, 'b: 'a, O, F>(
