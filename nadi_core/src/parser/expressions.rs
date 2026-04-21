@@ -180,26 +180,63 @@ pub fn expr_maybe_range<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprTy
 }
 
 pub fn array_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
-    let (rest, exprs) = delimited(
+    delimited(
         bracket_start,
-        separated_list0(
-            maybe_space(comma),
-            maybe_newline(raw_expr(complete_expression)),
-        ),
+        alt((
+            map(
+                tuple((
+                    maybe_newline(raw_expr(alt((expression_block, value_expression)))),
+                    delimited(
+                        maybe_space(kw_for),
+                        after_space(map(variable, |v| v.content.to_string())),
+                        after_space(kw_in),
+                    ),
+                    after_space(raw_expr(value_expression)),
+                )),
+                |(expr, var, parent)| ExprType::ArrayGen(Box::new(expr), var, Box::new(parent)),
+            ),
+            map(
+                separated_list0(
+                    maybe_space(comma),
+                    maybe_newline(raw_expr(complete_value_expression)),
+                ),
+                ExprType::Array,
+            ),
+        )),
         maybe_newline(bracket_end),
-    )(inp)?;
-
-    Ok((rest, ExprType::Array(exprs)))
+    )(inp)
 }
 
 pub fn table_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
-    let (rest, exprs) = delimited(
+    delimited(
         brace_start,
-        opt(maybe_newline(kw_args)),
+        alt((
+            map(
+                tuple((
+                    maybe_newline(raw_expr(alt((expression_block, value_expression)))),
+                    maybe_space(assignment),
+                    maybe_newline(raw_expr(alt((expression_block, value_expression)))),
+                    delimited(
+                        maybe_space(kw_for),
+                        after_space(separated_pair(
+                            map(variable, |v| v.content.to_string()),
+                            after_space(comma),
+                            after_space(map(variable, |v| v.content.to_string())),
+                        )),
+                        after_space(kw_in),
+                    ),
+                    after_space(raw_expr(expression)),
+                )),
+                |(key, _, expr, (var1, var2), parent)| {
+                    ExprType::MapGen(Box::new(key), Box::new(expr), var1, var2, Box::new(parent))
+                },
+            ),
+            map(opt(maybe_newline(kw_args)), |exprs| {
+                ExprType::Map(exprs.unwrap_or_default())
+            }),
+        )),
         maybe_newline(brace_end),
-    )(inp)?;
-
-    Ok((rest, ExprType::Map(exprs.unwrap_or_default())))
+    )(inp)
 }
 
 pub fn expression_group<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
@@ -319,7 +356,7 @@ pub fn complete_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Exp
     let (rest, (first, args)) = pair(
         alt((expression, expression_group)),
         many0(pair(
-            maybe_newline(bi_operator),
+            maybe_space(bi_operator),
             maybe_newline(cut(err_ctx(
                 &ParseErrorType::IncompleteExpression,
                 raw_expr(alt((expression, expression_group))),
@@ -446,7 +483,7 @@ pub fn try_catch_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType
 }
 
 pub fn for_each_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
-    let (rest, (var, expr1, expr2)) = tuple((
+    let (rest, (var, parent, expr)) = tuple((
         delimited(
             kw_for,
             after_space(map(variable, |v| v.content.to_string())),
@@ -457,7 +494,7 @@ pub fn for_each_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<
     ))(inp)?;
     Ok((
         rest,
-        ExprType::ForEach(var, Box::new(expr1), Box::new(expr2)),
+        ExprType::ForEach(var, Box::new(parent), Box::new(expr)),
     ))
 }
 

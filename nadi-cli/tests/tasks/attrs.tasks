@@ -1,0 +1,24 @@
+true
+2024-12-21T12:12:12
+"string value"
+12.21
+env.river = "Ohio River"
+river 	# empty
+river = "Ohio River"
+outlet = "Smithland Lock and Dam"
+outlet_is_gage = true
+outlet_site_no = ""
+streamflow_start = 1930-06-07 	# interpreted as integer operator
+mean_streamflow = 123456.0
+obs_7q10 = 19405.3
+nat_7q10 = 12335.9
+num_dams_gages = 2348
+river
+outlet
+outlet_is_gage
+outlet_site_no
+streamflow_start
+mean_streamflow
+obs_7q10
+nat_7q10
+num_dams_gages

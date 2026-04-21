@@ -10,7 +10,6 @@ use std::borrow::Cow;
 #[derive(Clone, Debug)]
 pub struct EvalCtx<'a> {
     pub(crate) expr_ctx: Cow<'a, ExprContext>,
-    pub(crate) local: Option<Cow<'a, AttrMap>>,
 }
 
 impl<'a> PartialEq for EvalCtx<'a> {
@@ -26,10 +25,6 @@ impl<'a> EvalCtx<'a> {
                 Cow::Owned(o) => Cow::Owned(o),
                 Cow::Borrowed(b) => Cow::Owned(b.clone()),
             },
-            local: self.local.map(|l| match l {
-                Cow::Owned(o) => Cow::Owned(o),
-                Cow::Borrowed(b) => Cow::Owned(b.clone()),
-            }),
         }
     }
 
@@ -37,56 +32,48 @@ impl<'a> EvalCtx<'a> {
         self.expr_ctx.as_ref().curr_node()
     }
 
-    pub fn at_node(&'a self, node: Node) -> EvalCtx<'a> {
+    pub fn at_node(node: Node) -> EvalCtx<'static> {
         EvalCtx {
             expr_ctx: Cow::Owned(ExprContext::Node(node)),
-            // FIX CLONE
-            local: self.local.clone(),
         }
     }
 
-    pub fn as_env(&'a self) -> EvalCtx<'a> {
+    pub fn local() -> EvalCtx<'static> {
+        EvalCtx {
+            expr_ctx: Cow::Owned(ExprContext::Local),
+        }
+    }
+
+    pub fn env() -> EvalCtx<'static> {
         EvalCtx {
             expr_ctx: Cow::Owned(ExprContext::Env),
-            // FIX CLONE
-            local: self.local.clone(),
         }
     }
 
-    pub fn as_network(&'a self) -> EvalCtx<'a> {
+    pub fn network() -> EvalCtx<'static> {
         EvalCtx {
             expr_ctx: Cow::Owned(ExprContext::Network),
-            // FIX CLONE
-            local: self.local.clone(),
         }
     }
 
-    pub fn with_local(&self, local: AttrMap) -> EvalCtx<'a> {
-        EvalCtx {
-            expr_ctx: self.expr_ctx.clone(),
-            local: Some(Cow::Owned(local)),
-        }
-    }
-
-    pub fn with_expr_ctx(&self, expr_ctx: Cow<'a, ExprContext>) -> EvalCtx<'a> {
-        EvalCtx {
-            expr_ctx,
-            local: self.local.clone(),
-        }
+    pub fn expr_ctx(expr_ctx: Cow<'a, ExprContext>) -> EvalCtx<'a> {
+        EvalCtx { expr_ctx }
     }
 }
 
 impl Eval for Template {
-    fn eval(&self, ctx: &TaskContext, ectx: &EvalCtx) -> Result<ExprResult, EvalError> {
+    fn eval(
+        &self,
+        ctx: &TaskContext,
+        ectx: &EvalCtx,
+        loc: &mut AttrMap,
+    ) -> Result<ExprResult, EvalError> {
         let map_res = |res: Result<String, TemplateError>| match res {
             Ok(s) => Ok(ExprResult::Val(s.into())),
             Err(e) => Err(EvalErrorType::RenderError(e.to_string()).no_pos()),
         };
         match ectx.expr_ctx.as_ref() {
-            ExprContext::Local => match ectx.local.as_ref() {
-                Some(l) => map_res(self.render(l.as_ref())),
-                None => map_res(self.render(&ctx.env)),
-            },
+            ExprContext::Local => map_res(self.render(loc)),
             ExprContext::Env => map_res(self.render(&ctx.env)),
             ExprContext::Network => map_res(self.render(&ctx.network)),
             ExprContext::Node(n) => map_res(self.render(&n.lock())),
@@ -111,20 +98,45 @@ impl Default for EvalCtx<'_> {
     fn default() -> Self {
         Self {
             expr_ctx: Cow::Owned(ExprContext::default()),
-            local: None,
         }
     }
 }
 
 pub trait Eval: Clone {
-    fn eval(&self, ctx: &TaskContext, ectx: &EvalCtx) -> Result<ExprResult, EvalError>;
+    fn eval(
+        &self,
+        ctx: &TaskContext,
+        ectx: &EvalCtx,
+        loc: &mut AttrMap,
+    ) -> Result<ExprResult, EvalError>;
 
-    fn eval_mut(&self, ctx: &mut TaskContext, ectx: &EvalCtx) -> Result<ExprResult, EvalError> {
-        self.eval(ctx, ectx)
+    fn eval_mut(
+        &self,
+        ctx: &mut TaskContext,
+        ectx: &EvalCtx,
+        loc: &mut AttrMap,
+    ) -> Result<ExprResult, EvalError> {
+        self.eval(ctx, ectx, loc)
     }
 
-    fn eval_value(&self, ctx: &TaskContext, ectx: &EvalCtx) -> Result<Attribute, EvalError> {
-        self.eval(ctx, ectx)?
+    fn eval_value(
+        &self,
+        ctx: &TaskContext,
+        ectx: &EvalCtx,
+        loc: &mut AttrMap,
+    ) -> Result<Attribute, EvalError> {
+        self.eval(ctx, ectx, loc)?
+            .to_attribute()
+            .ok_or(EvalErrorType::EmptyValue(None).no_pos())
+    }
+
+    fn eval_mut_value(
+        &self,
+        ctx: &mut TaskContext,
+        ectx: &EvalCtx,
+        loc: &mut AttrMap,
+    ) -> Result<Attribute, EvalError> {
+        self.eval_mut(ctx, ectx, loc)?
             .to_attribute()
             .ok_or(EvalErrorType::EmptyValue(None).no_pos())
     }

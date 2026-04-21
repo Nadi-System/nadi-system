@@ -60,6 +60,7 @@ fn spawn_task_context() -> (Sender<TaskCtxRequest>, Receiver<TaskCtxMessage>) {
 
     thread::spawn(move || {
         let mut task_ctx = TaskContext::new(None, send_inner);
+        let mut locals = AttrMap::new();
         let mut ty = NetworkViewType::default();
         loop {
             while let Ok(req) = recv.try_recv() {
@@ -82,7 +83,9 @@ fn spawn_task_context() -> (Sender<TaskCtxRequest>, Receiver<TaskCtxMessage>) {
                             task_ctx.clear();
                             let _ = send.send(TaskCtxMessage::Clear);
                         }
-                        let res = task_ctx.execute(*task).map_err(|e| e.to_string());
+                        let res = task_ctx
+                            .execute(*task, &mut locals)
+                            .map_err(|e| e.to_string());
                         // print the stdout output to the terminal
                         buf.read_to_string(&mut output).unwrap();
                         output.push('\n');

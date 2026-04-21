@@ -39,6 +39,7 @@ fn run_task_files() -> Result<(), Error> {
     let tasks = std::fs::read_dir(par.join("tasks")).unwrap();
     for task in tasks {
         let task = task.unwrap().path();
+        print!("Testing: {task:?}");
         let path = task.to_string_lossy();
         let out = task.with_extension("stdout");
         let stdout = std::fs::read_to_string(out).unwrap();
@@ -46,6 +47,7 @@ fn run_task_files() -> Result<(), Error> {
             .arg(path.as_ref())
             .assert()
             .stdout(stdout);
+        println!(" ✅");
     }
     Ok(())
 }

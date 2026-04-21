@@ -65,13 +65,12 @@ impl UserFunction {
         ectx: &EvalCtx,
         fctx: FunctionCtx,
     ) -> Result<ExprResult, EvalError> {
-        let locals = self.resolve_locals(ctx, ectx, fctx.args, fctx.kwargs)?;
-        let ectx = ectx.with_local(locals);
+        let mut locals = self.resolve_locals(ctx, ectx, fctx.args, fctx.kwargs)?;
         match self
             .exprs
             .clone()
             .resolve(ctx, ectx.clone())?
-            .eval(ctx, &ectx)
+            .eval(ctx, &ectx, &mut locals)
         {
             Ok(v) => Ok(v),
             // early return is returned as an error so it can be
@@ -92,10 +91,9 @@ impl UserFunction {
         ectx: &EvalCtx,
         fctx: FunctionCtx,
     ) -> Result<ExprResult, EvalError> {
-        let locals = self.resolve_locals(ctx, ectx, fctx.args, fctx.kwargs)?;
-        let ectx = ectx.with_local(locals);
-        let res = { self.exprs.clone().resolve(ctx, ectx.clone())? };
-        match res.eval_mut(ctx, &ectx) {
+        let mut locals = self.resolve_locals(ctx, ectx, fctx.args, fctx.kwargs)?;
+        let res = self.exprs.clone().resolve(ctx, ectx.clone())?;
+        match res.eval_mut(ctx, &ectx, &mut locals) {
             Ok(v) => return Ok(v),
             // early return is returned as an error so it can be
             // caught here
@@ -160,12 +158,14 @@ impl UserFunction {
             for (k, expr) in self.kwargs.iter().skip(args_len - self.args.len()) {
                 match kwargs.remove(k.as_str()) {
                     RSome(v) => locals.insert(k.to_string().into(), v),
-                    RNone => locals.insert(
-                        k.to_string().into(),
-                        expr.clone()
-                            .resolve(ctx, ectx.clone())?
-                            .eval_value(ctx, ectx)?,
-                    ),
+                    RNone => {
+                        let v = expr.clone().resolve(ctx, ectx.clone())?.eval_value(
+                            ctx,
+                            ectx,
+                            &mut locals,
+                        )?;
+                        locals.insert(k.to_string().into(), v)
+                    }
                 };
             }
         } else {
@@ -193,12 +193,14 @@ impl UserFunction {
             for (k, expr) in self.kwargs.iter() {
                 match kwargs.remove(k.as_str()) {
                     RSome(v) => locals.insert(k.to_string().into(), v),
-                    RNone => locals.insert(
-                        k.to_string().into(),
-                        expr.clone()
-                            .resolve(ctx, ectx.clone())?
-                            .eval_value(ctx, ectx)?,
-                    ),
+                    RNone => {
+                        let val = expr.clone().resolve(ctx, ectx.clone())?.eval_value(
+                            ctx,
+                            ectx,
+                            &mut locals,
+                        )?;
+                        locals.insert(k.to_string().into(), val)
+                    }
                 };
             }
         }

@@ -49,6 +49,9 @@ impl PyNodeFunction {
             FunctionRet::Image(v) | FunctionRet::File(v) | FunctionRet::Doc(v) => {
                 Ok(Some(Attribute::String(v).into()))
             }
+            FunctionRet::Images(v) => Ok(Some(
+                Attribute::Array(v.into_iter().map(Attribute::String).collect()).into(),
+            )),
             FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
         }
     }
@@ -106,6 +109,9 @@ impl PyNetworkFunction {
             FunctionRet::Image(v) | FunctionRet::File(v) | FunctionRet::Doc(v) => {
                 Ok(Some(Attribute::String(v).into()))
             }
+            FunctionRet::Images(v) => Ok(Some(
+                Attribute::Array(v.into_iter().map(Attribute::String).collect()).into(),
+            )),
             FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
         }
     }
@@ -162,6 +168,9 @@ impl PyEnvFunction {
             FunctionRet::Image(v) | FunctionRet::File(v) | FunctionRet::Doc(v) => {
                 Ok(Some(Attribute::String(v).into()))
             }
+            FunctionRet::Images(v) => Ok(Some(
+                Attribute::Array(v.into_iter().map(Attribute::String).collect()).into(),
+            )),
             FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
         }
     }
@@ -230,6 +239,9 @@ impl PyNadiFunctions {
             FunctionRet::Image(v) | FunctionRet::File(v) | FunctionRet::Doc(v) => {
                 Ok(Some(Attribute::String(v).into()))
             }
+            FunctionRet::Images(v) => Ok(Some(
+                Attribute::Array(v.into_iter().map(Attribute::String).collect()).into(),
+            )),
             FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
         }
     }
@@ -258,6 +270,9 @@ impl PyNadiFunctions {
             FunctionRet::Image(v) | FunctionRet::File(v) | FunctionRet::Doc(v) => {
                 Ok(Some(Attribute::String(v).into()))
             }
+            FunctionRet::Images(v) => Ok(Some(
+                Attribute::Array(v.into_iter().map(Attribute::String).collect()).into(),
+            )),
             FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
         }
     }
@@ -285,6 +300,9 @@ impl PyNadiFunctions {
             FunctionRet::Image(v) | FunctionRet::File(v) | FunctionRet::Doc(v) => {
                 Ok(Some(Attribute::String(v).into()))
             }
+            FunctionRet::Images(v) => Ok(Some(
+                Attribute::Array(v.into_iter().map(Attribute::String).collect()).into(),
+            )),
             FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
         }
     }

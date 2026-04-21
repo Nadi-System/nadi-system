@@ -1,4 +1,5 @@
 use clap::{Parser, ValueEnum};
+use nadi_core::attrs::AttrMap;
 use nadi_core::parser::tokenizer::{ParenCheck, TaskToken, Token};
 use nadi_core::tasks::TaskContext;
 use nadi_core::{functions::NadiFunctions, network::Network};
@@ -144,13 +145,14 @@ fn main() -> anyhow::Result<()> {
         };
         let (sender, receiver) = channel();
         let mut tasks_ctx = nadi_core::tasks::TaskContext::new(net, sender);
+        let mut locals = AttrMap::new();
         thread::spawn(move || {
             for msg in receiver {
                 msg.print();
             }
         });
         if let Some(ref txt) = args.task {
-            execute_tasks(txt, args.print_tasks, &mut tasks_ctx)?;
+            execute_tasks(txt, args.print_tasks, &mut tasks_ctx, &mut locals)?;
         }
         if let Some(ref tasks) = args.tasks {
             let txt = std::fs::read_to_string(tasks)?;
@@ -159,21 +161,21 @@ fn main() -> anyhow::Result<()> {
                     _ = std::env::set_current_dir(p);
                 }
             }
-            execute_tasks(&txt, args.print_tasks, &mut tasks_ctx)?;
+            execute_tasks(&txt, args.print_tasks, &mut tasks_ctx, &mut locals)?;
         }
         if args.stdin {
             let mut txt = String::new();
             std::io::stdin().read_to_string(&mut txt)?;
-            execute_tasks(&txt, args.print_tasks, &mut tasks_ctx)?;
+            execute_tasks(&txt, args.print_tasks, &mut tasks_ctx, &mut locals)?;
         }
         if args.repl {
-            repl(tasks_ctx);
+            repl(tasks_ctx, &mut locals);
         }
     }
     Ok(())
 }
 
-fn repl(mut ctx: TaskContext) {
+fn repl(mut ctx: TaskContext, loc: &mut AttrMap) {
     let mut residue = false;
     let mut input = String::new();
     loop {
@@ -203,7 +205,7 @@ fn repl(mut ctx: TaskContext) {
                     }
                 };
                 for task in tasks {
-                    match ctx.execute(task) {
+                    match ctx.execute(task, loc) {
                         Ok(Some(p)) => println!("{p}"),
                         Err(p) => {
                             println!("{}", p);
@@ -340,7 +342,12 @@ fn show_tasks(filename: &Path) {
     };
 }
 
-fn execute_tasks(txt: &str, print_tasks: bool, tasks_ctx: &mut TaskContext) -> anyhow::Result<()> {
+fn execute_tasks(
+    txt: &str,
+    print_tasks: bool,
+    tasks_ctx: &mut TaskContext,
+    loc: &mut AttrMap,
+) -> anyhow::Result<()> {
     let tokens = nadi_core::parser::tokenizer::get_tokens(txt);
     let tasks = match nadi_core::parser::tasks::parse(tokens) {
         Ok(t) => t,
@@ -351,7 +358,7 @@ fn execute_tasks(txt: &str, print_tasks: bool, tasks_ctx: &mut TaskContext) -> a
         if print_tasks {
             println!("{}", fc);
         }
-        match tasks_ctx.execute(fc) {
+        match tasks_ctx.execute(fc, loc) {
             Ok(Some(p)) => println!("{p}"),
             Err(p) => return Err(anyhow::Error::msg(p)),
             _ => (),

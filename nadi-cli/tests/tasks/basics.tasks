@@ -1,0 +1,18 @@
+sum([1,2,3])
+env.x = true;
+env.x
+env 1 + 2 * 8
+env render("my name is {name}", name="John")
+env.x = 12 > 2;
+env.x
+network load_str("a->b\nb->c")
+nm.NAME
+
+if ( !val? | (val > 5) ) {
+    # if val is not defined or greater than 5, set it to 0
+    env.val = 0
+}
+while (env.val < 5) {
+    env.val = env.val + 1;
+}
+env.val

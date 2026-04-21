@@ -38,13 +38,13 @@ fn clear_context() {
     ctx.context.clear();
 }
 
-fn execute_task(task: Task) -> Result<Option<String>, String> {
+fn execute_task(task: Task, loc: &mut AttrMap) -> Result<Option<String>, String> {
     // This saves us from loading the plugins over and over again for
     // each code block, significantly improving the runtime speed
     #[allow(static_mut_refs)]
     let ctx: &mut TaskContextWrap =
         unsafe { &mut NADI_CTX.lock().expect("Couldn't lock the task context") };
-    ctx.execute(task).map_err(|e| e.to_string())
+    ctx.execute(task, loc).map_err(|e| e.to_string())
 }
 
 pub fn run_task(task: &str, args: &str, pwd: &Path) -> anyhow::Result<Vec<Event<'static>>> {
@@ -74,9 +74,10 @@ pub fn run_task(task: &str, args: &str, pwd: &Path) -> anyhow::Result<Vec<Event<
 
     let mut response = String::new();
     std::env::set_current_dir(pwd)?;
+    let mut locals = AttrMap::new();
     for task in tasks {
         let mut buf = gag::BufferRedirect::stdout().unwrap();
-        let res = execute_task(task);
+        let res = execute_task(task, &mut locals);
         let r = buf.read_to_string(&mut response).unwrap();
         if r > 0 {
             response.push('\n');
@@ -183,10 +184,11 @@ pub fn run_table(table: &str, args: &str, pwd: &Path) -> anyhow::Result<Vec<Even
     clear_context();
 
     let mut response = String::new();
+    let mut locals = AttrMap::new();
     for task in tasks {
         // since we can't have anything else print on mdbook
         let mut buf = gag::BufferRedirect::stdout().unwrap();
-        let res = execute_task(task);
+        let res = execute_task(task, &mut locals);
         response.clear();
         buf.read_to_string(&mut response).unwrap();
         response.push('\n');

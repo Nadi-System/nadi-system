@@ -8,7 +8,7 @@ use crate::structs::NadiStruct;
 use crate::timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap};
 use crate::udf::UserFunction;
 use std::collections::HashMap;
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender, channel};
 
 // /// Result of a Task when executed => move to expression result => move to function return
 // pub enum TaskResult {
@@ -108,7 +108,7 @@ impl TaskContextWrap {
 }
 
 impl TaskContextWrap {
-    pub fn execute(&mut self, task: Task) -> Result<Option<String>, EvalError> {
+    pub fn execute(&mut self, task: Task, loc: &mut AttrMap) -> Result<Option<String>, EvalError> {
         let msg: Vec<String> = self
             .receiver
             .try_recv()
@@ -118,7 +118,7 @@ impl TaskContextWrap {
                 _ => None,
             })
             .collect();
-        match self.context.execute(task) {
+        match self.context.execute(task, loc) {
             Ok(Some(v)) => Ok(Some(format!("{v}\n{}", msg.join("\n")))),
             Ok(None) => Ok(Some(msg.join("\n"))),
             Err(e) => Err(e),
@@ -232,19 +232,23 @@ impl TaskContext {
         self.udf.get(name)
     }
 
-    pub fn run_hooks(&mut self) {
+    pub fn run_hooks(&mut self, loc: &mut AttrMap) {
         for t in self.hook.clone() {
-            _ = self.execute_single(t);
+            _ = self.execute_single(t, loc);
         }
     }
 
     /// execute a task in the task context, possible with hook
-    pub fn execute(&mut self, task: Task) -> Result<Option<String>, EvalError> {
-        self.execute_single(task)
+    pub fn execute(&mut self, task: Task, loc: &mut AttrMap) -> Result<Option<String>, EvalError> {
+        self.execute_single(task, loc)
     }
 
     /// execute a task in the task context
-    pub fn execute_single(&mut self, task: Task) -> Result<Option<String>, EvalError> {
+    pub fn execute_single(
+        &mut self,
+        task: Task,
+        loc: &mut AttrMap,
+    ) -> Result<Option<String>, EvalError> {
         match task {
             Task::Network => Ok(Some(format!("{:?}", self.network))),
             Task::Env => Ok(Some(format!("{:?}", self.env.attrs))),
@@ -265,7 +269,8 @@ impl TaskContext {
             }
             Task::Expr(expr) => {
                 let ectx = EvalCtx::default();
-                expr.eval_mut(self, &ectx).map(|a| self.show_res(&a, 0))
+                expr.eval_mut(self, &ectx, loc)
+                    .map(|a| self.show_res(&a, 0))
             }
             Task::Hook(tasks) => {
                 self.hook = tasks;
@@ -442,13 +447,13 @@ impl TaskContext {
             PropCondition::Expr(expr) => {
                 let mut sel_nodes = Vec::with_capacity(self.network.nodes().count());
                 // expression is evaluated for each node
-                let ectx = EvalCtx::default();
                 for n in nodes {
-                    let ectx = ectx.at_node(n.clone());
-                    let res = expr
-                        .clone()
-                        .resolve(self, ectx.clone())?
-                        .eval_value(self, &ectx)?;
+                    let ectx = EvalCtx::at_node(n.clone());
+                    let res = expr.clone().resolve(self, ectx.clone())?.eval_value(
+                        self,
+                        &ectx,
+                        &mut AttrMap::new(),
+                    )?;
                     match bool::try_from_attr(&res) {
                         Ok(true) => sel_nodes.push(n),
                         Ok(false) => (),

@@ -1,0 +1,2 @@
+network load_str("a -> b")
+nm array(LEVEL, ORDER)

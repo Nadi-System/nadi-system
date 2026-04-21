@@ -51,8 +51,9 @@ impl ReqTasks {
         }
 
         let mut results = Vec::with_capacity(self.tasks.len());
+        let mut locals = AttrMap::new();
         for fc in self.tasks {
-            match ctx.execute(fc) {
+            match ctx.execute(fc, &mut locals) {
                 Ok(Some(p)) => results.push(p),
                 Err(p) => {
                     return TaskResult::EvalError(format!(
