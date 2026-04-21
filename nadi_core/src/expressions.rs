@@ -144,7 +144,7 @@ impl RawExpr {
                 Ok(r) => ExprType::Check(Box::new(r)),
                 Err(_) => ExprType::Result(ExprResult::Val(false.into())),
             },
-            ExprType::WithContext(e) => return resolve_expr_w_ctx(e, ctx, ectx.clone()),
+            ExprType::WithContext(e) => ExprType::WithContext(e),
             ExprType::Range(b, Some(s), e) => ExprType::Range(
                 Box::new(b.resolve(ctx, ectx.clone())?),
                 Some(Box::new(s.resolve(ctx, ectx.clone())?)),
@@ -403,7 +403,7 @@ pub enum ExprType<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq> {
     /// map generator expression
     MapGen(Box<T>, Box<T>, String, String, Box<T>),
     /// context block
-    WithContext(ExprWithContext<T>),
+    WithContext(ExprWithContext),
     /// integer range
     Range(Box<T>, Option<Box<T>>, Box<T>),
     /// user error raising
@@ -722,7 +722,7 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
                 }
                 .into(),
             )),
-            Self::WithContext(e) => e.expr.eval_mut(ctx, &e.expr.context, loc),
+            Self::WithContext(e) => e.eval_mut(ctx, ectx, loc),
             Self::Import(i) => i.eval_mut(ctx, ectx, loc),
             Self::UniOp(op, expr) => op
                 .eval(expr.eval_mut_value(ctx, ectx, loc)?)
@@ -858,7 +858,7 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
                 .into(),
             )),
             // This is already resolved context, so it is fine to just evaluate
-            Self::WithContext(e) => e.expr.eval(ctx, &e.expr.context, loc),
+            Self::WithContext(e) => e.eval(ctx, ectx, loc),
             Self::Range(b, s, e) => {
                 let b = b.eval_value(ctx, ectx, loc)?;
                 let b = i64::from_attr(&b).ok_or(EvalErrorType::InvalidAttributeType(
@@ -1653,20 +1653,38 @@ impl VarType {
                 None => Err(EvalErrorType::NodeNotFound(n.to_string())),
             },
             (VarType::Node(None), Some(n)) => Ok(ExprContext::Node(n.clone())),
-            (VarType::Input, Some(n)) => match n.lock().input() {
+            (VarType::Input, Some(n)) => match n
+                .try_lock()
+                .into_option()
+                .ok_or(EvalErrorType::MutexError(file!(), line!()))?
+                .input()
+            {
                 RSome(r) => Ok(ExprContext::Node(r.clone())),
                 RNone => Err(EvalErrorType::NoInputNodes),
             },
-            (VarType::Output, Some(n)) => match n.lock().output() {
+            (VarType::Output, Some(n)) => match n
+                .try_lock()
+                .into_option()
+                .ok_or(EvalErrorType::MutexError(file!(), line!()))?
+                .output()
+            {
                 RSome(r) => Ok(ExprContext::Node(r.clone())),
                 RNone => Err(EvalErrorType::NoOutputNode),
             },
-            (VarType::Inputs | VarType::InputsMap, Some(n)) => {
-                nodes_func(n.lock().inputs().to_vec())
-            }
-            (VarType::Outputs | VarType::OutputsMap, Some(n)) => {
-                nodes_func(n.lock().outputs().to_vec())
-            }
+            (VarType::Inputs | VarType::InputsMap, Some(n)) => nodes_func(
+                n.try_lock()
+                    .into_option()
+                    .ok_or(EvalErrorType::MutexError(file!(), line!()))?
+                    .inputs()
+                    .to_vec(),
+            ),
+            (VarType::Outputs | VarType::OutputsMap, Some(n)) => nodes_func(
+                n.try_lock()
+                    .into_option()
+                    .ok_or(EvalErrorType::MutexError(file!(), line!()))?
+                    .outputs()
+                    .to_vec(),
+            ),
             (_, None) => Err(EvalErrorType::NotANodeContext),
         }
     }
@@ -2272,7 +2290,14 @@ fn get_series(
                 .iter()
                 .map(|i| {
                     let sr = get_node_series_or_ts(i, name, ts)?;
-                    Ok((i.lock().name().to_string(), sr))
+                    Ok((
+                        i.try_lock()
+                            .into_option()
+                            .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
+                            .name()
+                            .to_string(),
+                        sr,
+                    ))
                 })
                 .collect::<Result<Vec<(String, Series)>, EvalError>>()?;
             let sr_lengths: Vec<usize> = inp_series.iter().map(|(_, s)| s.len()).collect();
@@ -2341,17 +2366,15 @@ fn get_node_series_or_ts(n: &Node, name: &str, ts: bool) -> Result<Series, EvalE
 
 /// Expression with some context
 #[derive(Debug, Clone, PartialEq)]
-pub struct ExprWithContext<T: std::fmt::Debug + Clone + PartialEq> {
+pub struct ExprWithContext {
     pub ty: VarType,
     // TODO: make it a vec of expression later
-    pub expr: Box<T>,
+    pub expr: Box<RawExpr>,
     pub silent: bool,
     pub parallel: bool,
 }
 
-impl<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq> std::fmt::Display
-    for ExprWithContext<T>
-{
+impl std::fmt::Display for ExprWithContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match (self.silent, self.parallel) {
             (true, false) => write!(f, "{} do {{{}}}", self.ty, self.expr),
@@ -2362,75 +2385,119 @@ impl<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq> std::fmt::Displ
     }
 }
 
-// FIX: when there is setvariable inside the context expression, then we can not resolve in advance, or resolve into array and tables
-// e.g.: nodes { node.x = 8 }
-
-fn resolve_expr_w_ctx<'b>(
-    expr: ExprWithContext<RawExpr>,
-    ctx: &TaskContext,
-    ectx: EvalCtx<'b>,
-) -> Result<ResolvedExpr<'b>, EvalError> {
-    let expr_ctx = expr
-        .ty
-        .get_expr_context(ctx, ectx.curr_node())
-        .map_err(|e| e.no_pos())?;
-    let mut context = ectx.clone();
-    context.expr_ctx = Cow::Owned(expr_ctx.clone());
-    match expr_ctx {
-        ExprContext::Local => expr.expr.resolve(ctx, EvalCtx::local()),
-        ExprContext::Env => expr.expr.resolve(ctx, EvalCtx::env()),
-        ExprContext::Network => expr.expr.resolve(ctx, EvalCtx::network()),
-        ExprContext::Node(n) => expr.expr.resolve(ctx, EvalCtx::at_node(n).to_owned()),
-        ExprContext::Nodes(nds) => {
-            let exprs = nds
-                .into_iter()
-                .map(|n| {
-                    expr.expr
-                        .clone()
-                        .resolve(ctx, EvalCtx::at_node(n).to_owned())
-                })
-                .collect::<Result<Vec<ResolvedExpr>, EvalError>>()?;
-            // FIX: how to know whether the user is looking for array or statement?
-            let et = if expr.silent {
-                ExprType::Multi(exprs, true)
-            } else {
-                ExprType::Array(exprs)
-            };
-            Ok(ResolvedExpr {
-                position: expr.expr.position(),
-                expr: et,
-                context,
-            })
+impl Eval for ExprWithContext {
+    fn eval(
+        &self,
+        ctx: &TaskContext,
+        ectx: &EvalCtx,
+        loc: &mut AttrMap,
+    ) -> Result<ExprResult, EvalError> {
+        let expr_ctx = self
+            .ty
+            .get_expr_context(ctx, ectx.curr_node())
+            .map_err(|e| e.no_pos())?;
+        let mut context = ectx.clone();
+        context.expr_ctx = Cow::Owned(expr_ctx.clone());
+        match expr_ctx {
+            ExprContext::Local => self.expr.eval(ctx, &EvalCtx::local(), loc),
+            ExprContext::Env => self.expr.eval(ctx, &EvalCtx::env(), loc),
+            ExprContext::Network => self.expr.eval(ctx, &EvalCtx::network(), loc),
+            ExprContext::Node(n) => self.expr.eval(ctx, &EvalCtx::at_node(n).to_owned(), loc),
+            ExprContext::Nodes(nds) => {
+                let exprs = nds
+                    .into_iter()
+                    .map(|n| self.expr.eval(ctx, &EvalCtx::at_node(n).to_owned(), loc))
+                    .collect::<Result<Vec<ExprResult>, EvalError>>()?;
+                if self.silent {
+                    Ok(ExprResult::None)
+                } else {
+                    Ok(ExprResult::Arr(exprs))
+                }
+            }
+            ExprContext::NodesMap(nds) => {
+                let exprs = nds
+                    .into_iter()
+                    .map(|n| {
+                        let name = n
+                            .try_lock()
+                            .into_option()
+                            .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
+                            .name()
+                            .to_string();
+                        let expr = self.expr.eval(ctx, &EvalCtx::at_node(n).to_owned(), loc)?;
+                        Ok((name, expr))
+                    })
+                    .collect::<Result<Vec<(String, ExprResult)>, EvalError>>()?;
+                if self.silent {
+                    Ok(ExprResult::None)
+                } else {
+                    Ok(ExprResult::Map(exprs))
+                }
+            }
         }
-        ExprContext::NodesMap(nds) => {
-            let exprs = nds
-                .into_iter()
-                .map(|n| {
-                    let name = n
-                        .try_lock()
-                        .into_option()
-                        .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
-                        .name()
-                        .to_string();
-                    let expr = expr
-                        .expr
-                        .clone()
-                        .resolve(ctx, EvalCtx::at_node(n).to_owned())?;
-                    Ok((name, expr))
-                })
-                .collect::<Result<Vec<(String, ResolvedExpr)>, EvalError>>()?;
-            let et = ExprType::Map(exprs);
-            Ok(ResolvedExpr {
-                position: expr.expr.position(),
-                expr: et,
-                context,
-            })
+    }
+
+    fn eval_mut(
+        &self,
+        ctx: &mut TaskContext,
+        ectx: &EvalCtx,
+        loc: &mut AttrMap,
+    ) -> Result<ExprResult, EvalError> {
+        let expr_ctx = self
+            .ty
+            .get_expr_context(ctx, ectx.curr_node())
+            .map_err(|e| e.no_pos())?;
+        let mut context = ectx.clone();
+        context.expr_ctx = Cow::Owned(expr_ctx.clone());
+        match expr_ctx {
+            ExprContext::Local => self.expr.eval_mut(ctx, &EvalCtx::local(), loc),
+            ExprContext::Env => self.expr.eval_mut(ctx, &EvalCtx::env(), loc),
+            ExprContext::Network => self.expr.eval_mut(ctx, &EvalCtx::network(), loc),
+            ExprContext::Node(n) => self
+                .expr
+                .eval_mut(ctx, &EvalCtx::at_node(n).to_owned(), loc),
+            ExprContext::Nodes(nds) => {
+                let exprs = nds
+                    .into_iter()
+                    .map(|n| {
+                        self.expr
+                            .eval_mut(ctx, &EvalCtx::at_node(n).to_owned(), loc)
+                    })
+                    .collect::<Result<Vec<ExprResult>, EvalError>>()?;
+                if self.silent {
+                    Ok(ExprResult::None)
+                } else {
+                    Ok(ExprResult::Arr(exprs))
+                }
+            }
+            ExprContext::NodesMap(nds) => {
+                let exprs = nds
+                    .into_iter()
+                    .map(|n| {
+                        let name = n
+                            .try_lock()
+                            .into_option()
+                            .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
+                            .name()
+                            .to_string();
+                        let expr = self
+                            .expr
+                            .eval_mut(ctx, &EvalCtx::at_node(n).to_owned(), loc)?;
+                        Ok((name, expr))
+                    })
+                    .collect::<Result<Vec<(String, ExprResult)>, EvalError>>()?;
+                if self.silent {
+                    Ok(ExprResult::None)
+                } else {
+                    Ok(ExprResult::Map(exprs))
+                }
+            }
         }
     }
 }
 
-impl<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq + Position> ExprWithContext<T> {
-    pub fn new(ty: VarType, expr: T, silent: bool, parallel: bool) -> Self {
+impl ExprWithContext {
+    pub fn new(ty: VarType, expr: RawExpr, silent: bool, parallel: bool) -> Self {
         Self {
             ty,
             expr: Box::new(expr),
@@ -2485,9 +2552,12 @@ impl PartialEq for ExprContext {
             (Self::Env, Self::Env) => true,
             (Self::Network, Self::Network) => true,
             (Self::Node(n1), Self::Node(n2)) => {
-                let n1 = n1.lock().name().to_string();
-                let n2 = n2.lock().name().to_string();
-                n1 == n2
+                let n1 = n1.try_lock().map(|n| n.name().to_string());
+                let n2 = n2.try_lock().map(|n| n.name().to_string());
+                match (n1, n2) {
+                    (RSome(n1), RSome(n2)) => n1 == n2,
+                    _ => false,
+                }
             }
             // TODO
             (Self::Nodes(_nds1), Self::Nodes(_nds2)) => false,
@@ -2627,6 +2697,7 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
             ExprContext::Local => {
                 let val = self.expr.eval_value(ctx, &EvalCtx::local(), loc)?;
                 self.var.set_attr_nested(loc, val)?;
+                _ = ctx.channel.send(TaskMessage::Changed);
                 Ok(ExprResult::None)
             }
             ExprContext::Env | ExprContext::Network => {
@@ -2637,8 +2708,13 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
                 let val = self
                     .expr
                     .eval_value(ctx, &EvalCtx::at_node(n.clone()), loc)?;
-                self.var.set_attr_nested(n.lock().attr_map_mut(), val)?;
-
+                self.var.set_attr_nested(
+                    n.try_lock()
+                        .into_option()
+                        .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
+                        .attr_map_mut(),
+                    val,
+                )?;
                 _ = ctx.channel.send(TaskMessage::Changed);
                 Ok(ExprResult::None)
             }
@@ -2647,7 +2723,13 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
                     let val = self
                         .expr
                         .eval_value(ctx, &EvalCtx::at_node(n.clone()), loc)?;
-                    self.var.set_attr_nested(n.lock().attr_map_mut(), val)?;
+                    self.var.set_attr_nested(
+                        n.try_lock()
+                            .into_option()
+                            .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
+                            .attr_map_mut(),
+                        val,
+                    )?;
                 }
                 _ = ctx.channel.send(TaskMessage::Changed);
 
@@ -2686,7 +2768,13 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
                 let val = self
                     .expr
                     .eval_value(ctx, &EvalCtx::at_node(n.clone()), loc)?;
-                self.var.set_attr_nested(n.lock().attr_map_mut(), val)?;
+                self.var.set_attr_nested(
+                    n.try_lock()
+                        .into_option()
+                        .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
+                        .attr_map_mut(),
+                    val,
+                )?;
                 _ = ctx.channel.send(TaskMessage::Changed);
                 Ok(ExprResult::None)
             }
@@ -2695,7 +2783,13 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
                     let val = self
                         .expr
                         .eval_value(ctx, &EvalCtx::at_node(n.clone()), loc)?;
-                    self.var.set_attr_nested(n.lock().attr_map_mut(), val)?;
+                    self.var.set_attr_nested(
+                        n.try_lock()
+                            .into_option()
+                            .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
+                            .attr_map_mut(),
+                        val,
+                    )?;
                 }
                 _ = ctx.channel.send(TaskMessage::Changed);
 
