@@ -145,6 +145,7 @@ impl RawExpr {
                 ExprType::Break(Some(Box::new(expr.resolve(ctx, ectx.clone())?)))
             }
             ExprType::Continue => ExprType::Continue,
+            ExprType::Import(i) => ExprType::Import(i),
             _ => {
                 return Err(EvalErrorType::NotImplementedError(
                     "resolving logic not implemented yet for these",
@@ -626,6 +627,7 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
                 .into(),
             )),
             Self::WithContext(e) => e.expr.eval_mut(ctx, &e.expr.context),
+            ExprType::Import(i) => i.eval_mut(ctx, ectx),
             _ => self.eval(ctx, ectx),
         }
     }
@@ -750,6 +752,7 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
                 Err(EvalErrorType::InvalidBreak(ret).no_pos())
             }
             Self::Continue => Err(EvalErrorType::InvalidContinue.no_pos()),
+            ExprType::Import(i) => i.eval(ctx, ectx),
             _ => Err(
                 EvalErrorType::NotImplementedError("this expression is not implemented").no_pos(),
             ),
@@ -1693,24 +1696,27 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
         match &new_ectx {
             ExprContext::Local | ExprContext::Env => {
                 let func_ctx = self.function_ctx(ctx, &ectx)?;
-                match ctx.udf(&self.name).cloned() {
+                if let Some(func) = ctx.udf(&self.name).cloned() {
                     // priority for the locally defined function
-                    Some(func) => Ok(func.eval(ctx, &ectx, func_ctx)?),
-                    _ => match ctx.functions.env(&self.name) {
-                        Some(f) => f.call(&func_ctx).res().map_err(|s| {
-                            EvalErrorType::FunctionError(self.name.to_string(), s)
-                                .pos(self.position())
-                        }),
-                        None => Err(EvalErrorType::FunctionNotFound(
-                            Some(ectx.expr_ctx.as_ref().function_type().clone()),
-                            self.name.to_string(),
-                        )
-                        .pos(self.position())),
-                    },
+                    return Ok(func.eval(ctx, &ectx, func_ctx)?);
+                }
+                match ctx.functions.env(&self.name) {
+                    Some(f) => f.call(&func_ctx).res().map_err(|s| {
+                        EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
+                    }),
+                    None => Err(EvalErrorType::FunctionNotFound(
+                        Some(ectx.expr_ctx.as_ref().function_type().clone()),
+                        self.name.to_string(),
+                    )
+                    .pos(self.position())),
                 }
             }
             ExprContext::Network => {
                 let func_ctx = self.function_ctx(ctx, &ectx)?;
+                if let Some(func) = ctx.udf(&self.name).cloned() {
+                    // priority for the locally defined function
+                    return Ok(func.eval(ctx, &ectx, func_ctx)?);
+                }
                 match ctx.functions.network(&self.name) {
                     Some(f) => f.call(&ctx.network, &func_ctx).res().map_err(|s| {
                         EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
@@ -1725,7 +1731,12 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                 }
             }
             ExprContext::Node(node) => {
-                let func_ctx = self.function_ctx(ctx, &ectx.at_node(node.clone()))?;
+                let etc = ectx.at_node(node.clone());
+                let func_ctx = self.function_ctx(ctx, &etc)?;
+                if let Some(func) = ctx.udf(&self.name).cloned() {
+                    // priority for the locally defined function
+                    return Ok(func.eval(ctx, &etc, func_ctx)?);
+                }
                 match ctx.functions.node(&self.name) {
                     Some(f) => {
                         let n = node.try_lock().into_option().ok_or(
@@ -1745,7 +1756,41 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                     .pos(self.position())),
                 }
             }
-            ExprContext::Nodes(_nds) | ExprContext::NodesMap(_nds) => {
+            ExprContext::Nodes(nds) => {
+                let res: Vec<ExprResult> = nds
+                    .iter()
+                    .map(|n| {
+                        let etc = ectx.at_node(n.clone());
+                        let func_ctx = self.function_ctx(ctx, &etc)?;
+                        if let Some(func) = ctx.udf(&self.name).cloned() {
+                            // priority for the locally defined function
+                            return Ok(func.eval(ctx, &etc, func_ctx)?);
+                        }
+
+                        match ctx.functions.node(&self.name) {
+                            Some(f) => {
+                                let n = n.try_lock().into_option().ok_or(
+                                    EvalErrorType::MutexError(file!(), line!())
+                                        .pos(self.position()),
+                                )?;
+                                f.call(&n, &func_ctx).res().map_err(|s| {
+                                    EvalErrorType::FunctionError(self.name.to_string(), s)
+                                        .pos(self.position())
+                                })
+                            }
+                            // if the function is not called by explicit type then also test environment function
+                            None if self.ty.is_none() => self.eval(ctx, &ectx.as_env()),
+                            None => Err(EvalErrorType::FunctionNotFound(
+                                Some(ectx.expr_ctx.as_ref().function_type().clone()),
+                                self.name.to_string(),
+                            )
+                            .pos(self.position())),
+                        }
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(ExprResult::Arr(res))
+            }
+            ExprContext::NodesMap(_nds) => {
                 Err(EvalErrorType::NotImplementedError("nodes not implemented")
                     .pos(self.position()))
             }
@@ -1794,7 +1839,12 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                 }
             }
             ExprContext::Node(node) => {
-                let func_ctx = self.function_ctx(ctx, &ectx.at_node(node.clone()))?;
+                let etc = ectx.at_node(node.clone());
+                let func_ctx = self.function_ctx(ctx, &etc)?;
+                if let Some(func) = ctx.udf(&self.name).cloned() {
+                    // priority for the locally defined function
+                    return Ok(func.eval_mut(ctx, &etc, func_ctx)?);
+                }
                 match ctx.functions.node(&self.name) {
                     Some(f) => {
                         let mut n = node.try_lock().into_option().ok_or(
@@ -1814,7 +1864,41 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                     .pos(self.position())),
                 }
             }
-            ExprContext::Nodes(_nds) | ExprContext::NodesMap(_nds) => {
+            ExprContext::Nodes(nds) => {
+                let res: Vec<ExprResult> = nds
+                    .iter()
+                    .map(|n| {
+                        let etc = ectx.at_node(n.clone());
+                        let func_ctx = self.function_ctx(ctx, &etc)?;
+                        if let Some(func) = ctx.udf(&self.name).cloned() {
+                            // priority for the locally defined function
+                            return Ok(func.eval_mut(ctx, &etc, func_ctx)?);
+                        }
+
+                        match ctx.functions.node(&self.name) {
+                            Some(f) => {
+                                let mut n = n.try_lock().into_option().ok_or(
+                                    EvalErrorType::MutexError(file!(), line!())
+                                        .pos(self.position()),
+                                )?;
+                                f.call_mut(&mut n, &func_ctx).res().map_err(|s| {
+                                    EvalErrorType::FunctionError(self.name.to_string(), s)
+                                        .pos(self.position())
+                                })
+                            }
+                            // if the function is not called by explicit type then also test environment function
+                            None if self.ty.is_none() => self.eval_mut(ctx, &ectx.as_env()),
+                            None => Err(EvalErrorType::FunctionNotFound(
+                                Some(ectx.expr_ctx.as_ref().function_type().clone()),
+                                self.name.to_string(),
+                            )
+                            .pos(self.position())),
+                        }
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(ExprResult::Arr(res))
+            }
+            ExprContext::NodesMap(_nds) => {
                 Err(EvalErrorType::NotImplementedError("nodes not implemented")
                     .pos(self.position()))
             }
@@ -2278,7 +2362,12 @@ fn resolve_set_variable<'b>(
         .get_expr_context(e.function_type(), ctx, e.curr_node())?;
     let new_ectx = ectx.with_expr_ctx(Cow::Owned(new_expr_ctx.clone()));
     let etc = match new_expr_ctx {
-        ExprContext::Local => todo!(),
+        ExprContext::Local => {
+            return Err(EvalErrorType::NotImplementedError(
+                "resolving logic not implemented yet for these",
+            )
+            .no_pos());
+        }
         ExprContext::Env => new_ectx.as_env().to_owned(),
         ExprContext::Network => new_ectx.as_network().to_owned(),
         ExprContext::Node(n) => new_ectx.at_node(n).to_owned(),

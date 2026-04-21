@@ -86,28 +86,28 @@ impl UserFunction {
         }
     }
 
-    // pub fn eval_mut(
-    //     &self,
-    //     ctx: &mut TaskContext,
-    //     ectx: &EvalCtx,
-    //     fctx: FunctionCtx,
-    // ) -> Result<ExprResult, EvalError> {
-    //     let locals = self.resolve_locals(ctx, ectx, fctx.args, fctx.kwargs)?;
-    //     let ectx = ectx.with_local(locals);
-    //     let res = { self.exprs.clone().resolve(ctx, &ectx)? };
-    //     match res.eval_mut(ctx, &ectx) {
-    //         Ok(v) => return Ok(v),
-    //         // early return is returned as an error so it can be
-    //         // caught here
-    //         Err(e) => {
-    //             if let EvalErrorType::InvalidReturn(val) = e.ty {
-    //                 return Ok(val);
-    //             } else {
-    //                 return Err(e);
-    //             }
-    //         }
-    //     }
-    // }
+    pub fn eval_mut(
+        &self,
+        ctx: &mut TaskContext,
+        ectx: &EvalCtx,
+        fctx: FunctionCtx,
+    ) -> Result<ExprResult, EvalError> {
+        let locals = self.resolve_locals(ctx, ectx, fctx.args, fctx.kwargs)?;
+        let ectx = ectx.with_local(locals);
+        let res = { self.exprs.clone().resolve(ctx, ectx.clone())? };
+        match res.eval_mut(ctx, &ectx) {
+            Ok(v) => return Ok(v),
+            // early return is returned as an error so it can be
+            // caught here
+            Err(e) => {
+                if let EvalErrorType::InvalidReturn(val) = e.ty {
+                    return Ok(val);
+                } else {
+                    return Err(e);
+                }
+            }
+        }
+    }
 
     pub fn eval_val(
         &self,
