@@ -61,8 +61,10 @@ mod tests {
             Ok(t) => t,
             Err(e) => return Err(e.user_msg_color(None)),
         };
+
+        let mut loc = AttrMap::new();
         for tsk in tasks {
-            if let Err(p) = ctx.execute(tsk.clone()) {
+            if let Err(p) = ctx.execute(tsk.clone(), &mut loc) {
                 return Err(format!("Error in:\n{tsk}\n {p}"));
             }
         }

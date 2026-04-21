@@ -440,7 +440,7 @@ mod tests {
         // loading the plugins over and over again for each test,
         // significantly improving the runtime speed.
         #[allow(static_mut_refs)]
-        let functions = unsafe { NADI_FUNCS.get_or_init(NadiFunctions::new) }.clone();
+        let functions = unsafe { NADI_FUNCS.get_or_init(NadiFunctions::internals) }.clone();
 
         MdHelp {
             functions,

@@ -74,17 +74,11 @@ pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<Raw
             ExprType::UserError,
         ),
         map(
-            preceded(
-                kw_return,
-                opt(after_space(raw_expr(maybe_silent_expression))),
-            ),
+            preceded(kw_return, opt(after_space(raw_expr(complete_expression)))),
             |e| ExprType::Return(e.map(Box::new)),
         ),
         map(
-            preceded(
-                kw_break,
-                opt(after_space(raw_expr(maybe_silent_expression))),
-            ),
+            preceded(kw_break, opt(after_space(raw_expr(complete_expression)))),
             |e| ExprType::Break(e.map(Box::new)),
         ),
         series,
@@ -139,7 +133,7 @@ pub fn expr_set_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprT
             opt(terminated(variable_type, dot)),
             task_dot_variable,
             maybe_space(assignment),
-            maybe_space(raw_expr(complete_expression)),
+            maybe_space(raw_expr(complete_value_expression)),
             opt(semicolon),
         )),
         |(vt, (var, indices), _, expr, silent)| {
@@ -773,12 +767,11 @@ pub fn series<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::attrs::{Attribute, HasAttributes};
+    use crate::attrs::{AttrMap, Attribute, HasAttributes};
     use crate::eval::{Eval, EvalCtx, EvalErrorType};
     use crate::functions::NadiFunctions;
     use crate::network::Network;
     use crate::parser::tokenizer::get_tokens;
-    use crate::tasks::FunctionType;
     use crate::tasks::{TaskContext, TaskContextEnv};
     use rstest::{fixture, rstest};
     use std::collections::HashMap;
@@ -793,7 +786,7 @@ mod tests {
         // loading the plugins over and over again for each test,
         // significantly improving the runtime speed.
         #[allow(static_mut_refs)]
-        let functions = unsafe { NADI_FUNCS.get_or_init(NadiFunctions::new) }.clone();
+        let functions = unsafe { NADI_FUNCS.get_or_init(NadiFunctions::internals) }.clone();
 
         let (sender, _receiver) = std::sync::mpsc::channel();
         let mut ctx = TaskContext {
@@ -886,7 +879,9 @@ mod tests {
         let (rest, expr) = raw_expr(complete_expression)(&tokens).unwrap();
         assert_eq!(rest, vec![]);
         let ectx = EvalCtx::default();
-        let res = expr.eval_value(&context, &ectx).unwrap();
+        let mut loc = AttrMap::new();
+        loc.set_attr("xyz", 12.into());
+        let res = expr.eval_value(&context, &ectx, &mut loc).unwrap();
         assert_eq!(res, val);
     }
 
@@ -946,7 +941,7 @@ mod tests {
     #[case("true | false", true.into())]
     // this here can be invalid if xyz is bool, but valid when it's
     // number, so > is evaluated before the boolean operation |
-    #[case("false | xyz > -12", true.into())]
+    #[case("false | (xyz > -12)", true.into())]
     #[case("false | false", false.into())]
     #[case("! true", false.into())]
     #[case("! false", true.into())]
@@ -958,7 +953,9 @@ mod tests {
         let (rest, expr) = raw_expr(complete_expression)(&tokens).unwrap();
         assert_eq!(rest, vec![]);
         let ectx = EvalCtx::default();
-        let res = expr.eval_value(&context, &ectx).unwrap();
+        let mut loc = AttrMap::new();
+        loc.set_attr("xyz", 12.into());
+        let res = expr.eval_value(&context, &ectx, &mut loc).unwrap();
         assert_eq!(res, val);
     }
     // testing the simplify process
@@ -982,13 +979,15 @@ mod tests {
         let (rest, expr) = raw_expr(complete_expression)(&tokens).unwrap();
         assert_eq!(rest, vec![]);
         let ectx = EvalCtx::default();
-        let res1 = expr.eval_value(&context, &ectx).unwrap();
+        let mut loc = AttrMap::new();
+        loc.set_attr("xyz", 12.into());
+        let res1 = expr.eval_value(&context, &ectx, &mut loc).unwrap();
 
         let tokens = Token::validate(get_tokens(simpl)).unwrap();
         let (rest, expr) = raw_expr(complete_expression)(&tokens).unwrap();
         assert_eq!(rest, vec![]);
         let ectx = EvalCtx::default();
-        let res2 = expr.eval_value(&context, &ectx).unwrap();
+        let res2 = expr.eval_value(&context, &ectx, &mut loc).unwrap();
 
         assert_eq!(res1, res2);
     }
@@ -997,9 +996,11 @@ mod tests {
     #[rstest]
     #[case("- true", EvalErrorType::NotANumber)]
     #[case("12 | true", EvalErrorType::NotABool)]
-    #[case("(xyz - 1) * (12 + true)", EvalErrorType::InvalidOperation)]
-    #[case("(xyz - 1) * (true + true)", EvalErrorType::InvalidOperation)]
-    #[case("(xyz * \"1\") * (12 + true)", EvalErrorType::InvalidOperation)]
+    #[case("1 * (12 + true)", EvalErrorType::InvalidOperation)]
+    #[case("xyz * (true + true)", EvalErrorType::InvalidOperation)]
+    #[case("(xyz + 1) * (true + true)", EvalErrorType::InvalidOperation)]
+    #[case("(\"1\") * (12 + true)", EvalErrorType::InvalidOperation)]
+    #[case("(xyz + \"1\") * (12 + true)", EvalErrorType::InvalidOperation)]
     pub fn compl_expr_error_test(
         context: TaskContext,
         #[case] txt: &str,
@@ -1009,7 +1010,9 @@ mod tests {
         let (rest, expr) = raw_expr(complete_expression)(&tokens).unwrap();
         assert_eq!(rest, vec![]);
         let ectx = EvalCtx::default();
-        let res = expr.eval(&context, &ectx).err().unwrap();
+        let mut loc = AttrMap::new();
+        loc.set_attr("xyz", 12.into());
+        let res = expr.eval(&context, &ectx, &mut loc).err().unwrap();
         assert_eq!(res.ty, err);
     }
 }

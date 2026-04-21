@@ -7,11 +7,11 @@ use crate::tasks::TaskKeyword;
 use crate::template::Template;
 use nadi_core::attrs::{Attribute, Date, DateTime, Time};
 use nom::{
-    IResult,
     branch::alt,
     combinator::{map, opt, value},
     multi::{many0, many1, separated_list0, separated_list1},
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
+    IResult,
 };
 use std::str::FromStr;
 

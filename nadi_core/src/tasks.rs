@@ -8,7 +8,7 @@ use crate::structs::NadiStruct;
 use crate::timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap};
 use crate::udf::UserFunction;
 use std::collections::HashMap;
-use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::mpsc::{channel, Receiver, Sender};
 
 // /// Result of a Task when executed => move to expression result => move to function return
 // pub enum TaskResult {
