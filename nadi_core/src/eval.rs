@@ -275,6 +275,8 @@ pub enum EvalErrorType {
     NoInputNodes,
     /// The node doesn't have output node
     NoOutputNode,
+    /// The node doesn't have edge node
+    NoEdgeNode,
     /// The network doesn't have a root node
     NoRootNode,
     /// The node, doesn't have attribute with the given name
@@ -363,8 +365,9 @@ impl EvalErrorType {
             //     return format!("Node: {n:?} Attribute {var:?} not found")
             // }
             // Self::AttributeNotFound(None, var) => return format!("Attribute {var:?} not found"),
-            Self::NoInputNodes => "Node doesn't have a input nodes",
-            Self::NoOutputNode => "Node doesn't have a output node",
+            Self::NoInputNodes => "Node doesn't have an input node or has multiple",
+            Self::NoOutputNode => "Node doesn't have an output node or has multiple",
+            Self::NoEdgeNode => "Node doesn't have an edge node or has multiple",
             Self::NoRootNode => "Network doesn't have a root node",
             Self::AttributeError(s) => return format!("Attribute Error: {s}"),
             Self::NodeAttributeError(n, s) => return format!("Node {n:?} Attribute Error: {s}"),

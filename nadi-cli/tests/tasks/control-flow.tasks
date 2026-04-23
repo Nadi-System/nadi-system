@@ -1,0 +1,3 @@
+12 + 3
+try { somevar } catch { 1 }
+try {env.somevar } catch {10}

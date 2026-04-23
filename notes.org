@@ -1,3 +1,11 @@
+* TODO Error messages
+
+Now that we have positions on all expressions, we need to improve the error messages, make it save all positions of the errors while unwraping and then display them like in python. From inside to outside. It would also be great to make an error catching system that can take error type considerations, but that is for later.
+
+* TODO Series expressions
+
+After the expressions have been redone, I think we need to work on series expressions next. Maybe also add series functions, they can take one or more series along with attribute values. That way people can use the plugin system to do more things. 
+
 * New primitives for task system
 
 Remove the data and time format from the task system, they can still be used in attributes file, but the task system will no longer support them directly. You can use date/time values, and initial them by parsing strings. This will allow the use of operators like `-` without space in the expressions. And we can add syntax for the number range `1:20` instead of using it for the dates that are not used as much. We can make the range be a expression, so that we can insert variables instead of simple numbers.

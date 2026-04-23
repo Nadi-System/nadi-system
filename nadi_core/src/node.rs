@@ -238,6 +238,23 @@ impl NodeInner {
             .unwrap_or_default()
     }
 
+    /// single edge node of the node, None if no inputs or multiple edges
+    pub fn edge(&self) -> Option<Node> {
+        match self.edges().as_slice() {
+            [n] => Some(n.clone()),
+            _ => None,
+        }
+    }
+
+    /// Edges of the node
+    pub fn edges(&self) -> Vec<Node> {
+        self.outputs()
+            .iter()
+            .chain(self.inputs())
+            .map(|n| n.clone())
+            .collect()
+    }
+
     /// set the output of the node
     pub fn set_output(&mut self, output: Node) -> ROption<Node> {
         self.output.replace(output)

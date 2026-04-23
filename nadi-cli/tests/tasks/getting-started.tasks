@@ -1,2 +1,25 @@
 network load_str("a -> b")
 nm array(LEVEL, ORDER)
+nodesmap array(LEVEL, ORDER)
+
+1 + 2 * 10
+sum([1,2,3])
+env.x = true;
+env.x
+
+env 1 + 2 * 8
+env render("my name is {name}", name="John")
+env.x = 12 > 2;
+env.x
+
+x = 12 > 2;
+x
+
+if ( !val? | (val > 5) ) {
+	# if val is not defined or greater than 5, set it to 0
+    val = 0
+}
+while (val < 5) {
+    val = val + 1;
+}
+val

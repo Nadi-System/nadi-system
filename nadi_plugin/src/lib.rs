@@ -263,7 +263,7 @@ fn nadi_func_inner(
 }
 
 /// Invalid argument names = task system keywords
-const INVALID_ARG_NAME: [&str; 55] = [
+const INVALID_ARG_NAME: [&str; 62] = [
     "clear",  // TaskKeyword::Clear
     "import", // TaskKeyword::Import
     "exec",   // TaskKeyword::Exec
@@ -286,6 +286,10 @@ const INVALID_ARG_NAME: [&str; 55] = [
     "outputs", // TaskKeyword::Outputs
     "outputsmap",
     "om",    // TaskKeyword::OutputsMap
+    "edge",  // TaskKeyword::Edge
+    "edges", // TaskKeyword::Edges
+    "edgesmap",
+    "em",    // TaskKeyword::EdgesMap
     "nodes", // TaskKeyword::Nodes
     "nodesmap",
     "nm",    // TaskKeyword::NodesMap
@@ -318,7 +322,10 @@ const INVALID_ARG_NAME: [&str; 55] = [
     "attrs",    // TaskKeyword::Attrs
     "loop",     // TaskKeyword::Loop
     "progress",
-    "prog", // TaskKeyword::Progress
+    "prog",  // TaskKeyword::Progress
+    "do",    // TaskKeyword::Do
+    "par",   // TaskKeyword::Par
+    "dopar", // TaskKeyword::DoPar
 ];
 
 fn check_args_kwargs_order(

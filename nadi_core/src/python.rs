@@ -25,6 +25,7 @@ impl From<EvalError> for PyErr {
             EvalErrorType::EmptyValue(_) => PyAttributeError::new_err(err),
             EvalErrorType::NoInputNodes => PyAttributeError::new_err(err),
             EvalErrorType::NoOutputNode => PyAttributeError::new_err(err),
+            EvalErrorType::NoEdgeNode => PyAttributeError::new_err(err),
             EvalErrorType::NoRootNode => PyAttributeError::new_err(err),
 
             EvalErrorType::KeyError(_) => PyKeyError::new_err(err),

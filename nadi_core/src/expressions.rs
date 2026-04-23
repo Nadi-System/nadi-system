@@ -650,8 +650,8 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
                 }
             }
             Self::TryCatch(expr1, expr2) => match expr1.eval_mut(ctx, ectx, loc) {
+                Ok(ExprResult::NoneErr(_)) | Err(_) => expr2.eval_mut(ctx, ectx, loc),
                 Ok(val) => Ok(val),
-                _ => expr2.eval_mut(ctx, ectx, loc),
             },
             Self::Multi(exprs, silent) => {
                 let mut res = ExprResult::None;
@@ -785,8 +785,9 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
             )
             .no_pos()),
             Self::TryCatch(expr1, expr2) => match expr1.eval(ctx, ectx, loc) {
+                // returning none (e.g. silent expression) is fine
+                Ok(ExprResult::NoneErr(_)) | Err(_) => expr2.eval(ctx, ectx, loc),
                 Ok(val) => Ok(val),
-                _ => expr2.eval(ctx, ectx, loc),
             },
             Self::Multi(exprs, silent) => {
                 let mut res = ExprResult::None;
@@ -1499,7 +1500,10 @@ impl Eval for InputVar {
 
         match attr {
             Ok(Some(v)) => Ok(ExprResult::Val(v)),
-            Ok(None) => Ok(ExprResult::None),
+            Ok(None) => Ok(ExprResult::NoneErr(Box::new(
+                EvalErrorType::AttributeError(format!("Attribute {self} not found"))
+                    .pos(self.position()),
+            ))),
             Err(e) => Err(e.pos(self.position())),
         }
     }
@@ -1528,6 +1532,12 @@ pub enum VarType {
     Outputs,
     /// Outputs variable in map format (only valid in a node function)
     OutputsMap,
+    /// Edges variable (only valid in a node function for a node with single input or output, i.e. leaf and root)
+    Edge,
+    /// Edges variable (only valid in a node function)
+    Edges,
+    /// Edges variable in map format (only valid in a node function)
+    EdgesMap,
     /// Nodes variable (array of variable from each node)
     Nodes(Box<Propagation>),
     /// Nodes variable (map of variable from each node and its name)
@@ -1562,6 +1572,9 @@ impl VarType {
             TaskKeyword::Output => Some(VarType::Output),
             TaskKeyword::Outputs => Some(VarType::Outputs),
             TaskKeyword::OutputsMap => Some(VarType::OutputsMap),
+            TaskKeyword::Edge => Some(VarType::Edge),
+            TaskKeyword::Edges => Some(VarType::Edges),
+            TaskKeyword::EdgesMap => Some(VarType::EdgesMap),
             TaskKeyword::Nodes => Some(VarType::Nodes(Box::new(prop.unwrap_or_default()))),
             TaskKeyword::NodesMap => Some(VarType::NodesMap(Box::new(prop.unwrap_or_default()))),
             TaskKeyword::Root => Some(VarType::Root),
@@ -1585,6 +1598,9 @@ impl VarType {
             | VarType::Output
             | VarType::Outputs
             | VarType::OutputsMap
+            | VarType::Edge
+            | VarType::Edges
+            | VarType::EdgesMap
             | VarType::Nodes(_)
             | VarType::NodesMap(_)
             | VarType::Root
@@ -1606,12 +1622,15 @@ impl VarType {
             | VarType::Inputs
             | VarType::Output
             | VarType::Outputs
+            | VarType::Edge
+            | VarType::Edges
             | VarType::Nodes(_)
             | VarType::Root
             | VarType::Roots
             | VarType::Leaves => false,
             VarType::NodesMap(_)
             | VarType::OutputsMap
+            | VarType::EdgesMap
             | VarType::RootsMap
             | VarType::InputsMap
             | VarType::LeavesMap => true,
@@ -1671,6 +1690,15 @@ impl VarType {
                 RSome(r) => Ok(ExprContext::Node(r.clone())),
                 RNone => Err(EvalErrorType::NoOutputNode),
             },
+            (VarType::Edge, Some(n)) => match n
+                .try_lock()
+                .into_option()
+                .ok_or(EvalErrorType::MutexError(file!(), line!()))?
+                .edge()
+            {
+                Some(r) => Ok(ExprContext::Node(r.clone())),
+                None => Err(EvalErrorType::NoEdgeNode),
+            },
             (VarType::Inputs | VarType::InputsMap, Some(n)) => nodes_func(
                 n.try_lock()
                     .into_option()
@@ -1684,6 +1712,12 @@ impl VarType {
                     .ok_or(EvalErrorType::MutexError(file!(), line!()))?
                     .outputs()
                     .to_vec(),
+            ),
+            (VarType::Edges | VarType::EdgesMap, Some(n)) => nodes_func(
+                n.try_lock()
+                    .into_option()
+                    .ok_or(EvalErrorType::MutexError(file!(), line!()))?
+                    .edges(),
             ),
             (_, None) => Err(EvalErrorType::NotANodeContext),
         }
@@ -1706,6 +1740,9 @@ impl std::fmt::Display for VarType {
             VarType::Output => "output",
             VarType::Outputs => "outputs",
             VarType::OutputsMap => "outputsmap",
+            VarType::Edge => "edge",
+            VarType::Edges => "edges",
+            VarType::EdgesMap => "edgesmap",
             VarType::Nodes(p) => {
                 return write!(f, "nodes{p}");
             }
