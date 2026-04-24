@@ -1,0 +1,26 @@
+[1, true, "no maybe"]
+12.2
+[1, true, "no maybe"]
+true
+false
+[1, true, "no maybe"]
+false
+-12
+false
+true
+false
+true
+"if false"
+"no maybe"
+[1, true, "no maybe"]
+true
+false
+[1, true, "no maybe"]
+false
+-12
+false
+true
+false
+true
+"if false"
+"no maybe"

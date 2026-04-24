@@ -1,3 +1,3 @@
 [workspace]
-members = ["nadi-cli", "nadi_core", "nadi-ide", "nadi_plugin", "nadi-py", "mdbook-nadi", "nadi-serve"]
+members = ["nadi-cli", "nadi_core", "nadi-ide", "nadi_plugin", "nadi-py", "mdbook-nadi", "nadi-serve", "nadi-kernel"]
 resolver = "2"
