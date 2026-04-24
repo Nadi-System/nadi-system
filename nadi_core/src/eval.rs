@@ -186,13 +186,14 @@ impl std::fmt::Display for EvalError {
         if let Some(pos) = self.position.iter().last() {
             write!(
                 f,
-                "EvalError{node} at Line {} Column {}: {}",
+                "{} {node} at Line {} Column {}: {}",
+                self.ty.name(),
                 pos.0,
                 pos.1,
                 self.ty.message()
             )
         } else {
-            write!(f, "EvalError{node}: {}", self.ty.message())
+            write!(f, "{} {node}: {}", self.ty.name(), self.ty.message())
         }
     }
 }
@@ -330,46 +331,87 @@ impl std::fmt::Display for EvalErrorType {
 }
 
 impl EvalErrorType {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::UserError(_) => "UserError",
+            Self::UnresolvedVariable => "UnresolvedVariableError",
+            Self::FunctionNotFound(..) => "FunctionNotFoundError",
+            Self::FunctionError(..) => "FunctionError",
+            Self::UnknownFunctionType => "UnknownFunctionTypeError",
+            Self::NoReturnValue(_) => "NoReturnValueError",
+            Self::InvalidContext(_) => "InvalidContextError",
+            Self::InvalidReturn(_) => "InvalidReturnError",
+            Self::InvalidBreak(_) => "InvalidBreakError",
+            Self::InvalidContinue => "InvalidContinueError",
+            Self::NodeNotFound(_) => "NodeNotFoundError",
+            Self::NotANodeContext => "NotANodeContextError",
+            Self::PathNotFound(..) => "PathNotFoundError",
+            Self::AttributeNotFound => "AttributeNotFoundError",
+            Self::SeriesNotFound(_) => "SeriesNotFoundError",
+            Self::TimeSeriesNotFound(_) => "TimeSeriesNotFoundError",
+            Self::EmptyValue(_) => "EmptyValueError",
+            Self::KeyError(_) => "KeyError",
+            Self::IndexError => "IndexError",
+            Self::NoInputNodes => "NoInputNodesError",
+            Self::NoOutputNode => "NoOutputNodeError",
+            Self::NoEdgeNode => "NoEdgeNodeError",
+            Self::NoRootNode => "NoRootNodeError",
+            Self::AttributeError(_) => "AttributeError",
+            Self::NodeAttributeError(..) => "NodeAttributeError",
+            Self::InvalidOperation => "InvalidOperationError",
+            Self::InvalidVariableType => "InvalidVariableTypeError",
+            Self::InvalidAttributeType(..) => "InvalidAttributeTypeError",
+            Self::NotAnArray => "NotAnArrayError",
+            Self::NotANumber => "NotANumberError",
+            Self::NotABool => "NotABoolError",
+            Self::DifferentLength(..) => "DifferentLengthError",
+            Self::DivideByZero => "DivideByZeroError",
+            Self::MaxIteratorError(_) => "MaxIteratorError",
+            Self::RenderError(_) => "RenderError",
+            Self::RegexError(_) => "RegexError",
+            Self::ParseError(_) => "ParseError",
+            Self::LogicalError(_) => "LogicalError",
+            Self::NotImplementedError(_) => "NotImplementedError",
+            Self::MutexError(..) => "MutexError",
+        }
+    }
+
     /// Format the error into a message using the values
     pub fn message(&self) -> String {
         match self {
-            Self::UserError(s) => return format!("Error: {s}"),
-            Self::UnresolvedVariable => "Unresolved variable in expression",
+            Self::UserError(s) => return s.to_string(),
+            Self::UnresolvedVariable => "Could not resolve variable in expression",
             Self::FunctionNotFound(t, n) => {
                 return format!(
                     "{} function named {n:?} not found",
                     t.as_ref().map(|t| t.name()).unwrap_or("Any")
                 );
             }
-            Self::FunctionError(n, s) => return format!("Error in function {n}: {s}"),
+            Self::FunctionError(n, s) => return format!("function {n}: {s}"),
             Self::UnknownFunctionType => "Unknown function type",
             Self::NoReturnValue(n) => return format!("Function {n} did not return a value"),
-            Self::InvalidContext(s) => return format!("Invalid Context: {s}"),
+            Self::InvalidContext(s) => return s.to_string(),
             // if return is inside a function it is caught and the value is returned
             Self::InvalidReturn(_) => "Return statement outside of function",
             Self::InvalidBreak(_) => "Break statement outside of loop",
             Self::InvalidContinue => "Continue statement outside of loop",
-            Self::NodeNotFound(n) => return format!("Node: {n:?} not found"),
-            Self::NotANodeContext => "Not inside a node context, cannot use node attributes",
+            Self::NodeNotFound(n) => return format!("Node {n:?} not found"),
+            Self::NotANodeContext => "currently not inside a node context",
             Self::PathNotFound(s, e, t) => {
                 return format!("No path found between Nodes {s:?} and {t:?}, path ends at {e:?}");
             }
             Self::AttributeNotFound => "Attribute not found",
-            Self::SeriesNotFound(msg) => return format!("No Series: {msg}"),
-            Self::TimeSeriesNotFound(msg) => return format!("No TimeSeries: {msg}"),
+            Self::SeriesNotFound(msg) => return msg.to_string(),
+            Self::TimeSeriesNotFound(msg) => return msg.to_string(),
             Self::EmptyValue(Some(v)) => return format!("Value for {v:?} is not set"),
             Self::EmptyValue(None) => "the expression resulted in empty value",
             Self::KeyError(k) => return format!("Key {k:?} not found"),
-            Self::IndexError => "Index out of range for array",
-            // Self::AttributeNotFound(Some(n), var) => {
-            //     return format!("Node: {n:?} Attribute {var:?} not found")
-            // }
-            // Self::AttributeNotFound(None, var) => return format!("Attribute {var:?} not found"),
+            Self::IndexError => "Array index out of range",
             Self::NoInputNodes => "Node doesn't have an input node or has multiple",
             Self::NoOutputNode => "Node doesn't have an output node or has multiple",
             Self::NoEdgeNode => "Node doesn't have an edge node or has multiple",
-            Self::NoRootNode => "Network doesn't have a root node",
-            Self::AttributeError(s) => return format!("Attribute Error: {s}"),
+            Self::NoRootNode => "Network doesn't have a single root node",
+            Self::AttributeError(s) => return s.to_string(),
             Self::NodeAttributeError(n, s) => return format!("Node {n:?} Attribute Error: {s}"),
             Self::InvalidOperation => "Operation not Allowed",
             Self::InvalidVariableType => "Variable type invalid in this context",
@@ -382,21 +424,21 @@ impl EvalErrorType {
             Self::DifferentLength(a, b) => {
                 return format!("Different number of members in an array: {a} and {b}");
             }
-            Self::DivideByZero => "Division by Zero",
+            Self::DivideByZero => "Division by Zero not supported for integers, use float",
             Self::MaxIteratorError(n) => {
                 return format!("Loop did not exit after {n} iterations, could be infinite loop");
             }
-            Self::RenderError(e) => return format!("Rendering Failed: {e}"),
-            Self::RegexError(e) => return format!("Error in regex: {e}"),
-            Self::ParseError(e) => return format!("Error parsing: {e}"),
-            Self::LogicalError(s) => return format!("Logical Error: {s}, contact developer"),
+            Self::RenderError(e) => return e.to_string(),
+            Self::RegexError(e) => return e.to_string(),
+            Self::ParseError(e) => return e.to_string(),
+            Self::LogicalError(s) => {
+                return format!("{s}. Contact developer, this should be fixed.");
+            }
             Self::NotImplementedError(s) => {
-                return format!(
-                    "Not Implemented: {s}, this feature is planned for future versions"
-                );
+                return format!("{s}, this feature is planned for future versions");
             }
             Self::MutexError(f, l) => {
-                return format!("Mutex Error on file: {f}::{l}, contact developer");
+                return format!("file: {f}::{l}, multiple mutation attempted at the same time. If you think this should not happen, contact developer");
             }
         }
         .to_string()
