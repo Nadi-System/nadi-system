@@ -124,6 +124,20 @@ impl NadiKernel {
             .await?)
     }
 
+    async fn send_image(
+        &mut self,
+        image_path: &str,
+        parent: &JupyterMessage,
+    ) -> anyhow::Result<()> {
+        Ok(self
+            .iopub
+            .send(
+                DisplayData::from(MediaType::Svg(std::fs::read_to_string(image_path)?))
+                    .as_child_of(parent),
+            )
+            .await?)
+    }
+
     async fn send_markdown(
         &mut self,
         markdown: &str,
@@ -171,6 +185,20 @@ impl NadiKernel {
                 }
                 .as_child_of(parent),
             )
+            .await?)
+    }
+
+    async fn send_info(&mut self, text: &str, parent: &JupyterMessage) -> anyhow::Result<()> {
+        Ok(self
+            .iopub
+            .send(StreamContent::stdout(text).as_child_of(parent))
+            .await?)
+    }
+
+    async fn send_warning(&mut self, text: &str, parent: &JupyterMessage) -> anyhow::Result<()> {
+        Ok(self
+            .iopub
+            .send(StreamContent::stderr(text).as_child_of(parent))
             .await?)
     }
 
@@ -242,6 +270,15 @@ impl NadiKernel {
                     break;
                 }
                 _ => (),
+            }
+            let messages: Vec<_> = self.receiver.try_iter().collect();
+            for msg in messages {
+                match msg {
+                    TaskMessage::Image(img) => self.send_image(&img, request).await?,
+                    TaskMessage::Info(txt) => self.send_info(&txt, request).await?,
+                    TaskMessage::Warning(txt) => self.send_warning(&txt, request).await?,
+                    _ => (),
+                }
             }
         }
         Ok(())
