@@ -263,7 +263,7 @@ fn nadi_func_inner(
 }
 
 /// Invalid argument names = task system keywords
-const INVALID_ARG_NAME: [&str; 62] = [
+const INVALID_ARG_NAME: [&str; 63] = [
     "clear",  // TaskKeyword::Clear
     "import", // TaskKeyword::Import
     "exec",   // TaskKeyword::Exec
@@ -297,6 +297,7 @@ const INVALID_ARG_NAME: [&str; 62] = [
     "roots", // TaskKeyword::Roots
     "rootsmap",
     "rm",     // TaskKeyword::RootsMap
+    "leaf",   // TaskKeyword::Leaf
     "leaves", // TaskKeyword::Leaves
     "leavesmap",
     "lm",    // TaskKeyword::LeavesMap

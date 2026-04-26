@@ -174,6 +174,7 @@ impl RawExpr {
                 ExprType::Break(Some(Box::new(expr.resolve(ctx, ectx.clone())?)))
             }
             ExprType::Continue => ExprType::Continue,
+            #[cfg(feature = "parser")]
             ExprType::Import(i) => ExprType::Import(i),
             _ => {
                 return Err(EvalErrorType::NotImplementedError(
@@ -723,6 +724,7 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
                 .into(),
             )),
             Self::WithContext(e) => e.eval_mut(ctx, ectx, loc),
+            #[cfg(feature = "parser")]
             Self::Import(i) => i.eval_mut(ctx, ectx, loc),
             Self::UniOp(op, expr) => op
                 .eval(expr.eval_mut_value(ctx, ectx, loc)?)
@@ -914,6 +916,7 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
                 Err(EvalErrorType::InvalidBreak(ret).no_pos())
             }
             Self::Continue => Err(EvalErrorType::InvalidContinue.no_pos()),
+            #[cfg(feature = "parser")]
             ExprType::Import(i) => i.eval(ctx, ectx, loc),
             _ => Err(
                 EvalErrorType::NotImplementedError("this expression is not implemented").no_pos(),
@@ -1547,16 +1550,18 @@ pub enum VarType {
     Nodes(Box<Propagation>),
     /// Nodes variable (map of variable from each node and its name)
     NodesMap(Box<Propagation>),
+    /// variable for the Root node of the network
+    Root,
     /// Roots of the network
     Roots,
     /// Roots of the network in map format
     RootsMap,
     /// leaf nodes of the network
+    Leaf,
+    /// leaf nodes of the network
     Leaves,
     /// leaf nodes of the network in map format
     LeavesMap,
-    /// variable for the Root node of the network
-    Root,
 }
 
 impl VarType {
@@ -1585,6 +1590,7 @@ impl VarType {
             TaskKeyword::Root => Some(VarType::Root),
             TaskKeyword::Roots => Some(VarType::Roots),
             TaskKeyword::RootsMap => Some(VarType::RootsMap),
+            TaskKeyword::Leaf => Some(VarType::Leaf),
             TaskKeyword::Leaves => Some(VarType::Leaves),
             TaskKeyword::LeavesMap => Some(VarType::LeavesMap),
             _ => None,
@@ -1611,6 +1617,7 @@ impl VarType {
             | VarType::Root
             | VarType::Roots
             | VarType::RootsMap
+            | VarType::Leaf
             | VarType::Leaves
             | VarType::LeavesMap => &FunctionType::Node,
         }
@@ -1632,6 +1639,7 @@ impl VarType {
             | VarType::Nodes(_)
             | VarType::Root
             | VarType::Roots
+            | VarType::Leaf
             | VarType::Leaves => false,
             VarType::NodesMap(_)
             | VarType::OutputsMap
@@ -1663,11 +1671,15 @@ impl VarType {
                 nodes_func(ctx.propagation(*prop.clone()).map_err(|e| e.ty)?)
             }
             (VarType::Roots | VarType::RootsMap, _) => {
-                nodes_func(ctx.network.outlets().cloned().collect())
+                nodes_func(ctx.network.roots().cloned().collect())
             }
             (VarType::Leaves | VarType::LeavesMap, _) => {
                 nodes_func(ctx.network.leaves().cloned().collect())
             }
+            (VarType::Leaf, _) => match ctx.network.leaf() {
+                Some(r) => Ok(ExprContext::Node(r.clone())),
+                None => Err(EvalErrorType::NoRootNode),
+            },
             (VarType::Root, _) => match ctx.network.root() {
                 Some(r) => Ok(ExprContext::Node(r.clone())),
                 None => Err(EvalErrorType::NoRootNode),
@@ -1757,6 +1769,7 @@ impl std::fmt::Display for VarType {
             VarType::Root => "root",
             VarType::Roots => "outlets",
             VarType::RootsMap => "outletsmap",
+            VarType::Leaf => "leaf",
             VarType::Leaves => "leaves",
             VarType::LeavesMap => "leavesmap",
         };
@@ -2762,7 +2775,7 @@ impl std::fmt::Debug for ExprContext {
             Self::Env => write!(f, "env"),
             Self::Network => write!(f, "network"),
             Self::Node(_) => write!(f, "node"),
-            // Self::Node(n) => write!(f, "node {}", n.lock().name()),
+            // Self::Node(n) => write!(f, "node {}", n.try_lock().expect("mutex error").name()),
             Self::Nodes(_) => write!(f, "nodes"),
             Self::NodesMap(_) => write!(f, "nodesmap"),
         }

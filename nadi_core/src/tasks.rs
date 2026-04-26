@@ -305,7 +305,7 @@ impl TaskContext {
                     .iter()
                     .take(max_nodes_len)
                     .map(|n| {
-                        let n = n.lock();
+                        let n = n.try_lock().expect("mutex error");
                         format!(
                             "  {} = {}",
                             n.name(),
@@ -356,7 +356,9 @@ impl TaskContext {
                         None,
                         Some(n),
                     )?;
-                    n.lock().set_series(&sst.name, series);
+                    n.try_lock()
+                        .expect("mutex error")
+                        .set_series(&sst.name, series);
                     Ok(())
                 })?;
                 Ok(())
@@ -459,7 +461,7 @@ impl TaskContext {
                         Ok(false) => (),
                         Err(e) => {
                             return Err(EvalErrorType::NodeAttributeError(
-                                n.lock().name().to_string(),
+                                n.try_lock().expect("mutex error").name().to_string(),
                                 e,
                             )
                             .pos(prop.start));
@@ -711,6 +713,7 @@ pub enum TaskKeyword {
     Root,
     Roots,
     RootsMap,
+    Leaf,
     Leaves,
     LeavesMap,
     If,
@@ -771,6 +774,7 @@ impl std::str::FromStr for TaskKeyword {
             "root" => TaskKeyword::Root,
             "roots" => TaskKeyword::Roots,
             "rootsmap" | "rm" => TaskKeyword::RootsMap,
+            "leaf" => TaskKeyword::Leaf,
             "leaves" => TaskKeyword::Leaves,
             "leavesmap" | "lm" => TaskKeyword::LeavesMap,
             "if" => TaskKeyword::If,
@@ -833,6 +837,7 @@ impl std::fmt::Display for TaskKeyword {
                 TaskKeyword::Root => "root",
                 TaskKeyword::Roots => "roots",
                 TaskKeyword::RootsMap => "rootsmap",
+                TaskKeyword::Leaf => "leaf",
                 TaskKeyword::Leaves => "leaves",
                 TaskKeyword::LeavesMap => "leavesmap",
                 TaskKeyword::If => "if",
@@ -893,6 +898,7 @@ impl TaskKeyword {
             TaskKeyword::Root => "root node of the network (if single outlet)",
             TaskKeyword::Roots => "root nodes of the network",
             TaskKeyword::RootsMap => "map of root nodes of the network",
+            TaskKeyword::Leaf => "single leaf node of the network",
             TaskKeyword::Leaves => "leaf nodes of the network",
             TaskKeyword::LeavesMap => "map of leaf nodes of the network",
             TaskKeyword::If => "if part of if-else block",

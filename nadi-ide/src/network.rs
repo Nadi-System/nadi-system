@@ -106,6 +106,11 @@ where
                 let y = (self.data.network.weight + 2) as f32 * conf.deltax + conf.offsetx * 2.0;
                 Size::new(x * self.data.scale, y * self.data.scale)
             }
+            NetworkViewType::Attribute => {
+                let x = (self.data.network.max_x + 2.0) * conf.deltay + conf.offsety * 3.0;
+                let y = (self.data.network.max_y + 2.0) * conf.deltax + conf.offsetx * 2.0;
+                Size::new(x * self.data.scale, y * self.data.scale)
+            }
         };
         layout::Node::new(size)
     }
@@ -193,6 +198,7 @@ where
                             }
                         })
                 }
+                NetworkViewType::Attribute => None,
             });
         if state.over_node != node {
             state.over_node = node;
@@ -261,13 +267,26 @@ where
                 .collect();
             // Draw network lines
             for (from, to, color, width) in &self.data.network.edges {
-                let line = Path::line(coords[*from].into(), coords[*to].into());
-                frame.stroke(
-                    &line,
-                    Stroke::default()
-                        .with_width(*width)
-                        .with_color(color.unwrap_or(style.line)),
-                );
+                if from == to {
+                    // just making a circle here instead of loop back it itself
+                    let mut cent = coords[*from];
+                    cent.0 += conf.deltay / 3.0;
+                    let cir = Path::circle(cent.into(), conf.deltay / 3.0);
+                    frame.stroke(
+                        &cir,
+                        Stroke::default()
+                            .with_width(*width)
+                            .with_color(color.unwrap_or(style.line)),
+                    );
+                } else {
+                    let line = Path::line(coords[*from].into(), coords[*to].into());
+                    frame.stroke(
+                        &line,
+                        Stroke::default()
+                            .with_width(*width)
+                            .with_color(color.unwrap_or(style.line)),
+                    );
+                }
             }
 
             for (node, pos) in self.data.network.nodes.iter().zip(coords) {

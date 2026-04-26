@@ -79,14 +79,34 @@ impl Eval for Template {
             ExprContext::Node(n) => map_res(self.render(&n.lock())),
             ExprContext::Nodes(nds) => nds
                 .iter()
-                .map(|n| map_res(self.render(&n.lock())))
+                .map(|n| {
+                    map_res(
+                        self.render(
+                            &n.try_lock()
+                                .into_option()
+                                .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?,
+                        ),
+                    )
+                })
                 .collect::<Result<Vec<ExprResult>, _>>()
                 .map(ExprResult::Arr),
             ExprContext::NodesMap(nds) => nds
                 .iter()
                 .map(|n| {
-                    let name = n.lock().name().to_string();
-                    map_res(self.render(&n.lock())).map(|v| (name, v))
+                    let name = n
+                        .try_lock()
+                        .into_option()
+                        .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
+                        .name()
+                        .to_string();
+                    map_res(
+                        self.render(
+                            &n.try_lock()
+                                .into_option()
+                                .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?,
+                        ),
+                    )
+                    .map(|v| (name, v))
                 })
                 .collect::<Result<Vec<(String, ExprResult)>, _>>()
                 .map(ExprResult::Map),

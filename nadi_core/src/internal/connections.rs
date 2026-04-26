@@ -179,12 +179,12 @@ mod conn {
     /// env assert_eq(nodes.NAME, ["b", "a"])
     /// ```
     #[network_func]
-    fn subset_from(net: &mut Network, new_outlet: &str) -> Result<(), String> {
+    fn subset_from(net: &mut Network, new_root: &str) -> Result<(), String> {
         let node = net
-            .node_by_name(new_outlet)
-            .ok_or(format!("Node {new_outlet} not found in the network"))?
+            .node_by_name(new_root)
+            .ok_or(format!("Node {new_root} not found in the network"))?
             .clone();
-        net.new_outlet(node);
+        net.new_root(node);
         Ok(())
     }
 
@@ -227,11 +227,12 @@ mod conn {
                 }
                 outlet.unwrap_or(par)
             }
-            None if net.outlets.len() > 1 => net.outlets().next().unwrap().clone(),
-            // if one or 0 outlet nodes, then do nothing
-            None => return Ok(()),
+            None => match net.roots().next() {
+                Some(v) => v.clone(),
+                None => return Ok(()),
+            },
         };
-        net.new_outlet(node);
+        net.new_root(node);
         Ok(())
     }
 
@@ -241,9 +242,9 @@ mod conn {
         node.move_aside()
     }
 
-    /// Move the node down so that it swaps the place with the output
-    #[node_func]
-    fn move_down(node: &mut NodeInner) {
-        node.move_down()
-    }
+    // /// Move the node down so that it swaps the place with the output
+    // #[node_func]
+    // fn move_down(node: &mut NodeInner) {
+    //     node.move_down()
+    // }
 }

@@ -30,20 +30,26 @@ pub fn nadi_code_args(mark: &str) -> Option<(CodeHandler, String)> {
 
 static mut NADI_CTX: LazyLock<Mutex<TaskContextWrap>> =
     LazyLock::new(|| Mutex::new(TaskContextWrap::new(None)));
+static mut NADI_LOC: LazyLock<Mutex<AttrMap>> = LazyLock::new(|| Mutex::new(AttrMap::new()));
 
 fn clear_context() {
     #[allow(static_mut_refs)]
     let ctx: &mut TaskContextWrap =
         unsafe { &mut NADI_CTX.lock().expect("Couldn't lock the task context") };
     ctx.context.clear();
+    #[allow(static_mut_refs)]
+    let loc: &mut AttrMap = unsafe { &mut NADI_LOC.lock().expect("Couldn't lock the task locals") };
+    loc.clear();
 }
 
-fn execute_task(task: Task, loc: &mut AttrMap) -> Result<Option<String>, String> {
+fn execute_task(task: Task) -> Result<Option<String>, String> {
     // This saves us from loading the plugins over and over again for
     // each code block, significantly improving the runtime speed
     #[allow(static_mut_refs)]
     let ctx: &mut TaskContextWrap =
         unsafe { &mut NADI_CTX.lock().expect("Couldn't lock the task context") };
+    #[allow(static_mut_refs)]
+    let loc: &mut AttrMap = unsafe { &mut NADI_LOC.lock().expect("Couldn't lock the task locals") };
     ctx.execute(task, loc).map_err(|e| e.to_string())
 }
 
@@ -74,10 +80,9 @@ pub fn run_task(task: &str, args: &str, pwd: &Path) -> anyhow::Result<Vec<Event<
 
     let mut response = String::new();
     std::env::set_current_dir(pwd)?;
-    let mut locals = AttrMap::new();
     for task in tasks {
         let mut buf = gag::BufferRedirect::stdout().unwrap();
-        let res = execute_task(task, &mut locals);
+        let res = execute_task(task);
         let r = buf.read_to_string(&mut response).unwrap();
         if r > 0 {
             response.push('\n');

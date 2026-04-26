@@ -62,11 +62,11 @@ mod core {
     ///
     /// ```task
     /// network load_str("a -> b")
-    /// network assert_eq(net_outlets(), ["b"])
+    /// network assert_eq(net_roots(), ["b"])
     /// ```
     #[network_func]
-    fn net_outlets(net: &Network) -> Vec<String> {
-        net.outlets().map(|o| o.lock().name().to_string()).collect()
+    fn net_roots(net: &Network) -> Vec<String> {
+        net.roots().map(|o| o.lock().name().to_string()).collect()
     }
 
     /// Get the name of the leaf nodes

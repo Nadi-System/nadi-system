@@ -7,7 +7,7 @@ use abi_stable::{
     std_types::{
         RArc,
         ROption::{self, RNone, RSome},
-        RString, RVec,
+        RString, RVec, Tuple2,
     },
     StableAbi,
 };
@@ -50,6 +50,10 @@ pub struct NodeInner {
     pub(crate) index: usize,
     /// name of the node
     pub(crate) name: RString,
+    /// x position of the node for graphical reasons
+    pub x_pos: f64,
+    /// y position of the node for graphical reasons
+    pub y_pos: f64,
     /// level represents the rank of the tributary, 0 for main branch
     /// and 1 for tributaries connected to main branch and so on
     pub(crate) level: u64,
@@ -66,7 +70,7 @@ pub struct NodeInner {
     /// List of immediate inputs
     pub(crate) inputs: RVec<Node>,
     /// Output of the node if present
-    pub(crate) output: ROption<Node>,
+    pub(crate) outputs: RVec<Node>,
 }
 
 impl HasAttributes for NodeInner {
@@ -131,6 +135,21 @@ impl NodeInner {
         self.set_attr("INDEX", Attribute::Integer(index as i64));
     }
 
+    /// pos of the node
+    pub fn pos(&self) -> (f64, f64) {
+        (self.x_pos, self.y_pos)
+    }
+
+    /// set pos of the node
+    pub fn set_pos(&mut self, pos: (f64, f64)) {
+        self.x_pos = pos.0;
+        self.y_pos = pos.1;
+        self.set_attr(
+            "POSITION",
+            Attribute::Array(vec![Attribute::Float(pos.0), Attribute::Float(pos.1)].into()),
+        );
+    }
+
     /// level of the node
     pub fn level(&self) -> u64 {
         self.level
@@ -188,19 +207,14 @@ impl NodeInner {
         self.inputs.is_empty()
     }
 
-    /// check if the node is an outlet node
-    pub fn is_outlet(&self) -> bool {
-        self.output.is_none()
-    }
-
     /// add a input node to the node
     pub fn add_input(&mut self, input: Node) {
         self.inputs.push(input);
     }
 
     /// remove the input nodes of the node
-    pub fn unset_inputs(&mut self) {
-        self.inputs = RVec::new();
+    pub fn unset_inputs(&mut self) -> Vec<Node> {
+        self.inputs.drain(..).collect()
     }
 
     pub fn remove_input(&mut self, input: &str) {
@@ -224,21 +238,62 @@ impl NodeInner {
         });
     }
 
-    /// single input node of the node, None if no inputs or multiple inputs
+    /// single output node of the node, None if no outputs or multiple outputs
     pub fn output(&self) -> ROption<&Node> {
-        self.output.as_ref()
+        if let [out] = self.outputs.as_slice() {
+            RSome(out)
+        } else {
+            RNone
+        }
     }
 
-    // TODO: when DAG implementation is here, modify this and other output related functions
-    /// Outputs of the node (empty or one node for now)
+    /// output nodes of the node
     pub fn outputs(&self) -> &[Node] {
-        self.output
-            .as_ref()
-            .map(core::slice::from_ref)
-            .unwrap_or_default()
+        &self.outputs
     }
 
-    /// single edge node of the node, None if no inputs or multiple edges
+    /// output nodes as a mutable reference
+    pub(crate) fn outputs_mut(&mut self) -> &mut RVec<Node> {
+        &mut self.outputs
+    }
+
+    /// check if the node is a root node
+    pub fn is_root(&self) -> bool {
+        self.outputs.is_empty()
+    }
+
+    /// add a output node to the node
+    pub fn add_output(&mut self, output: Node) {
+        self.outputs.push(output);
+    }
+
+    /// remove the output nodes of the node
+    pub fn unset_outputs(&mut self) -> Vec<Node> {
+        self.outputs.drain(..).collect()
+    }
+
+    pub fn remove_output(&mut self, output: &str) {
+        self.outputs = self
+            .outputs
+            .drain(..)
+            // should make sure no output nodes are locked at this time
+            .filter(|n| n.try_lock().expect("mutex error").name() != output)
+            .collect::<Vec<_>>()
+            .into();
+    }
+
+    /// order the output nodes in the network
+    pub fn order_outputs(&mut self) {
+        self.outputs.sort_by(|a, b| {
+            b.try_lock()
+                .expect("mutex problem")
+                .order
+                .partial_cmp(&a.try_lock().expect("mutex problem").order)
+                .unwrap()
+        });
+    }
+
+    /// single edge node of the node, None if no edges or multiple edges
     pub fn edge(&self) -> Option<Node> {
         match self.edges().as_slice() {
             [n] => Some(n.clone()),
@@ -248,52 +303,56 @@ impl NodeInner {
 
     /// Edges of the node
     pub fn edges(&self) -> Vec<Node> {
-        self.outputs()
+        self.inputs()
             .iter()
-            .chain(self.inputs())
+            .chain(self.outputs())
             .map(|n| n.clone())
             .collect()
     }
 
-    /// set the output of the node
-    pub fn set_output(&mut self, output: Node) -> ROption<Node> {
-        self.output.replace(output)
-    }
-
-    /// unset the output of the node
-    pub fn unset_output(&mut self) -> ROption<Node> {
-        self.output.take()
-    }
-
     /// Move the node to the side (move the inputs to its output)
     pub fn move_aside(&mut self) {
-        if let RSome(o) = self.output() {
-            self.inputs().iter().for_each(|i| {
-                o.lock().add_input(i.clone());
-                i.lock().set_output(o.clone());
-            });
-        } else {
-            self.inputs().iter().for_each(|i| {
-                i.lock().unset_output();
-            });
+        match self.outputs.as_slice() {
+            [] => self.inputs().iter().for_each(|i| {
+                i.try_lock().expect("mutex error").unset_outputs();
+            }),
+            [o] => self.inputs().iter().for_each(|i| {
+                o.try_lock().expect("mutex error").add_input(i.clone());
+                i.try_lock().expect("mutex error").unset_outputs();
+                i.try_lock().expect("mutex error").add_output(o.clone());
+            }),
+            // if multiple outputs how do we move inputs and outputs?
+            // => Need to add the outputs to each inputs, and also remove
+            // current node as their output. then remove the inputs
+            // from the current node.
+            outs => todo!(),
         }
         self.unset_inputs();
     }
 
-    /// Move the network down one step, (swap places with its output)
-    pub fn move_down(&mut self) {
-        if let RSome(out) = self.unset_output() {
-            let i = out
-                .lock()
-                .inputs()
-                .iter()
-                // HACK current node will fail to lock
-                .position(|c| c.try_lock().is_none())
-                .unwrap();
-            let o = out.lock().inputs.remove(i);
-            self.output = out.lock().output.clone();
-            out.lock().set_output(o);
-            self.add_input(out.clone());
-        }
-    }
+    // FIX: this might have to be removed, or added with EvalError for
+    // when there are multiple output to the node
+    // /// Move the network down one step, (swap places with its output)
+    // pub fn move_down(&mut self) {
+    //     let outs = self.unset_outputs();
+    //     match outs.as_slice() {
+    //         // no outputs means no moving down
+    //         [] => (),
+    //         [o] => {
+    //             let i = o
+    //                 .try_lock().expect("mutex error")
+    //                 .inputs()
+    //                 .iter()
+    //                 // HACK current node will fail to lock
+    //                 .position(|c| c.try_lock().is_none())
+    //                 .unwrap();
+    //             let new_out = o.try_lock().expect("mutex error").inputs.remove(i);
+    //             self.output = o.try_lock().expect("mutex error").output().clone();
+    //             o.try_lock().expect("mutex error").set_output(new_out);
+    //             self.add_input(o.clone());
+    //         }
+    //         // if multiple outputs how do we move it down?
+    //         outs => todo!(),
+    //     }
+    // }
 }

@@ -8,6 +8,7 @@ use nadi_core::template::Template;
 
 pub struct NodeData {
     pub index: usize,
+    pub level: u64,
     pub weight: u64,
     pub order: u64,
     pub name: String,
@@ -34,14 +35,16 @@ impl NodeData {
             .as_ref()
             .map(|t| t.render(node).unwrap_or(t.original().to_string()))
             .unwrap_or_else(|| node.name().to_string());
+        let pos = node.pos();
         Self {
             index: node.index(),
+            level: node.level(),
             order: node.order(),
             weight: node.weight(),
             name: node.name().to_string(),
             size,
             shape,
-            pos: (node.level() as f32, node.index() as f32),
+            pos: (pos.0 as f32, pos.1 as f32),
             color,
             textcolor,
             label,
@@ -131,6 +134,8 @@ pub struct NetworkData {
     pub maxlevel: u64,
     pub weight: u64,
     pub maxorder: u64,
+    pub max_x: f32,
+    pub max_y: f32,
     pub ty: NetworkViewType,
 }
 
@@ -157,6 +162,7 @@ impl Default for NetworkDataView {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum NetworkViewType {
     #[default]
+    Attribute,
     Flat,
     Tree,
 }
@@ -166,13 +172,14 @@ impl std::fmt::Display for NetworkViewType {
         match self {
             Self::Flat => write!(f, "Flat"),
             Self::Tree => write!(f, "Tree"),
+            Self::Attribute => write!(f, "Attribute"),
         }
     }
 }
 
 impl NetworkViewType {
     pub fn all() -> &'static [Self] {
-        &[Self::Flat, Self::Tree]
+        &[Self::Attribute, Self::Flat, Self::Tree]
     }
 }
 
@@ -198,7 +205,7 @@ impl Default for TreeConfig {
 
 fn position_nodes(nds: Vec<Node>, x: f32, mut y: f32, pos: &mut Vec<NodeData>) {
     for n in nds {
-        let n = n.lock();
+        let n = n.try_lock().expect("mutex error");
         let ind = n.index();
         let nd = &mut pos[ind];
         let wt = n.weight();
@@ -212,33 +219,79 @@ impl NetworkData {
     pub fn new(net: &Network, ty: &NetworkViewType) -> Self {
         // TODO read network.visual.nodelabel here
         let label: Option<Template> = None;
-        let mut nodes = net
+        let mut nodes: Vec<NodeData> = net
             .nodes()
-            .map(|n| NodeData::new(&n.lock(), &label))
+            .map(|n| NodeData::new(&n.try_lock().expect("mutex error"), &label))
             .collect();
 
+        let max_x = nodes
+            .iter()
+            .map(|n| n.pos.0)
+            .max_by(|a, b| a.total_cmp(b))
+            .unwrap_or_default();
+        let max_y = nodes
+            .iter()
+            .map(|n| n.pos.1)
+            .max_by(|a, b| a.total_cmp(b))
+            .unwrap_or_default();
         let mut hide_labels = false;
-        if let NetworkViewType::Tree = ty {
-            position_nodes(net.outlets().cloned().collect(), 0.0, 0.0, &mut nodes);
-            hide_labels = true;
+        match ty {
+            NetworkViewType::Flat => {
+                for n in &mut nodes {
+                    n.pos = (n.level as f32, n.index as f32);
+                }
+            }
+            NetworkViewType::Attribute => {
+                hide_labels = true;
+            }
+            NetworkViewType::Tree => {
+                position_nodes(net.roots().cloned().collect(), 0.0, 0.0, &mut nodes);
+                hide_labels = true;
+            }
         }
-        let maxlevel = net.nodes().map(|n| n.lock().level()).max().unwrap_or(0);
-        let weight = net.outlets().map(|n| n.lock().weight()).sum();
-        let maxorder = net.nodes().next().map(|n| n.lock().order()).unwrap_or(0);
+        let maxlevel = net
+            .nodes()
+            .map(|n| n.try_lock().expect("mutex error").level())
+            .max()
+            .unwrap_or(0);
+        let weight = net
+            .roots()
+            .map(|n| n.try_lock().expect("mutex error").weight())
+            .sum();
+        let maxorder = net
+            .nodes()
+            .next()
+            .map(|n| n.try_lock().expect("mutex error").order())
+            .unwrap_or(0);
         let edges = net
             .nodes()
-            .filter_map(|n| {
-                let n = n.lock();
-                n.output()
+            .flat_map(|n| {
+                let (ind, lc, lw) = {
+                    let n = n.try_lock().expect("mutex error");
+                    (
+                        n.index(),
+                        n.maybe_line_color().map(iced_color),
+                        n.line_width() as f32,
+                    )
+                };
+                // lock should be free because of self loop
+                let outs: Vec<Node> = n
+                    .try_lock()
+                    .expect("mutex error")
+                    .outputs()
+                    .iter()
+                    .cloned()
+                    .collect();
+                outs.iter()
                     .map(|o| {
                         (
-                            n.index(),
-                            o.lock().index(),
-                            n.maybe_line_color().map(iced_color),
-                            n.line_width() as f32,
+                            ind,
+                            o.try_lock().expect("mutex error").index(),
+                            lc.clone(),
+                            lw,
                         )
                     })
-                    .into()
+                    .collect::<Vec<_>>()
             })
             .collect();
 
@@ -249,6 +302,8 @@ impl NetworkData {
             maxlevel,
             weight,
             maxorder,
+            max_x,
+            max_y,
             hide_labels,
             ty: ty.clone(),
         }
@@ -256,28 +311,58 @@ impl NetworkData {
 
     pub fn update(&mut self, net: &Network, ty: &NetworkViewType) {
         let label: Option<Template> = None;
-        let mut nodes = net
+        let mut nodes: Vec<NodeData> = net
             .nodes()
-            .map(|n| NodeData::new(&n.lock(), &label))
+            .map(|n| NodeData::new(&n.try_lock().expect("mutex error"), &label))
             .collect();
-        let maxlevel = net.nodes().map(|n| n.lock().level()).max().unwrap_or(0);
-        let weight = net.outlets().map(|n| n.lock().weight()).sum();
-        let maxorder = net.nodes().next().map(|n| n.lock().order()).unwrap_or(0);
-        if let NetworkViewType::Tree = ty {
-            position_nodes(net.outlets().cloned().collect(), 0.0, 0.0, &mut nodes);
-            self.hide_labels = true;
-        } else {
-            self.hide_labels = false;
+        let maxlevel = net
+            .nodes()
+            .map(|n| n.try_lock().expect("mutex error").level())
+            .max()
+            .unwrap_or(0);
+        let weight = net
+            .roots()
+            .map(|n| n.try_lock().expect("mutex error").weight())
+            .sum();
+        let maxorder = net
+            .nodes()
+            .next()
+            .map(|n| n.try_lock().expect("mutex error").order())
+            .unwrap_or(0);
+        match ty {
+            NetworkViewType::Flat => {
+                for n in &mut nodes {
+                    n.pos = (n.level as f32, n.index as f32);
+                }
+                self.hide_labels = false;
+            }
+            NetworkViewType::Attribute => {
+                self.hide_labels = true;
+                self.max_x = nodes
+                    .iter()
+                    .map(|n| n.pos.0)
+                    .max_by(|a, b| a.total_cmp(b))
+                    .unwrap_or_default();
+                self.max_y = nodes
+                    .iter()
+                    .map(|n| n.pos.1)
+                    .max_by(|a, b| a.total_cmp(b))
+                    .unwrap_or_default();
+            }
+            NetworkViewType::Tree => {
+                position_nodes(net.roots().cloned().collect(), 0.0, 0.0, &mut nodes);
+                self.hide_labels = true;
+            }
         }
         let edges = net
             .nodes()
             .filter_map(|n| {
-                let n = n.lock();
+                let n = n.try_lock().expect("mutex error");
                 n.output()
                     .map(|o| {
                         (
                             n.index(),
-                            o.lock().index(),
+                            o.try_lock().expect("mutex error").index(),
                             n.maybe_line_color().map(iced_color),
                             n.line_width() as f32,
                         )

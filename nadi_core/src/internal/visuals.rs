@@ -9,7 +9,7 @@ mod visuals {
     use nadi_core::attrs::Date;
     use nadi_core::functions::FunctionRet;
     use nadi_core::nadi_plugin::FromAttribute;
-    use nadi_core::nadi_plugin::{env_func, network_func};
+    use nadi_core::nadi_plugin::{env_func, network_func, node_func};
     use nadi_core::prelude::*;
     use nadi_core::timeseries::{HasTimeSeries, Series, TimeLine};
     use std::path::Path;
@@ -40,6 +40,26 @@ mod visuals {
                 fontsize: 8.0,
             }
         }
+    }
+
+    #[node_func]
+    fn set_xy(node: &mut NodeInner, #[relaxed] x: f64, #[relaxed] y: f64) {
+        node.set_pos((x, y));
+    }
+
+    #[node_func]
+    fn get_xy(node: &mut NodeInner) -> (f64, f64) {
+        node.pos()
+    }
+
+    #[network_func]
+    fn flatten(net: &mut Network) {
+        net.flatten()
+    }
+
+    #[env_func]
+    fn image(path: RString) -> FunctionRet {
+        FunctionRet::Image(path)
     }
 
     /// Generate the margins for the SVGs
