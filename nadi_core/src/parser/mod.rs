@@ -11,6 +11,7 @@ pub mod attrs;
 pub mod components;
 pub mod errors;
 pub mod expressions;
+pub mod graphviz;
 pub mod highlight;
 pub mod network;
 pub mod string;

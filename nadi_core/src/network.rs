@@ -988,7 +988,7 @@ impl Network {
 
 /// Path with start and end node
 #[repr(C)]
-#[derive(StableAbi, Debug, Default, Clone, PartialEq)]
+#[derive(StableAbi, Debug, Hash, Default, Clone, Eq, PartialEq)]
 pub struct StrPath {
     pub start: RString,
     pub end: RString,

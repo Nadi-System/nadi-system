@@ -618,7 +618,7 @@ pub fn kw_arg<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, (String, RawExpr
 }
 
 pub fn kw_args<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<(String, RawExpr)>> {
-    separated_list1(comma, maybe_newline(kw_arg))(inp)
+    separated_list1(maybe_space(comma), maybe_newline(kw_arg))(inp)
 }
 
 pub fn pos_args<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<RawExpr>> {

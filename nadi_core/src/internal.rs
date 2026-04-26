@@ -7,6 +7,7 @@ mod connections;
 mod core;
 mod debug;
 mod files;
+mod graphviz;
 mod logic;
 mod math;
 mod optimum;
@@ -33,6 +34,7 @@ pub(crate) fn register_internal(funcs: &mut NadiFunctions) {
     core::CoreMod {}.register(funcs);
     debug::DebugMod {}.register(funcs);
     files::FilesMod {}.register(funcs);
+    graphviz::GvizMod {}.register(funcs);
     logic::LogicMod {}.register(funcs);
     math::MathMod {}.register(funcs);
     optimum::OptimumMod {}.register(funcs);

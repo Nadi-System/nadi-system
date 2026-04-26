@@ -10,7 +10,9 @@ pub fn node_name<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, String> {
     err_ctx(
         &ParseErrorType::ValueError("Invalid node name"),
         alt((
-            map(alt((variable, integer, float, boolean)), |v| {
+            // keywords are valid because they are like variables, but
+            // can only be used as string in tasks
+            map(alt((variable, integer, float, boolean, keyword)), |v| {
                 v.content.to_string()
             }),
             string_val,
