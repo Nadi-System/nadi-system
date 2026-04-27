@@ -56,6 +56,7 @@ mod tests {
     use abi_stable::std_types::Tuple2;
     use pulldown_cmark::{CodeBlockKind, CowStr, Event, Options, Parser, Tag, TagEnd};
     use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
 
     fn test_plugin_function(txt: &str, ctx: &mut TaskContext) -> Result<(), String> {
         let tokens = nadi_core::parser::tokenizer::get_tokens(txt);
@@ -104,6 +105,7 @@ mod tests {
             hook: Vec::new(),
             udf: HashMap::new(),
             structs: HashMap::new(),
+            changed: Arc::new(Mutex::new(false)),
             channel: sender,
         };
         let mut tests = 0;

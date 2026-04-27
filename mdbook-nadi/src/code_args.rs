@@ -189,11 +189,10 @@ pub fn run_table(table: &str, args: &str, pwd: &Path) -> anyhow::Result<Vec<Even
     clear_context();
 
     let mut response = String::new();
-    let mut locals = AttrMap::new();
     for task in tasks {
         // since we can't have anything else print on mdbook
         let mut buf = gag::BufferRedirect::stdout().unwrap();
-        let res = execute_task(task, &mut locals);
+        let res = execute_task(task);
         response.clear();
         buf.read_to_string(&mut response).unwrap();
         response.push('\n');

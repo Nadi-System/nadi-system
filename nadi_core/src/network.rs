@@ -873,8 +873,8 @@ impl Network {
             .into_iter()
             .map(|(n, o)| (n.into(), o))
             .collect();
-        // self.reorder();
-        // self.set_levels();
+        self.reorder();
+        self.set_levels();
         Ok(())
     }
 

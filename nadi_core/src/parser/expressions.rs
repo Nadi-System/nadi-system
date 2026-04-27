@@ -775,7 +775,7 @@ mod tests {
     use crate::tasks::{TaskContext, TaskContextEnv};
     use rstest::{fixture, rstest};
     use std::collections::HashMap;
-    use std::sync::OnceLock;
+    use std::sync::{Arc, Mutex, OnceLock};
 
     static mut NADI_FUNCS: OnceLock<NadiFunctions> = OnceLock::new();
 
@@ -796,6 +796,7 @@ mod tests {
             structs: HashMap::new(),
             env: TaskContextEnv::new(),
             hook: Vec::new(),
+            changed: Arc::new(Mutex::new(false)),
             channel: sender,
         };
         ctx.env.set_attr("xyz", 12.into());

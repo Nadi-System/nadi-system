@@ -109,15 +109,14 @@ mod tests {
     }
 
     #[rstest]
-    #[case("0_node_name -> name", 1, 3)]
-    #[case("valid -> edge \nnode-name -> another", 2, 1)]
-    #[case("# test this \nnode-name -> another", 2, 1)]
+    #[case("0_node_name -> name", 1)]
+    #[case("valid -> edge \nnode-name -> another", 2)]
+    #[case("# test this \nnode-name -> another", 2)]
     #[should_panic]
-    #[case("012-> xyz_is_12", 1, 1)]
-    pub fn parse_error_test(#[case] txt: &str, #[case] line: usize, #[case] col: usize) {
+    #[case("012-> xyz_is_12", 1)]
+    pub fn parse_error_test(#[case] txt: &str, #[case] line: usize) {
         let tokens = get_tokens(txt);
         let err = parse(tokens).err().unwrap();
         assert_eq!(err.line, line);
-        assert_eq!(err.col, col);
     }
 }

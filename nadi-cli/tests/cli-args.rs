@@ -39,6 +39,9 @@ fn run_task_files() -> Result<(), Error> {
     let tasks = std::fs::read_dir(par.join("tasks")).unwrap();
     for task in tasks {
         let task = task.unwrap().path();
+        if task.extension() != Some(&std::ffi::OsString::from("tasks")) {
+            continue;
+        }
         print!("Testing: {task:?}");
         let path = task.to_string_lossy();
         let out = task.with_extension("stdout");
