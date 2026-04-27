@@ -8,7 +8,8 @@ use crate::structs::NadiStruct;
 use crate::timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap};
 use crate::udf::UserFunction;
 use std::collections::HashMap;
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::{Arc, Mutex};
 
 // /// Result of a Task when executed => move to expression result => move to function return
 // pub enum TaskResult {
@@ -202,6 +203,8 @@ pub struct TaskContext {
     pub env: TaskContextEnv,
     /// tasks to run after every assign execution
     pub hook: Vec<Task>,
+    /// the context has changed since the last time
+    pub changed: Arc<Mutex<bool>>,
     /// channel for sending messages
     pub channel: Sender<TaskMessage>,
     // TODO Channel to tell taskcontext to abort/cancel the current run. When it takes a long time, like while loop/ node functions can end in the middle.
@@ -216,6 +219,7 @@ impl TaskContext {
             udf: HashMap::new(),
             env: TaskContextEnv::new(),
             hook: Vec::new(),
+            changed: Arc::new(Mutex::new(false)),
             channel,
         }
     }
@@ -226,6 +230,7 @@ impl TaskContext {
         self.structs = HashMap::new();
         self.udf = HashMap::new();
         self.hook = Vec::new();
+        self.changed = Arc::new(Mutex::new(false));
     }
 
     pub fn udf(&self, name: &str) -> Option<&UserFunction> {
@@ -236,6 +241,18 @@ impl TaskContext {
         for t in self.hook.clone() {
             _ = self.execute_single(t, loc);
         }
+    }
+
+    pub fn reset_change(&self) {
+        let changed: bool = *self.changed.lock().expect("mutex error on reset change");
+        if changed {
+            _ = self.channel.send(TaskMessage::Changed);
+            *self.changed.lock().expect("mutex error on reset change") = false;
+        }
+    }
+
+    pub fn mark_change(&self) {
+        *self.changed.lock().expect("mutex error on mark change") = true;
     }
 
     /// execute a task in the task context, possible with hook
@@ -269,8 +286,12 @@ impl TaskContext {
             }
             Task::Expr(expr) => {
                 let ectx = EvalCtx::default();
-                expr.eval_mut(self, &ectx, loc)
-                    .map(|a| self.show_res(&a, 0))
+                self.reset_change();
+                let res = expr
+                    .eval_mut(self, &ectx, loc)
+                    .map(|a| self.show_res(&a, 0));
+                self.reset_change();
+                res
             }
             Task::Hook(tasks) => {
                 self.hook = tasks;

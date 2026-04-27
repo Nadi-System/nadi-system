@@ -2299,7 +2299,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                 Ok(ExprResult::Map(res))
             }
         };
-        _ = ctx.channel.send(TaskMessage::Changed);
+        // _ = ctx.channel.send(TaskMessage::Changed);
         res
     }
 }
@@ -2898,7 +2898,7 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
             ExprContext::Local => {
                 let val = self.expr.eval_value(ctx, &EvalCtx::local(), loc)?;
                 self.var.set_attr_nested(loc, val)?;
-                _ = ctx.channel.send(TaskMessage::Changed);
+                ctx.mark_change();
                 Ok(ExprResult::None)
             }
             ExprContext::Env | ExprContext::Network => {
@@ -2916,7 +2916,7 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
                         .attr_map_mut(),
                     val,
                 )?;
-                _ = ctx.channel.send(TaskMessage::Changed);
+                ctx.mark_change();
                 Ok(ExprResult::None)
             }
             ExprContext::Nodes(nds) => {
@@ -2932,7 +2932,7 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
                         val,
                     )?;
                 }
-                _ = ctx.channel.send(TaskMessage::Changed);
+                ctx.mark_change();
 
                 Ok(ExprResult::None)
             }
@@ -2950,19 +2950,19 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
             ExprContext::Local => {
                 let val = self.expr.eval_value(ctx, &EvalCtx::local(), loc)?;
                 self.var.set_attr_nested(loc, val)?;
-                _ = ctx.channel.send(TaskMessage::Changed);
+                ctx.mark_change();
                 Ok(ExprResult::None)
             }
             ExprContext::Env => {
                 let val = self.expr.eval_value(ctx, &EvalCtx::env(), loc)?;
                 self.var.set_attr_nested(ctx.env.attr_map_mut(), val)?;
-                _ = ctx.channel.send(TaskMessage::Changed);
+                ctx.mark_change();
                 Ok(ExprResult::None)
             }
             ExprContext::Network => {
                 let val = self.expr.eval_value(ctx, &EvalCtx::network(), loc)?;
                 self.var.set_attr_nested(ctx.network.attr_map_mut(), val)?;
-                _ = ctx.channel.send(TaskMessage::Changed);
+                ctx.mark_change();
                 Ok(ExprResult::None)
             }
             ExprContext::Node(n) => {
@@ -2976,7 +2976,7 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
                         .attr_map_mut(),
                     val,
                 )?;
-                _ = ctx.channel.send(TaskMessage::Changed);
+                ctx.mark_change();
                 Ok(ExprResult::None)
             }
             ExprContext::Nodes(nds) => {
@@ -2992,7 +2992,7 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
                         val,
                     )?;
                 }
-                _ = ctx.channel.send(TaskMessage::Changed);
+                ctx.mark_change();
 
                 Ok(ExprResult::None)
             }
