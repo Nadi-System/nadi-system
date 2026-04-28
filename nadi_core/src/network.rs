@@ -856,6 +856,9 @@ impl Network {
                             op.add_input(node.clone());
                             node.try_lock()
                                 .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                                .unset_outputs();
+                            node.try_lock()
+                                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
                                 .add_output(o.clone());
                             break;
                         } else {

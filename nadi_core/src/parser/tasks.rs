@@ -160,7 +160,7 @@ pub fn help_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
             kw_help,
             opt(after_space(keyword_val)),
             opt(after_space(alt((
-                map(variable, |v| v.content.to_string()),
+                map(dot_variable, |v| v.join(".")),
                 string_val,
             )))),
         )),

@@ -2785,9 +2785,21 @@ impl std::fmt::Debug for ExprContext {
 #[derive(Clone)]
 pub struct SetVariable<T> {
     var: InputVar,
+    ty: Option<NadiAttrType>,
     expr: Box<T>,
     silent: bool,
     ctx: Option<ExprContext>,
+}
+
+impl<T> SetVariable<T> {
+    fn assert_type(&self, val: &Attribute) -> Result<(), EvalError> {
+        if let Some(t) = &self.ty {
+            if t != &val.dtype() {
+                return Err(EvalErrorType::InvalidAttributeType(t.clone(), val.dtype()).no_pos());
+            }
+        }
+        Ok(())
+    }
 }
 
 impl<T: std::fmt::Debug> std::fmt::Debug for SetVariable<T> {
@@ -2835,6 +2847,7 @@ fn resolve_set_variable<'b>(
                     Ok(ResolvedExpr {
                         expr: ExprType::SetVar(SetVariable::new(
                             vt,
+                            expr.ty.clone(),
                             expr.expr.clone().resolve(ctx, context.clone())?,
                             expr.silent,
                         )),
@@ -2856,6 +2869,7 @@ fn resolve_set_variable<'b>(
     Ok(ResolvedExpr {
         expr: ExprType::SetVar(SetVariable::new(
             expr.var,
+            expr.ty.clone(),
             expr.expr.clone().resolve(ctx, etc.clone())?,
             expr.silent,
         )),
@@ -2865,9 +2879,10 @@ fn resolve_set_variable<'b>(
 }
 
 impl<T: Clone> SetVariable<T> {
-    pub fn new(var: InputVar, expr: T, silent: bool) -> Self {
+    pub fn new(var: InputVar, ty: Option<NadiAttrType>, expr: T, silent: bool) -> Self {
         Self {
             var,
+            ty,
             expr: Box::new(expr),
             silent,
             ctx: None,
@@ -2897,6 +2912,7 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
         match new_expr_ctx {
             ExprContext::Local => {
                 let val = self.expr.eval_value(ctx, &EvalCtx::local(), loc)?;
+                self.assert_type(&val)?;
                 self.var.set_attr_nested(loc, val)?;
                 ctx.mark_change();
                 Ok(ExprResult::None)
@@ -2909,6 +2925,7 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
                 let val = self
                     .expr
                     .eval_value(ctx, &EvalCtx::at_node(n.clone()), loc)?;
+                self.assert_type(&val)?;
                 self.var.set_attr_nested(
                     n.try_lock()
                         .into_option()
@@ -2924,6 +2941,7 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
                     let val = self
                         .expr
                         .eval_value(ctx, &EvalCtx::at_node(n.clone()), loc)?;
+                    self.assert_type(&val)?;
                     self.var.set_attr_nested(
                         n.try_lock()
                             .into_option()
@@ -2949,18 +2967,21 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
         match self.ctx.as_ref().unwrap_or(ectx.expr_ctx.as_ref()) {
             ExprContext::Local => {
                 let val = self.expr.eval_value(ctx, &EvalCtx::local(), loc)?;
+                self.assert_type(&val)?;
                 self.var.set_attr_nested(loc, val)?;
                 ctx.mark_change();
                 Ok(ExprResult::None)
             }
             ExprContext::Env => {
                 let val = self.expr.eval_value(ctx, &EvalCtx::env(), loc)?;
+                self.assert_type(&val)?;
                 self.var.set_attr_nested(ctx.env.attr_map_mut(), val)?;
                 ctx.mark_change();
                 Ok(ExprResult::None)
             }
             ExprContext::Network => {
                 let val = self.expr.eval_value(ctx, &EvalCtx::network(), loc)?;
+                self.assert_type(&val)?;
                 self.var.set_attr_nested(ctx.network.attr_map_mut(), val)?;
                 ctx.mark_change();
                 Ok(ExprResult::None)
@@ -2969,6 +2990,7 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
                 let val = self
                     .expr
                     .eval_value(ctx, &EvalCtx::at_node(n.clone()), loc)?;
+                self.assert_type(&val)?;
                 self.var.set_attr_nested(
                     n.try_lock()
                         .into_option()
@@ -2984,6 +3006,7 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
                     let val = self
                         .expr
                         .eval_value(ctx, &EvalCtx::at_node(n.clone()), loc)?;
+                    self.assert_type(&val)?;
                     self.var.set_attr_nested(
                         n.try_lock()
                             .into_option()

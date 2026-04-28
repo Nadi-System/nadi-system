@@ -6,7 +6,7 @@ use crate::network::{PropCondition, PropNodes, PropOrder};
 use crate::parser::{
     components::*,
     errors::{MatchErr, ParseErrorType},
-    tasks::propagation,
+    tasks::{attr_type, propagation},
     tokenizer::Token,
 };
 use crate::structs::NadiStructExpr;
@@ -132,13 +132,15 @@ pub fn expr_set_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprT
         tuple((
             opt(terminated(variable_type, dot)),
             task_dot_variable,
+            opt(maybe_space(preceded(colon, maybe_space(attr_type)))),
             maybe_space(assignment),
             maybe_space(raw_expr(complete_value_expression)),
             opt(semicolon),
         )),
-        |(vt, (var, indices), _, expr, silent)| {
+        |(vt, (var, indices), ty, _, expr, silent)| {
             ExprType::SetVar(SetVariable::new(
                 InputVar::new(vt.clone(), var.clone(), indices.clone(), inp.position()),
+                ty,
                 expr,
                 silent.is_some(),
             ))
