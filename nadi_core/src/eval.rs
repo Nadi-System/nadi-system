@@ -169,7 +169,7 @@ pub trait Eval: Clone {
 #[derive(Debug, PartialEq, Clone)]
 pub struct EvalError {
     /// Type of Eval Error
-    pub ty: EvalErrorType,
+    pub ty: Box<EvalErrorType>,
     /// Position of Eval Error
     pub position: Vec<(usize, usize)>,
     /// Name of the Node if caused in a node
@@ -227,7 +227,7 @@ impl From<EvalErrorType> for EvalError {
 impl EvalErrorType {
     pub fn at<T: Position>(self, obj: T) -> EvalError {
         EvalError {
-            ty: self,
+            ty: Box::new(self),
             position: vec![obj.position()],
             node: None,
         }
@@ -235,7 +235,7 @@ impl EvalErrorType {
 
     pub fn pos(self, position: (usize, usize)) -> EvalError {
         EvalError {
-            ty: self,
+            ty: Box::new(self),
             position: vec![position],
             node: None,
         }
@@ -243,7 +243,7 @@ impl EvalErrorType {
 
     pub fn no_pos(self) -> EvalError {
         EvalError {
-            ty: self,
+            ty: Box::new(self),
             position: Vec::new(),
             node: None,
         }

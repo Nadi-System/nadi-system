@@ -250,11 +250,9 @@ impl Eval for ResolvedExpr<'_> {
         _ectx: &EvalCtx,
         loc: &mut AttrMap,
     ) -> Result<ExprResult, EvalError> {
-        let res = self
-            .expr
+        self.expr
             .eval_mut(ctx, &self.context, loc)
-            .map_err(|e| self.err_ctx(e));
-        res
+            .map_err(|e| self.err_ctx(e))
     }
 
     fn eval(
@@ -686,7 +684,7 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
                     if cond {
                         match expr.eval_mut(ctx, ectx, loc) {
                             Ok(_) => (),
-                            Err(e) => match e.ty {
+                            Err(e) => match *e.ty {
                                 EvalErrorType::InvalidBreak(b) => return Ok(b),
                                 EvalErrorType::InvalidContinue => continue,
                                 _ => return Err(e),
@@ -710,7 +708,7 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
                     // only breaks through the break statement in code
                     match expr.eval_mut(ctx, ectx, loc) {
                         Ok(_) => (),
-                        Err(e) => match e.ty {
+                        Err(e) => match *e.ty {
                             EvalErrorType::InvalidBreak(b) => return Ok(b),
                             EvalErrorType::InvalidContinue => continue,
                             _ => return Err(e),
@@ -1546,7 +1544,7 @@ impl InputVar {
         Ok(())
     }
 
-    fn get_expr_context<'a>(
+    fn get_expr_context(
         &self,
         ctx: &TaskContext,
         ectx: ExprContext,
@@ -1781,7 +1779,7 @@ impl VarType {
             (VarType::Env, _) => Ok(ExprContext::Env),
             (VarType::Network, _) => Ok(ExprContext::Network),
             (VarType::Nodes(prop) | VarType::NodesMap(prop), _) => {
-                nodes_func(ctx.propagation(*prop.clone()).map_err(|e| e.ty)?)
+                nodes_func(ctx.propagation(*prop.clone()).map_err(|e| *e.ty)?)
             }
             (VarType::Roots | VarType::RootsMap, _) => {
                 nodes_func(ctx.network.roots().cloned().collect())
@@ -2069,7 +2067,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                 let func_ctx = self.function_ctx(ctx, &ectx, loc)?;
                 if let Some(func) = ctx.udf(&self.name).cloned() {
                     // priority for the locally defined function
-                    return Ok(func.eval(ctx, &ectx, func_ctx)?);
+                    return func.eval(ctx, &ectx, func_ctx);
                 }
                 match ctx.functions.env(&self.name) {
                     Some(f) => f.call(&func_ctx).res().map_err(|s| {
@@ -2086,7 +2084,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                 let func_ctx = self.function_ctx(ctx, &ectx, loc)?;
                 if let Some(func) = ctx.udf(&self.name).cloned() {
                     // priority for the locally defined function
-                    return Ok(func.eval(ctx, &ectx, func_ctx)?);
+                    return func.eval(ctx, &ectx, func_ctx);
                 }
                 match ctx.functions.network(&self.name) {
                     Some(f) => f.call(&ctx.network, &func_ctx).res().map_err(|s| {
@@ -2114,9 +2112,9 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                     .map_err(|e| e.node(name.clone()))?;
                 if let Some(func) = ctx.udf(&self.name).cloned() {
                     // priority for the locally defined function
-                    return Ok(func
+                    return func
                         .eval(ctx, &etc, func_ctx)
-                        .map_err(|e| e.node(name.clone()))?);
+                        .map_err(|e| e.node(name.clone()));
                 }
                 match ctx.functions.node(&self.name) {
                     Some(f) => {
@@ -2158,9 +2156,9 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                             .map_err(|e| e.node(name.clone()))?;
                         if let Some(func) = ctx.udf(&self.name).cloned() {
                             // priority for the locally defined function
-                            return Ok(func
+                            return func
                                 .eval(ctx, &etc, func_ctx)
-                                .map_err(|e| e.node(name.clone()))?);
+                                .map_err(|e| e.node(name.clone()));
                         }
 
                         match ctx.functions.node(&self.name) {
@@ -2205,10 +2203,10 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                             .map_err(|e| e.node(name.clone()))?;
                         if let Some(func) = ctx.udf(&self.name).cloned() {
                             // priority for the locally defined function
-                            return Ok(func
+                            return func
                                 .eval(ctx, &etc, func_ctx)
                                 .map(|v| (name.clone(), v))
-                                .map_err(|e| e.node(name.clone()))?);
+                                .map_err(|e| e.node(name.clone()));
                         }
 
                         match ctx.functions.node(&self.name) {
@@ -2252,7 +2250,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                 ctx.mark_change();
                 if let Some(func) = ctx.udf(&self.name).cloned() {
                     // priority for the locally defined function
-                    return Ok(func.eval_mut(ctx, &ectx, func_ctx)?);
+                    return func.eval_mut(ctx, &ectx, func_ctx);
                 }
                 match ctx.functions.env(&self.name) {
                     Some(f) => f.call(&func_ctx).res().map_err(|s| {
@@ -2270,7 +2268,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                 ctx.mark_change();
                 if let Some(func) = ctx.udf(&self.name).cloned() {
                     // priority for the locally defined function
-                    return Ok(func.eval_mut(ctx, &ectx, func_ctx)?);
+                    return func.eval_mut(ctx, &ectx, func_ctx);
                 }
                 match ctx.functions.network(&self.name) {
                     Some(f) => f.call_mut(&mut ctx.network, &func_ctx).res().map_err(|s| {
@@ -2299,9 +2297,9 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                 ctx.mark_change();
                 if let Some(func) = ctx.udf(&self.name).cloned() {
                     // priority for the locally defined function
-                    return Ok(func
+                    return func
                         .eval_mut(ctx, &etc, func_ctx)
-                        .map_err(|e| e.node(name.clone()))?);
+                        .map_err(|e| e.node(name.clone()));
                 }
                 match ctx.functions.node(&self.name) {
                     Some(f) => {
@@ -2343,9 +2341,9 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                             .map_err(|e| e.node(name.clone()))?;
                         if let Some(func) = ctx.udf(&self.name).cloned() {
                             // priority for the locally defined function
-                            return Ok(func
+                            return func
                                 .eval_mut(ctx, &etc, func_ctx)
-                                .map_err(|e| e.node(name.clone()))?);
+                                .map_err(|e| e.node(name.clone()));
                         }
 
                         match ctx.functions.node(&self.name) {
@@ -2393,10 +2391,10 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                             .map_err(|e| e.node(name.clone()))?;
                         if let Some(func) = ctx.udf(&self.name).cloned() {
                             // priority for the locally defined function
-                            return Ok(func
+                            return func
                                 .eval_mut(ctx, &etc, func_ctx)
                                 .map(|v| (name.clone(), v))
-                                .map_err(|e| e.node(name.clone()))?);
+                                .map_err(|e| e.node(name.clone()));
                         }
 
                         match ctx.functions.node(&self.name) {
@@ -2503,7 +2501,7 @@ impl GetSeries {
         }
     }
 
-    fn get_expr_context<'a>(
+    fn get_expr_context(
         &self,
         ctx: &TaskContext,
         ectx: ExprContext,
@@ -2587,9 +2585,7 @@ impl Eval for GetSeries {
         // TODO: take values out based on index
         match expr_ctx.as_ref() {
             ExprContext::Local => {
-                return Err(
-                    EvalErrorType::NotImplementedError("local series not supported").no_pos(),
-                );
+                Err(EvalErrorType::NotImplementedError("local series not supported").no_pos())
             }
             ExprContext::Env => index.subset(get_series_or_ts(&ctx.env, &self.name, self.is_ts)?),
             ExprContext::Network => {
@@ -2928,9 +2924,7 @@ impl<T: Eval> Eval for SetSeries<T> {
         // get ectx based on resolved ctx
         match ectx.expr_ctx.as_ref() {
             ExprContext::Local => {
-                return Err(
-                    EvalErrorType::NotImplementedError("local series not supported").no_pos(),
-                );
+                Err(EvalErrorType::NotImplementedError("local series not supported").no_pos())
             }
             ExprContext::Env | ExprContext::Network => {
                 // env and network can only be modified if the context is in mutable state
@@ -2972,9 +2966,7 @@ impl<T: Eval> Eval for SetSeries<T> {
         // get ectx based on resolved ctx
         match ectx.expr_ctx.as_ref() {
             ExprContext::Local => {
-                return Err(
-                    EvalErrorType::NotImplementedError("local series not supported").no_pos(),
-                );
+                Err(EvalErrorType::NotImplementedError("local series not supported").no_pos())
             }
             ExprContext::Env => {
                 let val = eval_series(self.expr.as_ref(), ctx, &EvalCtx::env(), loc)?;

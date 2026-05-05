@@ -664,7 +664,7 @@ pub fn map_series<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<Raw
             preceded(
                 maybe_space(path_sep),
                 cut(maybe_space(alt((
-                    map(function_def, |d| MapFunction::Defn(d)),
+                    map(function_def, MapFunction::Defn),
                     map(
                         preceded(
                             at,
@@ -1108,6 +1108,6 @@ mod tests {
         let mut loc = AttrMap::new();
         loc.set_attr("xyz", 12.into());
         let res = expr.eval(&context, &ectx, &mut loc).err().unwrap();
-        assert_eq!(res.ty, err);
+        assert_eq!(*res.ty, err);
     }
 }

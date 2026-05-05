@@ -3,7 +3,7 @@ use crate::eval::{EvalError, EvalErrorType};
 use crate::parser::ParseError;
 use crate::template::TemplateError;
 pub use pyo3;
-use pyo3::{exceptions::*, IntoPyObject, PyErr, PyErrArguments, PyObject, Python};
+use pyo3::{IntoPyObject, PyErr, PyErrArguments, PyObject, Python, exceptions::*};
 
 impl PyErrArguments for EvalError {
     fn arguments(self, py: Python<'_>) -> PyObject {
@@ -17,7 +17,7 @@ impl PyErrArguments for EvalError {
 
 impl From<EvalError> for PyErr {
     fn from(err: EvalError) -> PyErr {
-        match &err.ty {
+        match err.ty.as_ref() {
             EvalErrorType::UnresolvedVariable => PyAttributeError::new_err(err),
             EvalErrorType::AttributeNotFound => PyAttributeError::new_err(err),
             EvalErrorType::SeriesNotFound(_) => PyAttributeError::new_err(err),

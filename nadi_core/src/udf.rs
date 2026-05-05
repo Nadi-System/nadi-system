@@ -78,13 +78,13 @@ impl UserFunction {
             .exprs
             .clone()
             .resolve(ctx, ectx.clone())?
-            .eval(ctx, &ectx, &mut locals)
+            .eval(ctx, ectx, &mut locals)
         {
             Ok(v) => Ok(v),
             // early return is returned as an error so it can be
             // caught here
             Err(e) => {
-                if let EvalErrorType::InvalidReturn(val) = e.ty {
+                if let EvalErrorType::InvalidReturn(val) = *e.ty {
                     Ok(val)
                 } else {
                     Err(e)
@@ -101,15 +101,15 @@ impl UserFunction {
     ) -> Result<ExprResult, EvalError> {
         let mut locals = self.resolve_locals(ctx, ectx, fctx.args, fctx.kwargs)?;
         let res = self.exprs.clone().resolve(ctx, ectx.clone())?;
-        match res.eval_mut(ctx, &ectx, &mut locals) {
-            Ok(v) => return Ok(v),
+        match res.eval_mut(ctx, ectx, &mut locals) {
+            Ok(v) => Ok(v),
             // early return is returned as an error so it can be
             // caught here
             Err(e) => {
-                if let EvalErrorType::InvalidReturn(val) = e.ty {
-                    return Ok(val);
+                if let EvalErrorType::InvalidReturn(val) = *e.ty {
+                    Ok(val)
                 } else {
-                    return Err(e);
+                    Err(e)
                 }
             }
         }
