@@ -217,7 +217,10 @@ pub fn array_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<Raw
             map(
                 separated_list0(
                     maybe_space(comma),
-                    maybe_newline(raw_expr(complete_value_expression)),
+                    maybe_newline(raw_expr(alt((
+                        complete_value_expression,
+                        preceded(star, map(input_variable_only, ExprType::Args)),
+                    )))),
                 ),
                 ExprType::Array,
             ),
@@ -586,42 +589,41 @@ pub fn variable_type<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, VarType> 
     }
 }
 
+pub fn input_variable_only<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, InputVar> {
+    map(
+        tuple((opt(terminated(variable_type, dot)), task_dot_variable)),
+        |(vt, (var, indices))| InputVar::new(vt, var, indices, inp.position()),
+    )(inp)
+}
+
 pub fn input_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
-    let (rest, (st, vt, (var, indices), q)) = tuple((
-        opt(tuple((star, opt(star)))),
-        opt(terminated(variable_type, dot)),
-        task_dot_variable,
-        opt(maybe_space(pair(
-            question,
-            opt(maybe_space(raw_expr(alt((expression, expression_group))))),
-        ))),
-    ))(inp)?;
-    let var = InputVar::new(vt, var, indices, inp.position());
-    let exp = if let Some((_, s)) = st {
-        // star for args/kwargs
-        if q.is_some() {
-            return parse_err!(inp, "args/kwargs can't have check values");
-        }
-        if s.is_some() {
-            ExprType::KwArgs(var)
-        } else {
-            ExprType::Args(var)
-        }
-    } else if let Some((_, val)) = q {
-        let var = set_pos(ExprType::Var(var), inp);
-        if let Some(val) = val {
-            ExprType::IfElse(
-                Box::new(set_pos(ExprType::Check(Box::new(var.clone())), inp)),
-                Box::new(var),
-                Some(Box::new(val)),
-            )
-        } else {
-            ExprType::Check(Box::new(var))
-        }
-    } else {
-        ExprType::Var(var)
-    };
-    Ok((rest, exp))
+    map(
+        tuple((
+            opt(terminated(variable_type, dot)),
+            task_dot_variable,
+            opt(maybe_space(pair(
+                question,
+                opt(maybe_space(raw_expr(alt((expression, expression_group))))),
+            ))),
+        )),
+        |(vt, (var, indices), q)| {
+            let var = InputVar::new(vt, var, indices, inp.position());
+            if let Some((_, val)) = q {
+                let var = set_pos(ExprType::Var(var), inp);
+                if let Some(val) = val {
+                    ExprType::IfElse(
+                        Box::new(set_pos(ExprType::Check(Box::new(var.clone())), inp)),
+                        Box::new(var),
+                        Some(Box::new(val)),
+                    )
+                } else {
+                    ExprType::Check(Box::new(var))
+                }
+            } else {
+                ExprType::Var(var)
+            }
+        },
+    )(inp)
 }
 
 pub fn get_series<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
@@ -706,12 +708,30 @@ pub fn kw_arg<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, (String, RawExpr
 }
 
 pub fn kw_args<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<(String, RawExpr)>> {
-    separated_list1(maybe_space(comma), maybe_newline(kw_arg))(inp)
+    separated_list1(
+        maybe_space(comma),
+        maybe_newline(alt((
+            kw_arg,
+            map(
+                raw_expr(map(
+                    preceded(pair(star, star), input_variable_only),
+                    ExprType::KwArgs,
+                )),
+                |v| (String::new(), v),
+            ),
+        ))),
+    )(inp)
 }
 
 pub fn pos_args<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<RawExpr>> {
     // complete value expr doesn't have the SetVar that could consume keyword arg
-    separated_list1(comma, maybe_newline(raw_expr(complete_value_expression)))(inp)
+    separated_list1(
+        comma,
+        maybe_newline(raw_expr(alt((
+            complete_value_expression,
+            preceded(star, map(input_variable_only, ExprType::Args)),
+        )))),
+    )(inp)
 }
 
 pub fn pos_vars<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<String>> {

@@ -737,10 +737,34 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
                 }
             }
             Self::Array(exprs) => {
-                let vals: Vec<ExprResult> = exprs
-                    .iter()
-                    .map(|v| v.eval_mut(ctx, ectx, loc))
-                    .collect::<Result<_, _>>()?;
+                let vals: Vec<ExprResult> =
+                    if exprs.iter().any(|e| matches!(&e.expr, ExprType::Args(_))) {
+                        exprs
+                            .iter()
+                            .map(|v| match &v.expr {
+                                ExprType::Args(vt) => {
+                                    // eval, take an array, and insert it as expression
+                                    let parent = Vec::<Attribute>::from_attr(
+                                        &vt.eval_value(ctx, &v.context, loc)?,
+                                    )
+                                    .ok_or(EvalErrorType::NotAnArray.no_pos())?;
+                                    Ok(parent
+                                        .into_iter()
+                                        .map(ExprResult::Val)
+                                        .collect::<Vec<ExprResult>>())
+                                }
+                                e => Ok(vec![e.eval_mut(ctx, &v.context, loc)?]),
+                            })
+                            .collect::<Result<Vec<_>, EvalError>>()?
+                            .into_iter()
+                            .flatten()
+                            .collect()
+                    } else {
+                        exprs
+                            .iter()
+                            .map(|v| v.eval_mut(ctx, ectx, loc))
+                            .collect::<Result<_, _>>()?
+                    };
                 Ok(ExprResult::Arr(vals))
             }
             Self::ArrayGen(expr, var, parent) => {
@@ -928,13 +952,40 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
                 Ok(ExprResult::Val(vals.into()))
             }
             Self::Map(exprs) => {
-                // TODO: think about how to implement kwargs here,
-                // because it probably won't be parsed from the parser
-                // at this point because it needs the keys
-                let vals: Vec<(String, ExprResult)> = exprs
+                let vals: Vec<(String, ExprResult)> = if exprs
                     .iter()
-                    .map(|(k, v)| v.eval(ctx, ectx, loc).map(|v| (k.to_string(), v)))
-                    .collect::<Result<_, _>>()?;
+                    .any(|e| matches!(&e.1.expr, ExprType::KwArgs(_)))
+                {
+                    exprs
+                        .iter()
+                        .map(|(k, v)| match &v.expr {
+                            ExprType::KwArgs(vt) => {
+                                // eval, take an array, and insert it as expression
+                                let res = vt.eval_value(ctx, &v.context, loc)?;
+                                let parent = AttrMap::from_attr(&res).ok_or(
+                                    EvalErrorType::InvalidAttributeType(
+                                        NadiAttrType::Table,
+                                        res.dtype(),
+                                    )
+                                    .no_pos(),
+                                )?;
+                                Ok(parent
+                                    .into_iter()
+                                    .map(|Tuple2(k, v)| (k.to_string(), ExprResult::Val(v)))
+                                    .collect::<Vec<(String, ExprResult)>>())
+                            }
+                            e => Ok(vec![(k.to_string(), e.eval(ctx, &v.context, loc)?)]),
+                        })
+                        .collect::<Result<Vec<_>, EvalError>>()?
+                        .into_iter()
+                        .flatten()
+                        .collect()
+                } else {
+                    exprs
+                        .iter()
+                        .map(|(k, v)| v.eval(ctx, ectx, loc).map(|v| (k.to_string(), v)))
+                        .collect::<Result<_, _>>()?
+                };
                 Ok(ExprResult::Map(vals))
             }
             Self::MapGen(key, val, var1, var2, parent) => {
@@ -2043,12 +2094,23 @@ impl<'a> FunctionCall<ResolvedExpr<'a>> {
         }
         let mut kwargs = HashMap::with_capacity(self.kwargs.len());
         for (k, a) in &self.kwargs {
-            // TODO: parser doesn't support adding **kwargs here yet
-            kwargs.insert(
-                k.clone(),
-                a.eval_value(ctx, ectx, loc)
-                    .map_err(|e| e.pos(self.position()))?,
-            );
+            match &a.expr {
+                ExprType::KwArgs(vt) => {
+                    // eval, take an array, and insert it
+                    let parent = AttrMap::from_attr(&vt.eval_value(ctx, &a.context, loc)?)
+                        .ok_or(EvalErrorType::NotAnArray.pos(a.position()))?;
+                    for Tuple2(k, v) in parent {
+                        kwargs.insert(k.to_string(), v);
+                    }
+                }
+                v => {
+                    kwargs.insert(
+                        k.clone(),
+                        v.eval_value(ctx, ectx, loc)
+                            .map_err(|e| e.pos(self.position()))?,
+                    );
+                }
+            }
         }
         Ok(FunctionCtx::from_arg_kwarg(args, kwargs))
     }
