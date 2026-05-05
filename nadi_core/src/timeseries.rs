@@ -174,6 +174,25 @@ pub struct TimeSeries {
     values: Series,
 }
 
+impl std::fmt::Display for TimeSeries {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "TimeSeries {{..., {}}}", self.values)
+    }
+}
+
+// to make it work with ExprResult
+impl std::fmt::Debug for TimeSeries {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "TimeSeries {{..., {}}}", self.values)
+    }
+}
+
+impl PartialEq for TimeSeries {
+    fn eq(&self, other: &Self) -> bool {
+        self.same_timeline(other) & (self.series() == other.series())
+    }
+}
+
 impl TimeSeries {
     pub fn new(timeline: TimeLine, values: Series) -> Self {
         Self { timeline, values }
@@ -249,6 +268,15 @@ pub enum Series {
     Masked(MaskedSeries, ROption<Attribute>),
     /// Series without values
     Complete(CompleteSeries),
+}
+
+impl std::fmt::Display for Series {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Masked(..) => write!(f, "MaskedSeries {{...}}"),
+            Self::Complete(..) => write!(f, "CompleteSeries {{...}}"),
+        }
+    }
 }
 
 impl TaskContext {
@@ -447,6 +475,16 @@ impl Series {
                 .get_attribute(index)
                 .map(|v| v.or_else(|| fill.clone().into_option())),
         }
+    }
+
+    pub fn to_attributes(self) -> Option<Vec<Attribute>> {
+        Some(match self {
+            Series::Masked(ms, _) => {
+                let cs = ms.complete()?;
+                cs.to_attributes()
+            }
+            Series::Complete(cs) => cs.to_attributes(),
+        })
     }
 }
 

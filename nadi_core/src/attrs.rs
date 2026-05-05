@@ -379,6 +379,8 @@ impl TaskContext {
                     if prettify_map { "\n" } else { "" },
                 )
             }
+            ExprResult::Series(s) => self.show_sr(s),
+            ExprResult::TimeSeries(s) => self.show_ts(s),
             r => r.to_string(),
         })
     }

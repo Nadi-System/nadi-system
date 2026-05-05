@@ -1,5 +1,5 @@
 use crate::eval::{Eval, EvalCtx, EvalError, EvalErrorType};
-use crate::expressions::{ExprContext, RawExpr, SeriesExpression};
+use crate::expressions::{ExprContext, RawExpr};
 
 use crate::functions::{FuncArg, FuncArgType, NadiFunctions};
 use crate::network::PropCondition;
@@ -214,7 +214,10 @@ impl TaskContext {
     pub fn new(net: Option<Network>, channel: Sender<TaskMessage>) -> Self {
         Self {
             network: net.unwrap_or_default(),
+            #[cfg(feature = "functions")]
             functions: NadiFunctions::internals_w_plugins(),
+            #[cfg(not(feature = "functions"))]
+            functions: NadiFunctions::default(),
             structs: HashMap::new(),
             udf: HashMap::new(),
             env: TaskContextEnv::new(),
@@ -297,107 +300,12 @@ impl TaskContext {
                 self.hook = tasks;
                 Ok(None)
             }
-            Task::GetSeries(gst) => self.get_series_task(gst).map(Some),
-            Task::SetSeries(sst) => {
-                self.set_series_task(sst)?;
-                Ok(None)
-            }
             Task::Help(kw, var) => self.help(kw, var),
             Task::Clear => {
                 self.clear();
                 Ok(None)
             }
             Task::Exit => std::process::exit(0),
-        }
-    }
-
-    pub fn get_series_task(&self, gst: GetSeriesTask) -> Result<String, EvalError> {
-        match (gst.timeseries, gst.ty) {
-            (_, FunctionType::Env) => self
-                .env
-                .try_series(&gst.name)
-                .map(|sr| self.show_sr(sr))
-                .map_err(|e| EvalErrorType::SeriesNotFound(e).pos(gst.start)),
-            (ts, FunctionType::Node) => {
-                let nodes = self.propagation(gst.propagation.clone().unwrap_or_default())?;
-                let max_nodes_len = TaskCtxConsts::max_nodes_length(self);
-                let trunc = nodes.len() > max_nodes_len;
-                let attrs = nodes
-                    .iter()
-                    .take(max_nodes_len)
-                    .map(|n| {
-                        let n = n.try_lock().expect("mutex error");
-                        format!(
-                            "  {} = {}",
-                            n.name(),
-                            if ts {
-                                n.try_ts(&gst.name).map(|ts| self.show_ts(ts))
-                            } else {
-                                n.try_series(&gst.name).map(|ts| self.show_sr(ts))
-                            }
-                            .unwrap_or(crate::expressions::NONE_VALUE.to_string())
-                        )
-                    })
-                    .collect::<Vec<String>>();
-                Ok(format!(
-                    "{{\n{}\n{}}}",
-                    attrs.join(",\n"),
-                    if trunc { "...truncated\n" } else { "" }
-                ))
-            }
-            (true, FunctionType::Network) => self
-                .network
-                .try_ts(&gst.name)
-                .map(|ts| self.show_ts(ts))
-                .map_err(|e| EvalErrorType::TimeSeriesNotFound(e).pos(gst.start)),
-            (false, FunctionType::Network) => self
-                .network
-                .try_series(&gst.name)
-                .map(|sr| self.show_sr(sr))
-                .map_err(|e| EvalErrorType::SeriesNotFound(e).pos(gst.start)),
-        }
-    }
-
-    pub fn set_series_task(&mut self, sst: SetSeriesTask) -> Result<(), EvalError> {
-        match (sst.timeseries, sst.ty) {
-            (_, FunctionType::Env) => {
-                let series =
-                    sst.expression
-                        .resolve_eval_value(&FunctionType::Env, self, None, None)?;
-
-                self.env.set_series(&sst.name, series);
-                Ok(())
-            }
-            (false, FunctionType::Node) => {
-                let nodes = self.propagation(sst.propagation.clone().unwrap_or_default())?;
-                nodes.iter().try_for_each(|n| -> Result<(), EvalError> {
-                    let series = sst.expression.resolve_eval_value(
-                        &FunctionType::Node,
-                        self,
-                        None,
-                        Some(n),
-                    )?;
-                    n.try_lock()
-                        .expect("mutex error")
-                        .set_series(&sst.name, series);
-                    Ok(())
-                })?;
-                Ok(())
-            }
-            (true, FunctionType::Node) => {
-                Err(EvalErrorType::NotImplementedError("Can not set timeseries").pos(sst.start))
-            }
-            (true, FunctionType::Network) => {
-                Err(EvalErrorType::NotImplementedError("Can not set timeseries").pos(sst.start))
-            }
-            (false, FunctionType::Network) => {
-                let series =
-                    sst.expression
-                        .resolve_eval_value(&FunctionType::Network, self, None, None)?;
-
-                self.network.set_series(&sst.name, series);
-                Ok(())
-            }
         }
     }
 
@@ -576,42 +484,6 @@ impl std::fmt::Display for GetSeriesTask {
     }
 }
 
-/// Task representing getting of series/timeseries value
-#[derive(Clone, PartialEq, Debug)]
-pub struct SetSeriesTask {
-    /// type of function
-    pub ty: FunctionType,
-    /// node propagation for node function
-    pub propagation: Option<Propagation>,
-    /// Timeseries instead of Series
-    pub timeseries: bool,
-    /// name of the series/timeseries
-    pub name: String,
-    /// Series Evaluation Expression
-    pub expression: SeriesExpression,
-    // TODO: Add indexing capabilities (multiple index should be accepted)
-    // pub index: Option<Range>,
-    /// start position of the task
-    pub start: (usize, usize),
-}
-
-impl std::fmt::Display for SetSeriesTask {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "{}{}{}{} = {}",
-            self.ty,
-            self.propagation
-                .as_ref()
-                .map(|p| p.to_string())
-                .unwrap_or_default(),
-            if self.timeseries { "$$" } else { "$" },
-            self.name,
-            self.expression,
-        )
-    }
-}
-
 /// Execution body of the Task System
 #[derive(Clone, PartialEq, Debug)]
 pub enum Task {
@@ -625,10 +497,6 @@ pub enum Task {
     StructDef(NadiStruct),
     /// Evaluate the expression
     Expr(RawExpr),
-    /// Get a series/timeseries from the node/network/env
-    GetSeries(GetSeriesTask),
-    /// Set a series/timeseries to the node/network/env
-    SetSeries(SetSeriesTask),
     /// Network details
     Network,
     /// Env details
@@ -651,8 +519,6 @@ impl Task {
             Task::Function(_) => false,
             Task::StructDef(_) => false,
             Task::Expr(_) => false,
-            Task::GetSeries(_) => false,
-            Task::SetSeries(_) => true,
             Task::Network => false,
             Task::Env => false,
             Task::Clear => false,
@@ -668,8 +534,6 @@ impl Task {
             Task::Function(_) => "Define a new user function",
             Task::StructDef(_) => "Defines a new user struct",
             Task::Expr(_) => "Evaluate expression",
-            Task::GetSeries(_) => "Query Series/TimeSeries values",
-            Task::SetSeries(_) => "Set Series/TimeSeries values",
             Task::Network => "Show current Network Details",
             Task::Env => "Show current environment",
             Task::Clear => "Clear the task context",
@@ -697,8 +561,6 @@ impl std::fmt::Display for Task {
             Task::Function(fdef) => write!(f, "{fdef}"),
             Task::StructDef(sdef) => write!(f, "{sdef}"),
             Task::Expr(expr) => write!(f, "{expr}"),
-            Task::GetSeries(gst) => write!(f, "{gst}"),
-            Task::SetSeries(sst) => write!(f, "{sst}"),
             Self::Network => write!(f, "network"),
             Self::Env => write!(f, "env"),
             Self::Clear => write!(f, "clear"),

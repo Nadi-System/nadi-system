@@ -7,7 +7,7 @@ use abi_stable::{
     std_types::{
         RArc,
         ROption::{self, RNone, RSome},
-        RString, RVec, Tuple2,
+        RString, RVec,
     },
     StableAbi,
 };
@@ -311,7 +311,7 @@ impl NodeInner {
     }
 
     /// Move the node to the side (move the inputs to its output)
-    pub fn move_aside(&mut self) {
+    pub fn move_aside(&mut self) -> Result<(), &'static str> {
         match self.outputs.as_slice() {
             [] => self.inputs().iter().for_each(|i| {
                 i.try_lock().expect("mutex error").unset_outputs();
@@ -325,9 +325,12 @@ impl NodeInner {
             // => Need to add the outputs to each inputs, and also remove
             // current node as their output. then remove the inputs
             // from the current node.
-            outs => todo!(),
+            _outs => {
+                return Err("move aside with multiple output nodes is not implemented");
+            }
         }
         self.unset_inputs();
+        Ok(())
     }
 
     // FIX: this might have to be removed, or added with EvalError for

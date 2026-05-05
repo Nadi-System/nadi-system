@@ -1,6 +1,7 @@
 use crate::expressions::{
-    BiOperator, ExprProgress, ExprType, ExprWithContext, FunctionCall, ImportExpr, InputVar,
-    Position, RawExpr, SetVariable, UniOperator, VarType,
+    BiOperator, ExprProgress, ExprType, ExprWithContext, FunctionCall, GetSeries, ImportExpr,
+    InputVar, MapFunction, MapSeries, Position, RawExpr, SetSeries, SetVariable, UniOperator,
+    VarType,
 };
 use crate::network::{PropCondition, PropNodes, PropOrder};
 use crate::parser::{
@@ -19,6 +20,14 @@ use nom::{
     sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
 };
 use std::path::PathBuf;
+
+macro_rules! parse_err {
+    ($inp:ident, $msg:literal) => {
+        Err(nom::Err::Error(
+            MatchErr::new($inp).ty(&ParseErrorType::InvalidExpression($msg)),
+        ))
+    };
+}
 
 fn set_pos(ty: ExprType<RawExpr>, tk: &[Token<'_>]) -> RawExpr {
     RawExpr::new(ty, tk.position())
@@ -47,6 +56,7 @@ pub fn value_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprTy
     alt((
         expr_with_context,
         expr_maybe_range,
+        get_series,
         map(function_call, ExprType::Function),
         map(template_val, ExprType::Render),
         array_expr,
@@ -64,6 +74,9 @@ pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<Raw
     alt((
         // map(nadi_struct_expr, Expression::StructExpr),
         expr_set_variable,
+        map_series,
+        expr_set_series,
+        // set var and expr should come before value one
         value_expression,
         import_expr,
         value(ExprType::Continue, kw_continue),
@@ -81,7 +94,6 @@ pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<Raw
             preceded(kw_break, opt(after_space(raw_expr(complete_expression)))),
             |e| ExprType::Break(e.map(Box::new)),
         ),
-        series,
     ))(inp)
 }
 
@@ -250,10 +262,7 @@ pub fn expression_group<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprTy
     delimited(
         paren_start,
         maybe_newline(multi_expression),
-        cut(err_ctx(
-            &ParseErrorType::Unclosed(")"),
-            maybe_newline(paren_end),
-        )),
+        err_ctx(&ParseErrorType::Unclosed(")"), maybe_newline(paren_end)),
     )(inp)
 }
 
@@ -578,33 +587,102 @@ pub fn variable_type<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, VarType> 
 }
 
 pub fn input_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
+    let (rest, (st, vt, (var, indices), q)) = tuple((
+        opt(tuple((star, opt(star)))),
+        opt(terminated(variable_type, dot)),
+        task_dot_variable,
+        opt(maybe_space(pair(
+            question,
+            opt(maybe_space(raw_expr(alt((expression, expression_group))))),
+        ))),
+    ))(inp)?;
+    let var = InputVar::new(vt, var, indices, inp.position());
+    let exp = if let Some((_, s)) = st {
+        // star for args/kwargs
+        if q.is_some() {
+            return parse_err!(inp, "args/kwargs can't have check values");
+        }
+        if s.is_some() {
+            ExprType::KwArgs(var)
+        } else {
+            ExprType::Args(var)
+        }
+    } else if let Some((_, val)) = q {
+        let var = set_pos(ExprType::Var(var), inp);
+        if let Some(val) = val {
+            ExprType::IfElse(
+                Box::new(set_pos(ExprType::Check(Box::new(var.clone())), inp)),
+                Box::new(var),
+                Some(Box::new(val)),
+            )
+        } else {
+            ExprType::Check(Box::new(var))
+        }
+    } else {
+        ExprType::Var(var)
+    };
+    Ok((rest, exp))
+}
+
+pub fn get_series<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
+    map(series_variable, ExprType::Series)(inp)
+}
+
+pub fn series_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, GetSeries> {
     map(
         tuple((
-            opt(terminated(variable_type, dot)),
-            task_dot_variable,
-            opt(maybe_space(pair(
-                question,
-                opt(maybe_space(raw_expr(alt((expression, expression_group))))),
-            ))),
+            opt(variable_type),
+            tuple((dollar, opt(dollar), variable)),
+            opt(raw_expr(array_expr)),
+            opt(question),
         )),
-        |(vt, (var, indices), q)| {
-            let var = ExprType::Var(InputVar::new(vt, var, indices, inp.position()));
-            if let Some((_, val)) = q {
-                let var = set_pos(var, inp);
-                if let Some(val) = val {
-                    ExprType::IfElse(
-                        Box::new(set_pos(ExprType::Check(Box::new(var.clone())), inp)),
-                        Box::new(var),
-                        Some(Box::new(val)),
-                    )
-                } else {
-                    ExprType::Check(Box::new(var))
-                }
-            } else {
-                var
-            }
+        |(vt, (_, ts, var), ind, q)| {
+            GetSeries::new(vt, ts.is_some(), var.content.to_string(), ind, q.is_some())
         },
     )(inp)
+}
+
+pub fn map_series<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
+    map(
+        tuple((
+            alt((
+                map(series_variable, |v| vec![v]),
+                delimited(
+                    paren_start,
+                    separated_list1(maybe_space(comma), maybe_space(series_variable)),
+                    maybe_space(paren_end),
+                ),
+            )),
+            preceded(
+                maybe_space(path_sep),
+                cut(maybe_space(alt((
+                    map(function_def, |d| MapFunction::Defn(d)),
+                    map(
+                        preceded(
+                            at,
+                            separated_list1(dot, map(variable, |v| v.content.to_string())),
+                        ),
+                        |v| MapFunction::Pointer(v.join(".")),
+                    ),
+                )))),
+            ),
+        )),
+        |(srs, func)| ExprType::MapSeries(MapSeries::new(srs, func)),
+    )(inp)
+}
+
+pub fn expr_set_series<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
+    let (rest, (inpvar, ty, _, expr)) = tuple((
+        series_variable,
+        opt(maybe_space(preceded(colon, maybe_space(attr_type)))),
+        maybe_space(assignment),
+        maybe_space(raw_expr(alt((map_series, complete_value_expression)))),
+    ))(inp)?;
+    if inpvar.check {
+        parse_err!(inp, "can't assign a check series expression")
+    } else {
+        Ok((rest, ExprType::SetSeries(SetSeries::new(inpvar, ty, expr))))
+    }
 }
 
 pub fn kw_arg<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, (String, RawExpr)> {
@@ -746,26 +824,6 @@ pub fn function_def<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, UserFuncti
     ))
 }
 
-pub fn series<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<RawExpr>> {
-    let (rest, (vt, (ts, name), ind)) = tuple((
-        opt(variable_type),
-        preceded(
-            dollar,
-            pair(opt(dollar), map(variable, |v| v.content.to_string())),
-        ),
-        opt(delimited(
-            bracket_start,
-            maybe_space(integer_usize),
-            maybe_space(bracket_end),
-        )),
-    ))(inp)?;
-    let sr = match ind {
-        Some(ind) => ExprType::SeriesValue(vt, ts.is_some(), name, ind),
-        None => ExprType::Series(vt, ts.is_some(), name),
-    };
-    Ok((rest, sr))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -850,6 +908,32 @@ mod tests {
     pub fn function_call_valid_test(#[case] txt: &str) {
         let tokens = Token::validate(get_tokens(txt)).unwrap();
         let (rest, _) = function_call(&tokens).unwrap();
+        assert_eq!(rest, vec![]);
+    }
+
+    #[rstest]
+    #[case("$y -> @some_func")]
+    #[case("$y -> @sth.sth")]
+    #[case("$y -> func(x) {x + 1}")]
+    #[case("($x, inputs$y) -> @sth.sth")]
+    #[case("($x, $y) -> func(x, y) {x + y}")]
+    pub fn map_series_valid_test(#[case] txt: &str) {
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let (rest, _) = map_series(&tokens).unwrap();
+        assert_eq!(rest, vec![]);
+    }
+
+    #[rstest]
+    #[case("node$x = sth()")]
+    #[case("env$y = sth.sth()")]
+    #[case("nodes$xyz = $y -> @some_func")]
+    #[case("nodes$xyz = $y -> @sth.sth")]
+    #[case("nodes$xyz = $y -> func(x) {x + 1}")]
+    #[case("nodes$xyz = ($x, inputs$y) -> @sth.sth")]
+    #[case("nodes$xy = ($x, $y) -> func(x, y) {x + y}")]
+    pub fn set_series_valid_test(#[case] txt: &str) {
+        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let (rest, _) = expr_set_series(&tokens).unwrap();
         assert_eq!(rest, vec![]);
     }
 

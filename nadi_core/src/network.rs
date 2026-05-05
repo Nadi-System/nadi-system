@@ -16,12 +16,14 @@ use colored::Colorize;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 
-#[derive(Default, Clone, PartialEq)]
-enum NetworkType {
+// maybe I need a struct with loop, in_degree, etc flags instead?
+#[repr(C)]
+#[derive(StableAbi, Default, Clone, PartialEq)]
+pub enum NetworkType {
     DAG,
     InTree,
     OutTree,
-    Undirected,
+    WithLoop,
     #[default]
     Directed,
 }
@@ -32,7 +34,7 @@ impl std::fmt::Display for NetworkType {
             Self::DAG => write!(fmt, "DAG"),
             Self::InTree => write!(fmt, "InTree"),
             Self::OutTree => write!(fmt, "OutTree"),
-            Self::Undirected => write!(fmt, "Undirected"),
+            Self::WithLoop => write!(fmt, "WithLoop"),
             Self::Directed => write!(fmt, "Directed"),
         }
     }
@@ -78,6 +80,8 @@ impl std::fmt::Display for NetworkType {
 #[repr(C)]
 #[derive(StableAbi, Default, Clone)]
 pub struct Network {
+    /// Type of the network
+    ty: NetworkType,
     /// List of [`Node`]s
     pub(crate) nodes: RVec<RString>,
     /// Map of node names to the [`Node`]
@@ -136,6 +140,11 @@ impl HasTimeSeries for Network {
 }
 
 impl Network {
+    /// Type of the network
+    pub fn ty(&self) -> &NetworkType {
+        &self.ty
+    }
+
     /// Iterator for the nodes in the network
     pub fn nodes(&self) -> impl Iterator<Item = &Node> {
         self.nodes.iter().map(|n| &self.nodes_map[n])
@@ -201,9 +210,10 @@ impl Network {
     }
 
     /// Append the edges from the list, making new nodes if necessary
-    pub fn append_edges(&mut self, edges: &[(&str, &str)], force: bool) -> Result<(), String> {
+    pub fn append_edges(&mut self, edges: &[(&str, &str)], _force: bool) -> Result<(), String> {
         for (start, end) in edges {
             if start == end {
+                self.ty = NetworkType::WithLoop;
                 // Maybe fix it after adding assertions
                 // return Err(format!("Node {:?} has itself as the output", start));
                 if !self.nodes_map.contains_key(*start) {
@@ -395,6 +405,11 @@ impl Network {
         order: &PropOrder,
         path: &StrPath,
     ) -> Result<Vec<Node>, EvalErrorType> {
+        if self.ty != NetworkType::InTree {
+            return Err(EvalErrorType::NotImplementedError(
+                "path between nodes only implemented for in-trees",
+            ));
+        }
         let start = self.try_node_by_name(path.start.as_str())?;
         let end = self.try_node_by_name(path.end.as_str())?;
         // we'll assume the network is indexed based on order, small
@@ -504,6 +519,7 @@ impl Network {
                 if visited.contains(&o.index()) {
                     // looped back to the already visited node
                     // this needs to be here to prevent infinite loop
+                    self.ty = NetworkType::WithLoop;
                     break;
                 }
                 visited.insert(o.index());
@@ -669,6 +685,41 @@ impl Network {
         self.reindex();
         self.calc_order();
         self.ordered = true;
+        self.ty = match &self.ty {
+            NetworkType::Directed => {
+                let in_ord = self
+                    .nodes_map
+                    .values()
+                    .map(|n| {
+                        n.try_lock()
+                            .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                            .inputs()
+                            .len()
+                    })
+                    .max()
+                    .unwrap_or_default();
+                let out_ord = self
+                    .nodes_map
+                    .values()
+                    .map(|n| {
+                        n.try_lock()
+                            .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                            .outputs()
+                            .len()
+                    })
+                    .max()
+                    .unwrap_or_default();
+                // this is very rudimentary
+                if out_ord < 2 {
+                    NetworkType::InTree
+                } else if in_ord < 2 {
+                    NetworkType::OutTree
+                } else {
+                    NetworkType::DAG
+                }
+            }
+            t => t.clone(),
+        }
         // eprintln!("Exit Re Order");
     }
 
@@ -1121,6 +1172,8 @@ impl std::fmt::Display for PropCondition {
 impl From<Node> for Network {
     fn from(node: Node) -> Self {
         let mut net = Self::default();
+
+        // todo: add the visited flag to avoid infinite loop here as well
 
         let mut nodes = vec![];
         fn insert_node(n: &Node, nodes: &mut Vec<Node>) {

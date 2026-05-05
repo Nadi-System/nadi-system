@@ -10,7 +10,7 @@ pub struct UserFunction {
     pub(crate) name: Option<String>,
     args: Vec<String>,
     kwargs: Vec<(String, RawExpr)>,
-    exprs: RawExpr,
+    exprs: Box<RawExpr>,
 }
 
 impl std::fmt::Display for UserFunction {
@@ -50,7 +50,7 @@ impl UserFunction {
             name,
             args,
             kwargs,
-            exprs,
+            exprs: Box::new(exprs),
         }
     }
 

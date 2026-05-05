@@ -362,13 +362,14 @@ pub struct NadiFunctions {
 }
 
 impl NadiFunctions {
+    #[cfg(feature = "functions")]
     pub fn internals() -> Self {
         let mut funcs = Self::default();
-        #[cfg(feature = "functions")]
         crate::internal::register_internal(&mut funcs);
         funcs
     }
 
+    #[cfg(feature = "functions")]
     pub fn internals_w_plugins() -> Self {
         let mut funcs = Self::internals();
         funcs.load_plugins().unwrap();

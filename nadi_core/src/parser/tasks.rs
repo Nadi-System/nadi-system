@@ -1,21 +1,16 @@
+use crate::parser::{
+    components::*,
+    errors::MatchErr,
+    expressions::{complete_expression, function_def, maybe_silent_expression, raw_expr},
+    network::{node_name, str_path},
+    tokenizer::{RawToken, Token},
+    ParseError, ParseErrorType,
+};
 use crate::{
-    expressions::{MapFunction, Position, SeriesExpression},
+    expressions::Position,
     network::{PropCondition, PropNodes, PropOrder, Propagation},
     structs::{NadiAttrType, NadiStruct},
     tasks::{FunctionType, Task},
-};
-use crate::{
-    parser::{
-        components::*,
-        errors::MatchErr,
-        expressions::{
-            complete_expression, function_def, maybe_silent_expression, raw_expr, variable_type,
-        },
-        network::{node_name, str_path},
-        tokenizer::{RawToken, Token},
-        ParseError, ParseErrorType,
-    },
-    tasks::{GetSeriesTask, SetSeriesTask},
 };
 use abi_stable::std_types::{RString, RVec};
 use nom::{
@@ -173,101 +168,13 @@ pub fn hook_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<Task>> {
     Ok((rest, tasks))
 }
 
-pub fn get_series_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, GetSeriesTask> {
-    let (rest, (ty, propagation, (_, ts, name))) = tuple((
-        function_type,
-        propagation,
-        tuple((dollar, opt(dollar), variable)),
-    ))(inp)?;
-
-    match (&ty, propagation.is_some()) {
-        (FunctionType::Node, true) => (),
-        (_, true) => {
-            return Err(nom::Err::Error(
-                MatchErr::new(function_type(inp)?.0).ty(&ParseErrorType::PropagationNotSupported),
-            ));
-        }
-        _ => (),
-    }
-    Ok((
-        rest,
-        GetSeriesTask {
-            ty,
-            timeseries: ts.is_some(),
-            name: name.content.to_string(),
-            propagation,
-            start: inp.position(),
-        },
-    ))
-}
-
-pub fn series_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, SeriesExpression> {
-    alt((
-        map(
-            tuple((
-                opt(variable_type),
-                dollar,
-                opt(dollar),
-                variable,
-                // optionally the function mapping
-                opt(after_space(preceded(
-                    path_sep,
-                    cut(after_space(alt((
-                        map(function_def, MapFunction::Defn),
-                        map(preceded(at, variable), |v| {
-                            MapFunction::Pointer(v.content.to_string())
-                        }),
-                    )))),
-                ))),
-            )),
-            |(vt, _, ts, name, func)| match func {
-                Some(func) => {
-                    SeriesExpression::SeriesMap(vt, ts.is_some(), name.content.to_string(), func)
-                }
-                None => SeriesExpression::Series(vt, ts.is_some(), name.content.to_string()),
-            },
-        ),
-        map(raw_expr(complete_expression), SeriesExpression::AttrExpr),
-    ))(inp)
-}
-pub fn set_series_task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, SetSeriesTask> {
-    let (rest, (ty, propagation, (_, ts, name), _, expression)) = tuple((
-        function_type,
-        propagation,
-        tuple((dollar, opt(dollar), variable)),
-        maybe_space(assignment),
-        maybe_space(series_expression),
-    ))(inp)?;
-
-    match (&ty, propagation.is_some()) {
-        (FunctionType::Node, true) => (),
-        (_, true) => {
-            return Err(nom::Err::Error(
-                MatchErr::new(function_type(inp)?.0).ty(&ParseErrorType::PropagationNotSupported),
-            ));
-        }
-        _ => (),
-    }
-    Ok((
-        rest,
-        SetSeriesTask {
-            ty,
-            timeseries: ts.is_some(),
-            name: name.content.to_string(),
-            propagation,
-            expression,
-            start: inp.position(),
-        },
-    ))
-}
-
 pub fn task<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Task> {
     alt((
         map(function_def, Task::Function),
         map(nadi_struct_def, Task::StructDef),
         // set should be before get
-        map(set_series_task, Task::SetSeries),
-        map(get_series_task, Task::GetSeries),
+        // map(set_series_task, Task::SetSeries),
+        // map(get_series_task, Task::GetSeries),
         // eval task should come after series, otherwise series gets
         // interpreted as attribute expression
         // // removing temp to see if expression works

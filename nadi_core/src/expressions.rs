@@ -6,9 +6,11 @@ use crate::node::{Node, NodeInner};
 use crate::structs::NadiAttrType;
 use crate::tasks::{FunctionType, Task, TaskContext, TaskCtxConsts, TaskKeyword, TaskMessage};
 use crate::template::Template;
-use crate::timeseries::{CompleteSeries, HasSeries, HasTimeSeries, Series};
+use crate::timeseries::{
+    CompleteSeries, HasSeries, HasTimeSeries, MaskedSeries, Series, TimeSeries,
+};
 use crate::udf::UserFunction;
-use abi_stable::std_types::{RNone, RSome, RString, Tuple2};
+use abi_stable::std_types::{RNone, ROption, RSome, RString, Tuple2};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -83,6 +85,8 @@ impl RawExpr {
                 ExprType::Function(resolve_function_calls(fc, ctx, ectx.clone())?)
             }
             ExprType::Var(vt) => ExprType::Var(vt),
+            ExprType::Args(vt) => ExprType::Args(vt),
+            ExprType::KwArgs(vt) => ExprType::KwArgs(vt),
             ExprType::SetVar(sv) => return resolve_set_variable(sv, ctx, ectx.clone()),
             ExprType::IfElse(cond, expr1, Some(expr2)) => ExprType::IfElse(
                 Box::new(cond.resolve(ctx, ectx.clone())?),
@@ -176,12 +180,15 @@ impl RawExpr {
             ExprType::Continue => ExprType::Continue,
             #[cfg(feature = "parser")]
             ExprType::Import(i) => ExprType::Import(i),
-            _ => {
-                return Err(EvalErrorType::NotImplementedError(
-                    "resolving logic not implemented yet for these",
-                )
-                .no_pos());
-            }
+            ExprType::Series(s) => ExprType::Series(s),
+            ExprType::MapSeries(s) => ExprType::MapSeries(s),
+            ExprType::SetSeries(ss) => return resolve_set_series(ss, ctx, ectx.clone()),
+            // _ => {
+            //     return Err(EvalErrorType::NotImplementedError(
+            //         "resolving logic not implemented yet for these",
+            //     )
+            //     .no_pos());
+            // }
         };
         Ok(ResolvedExpr {
             expr,
@@ -279,6 +286,10 @@ pub enum ExprResult {
     NoneErr(Box<EvalError>),
     /// Valid value
     Val(Attribute),
+    /// Series value
+    Series(Series),
+    /// Timeseries value
+    TimeSeries(TimeSeries),
     /// Image output
     Image(String),
     /// Multiple Images output
@@ -292,7 +303,6 @@ pub enum ExprResult {
     /// Map of results
     Map(Vec<(String, ExprResult)>),
 }
-
 impl From<Option<Attribute>> for ExprResult {
     fn from(val: Option<Attribute>) -> Self {
         match val {
@@ -312,6 +322,8 @@ impl std::fmt::Display for ExprResult {
             Self::Images(s) => write!(f, "<images:{s:?}>"),
             Self::File(s) => write!(f, "<file:{s:?}>"),
             Self::Doc(s) => write!(f, "<doc:{s:?}>"),
+            Self::Series(s) => write!(f, "{s}"),
+            Self::TimeSeries(s) => write!(f, "{s}"),
             Self::Arr(ar) => write!(
                 f,
                 "[{}]",
@@ -341,6 +353,12 @@ impl ExprResult {
             Self::Images(s) => Some(s.into()),
             Self::File(s) => Some(s.into()),
             Self::Doc(s) => Some(s.into()),
+            Self::Series(s) => s.to_attributes().map(|v| Attribute::Array(v.into())),
+            Self::TimeSeries(ts) => ts
+                .series()
+                .clone()
+                .to_attributes()
+                .map(|v| Attribute::Array(v.into())),
             Self::Arr(ar) => ar
                 .into_iter()
                 .map(|a| a.to_attribute())
@@ -351,6 +369,20 @@ impl ExprResult {
                 .map(|(k, a)| a.to_attribute().map(|a| (k.into(), a)))
                 .collect::<Option<HashMap<RString, Attribute>>>()
                 .map(|a| Attribute::Table(a.into())),
+        }
+    }
+
+    pub fn to_attributes(self) -> Option<Vec<Attribute>> {
+        match self {
+            Self::Val(a) => Vec::<Attribute>::from_attr(&a),
+            Self::Series(s) => s.to_attributes(),
+            // disregards timeline
+            Self::TimeSeries(ts) => ts.series().clone().to_attributes(),
+            Self::Arr(ar) => ar
+                .into_iter()
+                .map(|a| a.to_attribute())
+                .collect::<Option<Vec<Attribute>>>(),
+            _ => None,
         }
     }
 
@@ -376,6 +408,10 @@ pub enum ExprType<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq> {
     Progress(ExprProgress<T>),
     /// get variable
     Var(InputVar),
+    /// args expression
+    Args(InputVar),
+    /// kwargs expression
+    KwArgs(InputVar),
     /// set variable (assignment)
     SetVar(SetVariable<T>),
     /// render a string template
@@ -425,10 +461,12 @@ pub enum ExprType<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq> {
     Continue,
     /// multiple expressions
     Multi(Vec<T>, bool),
-    /// Series as Attributes
-    Series(Option<VarType>, bool, String),
-    /// Value from a series
-    SeriesValue(Option<VarType>, bool, String, usize),
+    /// Series
+    Series(GetSeries),
+    /// Set Series to a value
+    SetSeries(SetSeries<T>),
+    /// Series mapped by a function
+    MapSeries(MapSeries),
 }
 
 impl<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq + Eval> std::fmt::Display
@@ -441,6 +479,8 @@ impl<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq + Eval> std::fmt
             Self::Result(r) => std::fmt::Display::fmt(r, f),
             Self::Progress(p) => std::fmt::Display::fmt(p, f),
             Self::Var(v) => std::fmt::Display::fmt(v, f),
+            Self::Args(v) => write!(f, "*{v}"),
+            Self::KwArgs(v) => write!(f, "**{v}"),
             Self::SetVar(v) => std::fmt::Display::fmt(v, f),
             Self::Render(v) => write!(f, "r{v:?}"),
             Self::UniOp(op, expr) => {
@@ -554,16 +594,9 @@ impl<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq + Eval> std::fmt
                     if *b { ";" } else { "" }
                 )
             }
-            Self::Series(Some(vt), ts, name) => {
-                write!(f, "{vt}{}{name}", if *ts { "$$" } else { "$" })
-            }
-            Self::Series(None, ts, name) => write!(f, "{}{name}", if *ts { "$$" } else { "$" }),
-            Self::SeriesValue(Some(vt), ts, name, ind) => {
-                write!(f, "{vt}{}{name}[{ind}]", if *ts { "$$" } else { "$" })
-            }
-            Self::SeriesValue(None, ts, name, ind) => {
-                write!(f, "{}{name}[{ind}]", if *ts { "$$" } else { "$" })
-            }
+            Self::Series(s) => std::fmt::Display::fmt(s, f),
+            Self::SetSeries(s) => std::fmt::Display::fmt(s, f),
+            Self::MapSeries(s) => std::fmt::Display::fmt(s, f),
         }
     }
 }
@@ -735,19 +768,22 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
                     expr2.eval_mut_value(ctx, ectx, loc)?,
                 )
                 .map(ExprResult::Val),
+            Self::SetSeries(s) => s.eval_mut(ctx, ectx, loc),
             Self::None
             | Self::Value(_)
             | Self::Result(_)
             | Self::Progress(_)
             | Self::Var(_)
+            | Self::Args(_)
+            | Self::KwArgs(_)
             | Self::Render(_)
             | Self::UserError(_)
             | Self::Return(_)
             | Self::Break(_)
             | Self::Continue
             | Self::Range(..)
-            | Self::Series(..)
-            | Self::SeriesValue(..) => self.eval(ctx, ectx, loc),
+            | Self::Series(_)
+            | Self::MapSeries(_) => self.eval(ctx, ectx, loc),
         }
     }
 
@@ -767,6 +803,13 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
             }
             Self::Function(fc) => Ok(fc.eval(ctx, ectx, loc)?),
             Self::Var(vt) => Ok(vt.eval(ctx, ectx, loc)?),
+            // these two shouldn't be evaluated directly
+            Self::Args(_) => {
+                Err(EvalErrorType::LogicalError("shouldn't be evaluated directly").no_pos())
+            }
+            Self::KwArgs(_) => {
+                Err(EvalErrorType::LogicalError("shouldn't be evaluated directly").no_pos())
+            }
             Self::SetVar(sv) => {
                 sv.eval(ctx, ectx, loc)?;
                 Ok(ExprResult::None)
@@ -803,10 +846,34 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
                 }
             }
             Self::Array(exprs) => {
-                let vals: Vec<ExprResult> = exprs
-                    .iter()
-                    .map(|v| v.eval(ctx, ectx, loc))
-                    .collect::<Result<_, _>>()?;
+                let vals: Vec<ExprResult> =
+                    if exprs.iter().any(|e| matches!(&e.expr, ExprType::Args(_))) {
+                        exprs
+                            .iter()
+                            .map(|v| match &v.expr {
+                                ExprType::Args(vt) => {
+                                    // eval, take an array, and insert it as expression
+                                    let parent = Vec::<Attribute>::from_attr(
+                                        &vt.eval_value(ctx, &v.context, loc)?,
+                                    )
+                                    .ok_or(EvalErrorType::NotAnArray.no_pos())?;
+                                    Ok(parent
+                                        .into_iter()
+                                        .map(ExprResult::Val)
+                                        .collect::<Vec<ExprResult>>())
+                                }
+                                e => Ok(vec![e.eval(ctx, &v.context, loc)?]),
+                            })
+                            .collect::<Result<Vec<_>, EvalError>>()?
+                            .into_iter()
+                            .flatten()
+                            .collect()
+                    } else {
+                        exprs
+                            .iter()
+                            .map(|v| v.eval(ctx, ectx, loc))
+                            .collect::<Result<_, _>>()?
+                    };
                 Ok(ExprResult::Arr(vals))
             }
             Self::ArrayGen(expr, var, parent) => {
@@ -823,6 +890,9 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
                 Ok(ExprResult::Val(vals.into()))
             }
             Self::Map(exprs) => {
+                // TODO: think about how to implement kwargs here,
+                // because it probably won't be parsed from the parser
+                // at this point because it needs the keys
                 let vals: Vec<(String, ExprResult)> = exprs
                     .iter()
                     .map(|(k, v)| v.eval(ctx, ectx, loc).map(|v| (k.to_string(), v)))
@@ -917,7 +987,10 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
             }
             Self::Continue => Err(EvalErrorType::InvalidContinue.no_pos()),
             #[cfg(feature = "parser")]
-            ExprType::Import(i) => i.eval(ctx, ectx, loc),
+            Self::Import(i) => i.eval(ctx, ectx, loc),
+            Self::Series(s) => s.eval(ctx, ectx, loc),
+            Self::SetSeries(s) => s.eval(ctx, ectx, loc),
+            Self::MapSeries(s) => s.eval(ctx, ectx, loc),
             _ => Err(
                 EvalErrorType::NotImplementedError("this expression is not implemented").no_pos(),
             ),
@@ -1915,13 +1988,24 @@ impl<'a> FunctionCall<ResolvedExpr<'a>> {
     ) -> Result<FunctionCtx, EvalError> {
         let mut args = Vec::with_capacity(self.args.len());
         for a in &self.args {
-            args.push(
-                a.eval_value(ctx, ectx, loc)
-                    .map_err(|e| e.pos(self.position()))?,
-            );
+            match &a.expr {
+                ExprType::Args(vt) => {
+                    // eval, take an array, and insert it
+                    let parent = Vec::<Attribute>::from_attr(&vt.eval_value(ctx, &a.context, loc)?)
+                        .ok_or(EvalErrorType::NotAnArray.pos(a.position()))?;
+                    for v in parent {
+                        args.push(v);
+                    }
+                }
+                v => args.push(
+                    v.eval_value(ctx, &a.context, loc)
+                        .map_err(|e| e.pos(a.position()))?,
+                ),
+            }
         }
         let mut kwargs = HashMap::with_capacity(self.kwargs.len());
         for (k, a) in &self.kwargs {
+            // TODO: parser doesn't support adding **kwargs here yet
             kwargs.insert(
                 k.clone(),
                 a.eval_value(ctx, ectx, loc)
@@ -2122,9 +2206,10 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
         loc: &mut AttrMap,
     ) -> Result<ExprResult, EvalError> {
         let ectx = self.get_eval_context(ctx, ectx)?;
-        let res = match &ectx.expr_ctx.as_ref() {
+        match &ectx.expr_ctx.as_ref() {
             ExprContext::Local | ExprContext::Env => {
                 let func_ctx = self.function_ctx(ctx, &ectx, loc)?;
+                ctx.mark_change();
                 if let Some(func) = ctx.udf(&self.name).cloned() {
                     // priority for the locally defined function
                     return Ok(func.eval_mut(ctx, &ectx, func_ctx)?);
@@ -2142,6 +2227,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
             }
             ExprContext::Network => {
                 let func_ctx = self.function_ctx(ctx, &ectx, loc)?;
+                ctx.mark_change();
                 if let Some(func) = ctx.udf(&self.name).cloned() {
                     // priority for the locally defined function
                     return Ok(func.eval_mut(ctx, &ectx, func_ctx)?);
@@ -2170,6 +2256,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                 let func_ctx = self
                     .function_ctx(ctx, &etc, loc)
                     .map_err(|e| e.node(name.clone()))?;
+                ctx.mark_change();
                 if let Some(func) = ctx.udf(&self.name).cloned() {
                     // priority for the locally defined function
                     return Ok(func
@@ -2245,6 +2332,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                         }
                     })
                     .collect::<Result<Vec<_>, _>>()?;
+                ctx.mark_change();
                 Ok(ExprResult::Arr(res))
             }
             ExprContext::NodesMap(nds) => {
@@ -2296,11 +2384,10 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                         .map(|v| (name, v))
                     })
                     .collect::<Result<Vec<_>, _>>()?;
+                ctx.mark_change();
                 Ok(ExprResult::Map(res))
             }
-        };
-        // _ = ctx.channel.send(TaskMessage::Changed);
-        res
+        }
     }
 }
 
@@ -2321,222 +2408,512 @@ impl std::fmt::Display for MapFunction {
     }
 }
 
+// TODO: add expression: isna() or iserr().
+// Or make functions take ExprResult (not abi_stable though) instead of Attribute, then we can simply write those outselves.
+// Maybe we make function input type: Val(), None, Err()... then use that, the proc macro will make sure users don't need to change anything.
+
+// TODO: NOTE: Make GetSeries and SetSeries as expressions as well, add exprresult variants that are series and timeseries. The result can be rendered as series or timeseries, or set as such. But if someone is trying to set an attribute with that, then simply convert to array (null values lead into errors).
+
+// Similarly make expressions for series expression we had previously, map function and such, but since they were evaluated through converting to attributes, they should work with loops, make special consideration so that none values can be passed to functions. Maybe add "is_none()" function or similar (? operator) support for those expressions. Instead of passing values to functions we pass exprresult (or make way to pass none values to functions somehow).
+
 #[derive(Clone, PartialEq, Debug)]
-pub enum SeriesExpression {
-    /// Expression evaluates to an attribute, but the attribute must be an array
-    AttrExpr(RawExpr),
-    /// Another Series, simply copy
-    // if single or zip them if multiple (add type for that)
-    Series(Option<VarType>, bool, String),
-    /// Series Mapped to a Function
-    ///
-    /// The functions should have same number of arguments as the
-    /// number of series, they can have additional optional arguments
-    SeriesMap(Option<VarType>, bool, String, MapFunction),
+pub struct GetSeries {
+    ty: Option<VarType>,
+    is_ts: bool,
+    name: String,
+    // TODO unused index for now
+    index: Option<Box<RawExpr>>,
+    pub(crate) check: bool,
 }
 
-impl std::fmt::Display for SeriesExpression {
+impl std::fmt::Display for GetSeries {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Self::AttrExpr(expr) => write!(f, "{expr}"),
-            Self::Series(Some(vt), ts, srs) => {
-                write!(f, "{vt}{}{srs}", if *ts { "$$" } else { "$" })
-            }
-            Self::Series(None, ts, srs) => write!(f, "{}{srs}", if *ts { "$$" } else { "$" }),
-            Self::SeriesMap(Some(vt), ts, srs, mf) => {
-                write!(f, "{vt}{}{srs} -> {mf}", if *ts { "$$" } else { "$" })
-            }
-            Self::SeriesMap(None, ts, srs, mf) => {
-                write!(f, "{}{srs} -> {mf}", if *ts { "$$" } else { "$" })
-            }
-        }
+        write!(
+            f,
+            "{}{}{}{}{}",
+            self.ty
+                .as_ref()
+                .map(|t| format!("{}", t))
+                .unwrap_or_default(),
+            if self.is_ts { "$$" } else { "$" },
+            self.name,
+            self.index
+                .as_ref()
+                .map(|i| format!("{i}"))
+                .unwrap_or_default(),
+            if self.check { "?" } else { "" },
+        )
     }
 }
 
-impl SeriesExpression {
-    /// Evaluates the series expression and returns a series
-    pub fn resolve_eval_value(
+impl GetSeries {
+    pub fn new(
+        ty: Option<VarType>,
+        is_ts: bool,
+        name: String,
+        index: Option<RawExpr>,
+        check: bool,
+    ) -> Self {
+        Self {
+            ty,
+            is_ts,
+            name,
+            index: index.map(Box::new),
+            check,
+        }
+    }
+
+    fn get_expr_context<'a>(
         &self,
-        ft: &FunctionType,
         ctx: &TaskContext,
-        _local: Option<&AttrMap>,
-        node: Option<&Node>,
-    ) -> Result<Series, EvalError> {
-        match self {
-            Self::AttrExpr(_) => todo!(),
-            // Self::AttrExpr(expr) => match expr.resolve_eval(ft, ctx, local, node)? {
-            //     ExprResult::Arr(ar) => Ok(MaskedSeries::from(
-            //         ar.into_iter()
-            //             .map(ExprResult::to_attribute)
-            //             .collect::<Vec<Option<Attribute>>>(),
-            //     )
-            //     .retype()
-            //     .into()),
-            //     _ => Err(EvalErrorType::NotAnArray.no_pos()),
-            // },
-            Self::Series(ty, ts, sr) => get_series(ft, ctx, node, ty, sr, *ts),
-            Self::SeriesMap(ty, ts, sr, func) => {
-                let sr = get_series(ft, ctx, node, ty, sr, *ts)?;
-                match func {
-                    MapFunction::Defn(udf) => {
-                        let func_call = |arg| {
-                            let fctx = if let Some(a) = arg {
-                                FunctionCtx::from_arg_kwarg(vec![a], HashMap::new())
-                            } else {
-                                FunctionCtx::from_arg_kwarg(vec![], HashMap::new())
-                            };
-                            // eval udf with node/network context
-                            udf.eval(ctx, &EvalCtx::default(), fctx)
-                        };
-                        sr.map_values(&func_call)
-                    }
-                    MapFunction::Pointer(name) => {
-                        let func_call = |arg| {
-                            let fctx = if let Some(a) = arg {
-                                FunctionCtx::from_arg_kwarg(vec![a], HashMap::new())
-                            } else {
-                                FunctionCtx::from_arg_kwarg(vec![], HashMap::new())
-                            };
-                            match ctx.udf(name).cloned() {
-                                // priority for the locally defined function; evaluated in local context
-                                Some(func) => func.eval(ctx, &EvalCtx::default(), fctx),
-                                _ => match ctx.functions.env(name) {
-                                    Some(f) => f.call(&fctx).res().map_err(|e| {
-                                        EvalErrorType::FunctionError(
-                                            name.to_string(),
-                                            e.to_string(),
-                                        )
-                                        .no_pos()
-                                    }),
-                                    None => Err(EvalErrorType::FunctionNotFound(
-                                        Some(FunctionType::Env),
-                                        name.to_string(),
-                                    )
-                                    .no_pos()),
-                                },
-                            }
-                        };
-                        sr.map_values(&func_call)
-                    }
-                }
-            }
+        ectx: ExprContext,
+    ) -> Result<ExprContext, EvalErrorType> {
+        match &self.ty {
+            Some(ty) => ty.get_expr_context(ctx, ectx.curr_node()),
+            None => Ok(ectx),
         }
     }
 }
 
-fn get_series(
-    ft: &FunctionType,
-    ctx: &TaskContext,
-    node: Option<&Node>,
-    vt: &Option<VarType>,
-    name: &str,
-    ts: bool,
-) -> Result<Series, EvalError> {
-    let expr_ctx = match vt {
-        Some(ty) => ty.get_expr_context(ctx, node)?,
-        None => ft.get_expr_context(node)?,
-    };
-    match expr_ctx {
-        ExprContext::Local => {
-            return Err(EvalErrorType::NotImplementedError("local series not supported").no_pos());
-        }
-        ExprContext::Env => get_series_or_ts(&ctx.env, name, ts),
-        ExprContext::Network => get_series_or_ts(&ctx.network, name, ts),
-        ExprContext::Node(n) => {
-            let n = &n
-                .try_lock()
-                .into_option()
-                .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?;
-            let n: &NodeInner = n;
-            get_series_or_ts(n, name, ts)
-        }
-        // Nodes series will error out on masked series with gaps, use nodesmap keywords
-        ExprContext::Nodes(nds) => {
-            let inp_series = nds
-                .iter()
-                .map(|i| get_node_series_or_ts(i, name, ts))
-                .collect::<Result<Vec<Series>, EvalError>>()?;
-            let sr_lengths: Vec<usize> = inp_series.iter().map(|s| s.len()).collect();
-            if sr_lengths.is_empty() {
-                return Err(EvalErrorType::NoInputNodes.no_pos());
+impl Eval for GetSeries {
+    fn eval(
+        &self,
+        ctx: &TaskContext,
+        ectx: &EvalCtx,
+        _loc: &mut AttrMap,
+    ) -> Result<ExprResult, EvalError> {
+        let expr_ctx = if let Some(s) = &self.ty {
+            Cow::Owned(s.get_expr_context(ctx, ectx.curr_node())?)
+        } else {
+            ectx.expr_ctx.clone()
+        };
+        // TODO: take values out based on index
+        match expr_ctx.as_ref() {
+            ExprContext::Local => {
+                return Err(
+                    EvalErrorType::NotImplementedError("local series not supported").no_pos(),
+                );
             }
-            if let Some(l) = sr_lengths.iter().find(|l| **l != sr_lengths[0]) {
-                return Err(EvalErrorType::DifferentLength(sr_lengths[0], *l).no_pos());
+            ExprContext::Env => {
+                get_series_or_ts(&ctx.env, &self.name, self.is_ts).map(ExprResult::Series)
             }
-            let mut compl_series = Vec::with_capacity(inp_series.len());
-            for ser in inp_series {
-                match ser {
-                    Series::Masked(ms, _) => {
-                        let cs = ms
-                            .complete()
-                            .ok_or(EvalErrorType::EmptyValue(None).no_pos())?;
-                        compl_series.push(cs.to_attributes().into_iter());
-                    }
-                    Series::Complete(cs) => compl_series.push(cs.to_attributes().into_iter()),
+            ExprContext::Network => {
+                get_series_or_ts(&ctx.network, &self.name, self.is_ts).map(ExprResult::Series)
+            }
+            ExprContext::Node(n) => {
+                let n = &n
+                    .try_lock()
+                    .into_option()
+                    .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?;
+                let n: &NodeInner = n;
+                get_series_or_ts(n, &self.name, self.is_ts).map(ExprResult::Series)
+            }
+            // Nodes series will error out on masked series with gaps, use nodesmap keywords
+            ExprContext::Nodes(nds) => {
+                let inp_series = nds
+                    .iter()
+                    .map(|i| get_node_series_or_ts(i, &self.name, self.is_ts))
+                    .collect::<Result<Vec<Series>, EvalError>>()?;
+                let sr_lengths: Vec<usize> = inp_series.iter().map(|s| s.len()).collect();
+                if sr_lengths.is_empty() {
+                    // we don't have a identity series when we need an empty one
+                    return Ok(ExprResult::None);
                 }
-            }
-            let zipped_vals: Vec<_> = (0..sr_lengths[0])
-                .map(|_| {
-                    let mut dt = Vec::with_capacity(sr_lengths.len());
-                    for s in &mut compl_series {
-                        dt.push(s.next().expect("lengths already checked"));
-                    }
-                    Attribute::Array(dt.into())
-                })
-                .collect();
-            Ok(CompleteSeries::attributes(zipped_vals).into())
-        }
-        ExprContext::NodesMap(nds) => {
-            let inp_series = nds
-                .iter()
-                .map(|i| {
-                    let sr = get_node_series_or_ts(i, name, ts)?;
-                    Ok((
-                        i.try_lock()
-                            .into_option()
-                            .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
-                            .name()
-                            .to_string(),
-                        sr,
-                    ))
-                })
-                .collect::<Result<Vec<(String, Series)>, EvalError>>()?;
-            let sr_lengths: Vec<usize> = inp_series.iter().map(|(_, s)| s.len()).collect();
-            if sr_lengths.is_empty() {
-                return Err(EvalErrorType::NoInputNodes.no_pos());
-            }
-            if let Some(l) = sr_lengths.iter().find(|l| **l != sr_lengths[0]) {
-                return Err(EvalErrorType::DifferentLength(sr_lengths[0], *l).no_pos());
-            }
-            let mut compl_series = Vec::with_capacity(inp_series.len());
-            let mut masked_series = Vec::with_capacity(inp_series.len());
-            for (inp, ser) in inp_series {
-                match ser {
-                    Series::Masked(ms, _) => {
-                        masked_series.push((inp, ms.to_attributes().into_iter()))
-                    }
-                    Series::Complete(cs) => {
-                        compl_series.push((inp, cs.to_attributes().into_iter()))
-                    }
+                if let Some(l) = sr_lengths.iter().find(|l| **l != sr_lengths[0]) {
+                    return Err(EvalErrorType::DifferentLength(sr_lengths[0], *l).no_pos());
                 }
+                let mut compl_series = Vec::with_capacity(inp_series.len());
+                for ser in inp_series {
+                    compl_series.push(
+                        ser.to_attributes()
+                            .ok_or(EvalErrorType::EmptyValue(None).no_pos())?
+                            .into_iter(),
+                    );
+                }
+                let zipped_vals: Vec<_> = (0..sr_lengths[0])
+                    .map(|_| {
+                        let mut dt = Vec::with_capacity(sr_lengths.len());
+                        for s in &mut compl_series {
+                            dt.push(s.next().expect("lengths already checked"));
+                        }
+                        Attribute::Array(dt.into())
+                    })
+                    .collect();
+
+                Ok(ExprResult::Series(
+                    CompleteSeries::attributes(zipped_vals).into(),
+                ))
             }
-            let zipped_vals: Vec<_> = (0..sr_lengths[0])
-                .map(|_| {
-                    let mut dt = AttrMap::with_capacity(sr_lengths.len());
-                    for (i, s) in &mut compl_series {
-                        dt.insert(i.clone().into(), s.next().expect("lengths already checked"));
-                    }
-                    for (i, s) in &mut masked_series {
-                        if let RSome(val) = s.next().expect("lengths already checked") {
-                            dt.insert(i.clone().into(), val);
+            ExprContext::NodesMap(nds) => {
+                let inp_series = nds
+                    .iter()
+                    .map(|i| {
+                        let sr = get_node_series_or_ts(i, &self.name, self.is_ts)?;
+                        Ok((
+                            i.try_lock()
+                                .into_option()
+                                .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
+                                .name()
+                                .to_string(),
+                            sr,
+                        ))
+                    })
+                    .collect::<Result<Vec<(String, Series)>, EvalError>>()?;
+                let sr_lengths: Vec<usize> = inp_series.iter().map(|(_, s)| s.len()).collect();
+                if sr_lengths.is_empty() {
+                    return Ok(ExprResult::None);
+                }
+                if let Some(l) = sr_lengths.iter().find(|l| **l != sr_lengths[0]) {
+                    return Err(EvalErrorType::DifferentLength(sr_lengths[0], *l).no_pos());
+                }
+                let mut compl_series = Vec::with_capacity(inp_series.len());
+                let mut masked_series = Vec::with_capacity(inp_series.len());
+                for (inp, ser) in inp_series {
+                    match ser {
+                        Series::Masked(ms, _) => {
+                            masked_series.push((inp, ms.to_attributes().into_iter()))
+                        }
+                        Series::Complete(cs) => {
+                            compl_series.push((inp, cs.to_attributes().into_iter()))
                         }
                     }
-                    Attribute::Table(dt)
-                })
-                .collect();
-            Ok(CompleteSeries::attributes(zipped_vals).into())
+                }
+                let zipped_vals: Vec<_> = (0..sr_lengths[0])
+                    .map(|_| {
+                        let mut dt = AttrMap::with_capacity(sr_lengths.len());
+                        for (i, s) in &mut compl_series {
+                            dt.insert(i.clone().into(), s.next().expect("lengths already checked"));
+                        }
+                        for (i, s) in &mut masked_series {
+                            if let RSome(val) = s.next().expect("lengths already checked") {
+                                dt.insert(i.clone().into(), val);
+                            }
+                        }
+                        Attribute::Table(dt)
+                    })
+                    .collect();
+                Ok(ExprResult::Series(
+                    CompleteSeries::attributes(zipped_vals).into(),
+                ))
+            }
         }
     }
+}
+
+/// Series (es) with a function to map a value
+#[derive(Clone, Debug, PartialEq)]
+pub struct MapSeries {
+    /// one or multiple series
+    series: Vec<GetSeries>,
+    /// function pointer or function definition
+    func: MapFunction,
+}
+
+impl std::fmt::Display for MapSeries {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self.series.as_slice() {
+            [v] => write!(f, "{v} -> {}", self.func),
+            m => write!(
+                f,
+                "({}) -> {}",
+                m.iter()
+                    .map(|s| format!("{s}"))
+                    .collect::<Vec<String>>()
+                    .join(", "),
+                self.func
+            ),
+        }
+    }
+}
+
+impl MapSeries {
+    pub fn new(series: Vec<GetSeries>, func: MapFunction) -> Self {
+        Self { series, func }
+    }
+}
+
+impl Eval for MapSeries {
+    fn eval(
+        &self,
+        ctx: &TaskContext,
+        ectx: &EvalCtx,
+        loc: &mut AttrMap,
+    ) -> Result<ExprResult, EvalError> {
+        let mut srs: Vec<Vec<Attribute>> = Vec::with_capacity(self.series.len());
+        for s in &self.series {
+            srs.push(
+                s.eval(ctx, ectx, loc)?
+                    .to_attributes()
+                    .ok_or(EvalErrorType::NotAnArray.no_pos())?,
+            );
+        }
+        let sr_lengths: Vec<usize> = srs.iter().map(|s| s.len()).collect();
+        if sr_lengths.is_empty() {
+            return Ok(ExprResult::None);
+        }
+        if let Some(l) = sr_lengths.iter().find(|l| **l != sr_lengths[0]) {
+            return Err(EvalErrorType::DifferentLength(sr_lengths[0], *l).no_pos());
+        }
+        let result = match &self.func {
+            MapFunction::Defn(udf) => {
+                let func_call = |args| {
+                    let fctx = FunctionCtx::from_arg_kwarg(args, HashMap::new());
+                    // eval udf with node/network context
+                    udf.eval(ctx, &EvalCtx::default(), fctx)
+                };
+                let vals = (0..sr_lengths[0])
+                    .map(|i| {
+                        let args = srs.iter().map(|s| s[i].clone()).collect();
+                        Ok(func_call(args)?.to_attribute().into())
+                    })
+                    .collect::<Result<Vec<ROption<Attribute>>, EvalError>>()?;
+                MaskedSeries::attributes(vals).retype()
+            }
+            MapFunction::Pointer(name) => {
+                let func_call = |args| {
+                    let fctx = FunctionCtx::from_arg_kwarg(args, HashMap::new());
+                    match ctx.udf(name).cloned() {
+                        // priority for the locally defined function; evaluated in local context
+                        Some(func) => func.eval(ctx, &EvalCtx::default(), fctx),
+                        _ => match ctx.functions.env(name) {
+                            Some(f) => f.call(&fctx).res().map_err(|e| {
+                                EvalErrorType::FunctionError(name.to_string(), e.to_string())
+                                    .no_pos()
+                            }),
+                            None => Err(EvalErrorType::FunctionNotFound(
+                                Some(FunctionType::Env),
+                                name.to_string(),
+                            )
+                            .no_pos()),
+                        },
+                    }
+                };
+                let vals = (0..sr_lengths[0])
+                    .map(|i| {
+                        let args = srs.iter().map(|s| s[i].clone()).collect();
+                        Ok(func_call(args)?.to_attribute().into())
+                    })
+                    .collect::<Result<Vec<ROption<Attribute>>, EvalError>>()?;
+                MaskedSeries::attributes(vals).retype()
+            }
+        };
+        Ok(ExprResult::Series(Series::Masked(result, RNone)))
+    }
+}
+
+/// Set a series from results of an expression
+///
+/// the expression should result in a series, timeseries, or array of attributes
+#[derive(Clone, PartialEq, Debug)]
+pub struct SetSeries<T> {
+    inp: GetSeries,
+    ty: Option<NadiAttrType>,
+    expr: Box<T>,
+    ctx: Option<ExprContext>,
+}
+
+impl<T> SetSeries<T> {
+    pub fn new(inp: GetSeries, ty: Option<NadiAttrType>, expr: T) -> Self {
+        Self {
+            inp,
+            ty,
+            expr: Box::new(expr),
+            ctx: None,
+        }
+    }
+}
+
+impl<T: std::fmt::Display> std::fmt::Display for SetSeries<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{}{} = {}",
+            self.inp,
+            self.ty
+                .as_ref()
+                .map(|t| format!(": {t}"))
+                .unwrap_or_default(),
+            self.expr
+        )
+    }
+}
+
+fn resolve_set_series<'b>(
+    expr: SetSeries<RawExpr>,
+    ctx: &TaskContext,
+    ectx: EvalCtx<'b>,
+) -> Result<ResolvedExpr<'b>, EvalError> {
+    let e = expr.ctx.as_ref().unwrap_or(ectx.expr_ctx.as_ref());
+    let new_expr_ctx = expr.inp.get_expr_context(ctx, e.clone())?;
+    let etc = match new_expr_ctx {
+        ExprContext::Local => EvalCtx::local(),
+        ExprContext::Env => EvalCtx::env(),
+        ExprContext::Network => EvalCtx::network(),
+        ExprContext::Node(n) => EvalCtx::at_node(n),
+        ExprContext::Nodes(nds) | ExprContext::NodesMap(nds) => {
+            let exprs = nds
+                .into_iter()
+                .map(|n| {
+                    let context = EvalCtx::at_node(n.clone()).to_owned();
+                    let mut inp = expr.inp.clone();
+                    _ = inp.ty.replace(VarType::Node(None));
+                    Ok(ResolvedExpr {
+                        expr: ExprType::SetSeries(SetSeries::new(
+                            inp,
+                            expr.ty.clone(),
+                            expr.expr.clone().resolve(ctx, context.clone())?,
+                        )),
+                        position: expr.expr.position(),
+                        context,
+                    })
+                })
+                .collect::<Result<Vec<ResolvedExpr>, EvalError>>()?;
+            // FIX: how to know whether the user is looking for array or statement?
+            let et = ExprType::Multi(exprs, true);
+            return Ok(ResolvedExpr {
+                position: expr.expr.position(),
+                expr: et,
+                context: EvalCtx::env(),
+            });
+        }
+    };
+
+    Ok(ResolvedExpr {
+        expr: ExprType::SetSeries(SetSeries::new(
+            expr.inp,
+            expr.ty.clone(),
+            expr.expr.clone().resolve(ctx, etc.clone())?,
+        )),
+        position: expr.expr.position(),
+        context: etc,
+    })
+}
+
+fn eval_series<T: Eval>(
+    expr: &T,
+    ctx: &TaskContext,
+    ectx: &EvalCtx,
+    loc: &mut AttrMap,
+) -> Result<Series, EvalError> {
+    let res = expr.eval(ctx, ectx, loc)?;
+    Ok(match res {
+        ExprResult::Series(s) => s,
+        ExprResult::TimeSeries(ts) => ts.series().clone(),
+        ExprResult::Val(a) => Series::Complete(
+            CompleteSeries::attributes(
+                Vec::<Attribute>::from_attr(&a).ok_or(EvalErrorType::NotAnArray.no_pos())?,
+            )
+            .retype(),
+        ),
+        ExprResult::Arr(ar) => Series::Masked(
+            MaskedSeries::attributes(ar.into_iter().map(|a| a.to_attribute().into()).collect())
+                .retype(),
+            RNone,
+        ),
+        _ => return Err(EvalErrorType::NotAnArray.no_pos()),
+    })
+}
+
+impl<T: Eval> Eval for SetSeries<T> {
+    fn eval(
+        &self,
+        ctx: &TaskContext,
+        ectx: &EvalCtx,
+        loc: &mut AttrMap,
+    ) -> Result<ExprResult, EvalError> {
+        // get ectx based on resolved ctx
+        match ectx.expr_ctx.as_ref() {
+            ExprContext::Local => {
+                return Err(
+                    EvalErrorType::NotImplementedError("local series not supported").no_pos(),
+                );
+            }
+            ExprContext::Env | ExprContext::Network => {
+                // env and network can only be modified if the context is in mutable state
+                Err(EvalErrorType::InvalidVariableType.no_pos())
+            }
+            ExprContext::Node(n) => {
+                let val = eval_series(self.expr.as_ref(), ctx, &EvalCtx::at_node(n.clone()), loc)?;
+                // self.ty.validate_series(val)?;
+                n.try_lock()
+                    .into_option()
+                    .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
+                    .set_series(&self.inp.name, val);
+                ctx.mark_change();
+                Ok(ExprResult::None)
+            }
+            ExprContext::Nodes(nds) => {
+                for n in nds {
+                    let val =
+                        eval_series(self.expr.as_ref(), ctx, &EvalCtx::at_node(n.clone()), loc)?;
+                    // self.ty.validate_series(val)?;
+                    n.try_lock()
+                        .into_option()
+                        .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
+                        .set_series(&self.inp.name, val);
+                }
+                ctx.mark_change();
+                Ok(ExprResult::None)
+            }
+            ExprContext::NodesMap(_) => Err(EvalErrorType::InvalidVariableType.no_pos()),
+        }
+    }
+
+    fn eval_mut(
+        &self,
+        ctx: &mut TaskContext,
+        ectx: &EvalCtx,
+        loc: &mut AttrMap,
+    ) -> Result<ExprResult, EvalError> {
+        // get ectx based on resolved ctx
+        match ectx.expr_ctx.as_ref() {
+            ExprContext::Local => {
+                return Err(
+                    EvalErrorType::NotImplementedError("local series not supported").no_pos(),
+                );
+            }
+            ExprContext::Env => {
+                let val = eval_series(self.expr.as_ref(), ctx, &EvalCtx::env(), loc)?;
+                // self.ty.validate_series(val)?;
+                ctx.env.set_series(&self.inp.name, val);
+                ctx.mark_change();
+                Ok(ExprResult::None)
+            }
+            ExprContext::Network => {
+                let val = eval_series(self.expr.as_ref(), ctx, &EvalCtx::network(), loc)?;
+                // self.ty.validate_series(val)?;
+                ctx.network.set_series(&self.inp.name, val);
+                ctx.mark_change();
+                Ok(ExprResult::None)
+            }
+            ExprContext::Node(n) => {
+                let val = eval_series(self.expr.as_ref(), ctx, &EvalCtx::at_node(n.clone()), loc)?;
+                // self.ty.validate_series(val)?;
+                n.try_lock()
+                    .into_option()
+                    .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
+                    .set_series(&self.inp.name, val);
+                ctx.mark_change();
+                Ok(ExprResult::None)
+            }
+            ExprContext::Nodes(nds) => {
+                for n in nds {
+                    let val =
+                        eval_series(self.expr.as_ref(), ctx, &EvalCtx::at_node(n.clone()), loc)?;
+                    // self.ty.validate_series(val)?;
+                    n.try_lock()
+                        .into_option()
+                        .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
+                        .set_series(&self.inp.name, val);
+                }
+                ctx.mark_change();
+                Ok(ExprResult::None)
+            }
+            ExprContext::NodesMap(_) => Err(EvalErrorType::InvalidVariableType.no_pos()),
+        }
+    }
+
+    // TODO: add eval mut where you can change it for env and network as well
 }
 
 fn get_series_or_ts<T: HasSeries + HasTimeSeries>(

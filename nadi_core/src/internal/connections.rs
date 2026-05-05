@@ -238,8 +238,8 @@ mod conn {
 
     /// Move the node to the side so that its inputs go to the output
     #[node_func]
-    fn move_aside(node: &mut NodeInner) {
-        node.move_aside()
+    fn move_aside(node: &mut NodeInner) -> Result<(), String> {
+        node.move_aside().map_err(String::from)
     }
 
     // /// Move the node down so that it swaps the place with the output

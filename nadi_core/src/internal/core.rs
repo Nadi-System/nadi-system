@@ -150,7 +150,7 @@ mod core {
     ///
     /// ```task
     /// network load_str("a -> b\n b -> d\n c -> d")
-    /// nodes assert_eq(inputs_count(), length(inputs._))
+    /// nodes assert_eq(inputs_count(), len(inputs._))
     /// ```
     #[node_func]
     fn inputs_count(node: &NodeInner) -> usize {
@@ -540,11 +540,11 @@ mod core {
     /// length of an array or hashmap
     ///
     /// ```task
-    /// env assert_eq(length([4, 5]), 2)
-    /// env assert_eq(length({x=4, y=5}), 2)
+    /// env assert_eq(len([4, 5]), 2)
+    /// env assert_eq(len({x=4, y=5}), 2)
     /// ```
     #[env_func]
-    fn length(
+    fn len(
         /// Array or a HashMap
         value: &Attribute,
     ) -> Result<usize, String> {
@@ -865,7 +865,7 @@ mod core {
     ///
     /// ```task
     /// env.uniq = unique_str(["hi", "me", "hi", "you"]);
-    /// env assert_eq(length(uniq), 3)
+    /// env assert_eq(len(uniq), 3)
     /// ```
     #[env_func]
     fn unique_str(#[relaxed] vars: Vec<String>) -> Vec<String> {
