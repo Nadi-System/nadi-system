@@ -486,6 +486,13 @@ impl Series {
             Series::Complete(cs) => cs.to_attributes(),
         })
     }
+
+    pub fn to_opt_attributes(self) -> Vec<ROption<Attribute>> {
+        match self {
+            Series::Masked(ms, _) => ms.to_attributes(),
+            Series::Complete(cs) => cs.to_attributes().into_iter().map(RSome).collect(),
+        }
+    }
 }
 
 #[repr(C)]

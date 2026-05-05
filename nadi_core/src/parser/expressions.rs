@@ -633,7 +633,15 @@ pub fn series_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, GetSeri
         tuple((
             opt(variable_type),
             tuple((dollar, opt(dollar), variable)),
-            opt(raw_expr(array_expr)),
+            opt(raw_expr(alt((
+                // just to capture single value separately than array_expr
+                delimited(
+                    bracket_start,
+                    maybe_space(value_expression),
+                    maybe_space(bracket_end),
+                ),
+                array_expr,
+            )))),
             opt(question),
         )),
         |(vt, (_, ts, var), ind, q)| {

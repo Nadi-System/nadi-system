@@ -54,6 +54,14 @@ impl UserFunction {
         }
     }
 
+    pub fn arg_names(&self) -> Vec<&str> {
+        self.args
+            .iter()
+            .map(|a| a.as_str())
+            .chain(self.kwargs.iter().map(|(k, _)| k.as_str()))
+            .collect()
+    }
+
     // TODO: check if running this with ft: env can make it work even if there is "node" variable, because node is Some(_)
     // TODO: Need to resolve in a way that even if function type is Env, if variable type is Node, and node is Some node
     // This is so that we don't need the loc.x part here
