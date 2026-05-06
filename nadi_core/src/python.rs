@@ -3,7 +3,7 @@ use crate::eval::{EvalError, EvalErrorType};
 use crate::parser::ParseError;
 use crate::template::TemplateError;
 pub use pyo3;
-use pyo3::{IntoPyObject, PyErr, PyErrArguments, PyObject, Python, exceptions::*};
+use pyo3::{exceptions::*, IntoPyObject, PyErr, PyErrArguments, PyObject, Python};
 
 impl PyErrArguments for EvalError {
     fn arguments(self, py: Python<'_>) -> PyObject {

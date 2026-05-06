@@ -305,7 +305,8 @@ impl NodeInner {
     pub fn edges(&self) -> Vec<Node> {
         self.inputs()
             .iter()
-            .chain(self.outputs()).cloned()
+            .chain(self.outputs())
+            .cloned()
             .collect()
     }
 

@@ -551,7 +551,8 @@ impl Network {
             let inputs: Vec<Node> = nobj
                 .try_lock()
                 .expect(&format!("mutex error: {:?} {}", file!(), line!()))
-                .inputs().to_vec();
+                .inputs()
+                .to_vec();
             let ord = inputs
                 .iter()
                 // nodes that have some node loop back to them will have zero  (unset) value as order from them
@@ -623,7 +624,8 @@ impl Network {
             let inputs: Vec<Node> = self.nodes_map[curr.as_str()]
                 .try_lock()
                 .expect(&format!("mutex error: {:?} {}", file!(), line!()))
-                .inputs().to_vec();
+                .inputs()
+                .to_vec();
             let mut inps: Vec<String> = inputs
                 .iter()
                 .map(|i| {
@@ -783,10 +785,7 @@ impl Network {
             self.nodes.remove(ind);
             self.nodes_map.remove(n.name());
             // make sure the block below doesn't hang for long
-            (
-                ind,
-                n.outputs().to_vec(),
-            )
+            (ind, n.outputs().to_vec())
         };
 
         // remove node from its output
@@ -811,7 +810,8 @@ impl Network {
         let inputs: Vec<Node> = node
             .try_lock()
             .expect(&format!("mutex error: {:?} {}", file!(), line!()))
-            .inputs().to_vec();
+            .inputs()
+            .to_vec();
 
         // remove node from its inputs
         for inp in &inputs {
@@ -910,8 +910,7 @@ impl Network {
                 }
             }
         }
-        self.nodes = include_nodes.keys().map(|n| n.to_string().into())
-            .collect();
+        self.nodes = include_nodes.keys().map(|n| n.to_string().into()).collect();
         self.nodes_map = include_nodes
             .into_iter()
             .map(|(n, o)| (n.into(), o))

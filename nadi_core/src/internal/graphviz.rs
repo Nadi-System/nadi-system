@@ -5,7 +5,7 @@ mod gviz {
     use crate::attrs::FromAttribute;
     use crate::functions::FunctionRet;
     use crate::nadi_plugin::network_func;
-    
+
     use crate::template::Template;
     use crate::{network::Network, node::NodeInner, return_on_err};
     use abi_stable::std_types::Tuple2;
@@ -55,10 +55,7 @@ mod gviz {
         for node in net.nodes() {
             let (name, outputs) = {
                 let node: &NodeInner = &node.lock();
-                (
-                    node.name().to_string(),
-                    node.outputs().to_vec(),
-                )
+                (node.name().to_string(), node.outputs().to_vec())
             };
             if let Some(templ) = &node_attr {
                 let node: &NodeInner = &node.lock();
