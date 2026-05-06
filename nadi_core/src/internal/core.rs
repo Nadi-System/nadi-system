@@ -859,6 +859,89 @@ mod core {
         Ok(val)
     }
 
+    #[derive(FromAttribute)]
+    enum HashableAttr {
+        Int(i64),
+        Float(f64),
+        Str(String),
+        Bool(bool),
+    }
+
+    impl std::cmp::PartialEq for HashableAttr {
+        fn eq(&self, other: &Self) -> bool {
+            match (self, other) {
+                (Self::Int(a), Self::Int(b)) => a == b,
+                // nan are considered equal because we're looking at unique values
+                (Self::Float(a), Self::Float(b)) => (a.is_nan() & b.is_nan()) | (a == b),
+                (Self::Str(a), Self::Str(b)) => a == b,
+                (Self::Bool(a), Self::Bool(b)) => a == b,
+                _ => false,
+            }
+        }
+    }
+
+    impl Eq for HashableAttr {}
+
+    // manual implementation because f64 doesn't have hash
+    impl std::hash::Hash for HashableAttr {
+        fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+            match self {
+                HashableAttr::Int(v) => {
+                    state.write_u8(1);
+                    v.hash(state);
+                }
+                HashableAttr::Float(v) => {
+                    if v.is_nan() {
+                        // nan can have different values, so consider it a separate kind
+                        state.write_u8(2);
+                    } else {
+                        state.write_u8(3);
+                        v.to_bits().hash(state);
+                    }
+                }
+                HashableAttr::Str(v) => {
+                    state.write_u8(4);
+                    v.hash(state);
+                }
+                HashableAttr::Bool(v) => {
+                    state.write_u8(5);
+                    v.hash(state);
+                }
+            }
+        }
+    }
+
+    impl From<HashableAttr> for Attribute {
+        fn from(val: HashableAttr) -> Attribute {
+            match val {
+                HashableAttr::Int(v) => Attribute::Integer(v),
+                HashableAttr::Float(v) => Attribute::Float(v),
+                HashableAttr::Str(v) => Attribute::String(v.into()),
+                HashableAttr::Bool(v) => Attribute::Bool(v),
+            }
+        }
+    }
+
+    /// Get a list of unique attribute values (only primitives)
+    ///
+    /// The order of the attributes returned is not guaranteed. This
+    /// does not support array and attrmap values due to uniqueness
+    /// ambiguity.
+    ///
+    /// ```task
+    /// env.uniq = unique(["hi", "me", "hi", "you"]);
+    /// env assert_eq(len(uniq), 3)
+    /// env.uniq = unique(["hi", true, true, nan, 1.0, 1, nan]);
+    /// env assert_eq(len(uniq), 5)
+    /// ```
+    #[env_func]
+    fn unique(vars: Vec<HashableAttr>) -> Vec<HashableAttr> {
+        vars.into_iter()
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect()
+    }
+
     /// Get a list of unique string values
     ///
     /// The order of the strings returned is not guaranteed

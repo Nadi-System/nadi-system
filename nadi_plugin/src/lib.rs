@@ -133,13 +133,19 @@ fn from_attr_derive(input: TokenStream, relaxed: bool) -> TokenStream {
             let names: Vec<String> = en
                 .variants
                 .iter()
-                .map(|v| v.fields.to_token_stream().to_string())
+                .map(|v| {
+                    v.fields
+                        .to_token_stream()
+                        .to_string()
+                        .trim_matches(['(', ')'])
+                        .to_string()
+                })
                 .collect();
             // TODO extra () for unnamed fields should be renamed later
-            let names = names.join(", ");
+            let names = names.join(" | ");
             quote! {
             #(#vars)*
-            Err(format!("Incorrect Type: got {} instead of any of: [{}]", value.type_name(), #names))
+            Err(format!("Incorrect Type: got {} instead of one of: [ {} ]", value.type_name(), #names))
             }
         }
         syn::Data::Union(_) => {

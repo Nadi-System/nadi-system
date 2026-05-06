@@ -280,7 +280,13 @@ impl std::fmt::Display for Attribute {
             Self::String(v) => write!(f, "{v:?}"),
             Self::Integer(v) => write!(f, "{v}"),
             // lower for nan and inf
-            Self::Float(v) => write!(f, "{}", v.to_string().to_lowercase()),
+            Self::Float(v) => {
+                // if v.is_finite() {
+                //     write!(f, "{v}")
+                // } else {
+                write!(f, "{}", v.to_string().to_lowercase())
+                // }
+            }
             Self::Date(v) => write!(f, "{v}"),
             Self::Time(v) => write!(f, "{v}"),
             Self::DateTime(v) => write!(f, "{v}"),
