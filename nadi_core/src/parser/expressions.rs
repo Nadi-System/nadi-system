@@ -123,7 +123,7 @@ pub fn expr_with_context<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprT
             value((true, false), after_space(kw_do)),
             value((true, true), after_space(kw_dopar)),
             // parallel but not silent: not implemented yet
-            value((false, true), after_space(kw_par)),
+            // value((false, true), after_space(kw_par)),
         ))),
         alt((
             maybe_space(raw_expr(expression_block)),

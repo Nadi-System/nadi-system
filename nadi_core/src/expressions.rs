@@ -14,6 +14,7 @@ use abi_stable::std_types::{RNone, ROption, RSome, RString, Tuple2};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 pub static NONE_VALUE: &str = "<None>";
 
@@ -3104,7 +3105,6 @@ fn get_node_series_or_ts(n: &Node, name: &str, ts: bool) -> Result<Series, EvalE
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExprWithContext {
     pub ty: VarType,
-    // TODO: make it a vec of expression later
     pub expr: Box<RawExpr>,
     pub silent: bool,
     pub parallel: bool,
@@ -3140,13 +3140,24 @@ impl Eval for ExprWithContext {
             ExprContext::Network => self.expr.eval(ctx, &EvalCtx::network(), loc),
             ExprContext::Node(n) => self.expr.eval(ctx, &EvalCtx::at_node(n).to_owned(), loc),
             ExprContext::Nodes(nds) => {
-                let exprs = nds
-                    .into_iter()
-                    .map(|n| self.expr.eval(ctx, &EvalCtx::at_node(n).to_owned(), loc))
-                    .collect::<Result<Vec<ExprResult>, EvalError>>()?;
                 if self.silent {
-                    Ok(ExprResult::None)
+                    let parallel = TaskCtxConsts::parallize_nodes(ctx);
+                    if parallel | self.parallel {
+                        run_nodes_in_parallel(nds, &ctx, &self.expr)
+                    } else {
+                        nds.into_iter().try_for_each(|n| {
+                            self.expr
+                                .eval(ctx, &EvalCtx::at_node(n).to_owned(), loc)
+                                .map(|_| ())
+                        })?;
+
+                        Ok(ExprResult::None)
+                    }
                 } else {
+                    let exprs = nds
+                        .into_iter()
+                        .map(|n| self.expr.eval(ctx, &EvalCtx::at_node(n).to_owned(), loc))
+                        .collect::<Result<Vec<ExprResult>, EvalError>>()?;
                     Ok(ExprResult::Arr(exprs))
                 }
             }
@@ -3193,16 +3204,23 @@ impl Eval for ExprWithContext {
                 .expr
                 .eval_mut(ctx, &EvalCtx::at_node(n).to_owned(), loc),
             ExprContext::Nodes(nds) => {
-                let exprs = nds
-                    .into_iter()
-                    .map(|n| {
-                        self.expr
-                            .eval_mut(ctx, &EvalCtx::at_node(n).to_owned(), loc)
-                    })
-                    .collect::<Result<Vec<ExprResult>, EvalError>>()?;
                 if self.silent {
-                    Ok(ExprResult::None)
+                    let parallel = TaskCtxConsts::parallize_nodes(ctx);
+                    if parallel | self.parallel {
+                        run_nodes_in_parallel(nds, &ctx, &self.expr)
+                    } else {
+                        nds.into_iter().try_for_each(|n| {
+                            self.expr
+                                .eval_mut(ctx, &EvalCtx::at_node(n).to_owned(), loc)
+                                .map(|_| ())
+                        })?;
+                        Ok(ExprResult::None)
+                    }
                 } else {
+                    let exprs = nds
+                        .into_iter()
+                        .map(|n| self.expr.eval(ctx, &EvalCtx::at_node(n).to_owned(), loc))
+                        .collect::<Result<Vec<ExprResult>, EvalError>>()?;
                     Ok(ExprResult::Arr(exprs))
                 }
             }
@@ -3228,6 +3246,59 @@ impl Eval for ExprWithContext {
                     Ok(ExprResult::Map(exprs))
                 }
             }
+        }
+    }
+}
+
+fn run_nodes_in_parallel(
+    nodes: Vec<Node>,
+    ctx: &TaskContext,
+    expr: &RawExpr,
+) -> Result<ExprResult, EvalError> {
+    {
+        // TODO: move to a function
+        // parallel is run without mutability inside:
+        // nodes are mutable without that anyway, but
+        // env and network are not
+        let num_jobs = TaskCtxConsts::parallel_cores(ctx);
+        let nodes = Arc::new(Mutex::new(nodes));
+        let error = Arc::new(Mutex::new(None));
+        let ctx = &ctx;
+        std::thread::scope(|s| {
+            let handles = (0..num_jobs)
+                .map(|_| {
+                    let nds = nodes.clone();
+                    let err = error.clone();
+                    s.spawn(move || {
+                        loop {
+                            // if some other thread errored out, then stop others
+                            if err.lock().unwrap().is_some() {
+                                break;
+                            }
+                            let n = nds.lock().unwrap().pop();
+                            if let Some(n) = n {
+                                let mut new_loc = AttrMap::new();
+                                if let Err(e) =
+                                    expr.eval(ctx, &EvalCtx::at_node(n).to_owned(), &mut new_loc)
+                                {
+                                    err.lock().unwrap().replace(e);
+                                }
+                            } else {
+                                break;
+                            }
+                        }
+                    })
+                })
+                .collect::<Vec<_>>();
+            for h in handles {
+                _ = h.join();
+            }
+        });
+        let err: &Option<EvalError> = &error.lock().unwrap();
+        if let Some(e) = err {
+            Err(e.clone())
+        } else {
+            Ok(ExprResult::None)
         }
     }
 }
