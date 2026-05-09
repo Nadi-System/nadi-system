@@ -3318,7 +3318,10 @@ impl Eval for ExprWithContext {
                 } else {
                     let exprs = nds
                         .into_iter()
-                        .map(|n| self.expr.eval(ctx, &EvalCtx::at_node(n).to_owned(), loc))
+                        .map(|n| {
+                            self.expr
+                                .eval_mut(ctx, &EvalCtx::at_node(n).to_owned(), loc)
+                        })
                         .collect::<Result<Vec<ExprResult>, EvalError>>()?;
                     Ok(ExprResult::Arr(exprs))
                 }
