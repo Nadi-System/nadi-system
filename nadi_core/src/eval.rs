@@ -83,7 +83,6 @@ impl Eval for Template {
                     map_res(
                         self.render(
                             &n.try_lock()
-                                .into_option()
                                 .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?,
                         ),
                     )
@@ -93,16 +92,10 @@ impl Eval for Template {
             ExprContext::NodesMap(nds) => nds
                 .iter()
                 .map(|n| {
-                    let name = n
-                        .try_lock()
-                        .into_option()
-                        .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
-                        .name()
-                        .to_string();
+                    let name = n.name().to_string();
                     map_res(
                         self.render(
                             &n.try_lock()
-                                .into_option()
                                 .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?,
                         ),
                     )

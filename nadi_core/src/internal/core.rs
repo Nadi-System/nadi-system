@@ -66,7 +66,7 @@ mod core {
     /// ```
     #[network_func]
     fn net_roots(net: &Network) -> Vec<String> {
-        net.roots().map(|o| o.lock().name().to_string()).collect()
+        net.roots().map(|o| o.name().to_string()).collect()
     }
 
     /// Get the name of the leaf nodes
@@ -77,7 +77,7 @@ mod core {
     /// ```
     #[network_func]
     fn net_leaves(net: &Network) -> Vec<String> {
-        net.leaves().map(|o| o.lock().name().to_string()).collect()
+        net.leaves().map(|o| o.name().to_string()).collect()
     }
 
     /// Get the attr of the provided node

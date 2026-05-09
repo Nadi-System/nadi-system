@@ -1,7 +1,7 @@
 use crate::attrs::{AttrMap, HasAttributes};
 use crate::eval::EvalErrorType;
 use crate::expressions::RawExpr;
-use crate::node::{new_node, Node};
+use crate::node::Node;
 use crate::timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap};
 use abi_stable::std_types::{RDuration, Tuple2};
 use abi_stable::{
@@ -224,11 +224,9 @@ impl Network {
                 let inp = self.node_by_name(start).expect("Input just inserted");
                 let out = inp.clone();
                 inp.try_lock()
-                    .into_option()
                     .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                     .add_output(out.clone());
                 inp.try_lock()
-                    .into_option()
                     .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                     .add_input(out.clone());
             } else {
@@ -241,11 +239,9 @@ impl Network {
                 let inp = self.node_by_name(start).expect("Input just inserted");
                 let out = self.node_by_name(end).expect("Output just inserted");
                 inp.try_lock()
-                    .into_option()
                     .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                     .add_output(out.clone());
                 out.try_lock()
-                    .into_option()
                     .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                     .add_input(inp.clone());
             }
@@ -321,7 +317,7 @@ impl Network {
         if self.nodes_map.contains_key(name) {
             return;
         }
-        let node = new_node(self.nodes_count(), name);
+        let node = Node::new(self.nodes_count(), name);
         self.nodes_map.insert(name.into(), node);
         self.nodes.push(name.into());
     }
@@ -392,13 +388,7 @@ impl Network {
                 let res = self
                     .nodes_order(o)
                     .into_iter()
-                    .filter(|n| {
-                        sel_lst.remove(
-                            n.try_lock()
-                                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
-                                .name(),
-                        )
-                    })
+                    .filter(|n| sel_lst.remove(n.name()))
                     .collect();
                 if sel_lst.is_empty() {
                     Ok(res)
@@ -451,12 +441,7 @@ impl Network {
         .as_str();
         loop {
             path_nodes.push(curr.clone());
-            if curr
-                .try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
-                .name()
-                == end_name
-            {
+            if curr.name() == end_name {
                 break;
             }
             let tmp = if let RSome(o) = curr
@@ -469,10 +454,7 @@ impl Network {
                 // TODO: work with multiple output
                 return Err(EvalErrorType::PathNotFound(
                     start_name.to_string(),
-                    curr.try_lock()
-                        .expect(&format!("mutex error: {:?} {}", file!(), line!()))
-                        .name()
-                        .to_string(),
+                    curr.name().to_string(),
                     end_name.to_string(),
                 ));
             };
@@ -526,10 +508,10 @@ impl Network {
                     .output()
                     .cloned();
             while let RSome(out) = n {
+                *weights.entry(out.name().into()).or_insert(1) += 1;
                 let o = out
                     .try_lock_for(RDuration::from_secs(1))
                     .expect("Lock failed for node, maybe branched network");
-                *weights.entry(o.name().into()).or_insert(1) += 1;
                 if visited.contains(&o.index()) {
                     // looped back to the already visited node
                     // this needs to be here to prevent infinite loop
@@ -636,12 +618,7 @@ impl Network {
         let mut nodes_queue: Vec<String> = Vec::with_capacity(self.nodes.len());
         let mut new_nodes: Vec<String> = Vec::with_capacity(self.nodes.len());
         for o in self.outlets.iter().rev() {
-            nodes_queue.push(
-                o.try_lock()
-                    .expect(&format!("mutex error: {:?} {}", file!(), line!()))
-                    .name()
-                    .to_string(),
-            );
+            nodes_queue.push(o.name().to_string());
         }
 
         while let Some(curr) = nodes_queue.pop() {
@@ -656,15 +633,7 @@ impl Network {
                 .expect(&format!("mutex error: {:?} {}", file!(), line!()))
                 .inputs()
                 .to_vec();
-            let mut inps: Vec<String> = inputs
-                .iter()
-                .map(|i| {
-                    i.try_lock()
-                        .expect(&format!("mutex error: {:?} {}", file!(), line!()))
-                        .name()
-                        .to_string()
-                })
-                .collect();
+            let mut inps: Vec<String> = inputs.iter().map(|i| i.name().to_string()).collect();
 
             inps.sort_by(|n1, n2| {
                 weights[n2.as_str()]
@@ -700,12 +669,7 @@ impl Network {
         }
         self.nodes = new_nodes
             .iter()
-            .map(|n| {
-                n.try_lock()
-                    .expect(&format!("mutex error: {:?} {}", file!(), line!()))
-                    .name()
-                    .into()
-            })
+            .map(|n| n.name().into())
             .collect::<Vec<RString>>()
             .into();
         self.reindex();
@@ -921,10 +885,12 @@ impl Network {
                         break;
                     }
                     RSome(o) => {
-                        let mut op =
-                            o.try_lock()
-                                .expect(&format!("mutex error: {:?} {}", file!(), line!()));
-                        if include_nodes.contains_key(op.name()) {
+                        if include_nodes.contains_key(o.name()) {
+                            let mut op = o.try_lock().expect(&format!(
+                                "mutex error: {:?} {}",
+                                file!(),
+                                line!()
+                            ));
                             op.add_input(node.clone());
                             node.try_lock()
                                 .expect(&format!("mutex error: {:?} {}", file!(), line!()))
@@ -957,12 +923,7 @@ impl Network {
         let mut nodes = Vec::with_capacity(self.nodes.len());
         let mut nodes_map = HashMap::with_capacity(self.nodes.len());
         fn register(n: &Node, nds: &mut Vec<RString>, nmp: &mut HashMap<RString, Node>) {
-            let nm: RString = n
-                .try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
-                .name()
-                .to_string()
-                .into();
+            let nm: RString = n.name().to_string().into();
             nds.push(nm.clone());
             nmp.insert(nm, n.clone());
             for i in n
@@ -1210,14 +1171,7 @@ impl From<Node> for Network {
         insert_node(&node, &mut nodes);
         net.nodes_map = nodes
             .into_iter()
-            .map(|n| {
-                let name = RString::from(
-                    n.try_lock()
-                        .expect(&format!("mutex error: {:?} {}", file!(), line!()))
-                        .name(),
-                );
-                (name, n)
-            })
+            .map(|n| (RString::from(n.name()), n))
             .collect::<HashMap<RString, Node>>()
             .into();
         net.nodes = net.nodes_map.keys().cloned().collect::<Vec<_>>().into();

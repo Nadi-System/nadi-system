@@ -1631,22 +1631,20 @@ impl Eval for InputVar {
             ExprContext::Env => self.attr_nested(&ctx.env)?,
             ExprContext::Network => self.attr_nested(&ctx.network)?,
             ExprContext::Node(n) => {
+                let name = n.name().to_string();
                 let n = &n
                     .try_lock()
-                    .into_option()
                     .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(self.position()))?;
-                let name = n.name().to_string();
                 self.attr_nested(n)
                     .map_err(|e| e.pos(self.position()).node(name))?
             }
             ExprContext::Nodes(nds) => {
                 let mut vars = Vec::<ExprResult>::with_capacity(nds.len());
                 for i in nds {
+                    let name = i.name().to_string();
                     let n = &i
                         .try_lock()
-                        .into_option()
                         .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(self.position()))?;
-                    let name = n.name().to_string();
                     let a = self.attr_nested(n);
                     vars.push(a.map_err(|e| e.pos(self.position()).node(name))?.into());
                 }
@@ -1656,12 +1654,11 @@ impl Eval for InputVar {
                 let res: Vec<(String, ExprResult)> = nds
                     .iter()
                     .map(|i| {
-                        let n = i.try_lock().into_option().ok_or(
+                        let a = self.attr_nested(&i.try_lock().ok_or(
                             EvalErrorType::MutexError(file!(), line!()).pos(self.position()),
-                        )?;
-                        let a = self.attr_nested(&n);
+                        )?);
                         Ok((
-                            n.name().to_string(),
+                            i.name().to_string(),
                             ExprResult::from(a.map_err(|e| e.pos(self.position()))?),
                         ))
                     })
@@ -1854,7 +1851,6 @@ impl VarType {
             (VarType::Node(None), Some(n)) => Ok(ExprContext::Node(n.clone())),
             (VarType::Input, Some(n)) => match n
                 .try_lock()
-                .into_option()
                 .ok_or(EvalErrorType::MutexError(file!(), line!()))?
                 .input()
             {
@@ -1863,7 +1859,6 @@ impl VarType {
             },
             (VarType::Output, Some(n)) => match n
                 .try_lock()
-                .into_option()
                 .ok_or(EvalErrorType::MutexError(file!(), line!()))?
                 .output()
             {
@@ -1872,7 +1867,6 @@ impl VarType {
             },
             (VarType::Edge, Some(n)) => match n
                 .try_lock()
-                .into_option()
                 .ok_or(EvalErrorType::MutexError(file!(), line!()))?
                 .edge()
             {
@@ -1881,21 +1875,18 @@ impl VarType {
             },
             (VarType::Inputs | VarType::InputsMap, Some(n)) => nodes_func(
                 n.try_lock()
-                    .into_option()
                     .ok_or(EvalErrorType::MutexError(file!(), line!()))?
                     .inputs()
                     .to_vec(),
             ),
             (VarType::Outputs | VarType::OutputsMap, Some(n)) => nodes_func(
                 n.try_lock()
-                    .into_option()
                     .ok_or(EvalErrorType::MutexError(file!(), line!()))?
                     .outputs()
                     .to_vec(),
             ),
             (VarType::Edges | VarType::EdgesMap, Some(n)) => nodes_func(
                 n.try_lock()
-                    .into_option()
                     .ok_or(EvalErrorType::MutexError(file!(), line!()))?
                     .edges(),
             ),
@@ -2165,7 +2156,6 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
             ExprContext::Node(node) => {
                 let name = node
                     .try_lock()
-                    .into_option()
                     .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(self.position()))?
                     .name()
                     .to_string();
@@ -2181,7 +2171,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                 }
                 match ctx.functions.node(&self.name) {
                     Some(f) => {
-                        let n = node.try_lock().into_option().ok_or(
+                        let n = node.try_lock().ok_or(
                             EvalErrorType::MutexError(file!(), line!()).pos(self.position()),
                         )?;
                         f.call(&n, &func_ctx).res().map_err(|s| {
@@ -2205,14 +2195,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                 let res: Vec<ExprResult> = nds
                     .iter()
                     .map(|n| {
-                        let name = n
-                            .try_lock()
-                            .into_option()
-                            .ok_or(
-                                EvalErrorType::MutexError(file!(), line!()).pos(self.position()),
-                            )?
-                            .name()
-                            .to_string();
+                        let name = n.name().to_string();
                         let etc = EvalCtx::at_node(n.clone());
                         let func_ctx = self
                             .function_ctx(ctx, &etc, loc)
@@ -2226,7 +2209,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
 
                         match ctx.functions.node(&self.name) {
                             Some(f) => {
-                                let n = n.try_lock().into_option().ok_or(
+                                let n = n.try_lock().ok_or(
                                     EvalErrorType::MutexError(file!(), line!())
                                         .pos(self.position()),
                                 )?;
@@ -2252,14 +2235,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                 let res: Vec<(String, ExprResult)> = nds
                     .iter()
                     .map(|n| {
-                        let name = n
-                            .try_lock()
-                            .into_option()
-                            .ok_or(
-                                EvalErrorType::MutexError(file!(), line!()).pos(self.position()),
-                            )?
-                            .name()
-                            .to_string();
+                        let name = n.name().to_string();
                         let etc = EvalCtx::at_node(n.clone());
                         let func_ctx = self
                             .function_ctx(ctx, &etc, loc)
@@ -2274,7 +2250,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
 
                         match ctx.functions.node(&self.name) {
                             Some(f) => {
-                                let n = n.try_lock().into_option().ok_or(
+                                let n = n.try_lock().ok_or(
                                     EvalErrorType::MutexError(file!(), line!())
                                         .pos(self.position()),
                                 )?;
@@ -2347,12 +2323,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                 }
             }
             ExprContext::Node(node) => {
-                let name = node
-                    .try_lock()
-                    .into_option()
-                    .ok_or(EvalErrorType::MutexError(file!(), line!()).pos(self.position()))?
-                    .name()
-                    .to_string();
+                let name = node.name().to_string();
                 let etc = EvalCtx::at_node(node.clone());
                 let func_ctx = self
                     .function_ctx(ctx, &etc, loc)
@@ -2366,7 +2337,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                 }
                 match ctx.functions.node(&self.name) {
                     Some(f) => {
-                        let n = &mut node.try_lock().into_option().ok_or(
+                        let n = &mut node.try_lock().ok_or(
                             EvalErrorType::MutexError(file!(), line!()).pos(self.position()),
                         )?;
                         f.call_mut(n, &func_ctx).res().map_err(|s| {
@@ -2390,14 +2361,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                 let res: Vec<ExprResult> = nds
                     .iter()
                     .map(|n| {
-                        let name = n
-                            .try_lock()
-                            .into_option()
-                            .ok_or(
-                                EvalErrorType::MutexError(file!(), line!()).pos(self.position()),
-                            )?
-                            .name()
-                            .to_string();
+                        let name = n.name().to_string();
                         let etc = EvalCtx::at_node(n.clone());
                         let func_ctx = self
                             .function_ctx(ctx, &etc, loc)
@@ -2411,7 +2375,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
 
                         match ctx.functions.node(&self.name) {
                             Some(f) => {
-                                let n = &mut n.try_lock().into_option().ok_or(
+                                let n = &mut n.try_lock().ok_or(
                                     EvalErrorType::MutexError(file!(), line!())
                                         .pos(self.position()),
                                 )?;
@@ -2440,14 +2404,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                 let res: Vec<(String, ExprResult)> = nds
                     .iter()
                     .map(|n| {
-                        let name = n
-                            .try_lock()
-                            .into_option()
-                            .ok_or(
-                                EvalErrorType::MutexError(file!(), line!()).pos(self.position()),
-                            )?
-                            .name()
-                            .to_string();
+                        let name = n.name().to_string();
                         let etc = EvalCtx::at_node(n.clone());
                         let func_ctx = self
                             .function_ctx(ctx, &etc, loc)
@@ -2462,7 +2419,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
 
                         match ctx.functions.node(&self.name) {
                             Some(f) => {
-                                let n = &mut n.try_lock().into_option().ok_or(
+                                let n = &mut n.try_lock().ok_or(
                                     EvalErrorType::MutexError(file!(), line!())
                                         .pos(self.position()),
                                 )?;
@@ -2649,7 +2606,6 @@ impl Eval for GetSeries {
             ExprContext::Node(n) => {
                 let n = &n
                     .try_lock()
-                    .into_option()
                     .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?;
                 let n: &NodeInner = n;
                 index.subset(get_series_or_ts(n, &self.name, self.is_ts)?)
@@ -2704,14 +2660,7 @@ impl Eval for GetSeries {
                     .iter()
                     .map(|i| {
                         let sr = get_node_series_or_ts(i, &self.name, self.is_ts)?;
-                        Ok((
-                            i.try_lock()
-                                .into_option()
-                                .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
-                                .name()
-                                .to_string(),
-                            sr,
-                        ))
+                        Ok((i.name().to_string(), sr))
                     })
                     .collect::<Result<Vec<(String, EvalSeriesRes)>, EvalError>>()?;
                 let sr_lengths: Vec<usize> = inp_series.iter().map(|(_, s)| s.len()).collect();
@@ -3114,7 +3063,6 @@ impl EvalSeriesRes {
         use std::ops::DerefMut;
         let n = &mut n
             .try_lock()
-            .into_option()
             .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?;
         self.set_to_any(n.deref_mut(), name, is_ts)
     }
@@ -3253,7 +3201,6 @@ fn get_node_series_or_ts(n: &Node, name: &str, ts: bool) -> Result<EvalSeriesRes
     use std::ops::Deref;
     let node = n
         .try_lock()
-        .into_option()
         .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?;
     get_series_or_ts(node.deref(), name, ts).map_err(|e| e.node(node.name().to_string()))
 }
@@ -3322,12 +3269,7 @@ impl Eval for ExprWithContext {
                 let exprs = nds
                     .into_iter()
                     .map(|n| {
-                        let name = n
-                            .try_lock()
-                            .into_option()
-                            .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
-                            .name()
-                            .to_string();
+                        let name = n.name().to_string();
                         let expr = self.expr.eval(ctx, &EvalCtx::at_node(n).to_owned(), loc)?;
                         Ok((name, expr))
                     })
@@ -3385,12 +3327,7 @@ impl Eval for ExprWithContext {
                 let exprs = nds
                     .into_iter()
                     .map(|n| {
-                        let name = n
-                            .try_lock()
-                            .into_option()
-                            .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
-                            .name()
-                            .to_string();
+                        let name = n.name().to_string();
                         let expr = self
                             .expr
                             .eval_mut(ctx, &EvalCtx::at_node(n).to_owned(), loc)?;
@@ -3515,14 +3452,7 @@ impl PartialEq for ExprContext {
             (Self::Local, Self::Local) => true,
             (Self::Env, Self::Env) => true,
             (Self::Network, Self::Network) => true,
-            (Self::Node(n1), Self::Node(n2)) => {
-                let n1 = n1.try_lock().map(|n| n.name().to_string());
-                let n2 = n2.try_lock().map(|n| n.name().to_string());
-                match (n1, n2) {
-                    (RSome(n1), RSome(n2)) => n1 == n2,
-                    _ => false,
-                }
-            }
+            (Self::Node(n1), Self::Node(n2)) => n1.name() == n2.name(),
             // TODO
             (Self::Nodes(_nds1), Self::Nodes(_nds2)) => false,
             (Self::NodesMap(_nds1), Self::NodesMap(_nds2)) => false,
@@ -3537,10 +3467,9 @@ impl std::fmt::Debug for ExprContext {
             Self::Local => write!(f, "local"),
             Self::Env => write!(f, "env"),
             Self::Network => write!(f, "network"),
-            Self::Node(_) => write!(f, "node"),
-            // Self::Node(n) => write!(f, "node {}", n.try_lock().expect("mutex error").name()),
-            Self::Nodes(_) => write!(f, "nodes"),
-            Self::NodesMap(_) => write!(f, "nodesmap"),
+            Self::Node(n) => write!(f, "node[{:?}]", n.name()),
+            Self::Nodes(_) => write!(f, "nodes[...]"),
+            Self::NodesMap(_) => write!(f, "nodesmap[...]"),
         }
     }
 }
@@ -3691,7 +3620,6 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
                 self.assert_type(&val)?;
                 self.var.set_attr_nested(
                     n.try_lock()
-                        .into_option()
                         .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
                         .attr_map_mut(),
                     val,
@@ -3707,7 +3635,6 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
                     self.assert_type(&val)?;
                     self.var.set_attr_nested(
                         n.try_lock()
-                            .into_option()
                             .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
                             .attr_map_mut(),
                         val,
@@ -3756,7 +3683,6 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
                 self.assert_type(&val)?;
                 self.var.set_attr_nested(
                     n.try_lock()
-                        .into_option()
                         .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
                         .attr_map_mut(),
                     val,
@@ -3772,7 +3698,6 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
                     self.assert_type(&val)?;
                     self.var.set_attr_nested(
                         n.try_lock()
-                            .into_option()
                             .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
                             .attr_map_mut(),
                         val,

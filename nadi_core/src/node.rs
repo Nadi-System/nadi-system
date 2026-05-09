@@ -3,21 +3,54 @@ use crate::{
     timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap},
 };
 use abi_stable::{
-    external_types::RMutex,
+    external_types::{parking_lot::mutex::RMutexGuard, RMutex},
     std_types::{
-        RArc,
+        RArc, RDuration,
         ROption::{self, RNone, RSome},
         RString, RVec,
     },
     StableAbi,
 };
 
-/// Thread safe Mutex of [`NodeInner`]
-pub type Node = RArc<RMutex<NodeInner>>;
+/// Wrapper around thread safe Mutex of [`NodeInner`]
+#[repr(C)]
+#[derive(Clone, StableAbi)]
+pub struct Node {
+    /// Name of the node, can not be changed
+    name: RString,
+    /// Actual node data
+    inner: RArc<RMutex<NodeInner>>,
+}
 
-/// Create a new [`Node`]
-pub fn new_node(index: usize, name: &str) -> Node {
-    RArc::new(RMutex::new(NodeInner::new(index, name)))
+impl std::fmt::Display for Node {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "<Node {:?}>", self.name)
+    }
+}
+
+impl<'a> Node {
+    pub fn new(index: usize, name: &str) -> Self {
+        Self {
+            name: name.to_string().into(),
+            inner: RArc::new(RMutex::new(NodeInner::new(index, name))),
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        self.name.as_str()
+    }
+
+    pub fn lock(&'a self) -> RMutexGuard<'a, NodeInner> {
+        self.inner.lock()
+    }
+
+    pub fn try_lock(&'a self) -> Option<RMutexGuard<'a, NodeInner>> {
+        self.inner.try_lock().into_option()
+    }
+
+    pub fn try_lock_for(&'a self, dur: RDuration) -> Option<RMutexGuard<'a, NodeInner>> {
+        self.inner.try_lock_for(dur).into_option()
+    }
 }
 
 /// Represents points with attributes and timeseries. These can be any
@@ -68,11 +101,11 @@ pub struct NodeInner {
     /// Hashmap of [`RString`] to [`TimeSeries`]
     pub(crate) timeseries: TsMap,
     /// List of names of immediate inputs
-    input_names: RVec<RString>,
+    pub(crate) input_names: RVec<RString>,
     /// List of immediate inputs
     pub(crate) inputs: RVec<Node>,
     /// List of names of immediate outputs
-    output_names: RVec<RString>,
+    pub(crate) output_names: RVec<RString>,
     /// Output of the node if present
     pub(crate) outputs: RVec<Node>,
 }
@@ -211,34 +244,28 @@ impl NodeInner {
         self.inputs.is_empty()
     }
 
-    pub fn refresh_input_names(&mut self) {
-        // TODO: we can't do this becase we are inside a NodeInner (in a Node.lock() state, and locking the inputs could be a problem for loops and other things)
+    pub fn input_names(&self) -> &[RString] {
+        self.input_names.as_slice()
+    }
 
-        // Currently ignoring any nodes we can't lock: DO NOT USE anywhere
+    pub fn output_names(&self) -> &[RString] {
+        self.output_names.as_slice()
+    }
+
+    pub fn refresh_input_names(&mut self) {
         self.input_names = self
             .inputs()
             .iter()
-            .filter_map(|a| {
-                a.try_lock()
-                    // .expect(&format!("mutex error: {:?} {}", file!(), line!()))
-                    .ok()
-                    .map(|n| n.name().to_string().into())
-            })
+            .map(|a| a.name().to_string().into())
             .collect::<Vec<RString>>()
             .into();
     }
 
     pub fn refresh_output_names(&mut self) {
-        // Currently ignoring any nodes we can't lock: DO NOT USE anywhere
         self.output_names = self
             .outputs()
             .iter()
-            .filter_map(|a| {
-                a.try_lock()
-                    // .expect(&format!("mutex error: {:?} {}", file!(), line!()))
-                    .ok()
-                    .map(|n| n.name().to_string().into())
-            })
+            .map(|a| a.name().to_string().into())
             .collect::<Vec<RString>>()
             .into();
     }
@@ -260,12 +287,7 @@ impl NodeInner {
             .inputs
             .drain(..)
             // should make sure no input nodes are locked at this time
-            .filter(|n| {
-                n.try_lock()
-                    .expect(&format!("mutex error: {:?} {}", file!(), line!()))
-                    .name()
-                    != input
-            })
+            .filter(|n| n.name() != input)
             .collect::<Vec<_>>()
             .into();
         self.refresh_input_names();

@@ -389,11 +389,8 @@ impl TaskContext {
                         Ok(true) => sel_nodes.push(n),
                         Ok(false) => (),
                         Err(e) => {
-                            return Err(EvalErrorType::NodeAttributeError(
-                                n.try_lock().expect("mutex error").name().to_string(),
-                                e,
-                            )
-                            .pos(prop.start));
+                            return Err(EvalErrorType::NodeAttributeError(n.name().to_string(), e)
+                                .pos(prop.start));
                         }
                     }
                 }
