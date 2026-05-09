@@ -3,7 +3,8 @@ use nadi_plugin::nadi_internal_plugin;
 #[nadi_internal_plugin]
 mod series {
     use crate::prelude::*;
-    use crate::timeseries::{CompleteSeries, Series};
+    use crate::timeseries::{CompleteSeries, MaskedSeries, Series};
+    use nadi_core::abi_stable::std_types::RSome;
     use nadi_plugin::node_func;
 
     /// Number of series in the node
@@ -70,6 +71,41 @@ mod series {
             Series::Complete(CompleteSeries::Booleans(ref vals)) => {
                 Ok(vals.iter().filter(|v| **v).count() as f64 / vals.len() as f64)
             }
+            Series::Masked(MaskedSeries::Floats(ref vals), _) => {
+                let mut sum = 0.0;
+                let mut count = 0;
+                for v in vals {
+                    if let RSome(v) = v {
+                        count += 1;
+                        sum += *v;
+                    }
+                }
+                Ok(sum / count as f64)
+            }
+            Series::Masked(MaskedSeries::Integers(ref vals), _) => {
+                let mut sum = 0;
+                let mut count = 0;
+                for v in vals {
+                    if let RSome(v) = v {
+                        count += 1;
+                        sum += *v;
+                    }
+                }
+                Ok(sum as f64 / count as f64)
+            }
+            Series::Masked(MaskedSeries::Booleans(ref vals), _) => {
+                let mut sum = 0;
+                let mut count = 0;
+                for v in vals {
+                    if let RSome(v) = v {
+                        count += 1;
+                        if *v {
+                            sum += 1;
+                        }
+                    }
+                }
+                Ok(sum as f64 / count as f64)
+            }
             s => Err(format!(
                 "Incorrect Type: Mean cannot be calculated for series of type `{}`",
                 s.type_name(),
@@ -94,6 +130,35 @@ mod series {
             }
             Series::Complete(CompleteSeries::Booleans(ref vals)) => {
                 Ok(vals.iter().filter(|v| **v).count().into())
+            }
+            Series::Masked(MaskedSeries::Floats(ref vals), _) => {
+                let mut sum = 0.0;
+                for v in vals {
+                    if let RSome(v) = v {
+                        sum += *v;
+                    }
+                }
+                Ok(sum.into())
+            }
+            Series::Masked(MaskedSeries::Integers(ref vals), _) => {
+                let mut sum = 0;
+                for v in vals {
+                    if let RSome(v) = v {
+                        sum += *v;
+                    }
+                }
+                Ok(sum.into())
+            }
+            Series::Masked(MaskedSeries::Booleans(ref vals), _) => {
+                let mut sum: i64 = 0;
+                for v in vals {
+                    if let RSome(v) = v {
+                        if *v {
+                            sum += 1;
+                        }
+                    }
+                }
+                Ok(sum.into())
             }
             s => Err(format!(
                 "Incorrect Type: Mean cannot be calculated for series of type `{}`",

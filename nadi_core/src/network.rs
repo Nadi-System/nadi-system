@@ -82,8 +82,10 @@ impl std::fmt::Display for NetworkType {
 pub struct Network {
     /// Type of the network
     ty: NetworkType,
-    /// List of [`Node`]s
+    /// List of [`Node`]s based on their index
     pub(crate) nodes: RVec<RString>,
+    /// List of [`Node`]s based on their order
+    pub(crate) nodes_ord: RVec<RVec<RString>>,
     /// Map of node names to the [`Node`]
     pub(crate) nodes_map: RHashMap<RString, Node>,
     /// Network Attributes
@@ -344,10 +346,21 @@ impl Network {
     /// Get nodes in the given order
     pub fn nodes_order(&self, prop: &PropOrder) -> Vec<Node> {
         match prop {
-            PropOrder::Auto | PropOrder::Sequential | PropOrder::OutputFirst => {
-                self.nodes().cloned().collect()
-            }
-            PropOrder::Inverse | PropOrder::InputsFirst => self.nodes_rev().cloned().collect(),
+            PropOrder::Auto | PropOrder::Sequential => self.nodes().cloned().collect(),
+            PropOrder::OutputFirst => self
+                .nodes_ord
+                .iter()
+                .rev()
+                .flat_map(|n| n.iter())
+                .map(|n| self.nodes_map[n].clone())
+                .collect(),
+            PropOrder::Inverse => self.nodes_rev().cloned().collect(),
+            PropOrder::InputsFirst => self
+                .nodes_ord
+                .iter()
+                .flat_map(|n| n.iter())
+                .map(|n| self.nodes_map[n].clone())
+                .collect(),
         }
     }
 
@@ -516,6 +529,7 @@ impl Network {
                 let o = out
                     .try_lock_for(RDuration::from_secs(1))
                     .expect("Lock failed for node, maybe branched network");
+                *weights.entry(o.name().into()).or_insert(1) += 1;
                 if visited.contains(&o.index()) {
                     // looped back to the already visited node
                     // this needs to be here to prevent infinite loop
@@ -523,7 +537,6 @@ impl Network {
                     break;
                 }
                 visited.insert(o.index());
-                *weights.entry(o.name().into()).or_insert(1) += 1;
                 n = o.output().cloned();
             }
         });
@@ -544,9 +557,11 @@ impl Network {
         self.nodes_map.values().for_each(|n| {
             n.try_lock()
                 .expect(&format!("mutex error: {:?} {}", file!(), line!()))
-                .set_order(0)
+                .set_order(1)
         });
-        self.nodes.iter().rev().for_each(|n| {
+
+        let mut nodes_ord_map = HashMap::new();
+        self.nodes.iter().enumerate().rev().for_each(|(i, n)| {
             let nobj = &self.nodes_map[n];
             let inputs: Vec<Node> = nobj
                 .try_lock()
@@ -555,7 +570,7 @@ impl Network {
                 .to_vec();
             let ord = inputs
                 .iter()
-                // nodes that have some node loop back to them will have zero  (unset) value as order from them
+                // nodes that have some node loop back to them will have one (unset) value as order from them
                 .map(|i| {
                     i.try_lock()
                         .expect(&format!("mutex error: {:?} {}", file!(), line!()))
@@ -566,7 +581,22 @@ impl Network {
             nobj.try_lock()
                 .expect(&format!("mutex error: {:?} {}", file!(), line!()))
                 .set_order(ord + 1);
+            nodes_ord_map.insert(i, ord + 1);
         });
+
+        let max_ord = *nodes_ord_map.values().max().unwrap_or(&0);
+        let mut nodes_ord: Vec<RVec<RString>> = (0..=max_ord).map(|_| RVec::new()).collect();
+        for (i, o) in nodes_ord_map {
+            nodes_ord
+                .get_mut(o as usize)
+                .expect("max taken")
+                .push(self.nodes[i].clone());
+        }
+        self.nodes_ord = nodes_ord
+            .into_iter()
+            .filter(|o| !o.is_empty())
+            .collect::<Vec<_>>()
+            .into();
     }
 
     /// Reorder the nodes in the network

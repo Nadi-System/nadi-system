@@ -56,6 +56,7 @@ pub fn value_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprTy
     alt((
         expr_with_context,
         expr_maybe_range,
+        map_series,
         get_series,
         map(function_call, ExprType::Function),
         map(template_val, ExprType::Render),
@@ -74,7 +75,6 @@ pub fn expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<Raw
     alt((
         // map(nadi_struct_expr, Expression::StructExpr),
         expr_set_variable,
-        map_series,
         expr_set_series,
         // set var and expr should come before value one
         value_expression,
@@ -663,21 +663,19 @@ pub fn map_series<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<Raw
                     maybe_space(paren_end),
                 ),
             )),
-            preceded(
-                maybe_space(path_sep),
-                cut(maybe_space(alt((
-                    map(function_def, MapFunction::Defn),
-                    map(
-                        preceded(
-                            at,
-                            separated_list1(dot, map(variable, |v| v.content.to_string())),
-                        ),
-                        |v| MapFunction::Pointer(v.join(".")),
+            maybe_space(pair(path_sep, opt(plus))),
+            cut(maybe_space(alt((
+                map(function_def, MapFunction::Defn),
+                map(
+                    preceded(
+                        at,
+                        separated_list1(dot, map(variable, |v| v.content.to_string())),
                     ),
-                )))),
-            ),
+                    |v| MapFunction::Pointer(v.join(".")),
+                ),
+            )))),
         )),
-        |(srs, func)| ExprType::MapSeries(MapSeries::new(srs, func)),
+        |(srs, (_, ac), func)| ExprType::MapSeries(MapSeries::new(srs, func, ac.is_some())),
     )(inp)
 }
 

@@ -20,6 +20,9 @@ pub trait HasTimeSeries {
     fn ts(&self, name: &str) -> Option<&TimeSeries> {
         self.ts_map().get(name)
     }
+    fn ts_mut(&mut self, name: &str) -> Option<&mut TimeSeries> {
+        self.ts_map_mut().get_mut(name)
+    }
     fn del_ts(&mut self, name: &str) -> Option<TimeSeries> {
         self.ts_map_mut().remove(name).into()
     }
@@ -174,6 +177,12 @@ pub struct TimeSeries {
     values: Series,
 }
 
+impl From<TimeSeries> for Series {
+    fn from(val: TimeSeries) -> Self {
+        val.values
+    }
+}
+
 impl std::fmt::Display for TimeSeries {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "TimeSeries {{..., {}}}", self.values)
@@ -220,6 +229,14 @@ impl TimeSeries {
 
     pub fn series(&self) -> &Series {
         &self.values
+    }
+
+    pub fn replace_series(&mut self, sr: Series) -> Result<(), (usize, usize)> {
+        if self.len() != sr.len() {
+            return Err((self.len(), sr.len()));
+        }
+        self.values = sr;
+        Ok(())
     }
 
     pub fn maybe_complete(mut self) -> Self {

@@ -67,8 +67,12 @@ pub struct NodeInner {
     pub(crate) series: SeriesMap,
     /// Hashmap of [`RString`] to [`TimeSeries`]
     pub(crate) timeseries: TsMap,
+    /// List of names of immediate inputs
+    input_names: RVec<RString>,
     /// List of immediate inputs
     pub(crate) inputs: RVec<Node>,
+    /// List of names of immediate outputs
+    output_names: RVec<RString>,
     /// Output of the node if present
     pub(crate) outputs: RVec<Node>,
 }
@@ -207,13 +211,47 @@ impl NodeInner {
         self.inputs.is_empty()
     }
 
+    pub fn refresh_input_names(&mut self) {
+        // TODO: we can't do this becase we are inside a NodeInner (in a Node.lock() state, and locking the inputs could be a problem for loops and other things)
+
+        // Currently ignoring any nodes we can't lock: DO NOT USE anywhere
+        self.input_names = self
+            .inputs()
+            .iter()
+            .filter_map(|a| {
+                a.try_lock()
+                    // .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                    .ok()
+                    .map(|n| n.name().to_string().into())
+            })
+            .collect::<Vec<RString>>()
+            .into();
+    }
+
+    pub fn refresh_output_names(&mut self) {
+        // Currently ignoring any nodes we can't lock: DO NOT USE anywhere
+        self.output_names = self
+            .outputs()
+            .iter()
+            .filter_map(|a| {
+                a.try_lock()
+                    // .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                    .ok()
+                    .map(|n| n.name().to_string().into())
+            })
+            .collect::<Vec<RString>>()
+            .into();
+    }
+
     /// add a input node to the node
     pub fn add_input(&mut self, input: Node) {
         self.inputs.push(input);
+        self.refresh_input_names();
     }
 
     /// remove the input nodes of the node
     pub fn unset_inputs(&mut self) -> Vec<Node> {
+        self.input_names = RVec::new();
         self.inputs.drain(..).collect()
     }
 
@@ -222,20 +260,31 @@ impl NodeInner {
             .inputs
             .drain(..)
             // should make sure no input nodes are locked at this time
-            .filter(|n| n.try_lock().expect("mutex error").name() != input)
+            .filter(|n| {
+                n.try_lock()
+                    .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                    .name()
+                    != input
+            })
             .collect::<Vec<_>>()
             .into();
+        self.refresh_input_names();
     }
 
     /// order the input nodes in the network
     pub fn order_inputs(&mut self) {
         self.inputs.sort_by(|a, b| {
             b.try_lock()
-                .expect("mutex problem")
+                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
                 .order
-                .partial_cmp(&a.try_lock().expect("mutex problem").order)
+                .partial_cmp(
+                    &a.try_lock()
+                        .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                        .order,
+                )
                 .unwrap()
         });
+        self.refresh_input_names();
     }
 
     /// single output node of the node, None if no outputs or multiple outputs
@@ -265,10 +314,12 @@ impl NodeInner {
     /// add a output node to the node
     pub fn add_output(&mut self, output: Node) {
         self.outputs.push(output);
+        self.refresh_output_names();
     }
 
     /// remove the output nodes of the node
     pub fn unset_outputs(&mut self) -> Vec<Node> {
+        self.output_names = RVec::new();
         self.outputs.drain(..).collect()
     }
 
@@ -277,20 +328,31 @@ impl NodeInner {
             .outputs
             .drain(..)
             // should make sure no output nodes are locked at this time
-            .filter(|n| n.try_lock().expect("mutex error").name() != output)
+            .filter(|n| {
+                n.try_lock()
+                    .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                    .name()
+                    != output
+            })
             .collect::<Vec<_>>()
             .into();
+        self.refresh_output_names();
     }
 
     /// order the output nodes in the network
     pub fn order_outputs(&mut self) {
         self.outputs.sort_by(|a, b| {
             b.try_lock()
-                .expect("mutex problem")
+                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
                 .order
-                .partial_cmp(&a.try_lock().expect("mutex problem").order)
+                .partial_cmp(
+                    &a.try_lock()
+                        .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                        .order,
+                )
                 .unwrap()
         });
+        self.refresh_output_names();
     }
 
     /// single edge node of the node, None if no edges or multiple edges
@@ -314,12 +376,20 @@ impl NodeInner {
     pub fn move_aside(&mut self) -> Result<(), &'static str> {
         match self.outputs.as_slice() {
             [] => self.inputs().iter().for_each(|i| {
-                i.try_lock().expect("mutex error").unset_outputs();
+                i.try_lock()
+                    .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                    .unset_outputs();
             }),
             [o] => self.inputs().iter().for_each(|i| {
-                o.try_lock().expect("mutex error").add_input(i.clone());
-                i.try_lock().expect("mutex error").unset_outputs();
-                i.try_lock().expect("mutex error").add_output(o.clone());
+                o.try_lock()
+                    .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                    .add_input(i.clone());
+                i.try_lock()
+                    .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                    .unset_outputs();
+                i.try_lock()
+                    .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                    .add_output(o.clone());
             }),
             // if multiple outputs how do we move inputs and outputs?
             // => Need to add the outputs to each inputs, and also remove

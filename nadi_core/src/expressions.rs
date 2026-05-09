@@ -7,7 +7,7 @@ use crate::structs::NadiAttrType;
 use crate::tasks::{FunctionType, Task, TaskContext, TaskCtxConsts, TaskKeyword, TaskMessage};
 use crate::template::Template;
 use crate::timeseries::{
-    CompleteSeries, HasSeries, HasTimeSeries, MaskedSeries, Series, TimeSeries,
+    CompleteSeries, HasSeries, HasTimeSeries, MaskedSeries, Series, TimeLine, TimeSeries,
 };
 use crate::udf::UserFunction;
 use abi_stable::std_types::{RNone, ROption, RSome, RString, Tuple2};
@@ -2509,20 +2509,11 @@ impl std::fmt::Display for MapFunction {
     }
 }
 
-// TODO: add expression: isna() or iserr().
-// Or make functions take ExprResult (not abi_stable though) instead of Attribute, then we can simply write those outselves.
-// Maybe we make function input type: Val(), None, Err()... then use that, the proc macro will make sure users don't need to change anything.
-
-// TODO: NOTE: Make GetSeries and SetSeries as expressions as well, add exprresult variants that are series and timeseries. The result can be rendered as series or timeseries, or set as such. But if someone is trying to set an attribute with that, then simply convert to array (null values lead into errors).
-
-// Similarly make expressions for series expression we had previously, map function and such, but since they were evaluated through converting to attributes, they should work with loops, make special consideration so that none values can be passed to functions. Maybe add "is_none()" function or similar (? operator) support for those expressions. Instead of passing values to functions we pass exprresult (or make way to pass none values to functions somehow).
-
 #[derive(Clone, PartialEq, Debug)]
 pub struct GetSeries {
     ty: Option<VarType>,
     is_ts: bool,
     name: String,
-    // TODO unused index for now
     index: Option<Box<RawExpr>>,
     pub(crate) check: bool,
 }
@@ -2583,10 +2574,10 @@ enum SeriesIndex {
 }
 
 impl SeriesIndex {
-    fn subset(&self, sr: Series) -> Result<ExprResult, EvalError> {
+    fn subset(&self, sr: EvalSeriesRes) -> Result<ExprResult, EvalError> {
         match self {
-            Self::None => Ok(ExprResult::Series(sr)),
-            Self::One(i) => match sr.get_attribute(*i) {
+            Self::None => Ok(sr.into()),
+            Self::One(i) => match sr.series().get_attribute(*i) {
                 Some(Some(a)) => Ok(ExprResult::Val(a)),
                 Some(None) => Ok(ExprResult::None),
                 None => Ok(ExprResult::NoneErr(Box::new(
@@ -2595,6 +2586,7 @@ impl SeriesIndex {
             },
             Self::Multi(inds) => {
                 let mut vals = Vec::new();
+                let sr = sr.series(); // TODO index timeseries to make another timeseries
                 for i in inds {
                     match sr.get_attribute(*i) {
                         Some(Some(a)) => vals.push(RSome(a)),
@@ -2667,7 +2659,7 @@ impl Eval for GetSeries {
                 let inp_series = nds
                     .iter()
                     .map(|i| get_node_series_or_ts(i, &self.name, self.is_ts))
-                    .collect::<Result<Vec<Series>, EvalError>>()?;
+                    .collect::<Result<Vec<EvalSeriesRes>, EvalError>>()?;
                 let sr_lengths: Vec<usize> = inp_series.iter().map(|s| s.len()).collect();
                 if sr_lengths.is_empty() {
                     // we don't have a identity series when we need an empty one
@@ -2677,9 +2669,17 @@ impl Eval for GetSeries {
                     return Err(EvalErrorType::DifferentLength(sr_lengths[0], *l).no_pos());
                 }
                 let mut compl_series = Vec::with_capacity(inp_series.len());
+                let timeline = inp_series
+                    .iter()
+                    .filter_map(|s| match s {
+                        EvalSeriesRes::Ts(ts) => Some(ts.timeline().clone()),
+                        _ => None,
+                    })
+                    .next();
                 for ser in inp_series {
                     compl_series.push(
-                        ser.to_attributes()
+                        ser.series()
+                            .to_attributes()
                             .ok_or(EvalErrorType::EmptyValue(None).no_pos())?
                             .into_iter(),
                     );
@@ -2694,7 +2694,10 @@ impl Eval for GetSeries {
                     })
                     .collect();
                 // FIX: remove extra calculation if we are indexing anyway
-                index.subset(CompleteSeries::attributes(zipped_vals).into())
+                index.subset(EvalSeriesRes::new(
+                    CompleteSeries::attributes(zipped_vals).into(),
+                    timeline,
+                ))
             }
             ExprContext::NodesMap(nds) => {
                 let inp_series = nds
@@ -2710,7 +2713,7 @@ impl Eval for GetSeries {
                             sr,
                         ))
                     })
-                    .collect::<Result<Vec<(String, Series)>, EvalError>>()?;
+                    .collect::<Result<Vec<(String, EvalSeriesRes)>, EvalError>>()?;
                 let sr_lengths: Vec<usize> = inp_series.iter().map(|(_, s)| s.len()).collect();
                 if sr_lengths.is_empty() {
                     return Ok(ExprResult::None);
@@ -2718,10 +2721,17 @@ impl Eval for GetSeries {
                 if let Some(l) = sr_lengths.iter().find(|l| **l != sr_lengths[0]) {
                     return Err(EvalErrorType::DifferentLength(sr_lengths[0], *l).no_pos());
                 }
+                let timeline = inp_series
+                    .iter()
+                    .filter_map(|(_, s)| match s {
+                        EvalSeriesRes::Ts(ts) => Some(ts.timeline().clone()),
+                        _ => None,
+                    })
+                    .next();
                 let mut compl_series = Vec::with_capacity(inp_series.len());
                 let mut masked_series = Vec::with_capacity(inp_series.len());
                 for (inp, ser) in inp_series {
-                    match ser {
+                    match ser.series() {
                         Series::Masked(ms, _) => {
                             masked_series.push((inp, ms.to_attributes().into_iter()))
                         }
@@ -2744,7 +2754,10 @@ impl Eval for GetSeries {
                         Attribute::Table(dt)
                     })
                     .collect();
-                index.subset(CompleteSeries::attributes(zipped_vals).into())
+                index.subset(EvalSeriesRes::new(
+                    CompleteSeries::attributes(zipped_vals).into(),
+                    timeline,
+                ))
             }
         }
     }
@@ -2757,19 +2770,27 @@ pub struct MapSeries {
     series: Vec<GetSeries>,
     /// function pointer or function definition
     func: MapFunction,
+    /// accumulate instead of independent map
+    accum: bool,
 }
 
 impl std::fmt::Display for MapSeries {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self.series.as_slice() {
-            [v] => write!(f, "{v} -> {}", self.func),
+            [v] => write!(
+                f,
+                "{v} {}-> {}",
+                if self.accum { "+" } else { "" },
+                self.func
+            ),
             m => write!(
                 f,
-                "({}) -> {}",
+                "({}) {}-> {}",
                 m.iter()
                     .map(|s| format!("{s}"))
                     .collect::<Vec<String>>()
                     .join(", "),
+                if self.accum { "+" } else { "" },
                 self.func
             ),
         }
@@ -2777,8 +2798,12 @@ impl std::fmt::Display for MapSeries {
 }
 
 impl MapSeries {
-    pub fn new(series: Vec<GetSeries>, func: MapFunction) -> Self {
-        Self { series, func }
+    pub fn new(series: Vec<GetSeries>, func: MapFunction, accum: bool) -> Self {
+        Self {
+            series,
+            func,
+            accum,
+        }
     }
 }
 
@@ -2790,8 +2815,13 @@ impl Eval for MapSeries {
         loc: &mut AttrMap,
     ) -> Result<ExprResult, EvalError> {
         let mut srs: Vec<Vec<ROption<Attribute>>> = Vec::with_capacity(self.series.len());
+        let mut timeline = None;
         for s in &self.series {
             let res = s.eval(ctx, ectx, loc)?;
+            if let ExprResult::TimeSeries(ts) = &res {
+                // keep the first arg's timeline for later
+                timeline = Some(timeline.unwrap_or(ts.timeline().clone()));
+            }
             let opt = res.to_opt_attributes();
             srs.push(opt.ok_or(EvalErrorType::NotAnArray.no_pos())?);
         }
@@ -2802,7 +2832,7 @@ impl Eval for MapSeries {
         if let Some(l) = sr_lengths.iter().find(|l| **l != sr_lengths[0]) {
             return Err(EvalErrorType::DifferentLength(sr_lengths[0], *l).no_pos());
         }
-        let result = match &self.func {
+        match &self.func {
             MapFunction::Defn(udf) => {
                 // udf uses kwargs to support empty values; pointer doesn't
                 let func_call = |kwargs| {
@@ -2811,9 +2841,17 @@ impl Eval for MapSeries {
                     udf.eval(ctx, &EvalCtx::default(), fctx)
                 };
                 let names = udf.arg_names();
-                let vals = (0..sr_lengths[0])
-                    .map(|i| {
-                        let args = srs
+                let has_cum_arg = names.iter().skip(sr_lengths.len()).any(|n| n == &"LAST");
+                // next extra arg after all the positional args for series tuple
+                if has_cum_arg {
+                    let mut last_res: Option<Attribute> = None;
+                    let mut all_res: Vec<ROption<Attribute>> = if self.accum {
+                        Vec::with_capacity(0)
+                    } else {
+                        Vec::with_capacity(sr_lengths[0])
+                    };
+                    for i in 0..sr_lengths[0] {
+                        let mut kwargs: HashMap<String, Attribute> = srs
                             .iter()
                             .zip(&names)
                             .filter_map(|(s, n)| match &s[i] {
@@ -2821,10 +2859,59 @@ impl Eval for MapSeries {
                                 RNone => None,
                             })
                             .collect();
-                        Ok(func_call(args)?.to_attribute().into())
+                        if let Some(ref v) = last_res {
+                            kwargs.insert("LAST".to_string(), v.clone());
+                        }
+                        let res = func_call(kwargs)?.to_attribute();
+                        if !self.accum {
+                            all_res.push(res.clone().into());
+                        }
+                        // update last_res if function returned a
+                        // value, otherwise keep the last value
+                        // instead of the default value: this
+                        // allows users to skip values by
+                        // returning None from the function
+                        if let Some(v) = res {
+                            last_res = Some(v);
+                        }
+                    }
+                    if self.accum {
+                        Ok(last_res.into())
+                    } else {
+                        let sr: Series = MaskedSeries::attributes(all_res).retype().into();
+                        Ok(if let Some(tl) = timeline {
+                            ExprResult::TimeSeries(TimeSeries::new(tl, sr))
+                        } else {
+                            ExprResult::Series(sr)
+                        })
+                    }
+                } else if self.accum {
+                    Err(EvalErrorType::FunctionError(
+                        udf.name().unwrap_or("series_accum").to_string(),
+                        "not enough arguments to accumulate values".into(),
+                    )
+                    .no_pos())
+                } else {
+                    let vals = (0..sr_lengths[0])
+                        .map(|i| {
+                            let kwargs = srs
+                                .iter()
+                                .zip(&names)
+                                .filter_map(|(s, n)| match &s[i] {
+                                    RSome(v) => Some((n.to_string(), v.clone())),
+                                    RNone => None,
+                                })
+                                .collect();
+                            Ok(func_call(kwargs)?.to_attribute().into())
+                        })
+                        .collect::<Result<Vec<ROption<Attribute>>, EvalError>>()?;
+                    let sr: Series = MaskedSeries::attributes(vals).retype().into();
+                    Ok(if let Some(tl) = timeline {
+                        ExprResult::TimeSeries(TimeSeries::new(tl, sr))
+                    } else {
+                        ExprResult::Series(sr)
                     })
-                    .collect::<Result<Vec<ROption<Attribute>>, EvalError>>()?;
-                MaskedSeries::attributes(vals).retype()
+                }
             }
             MapFunction::Pointer(name) => {
                 let func_call = |args: Vec<ROption<Attribute>>| {
@@ -2857,10 +2944,14 @@ impl Eval for MapSeries {
                         Ok(func_call(args)?.to_attribute().into())
                     })
                     .collect::<Result<Vec<ROption<Attribute>>, EvalError>>()?;
-                MaskedSeries::attributes(vals).retype()
+                let sr: Series = MaskedSeries::attributes(vals).retype().into();
+                Ok(if let Some(tl) = timeline {
+                    ExprResult::TimeSeries(TimeSeries::new(tl, sr))
+                } else {
+                    ExprResult::Series(sr)
+                })
             }
-        };
-        Ok(ExprResult::Series(result.into()))
+        }
     }
 }
 
@@ -2952,27 +3043,104 @@ fn resolve_set_series<'b>(
     })
 }
 
+enum EvalSeriesRes {
+    Sr(Series),
+    Ts(TimeSeries),
+}
+
+impl From<EvalSeriesRes> for ExprResult {
+    fn from(val: EvalSeriesRes) -> ExprResult {
+        match val {
+            EvalSeriesRes::Sr(s) => ExprResult::Series(s),
+            EvalSeriesRes::Ts(s) => ExprResult::TimeSeries(s),
+        }
+    }
+}
+
+impl EvalSeriesRes {
+    fn new(sr: Series, tl: Option<TimeLine>) -> Self {
+        if let Some(tl) = tl {
+            Self::Ts(TimeSeries::new(tl, sr))
+        } else {
+            Self::Sr(sr)
+        }
+    }
+
+    fn len(&self) -> usize {
+        match self {
+            Self::Sr(s) => s.len(),
+            Self::Ts(ts) => ts.len(),
+        }
+    }
+
+    fn series(self) -> Series {
+        match self {
+            Self::Sr(s) => s,
+            Self::Ts(ts) => ts.into(),
+        }
+    }
+
+    fn set_to_any<T: HasSeries + HasTimeSeries>(
+        self,
+        n: &mut T,
+        name: &str,
+        is_ts: bool,
+    ) -> Result<(), EvalError> {
+        if is_ts {
+            match self {
+                EvalSeriesRes::Ts(ts) => {
+                    n.set_ts(name, ts);
+                }
+                EvalSeriesRes::Sr(sr) => {
+                    // to assign a series result as a
+                    // timeseries, we'll try to overwrite a
+                    // timeseries values with the series is it
+                    // exists, otherwise it is an error
+                    let oldts = n.ts_mut(name).ok_or_else(|| {
+                        EvalErrorType::TimeSeriesNotFound(name.to_string()).no_pos()
+                    })?;
+                    oldts
+                        .replace_series(sr)
+                        .map_err(|(a, b)| EvalErrorType::DifferentLength(a, b).no_pos())?;
+                }
+            }
+        } else {
+            n.set_series(name, self.series());
+        }
+        Ok(())
+    }
+
+    fn set_to_node(self, n: &Node, name: &str, is_ts: bool) -> Result<(), EvalError> {
+        use std::ops::DerefMut;
+        let n = &mut n
+            .try_lock()
+            .into_option()
+            .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?;
+        self.set_to_any(n.deref_mut(), name, is_ts)
+    }
+}
+
 fn eval_series<T: Eval>(
     expr: &T,
     ctx: &TaskContext,
     ectx: &EvalCtx,
     loc: &mut AttrMap,
-) -> Result<Series, EvalError> {
+) -> Result<EvalSeriesRes, EvalError> {
     let res = expr.eval(ctx, ectx, loc)?;
     Ok(match res {
-        ExprResult::Series(s) => s,
-        ExprResult::TimeSeries(ts) => ts.series().clone(),
-        ExprResult::Val(a) => Series::Complete(
+        ExprResult::Series(s) => EvalSeriesRes::Sr(s),
+        ExprResult::TimeSeries(ts) => EvalSeriesRes::Ts(ts),
+        ExprResult::Val(a) => EvalSeriesRes::Sr(Series::Complete(
             CompleteSeries::attributes(
                 Vec::<Attribute>::from_attr(&a).ok_or(EvalErrorType::NotAnArray.no_pos())?,
             )
             .retype(),
-        ),
-        ExprResult::Arr(ar) => {
+        )),
+        ExprResult::Arr(ar) => EvalSeriesRes::Sr(
             MaskedSeries::attributes(ar.into_iter().map(|a| a.to_attribute().into()).collect())
                 .retype()
-                .into()
-        }
+                .into(),
+        ),
         _ => return Err(EvalErrorType::NotAnArray.no_pos()),
     })
 }
@@ -2996,10 +3164,7 @@ impl<T: Eval> Eval for SetSeries<T> {
             ExprContext::Node(n) => {
                 let val = eval_series(self.expr.as_ref(), ctx, &EvalCtx::at_node(n.clone()), loc)?;
                 // self.ty.validate_series(val)?;
-                n.try_lock()
-                    .into_option()
-                    .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
-                    .set_series(&self.inp.name, val);
+                val.set_to_node(n, &self.inp.name, self.inp.is_ts)?;
                 ctx.mark_change();
                 Ok(ExprResult::None)
             }
@@ -3008,10 +3173,7 @@ impl<T: Eval> Eval for SetSeries<T> {
                     let val =
                         eval_series(self.expr.as_ref(), ctx, &EvalCtx::at_node(n.clone()), loc)?;
                     // self.ty.validate_series(val)?;
-                    n.try_lock()
-                        .into_option()
-                        .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
-                        .set_series(&self.inp.name, val);
+                    val.set_to_node(n, &self.inp.name, self.inp.is_ts)?;
                 }
                 ctx.mark_change();
                 Ok(ExprResult::None)
@@ -3034,24 +3196,21 @@ impl<T: Eval> Eval for SetSeries<T> {
             ExprContext::Env => {
                 let val = eval_series(self.expr.as_ref(), ctx, &EvalCtx::env(), loc)?;
                 // self.ty.validate_series(val)?;
-                ctx.env.set_series(&self.inp.name, val);
+                val.set_to_any(&mut ctx.env, &self.inp.name, self.inp.is_ts)?;
                 ctx.mark_change();
                 Ok(ExprResult::None)
             }
             ExprContext::Network => {
                 let val = eval_series(self.expr.as_ref(), ctx, &EvalCtx::network(), loc)?;
                 // self.ty.validate_series(val)?;
-                ctx.network.set_series(&self.inp.name, val);
+                val.set_to_any(&mut ctx.network, &self.inp.name, self.inp.is_ts)?;
                 ctx.mark_change();
                 Ok(ExprResult::None)
             }
             ExprContext::Node(n) => {
                 let val = eval_series(self.expr.as_ref(), ctx, &EvalCtx::at_node(n.clone()), loc)?;
                 // self.ty.validate_series(val)?;
-                n.try_lock()
-                    .into_option()
-                    .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
-                    .set_series(&self.inp.name, val);
+                val.set_to_node(n, &self.inp.name, self.inp.is_ts)?;
                 ctx.mark_change();
                 Ok(ExprResult::None)
             }
@@ -3060,10 +3219,7 @@ impl<T: Eval> Eval for SetSeries<T> {
                     let val =
                         eval_series(self.expr.as_ref(), ctx, &EvalCtx::at_node(n.clone()), loc)?;
                     // self.ty.validate_series(val)?;
-                    n.try_lock()
-                        .into_option()
-                        .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?
-                        .set_series(&self.inp.name, val);
+                    val.set_to_node(n, &self.inp.name, self.inp.is_ts)?;
                 }
                 ctx.mark_change();
                 Ok(ExprResult::None)
@@ -3079,20 +3235,21 @@ fn get_series_or_ts<T: HasSeries + HasTimeSeries>(
     n: &T,
     name: &str,
     ts: bool,
-) -> Result<Series, EvalError> {
+) -> Result<EvalSeriesRes, EvalError> {
     if ts {
         n.try_ts(name)
-            .map(|t| t.series())
-            .map_err(|e| EvalErrorType::TimeSeriesNotFound(e).no_pos())
             .cloned()
+            .map(EvalSeriesRes::Ts)
+            .map_err(|e| EvalErrorType::TimeSeriesNotFound(e).no_pos())
     } else {
         n.try_series(name)
-            .map_err(|e| EvalErrorType::SeriesNotFound(e).no_pos())
             .cloned()
+            .map(EvalSeriesRes::Sr)
+            .map_err(|e| EvalErrorType::SeriesNotFound(e).no_pos())
     }
 }
 
-fn get_node_series_or_ts(n: &Node, name: &str, ts: bool) -> Result<Series, EvalError> {
+fn get_node_series_or_ts(n: &Node, name: &str, ts: bool) -> Result<EvalSeriesRes, EvalError> {
     use std::ops::Deref;
     let node = n
         .try_lock()
