@@ -1,6 +1,6 @@
 use crate::attrs::{AttrMap, Attribute, FromAttribute, HasAttributes};
 use crate::eval::{Eval, EvalCtx, EvalError, EvalErrorType};
-use crate::functions::FunctionCtx;
+use crate::functions::{FunctionCtx, FunctionInput};
 use crate::network::Propagation;
 use crate::node::{Node, NodeInner};
 use crate::structs::NadiAttrType;
@@ -302,11 +302,27 @@ pub enum ExprResult {
     /// Map of results
     Map(Vec<(String, ExprResult)>),
 }
+
 impl From<Option<Attribute>> for ExprResult {
     fn from(val: Option<Attribute>) -> Self {
         match val {
             Some(a) => Self::Val(a),
             None => Self::None,
+        }
+    }
+}
+
+impl<'a> ExprResult {
+    fn to_function_input(self) -> Result<FunctionInput<'a>, EvalError> {
+        match self {
+            Self::None => Ok(FunctionInput::None),
+            Self::Series(s) => Ok(FunctionInput::SeriesOwn(s)),
+            Self::TimeSeries(s) => Ok(FunctionInput::TsOwn(s)),
+            Self::NoneErr(e) => Err(*e.clone()),
+            a => a
+                .to_attribute()
+                .map(FunctionInput::AttrOwn)
+                .ok_or(EvalErrorType::EmptyValue(None).no_pos()),
         }
     }
 }
@@ -2075,12 +2091,13 @@ impl<'a> FunctionCall<ResolvedExpr<'a>> {
                     let parent = Vec::<Attribute>::from_attr(&vt.eval_value(ctx, &a.context, loc)?)
                         .ok_or(EvalErrorType::NotAnArray.pos(a.position()))?;
                     for v in parent {
-                        args.push(v);
+                        args.push(v.into());
                     }
                 }
                 v => args.push(
-                    v.eval_value(ctx, &a.context, loc)
-                        .map_err(|e| e.pos(a.position()))?,
+                    v.eval(ctx, &a.context, loc)
+                        .map_err(|e| e.pos(a.position()))?
+                        .to_function_input()?,
                 ),
             }
         }
@@ -2092,14 +2109,15 @@ impl<'a> FunctionCall<ResolvedExpr<'a>> {
                     let parent = AttrMap::from_attr(&vt.eval_value(ctx, &a.context, loc)?)
                         .ok_or(EvalErrorType::NotAnArray.pos(a.position()))?;
                     for Tuple2(k, v) in parent {
-                        kwargs.insert(k.to_string(), v);
+                        kwargs.insert(k.to_string(), v.into());
                     }
                 }
                 v => {
                     kwargs.insert(
                         k.clone(),
-                        v.eval_value(ctx, ectx, loc)
-                            .map_err(|e| e.pos(self.position()))?,
+                        v.eval(ctx, ectx, loc)
+                            .map_err(|e| e.pos(self.position()))?
+                            .to_function_input()?,
                     );
                 }
             }
@@ -2800,16 +2818,16 @@ impl Eval for MapSeries {
                         Vec::with_capacity(sr_lengths[0])
                     };
                     for i in 0..sr_lengths[0] {
-                        let mut kwargs: HashMap<String, Attribute> = srs
+                        let mut kwargs: HashMap<String, FunctionInput> = srs
                             .iter()
                             .zip(&names)
                             .filter_map(|(s, n)| match &s[i] {
-                                RSome(v) => Some((n.to_string(), v.clone())),
+                                RSome(v) => Some((n.to_string(), FunctionInput::Attr(v))),
                                 RNone => None,
                             })
                             .collect();
                         if let Some(ref v) = last_res {
-                            kwargs.insert("LAST".to_string(), v.clone());
+                            kwargs.insert("LAST".to_string(), FunctionInput::AttrOwn(v.clone()));
                         }
                         let res = func_call(kwargs)?.to_attribute();
                         if !self.accum {
@@ -2847,7 +2865,7 @@ impl Eval for MapSeries {
                                 .iter()
                                 .zip(&names)
                                 .filter_map(|(s, n)| match &s[i] {
-                                    RSome(v) => Some((n.to_string(), v.clone())),
+                                    RSome(v) => Some((n.to_string(), FunctionInput::Attr(v))),
                                     RNone => None,
                                 })
                                 .collect();
@@ -2863,13 +2881,7 @@ impl Eval for MapSeries {
                 }
             }
             MapFunction::Pointer(name) => {
-                let func_call = |args: Vec<ROption<Attribute>>| {
-                    // no support for empty values if using a pointer to a function
-                    let args = args
-                        .into_iter()
-                        .map(|a| a.into_option())
-                        .collect::<Option<Vec<Attribute>>>()
-                        .ok_or(EvalErrorType::EmptyValue(None).no_pos())?;
+                let func_call = |args: Vec<FunctionInput>| {
                     let fctx = FunctionCtx::from_arg_kwarg(args, HashMap::new());
                     match ctx.udf(name).cloned() {
                         // priority for the locally defined function; evaluated in local context
@@ -2889,7 +2901,7 @@ impl Eval for MapSeries {
                 };
                 let vals = (0..sr_lengths[0])
                     .map(|i| {
-                        let args = srs.iter().map(|s| s[i].clone()).collect();
+                        let args = srs.iter().map(|s| FunctionInput::from(&s[i])).collect();
                         Ok(func_call(args)?.to_attribute().into())
                     })
                     .collect::<Result<Vec<ROption<Attribute>>, EvalError>>()?;
@@ -3353,10 +3365,6 @@ fn run_nodes_in_parallel(
     expr: &RawExpr,
 ) -> Result<ExprResult, EvalError> {
     {
-        // TODO: move to a function
-        // parallel is run without mutability inside:
-        // nodes are mutable without that anyway, but
-        // env and network are not
         let num_jobs = TaskCtxConsts::parallel_cores(ctx);
         let nodes = Arc::new(Mutex::new(nodes));
         let error = Arc::new(Mutex::new(None));

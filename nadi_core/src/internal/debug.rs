@@ -2,6 +2,7 @@ use nadi_plugin::nadi_internal_plugin;
 
 #[nadi_internal_plugin]
 mod debug {
+    use crate::functions::{FunctionArgs, FunctionKwArgs};
     use crate::prelude::*;
     use abi_stable::std_types::Tuple2;
     use colored::Colorize;
@@ -24,18 +25,15 @@ mod debug {
     fn debug(
         /// Function arguments
         #[args]
-        args: AttrSlice,
+        args: FunctionArgs,
         /// Function Keyword arguments
         #[kwargs]
-        kwargs: &AttrMap,
+        kwargs: FunctionKwArgs,
     ) {
-        let mut args_str: Vec<String> = args
-            .iter()
-            .map(|a| Attribute::to_colored_string(a).to_string())
-            .collect();
+        let mut args_str: Vec<String> = args.iter().map(|a| format!("{a:?}")).collect();
         let kwargs_str: Vec<String> = kwargs
             .iter()
-            .map(|Tuple2(k, v)| format!("{}={}", k.to_string().blue(), v.to_colored_string()))
+            .map(|Tuple2(k, v)| format!("{}={:?}", k.to_string().blue(), v))
             .collect();
         args_str.extend(kwargs_str);
         println!("Function Call: debug({})", args_str.join(", "));

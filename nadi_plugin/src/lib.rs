@@ -6,10 +6,10 @@ use convert_case::{Case, Casing};
 use std::collections::HashMap;
 
 use proc_macro::TokenStream;
-use quote::{format_ident, quote, quote_spanned, ToTokens};
+use quote::{ToTokens, format_ident, quote, quote_spanned};
 use syn::{
-    parse_macro_input, punctuated::Punctuated, token::Comma, Attribute, DeriveInput, Expr, FnArg,
-    Ident, ItemFn, ItemMod, Lit, MetaNameValue, Type, TypeReference,
+    Attribute, DeriveInput, Expr, FnArg, Ident, ItemFn, ItemMod, Lit, MetaNameValue, Type,
+    TypeReference, parse_macro_input, punctuated::Punctuated, token::Comma,
 };
 
 #[derive(PartialEq)]
@@ -376,7 +376,7 @@ fn clean_function(func: &ItemFn) -> ItemFn {
     let mut func = func.clone();
     for arg in &mut func.sig.inputs {
         match arg {
-            syn::FnArg::Typed(ref mut a) => {
+            syn::FnArg::Typed(a) => {
                 let attrs = std::mem::take(&mut a.attrs);
                 let (_, remain): (Vec<_>, Vec<_>) = attrs.into_iter().partition(|at| {
                     // remove all attrs for function arg, and the doc attribute
@@ -734,14 +734,36 @@ fn get_call_func(
                 FuncArgType::Relaxed => quote! { ctx.arg_kwarg_relaxed (#argc - 1, #arg_name)},
                 FuncArgType::Args => {
                     kwonly = true;
-                    return quote! {
-                        let #arg: #ty = ctx.args().into();
+                    return if let Type::Path(p) = ty
+                        && p.path.is_ident("FunctionArgs")
+                    {
+                        quote! {
+                                    let #arg: #ty = ctx.args();
+                        }
+                    } else {
+                        quote! {
+                                    let #arg: #ty = match ctx.try_args() {
+                            Ok(v)=>v,
+                            Err(e) => return #ret_err(e),
+                        };
+                        }
                     };
                 }
                 FuncArgType::KwArgs => {
                     kwonly = true;
-                    return quote! {
-                        let #arg: #ty = ctx.kwargs().into();
+                    return if let Type::Path(p) = ty
+                        && p.path.is_ident("FunctionKwArgs")
+                    {
+                        quote! {
+                            let #arg: #ty = ctx.kwargs();
+                        }
+                    } else {
+                        quote! {
+                                    let #arg: #ty = match ctx.try_kwargs(){
+                            Ok(v)=>v,
+                            Err(e) => return #ret_err(e),
+                        };
+                                }
                     };
                 }
             };

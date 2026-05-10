@@ -379,9 +379,9 @@ mod core {
     fn array(
         /// List of attributes
         #[args]
-        attributes: &[Attribute],
+        attributes: Vec<Attribute>,
     ) -> Attribute {
-        Attribute::Array(attributes.to_vec().into())
+        Attribute::Array(attributes.into())
     }
 
     /// make an array combining the arrays from arguments
@@ -393,7 +393,7 @@ mod core {
     fn zip(
         /// List of attributes
         #[args]
-        attributes: &[Attribute],
+        attributes: Vec<Attribute>,
         /// error if different lengths
         err_diff_len: bool,
     ) -> Result<Attribute, String> {
@@ -402,7 +402,7 @@ mod core {
         }
         let mut attrs = Vec::with_capacity(attributes.len());
         let mut min_len = usize::MAX;
-        for (i, attr) in attributes.iter().enumerate() {
+        for (i, attr) in attributes.into_iter().enumerate() {
             if let Attribute::Array(ar) = attr {
                 if ar.len() < min_len {
                     min_len = ar.len();
@@ -419,12 +419,13 @@ mod core {
             return Err("Lengths of the arguments are not the same".to_string());
         }
         let mut zipped = Vec::with_capacity(min_len);
-        for j in 0..min_len {
+        let mut attrs_iter: Vec<_> = attrs.into_iter().map(|a| a.into_iter()).collect();
+        for _ in 0..min_len {
             // we already made sure the min_len is valid, but using
             // filter map just in case
-            let vals = attrs
-                .iter()
-                .filter_map(|a| a.get(j).cloned())
+            let vals = attrs_iter
+                .iter_mut()
+                .filter_map(|a| a.next())
                 .collect::<Vec<Attribute>>();
             zipped.push(Attribute::Array(vals.into()));
         }
@@ -440,9 +441,14 @@ mod core {
     fn attrmap(
         /// name and values of attributes
         #[kwargs]
-        attributes: &AttrMap,
+        attributes: HashMap<&RString, Attribute>,
     ) -> Attribute {
-        Attribute::Table(attributes.clone())
+        Attribute::Table(
+            attributes
+                .into_iter()
+                .map(|(k, v)| (k.clone(), v))
+                .collect(),
+        )
     }
 
     /// make an attrmap from a list of (k, v)
@@ -982,9 +988,9 @@ mod core {
     /// env assert_eq(concat("Hello", "World", join=" "), "Hello World")
     /// ```
     #[env_func(join = "")]
-    fn concat(#[args] vars: &[Attribute], join: &str) -> String {
+    fn concat(#[args] vars: Vec<Attribute>, join: &str) -> String {
         let reprs: Vec<String> = vars
-            .iter()
+            .into_iter()
             .map(|a| match a {
                 Attribute::String(s) => s.to_string(),
                 x => x.to_string(),

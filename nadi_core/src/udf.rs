@@ -1,9 +1,9 @@
 use crate::attrs::{AttrMap, Attribute};
 use crate::eval::{Eval, EvalCtx, EvalError, EvalErrorType};
 use crate::expressions::{ExprResult, RawExpr};
-use crate::functions::FunctionCtx;
+use crate::functions::{FunctionCtx, FunctionInput};
 use crate::tasks::TaskContext;
-use abi_stable::std_types::{RNone, RSome, RVec};
+use abi_stable::std_types::{RHashMap, RNone, RSome, RString, RVec};
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct UserFunction {
@@ -138,8 +138,8 @@ impl UserFunction {
         &self,
         ctx: &TaskContext,
         ectx: &EvalCtx,
-        args: RVec<Attribute>,
-        mut kwargs: AttrMap,
+        args: RVec<FunctionInput<'_>>,
+        mut kwargs: RHashMap<RString, FunctionInput<'_>>,
     ) -> Result<AttrMap, EvalError> {
         let mut locals = AttrMap::new();
         let args_len = args.len();
@@ -160,12 +160,14 @@ impl UserFunction {
                 .iter()
                 .chain(self.kwargs.iter().map(|v| &v.0))
                 .zip(args)
-                .for_each(|(k, v)| {
-                    locals.insert(k.to_string().into(), v);
-                });
+                .try_for_each(|(k, v)| {
+                    v.attribute().map(|m| {
+                        locals.insert(k.to_string().into(), m);
+                    })
+                })?;
             for (k, expr) in self.kwargs.iter().skip(args_len - self.args.len()) {
                 match kwargs.remove(k.as_str()) {
-                    RSome(v) => locals.insert(k.to_string().into(), v),
+                    RSome(v) => locals.insert(k.to_string().into(), v.attribute()?),
                     RNone => {
                         let v = expr.clone().resolve(ctx, ectx.clone())?.eval_value(
                             ctx,
@@ -181,13 +183,15 @@ impl UserFunction {
             // the functioncall, we need to have all the remaining
             // positional parameters provided in the keyword arguments
             // of the function call
-            self.args.iter().zip(args).for_each(|(k, v)| {
-                locals.insert(k.to_string().into(), v);
-            });
+            self.args.iter().zip(args).try_for_each(|(k, v)| {
+                v.attribute().map(|m| {
+                    locals.insert(k.to_string().into(), m);
+                })
+            })?;
             for arg in self.args.iter().skip(args_len) {
                 match kwargs.remove(arg.as_str()) {
                     RSome(v) => {
-                        locals.insert(arg.to_string().into(), v);
+                        locals.insert(arg.to_string().into(), v.attribute()?);
                     }
                     RNone => {
                         return Err(EvalErrorType::FunctionError(
@@ -200,7 +204,7 @@ impl UserFunction {
             }
             for (k, expr) in self.kwargs.iter() {
                 match kwargs.remove(k.as_str()) {
-                    RSome(v) => locals.insert(k.to_string().into(), v),
+                    RSome(v) => locals.insert(k.to_string().into(), v.attribute()?),
                     RNone => {
                         let val = expr.clone().resolve(ctx, ectx.clone())?.eval_value(
                             ctx,

@@ -107,15 +107,11 @@ mod logic {
     /// ```
     #[env_func]
     fn and(
-        /// List of attributes that can be cast to bool
+        /// List of bools
         #[args]
-        conds: &[Attribute],
+        conds: Vec<bool>,
     ) -> bool {
-        let mut ans = true;
-        for c in conds {
-            ans = ans && bool::from_attr_relaxed(c).unwrap();
-        }
-        ans
+        conds.into_iter().all(|t| t)
     }
 
     /// boolean or
@@ -129,15 +125,11 @@ mod logic {
     /// ```
     #[env_func]
     fn or(
-        /// List of attributes that can be cast to bool
+        /// List of bools
         #[args]
-        conds: &[Attribute],
+        conds: Vec<bool>,
     ) -> bool {
-        let mut ans = false;
-        for c in conds {
-            ans = ans || bool::from_attr_relaxed(c).unwrap();
-        }
-        ans
+        conds.into_iter().any(|t| t)
     }
 
     /// boolean not

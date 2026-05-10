@@ -3,7 +3,9 @@ use nadi_plugin::nadi_internal_plugin;
 #[nadi_internal_plugin]
 mod render {
     use crate::prelude::*;
+    use abi_stable::std_types::{RHashMap, RString};
     use nadi_plugin::{env_func, network_func, node_func};
+    use std::collections::HashMap;
     use std::path::PathBuf;
 
     /// Render the template based on the node attributes
@@ -33,9 +35,10 @@ mod render {
         template: &Template,
         /// if render fails keep it as it is instead of exiting
         safe: bool,
-        #[kwargs] keyval: &AttrMap,
+        #[kwargs] keyval: HashMap<&RString, Attribute>,
     ) -> Result<String, String> {
-        let res = template.render(keyval);
+        let attrmap: RHashMap<_, _> = keyval.into_iter().map(|(k, v)| (k.clone(), v)).collect();
+        let res = template.render(&attrmap);
         let text = if safe {
             res.unwrap_or_else(|_| template.original().to_string())
         } else {

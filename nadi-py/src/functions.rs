@@ -7,7 +7,7 @@ use nadi_core::abi_stable::std_types::RString;
 use nadi_core::functions::{
     EnvFunctionBox, FuncArg, FuncArgType, NadiFunctions, NetworkFunctionBox, NodeFunctionBox,
 };
-use nadi_core::functions::{FunctionCtx, FunctionRet};
+use nadi_core::functions::{FunctionCtx, FunctionInput, FunctionRet};
 use nadi_core::prelude::*;
 use std::str::FromStr;
 
@@ -33,6 +33,24 @@ impl PyNodeFunction {
     }
 }
 
+fn handle_func_output(res: FunctionRet) -> PyResult<Option<PyAttribute>> {
+    match res {
+        FunctionRet::None => Ok(None),
+        FunctionRet::Some(v) => Ok(Some(v.into())),
+        FunctionRet::Image(v) | FunctionRet::File(v) | FunctionRet::Doc(v) => {
+            Ok(Some(Attribute::String(v).into()))
+        }
+        FunctionRet::Images(v) => Ok(Some(
+            Attribute::Array(v.into_iter().map(Attribute::String).collect()).into(),
+        )),
+        FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
+        FunctionRet::Series(_) => Err(PyRuntimeError::new_err("Returing Series Not yet supported")),
+        FunctionRet::Ts(_) => Err(PyRuntimeError::new_err(
+            "Returning TimeSeries Not yet supported",
+        )),
+    }
+}
+
 #[pymethods]
 impl PyNodeFunction {
     #[pyo3(signature = (node, *args, **kwargs))]
@@ -43,17 +61,7 @@ impl PyNodeFunction {
         kwargs: Option<PyAttrMap>,
     ) -> PyResult<Option<PyAttribute>> {
         let ctx = py_args_kwargs_to_ctx(args, kwargs);
-        match self.func.call_mut(&mut node.0.lock(), &ctx) {
-            FunctionRet::None => Ok(None),
-            FunctionRet::Some(v) => Ok(Some(v.into())),
-            FunctionRet::Image(v) | FunctionRet::File(v) | FunctionRet::Doc(v) => {
-                Ok(Some(Attribute::String(v).into()))
-            }
-            FunctionRet::Images(v) => Ok(Some(
-                Attribute::Array(v.into_iter().map(Attribute::String).collect()).into(),
-            )),
-            FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
-        }
+        handle_func_output(self.func.call_mut(&mut node.0.lock(), &ctx))
     }
 
     #[getter]
@@ -103,17 +111,7 @@ impl PyNetworkFunction {
         kwargs: Option<PyAttrMap>,
     ) -> PyResult<Option<PyAttribute>> {
         let ctx = py_args_kwargs_to_ctx(args, kwargs);
-        match self.func.call_mut(&mut network.0, &ctx) {
-            FunctionRet::None => Ok(None),
-            FunctionRet::Some(v) => Ok(Some(v.into())),
-            FunctionRet::Image(v) | FunctionRet::File(v) | FunctionRet::Doc(v) => {
-                Ok(Some(Attribute::String(v).into()))
-            }
-            FunctionRet::Images(v) => Ok(Some(
-                Attribute::Array(v.into_iter().map(Attribute::String).collect()).into(),
-            )),
-            FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
-        }
+        handle_func_output(self.func.call_mut(&mut network.0, &ctx))
     }
 
     #[getter]
@@ -162,17 +160,7 @@ impl PyEnvFunction {
         kwargs: Option<PyAttrMap>,
     ) -> PyResult<Option<PyAttribute>> {
         let ctx = py_args_kwargs_to_ctx(args, kwargs);
-        match self.func.call(&ctx) {
-            FunctionRet::None => Ok(None),
-            FunctionRet::Some(v) => Ok(Some(v.into())),
-            FunctionRet::Image(v) | FunctionRet::File(v) | FunctionRet::Doc(v) => {
-                Ok(Some(Attribute::String(v).into()))
-            }
-            FunctionRet::Images(v) => Ok(Some(
-                Attribute::Array(v.into_iter().map(Attribute::String).collect()).into(),
-            )),
-            FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
-        }
+        handle_func_output(self.func.call(&ctx))
     }
 
     #[getter]
@@ -233,17 +221,7 @@ impl PyNadiFunctions {
                 )));
             }
         };
-        match func.call_mut(&mut node.0.lock(), &ctx) {
-            FunctionRet::None => Ok(None),
-            FunctionRet::Some(v) => Ok(Some(v.into())),
-            FunctionRet::Image(v) | FunctionRet::File(v) | FunctionRet::Doc(v) => {
-                Ok(Some(Attribute::String(v).into()))
-            }
-            FunctionRet::Images(v) => Ok(Some(
-                Attribute::Array(v.into_iter().map(Attribute::String).collect()).into(),
-            )),
-            FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
-        }
+        handle_func_output(func.call_mut(&mut node.0.lock(), &ctx))
     }
 
     #[pyo3(signature = (function, network, *args, **kwargs))]
@@ -264,17 +242,7 @@ impl PyNadiFunctions {
                 )));
             }
         };
-        match func.call_mut(&mut network.0, &ctx) {
-            FunctionRet::None => Ok(None),
-            FunctionRet::Some(v) => Ok(Some(v.into())),
-            FunctionRet::Image(v) | FunctionRet::File(v) | FunctionRet::Doc(v) => {
-                Ok(Some(Attribute::String(v).into()))
-            }
-            FunctionRet::Images(v) => Ok(Some(
-                Attribute::Array(v.into_iter().map(Attribute::String).collect()).into(),
-            )),
-            FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
-        }
+        handle_func_output(func.call_mut(&mut network.0, &ctx))
     }
 
     #[pyo3(signature = (function, *args, **kwargs))]
@@ -294,17 +262,7 @@ impl PyNadiFunctions {
                 )));
             }
         };
-        match func.call(&ctx) {
-            FunctionRet::None => Ok(None),
-            FunctionRet::Some(v) => Ok(Some(v.into())),
-            FunctionRet::Image(v) | FunctionRet::File(v) | FunctionRet::Doc(v) => {
-                Ok(Some(Attribute::String(v).into()))
-            }
-            FunctionRet::Images(v) => Ok(Some(
-                Attribute::Array(v.into_iter().map(Attribute::String).collect()).into(),
-            )),
-            FunctionRet::Error(s) => Err(PyRuntimeError::new_err(s.to_string())),
-        }
+        handle_func_output(func.call(&ctx))
     }
 
     // todo register python functions into nadi/node function
@@ -529,10 +487,20 @@ fn type_to_py(ty: &str) -> String {
         .join("")
 }
 
-fn py_args_kwargs_to_ctx(args: Vec<PyAttribute>, kwargs: Option<PyAttrMap>) -> FunctionCtx {
-    let args: Vec<Attribute> = args.into_iter().map(|v| v.into()).collect();
+fn py_args_kwargs_to_ctx(
+    args: Vec<PyAttribute>,
+    kwargs: Option<PyAttrMap>,
+) -> FunctionCtx<'static> {
+    let args: Vec<FunctionInput> = args
+        .into_iter()
+        .map(|v| FunctionInput::AttrOwn(v.into()))
+        .collect();
     let kwargs = kwargs
-        .map(|kw| kw.into_iter().map(|(k, v)| (k, v.into())).collect())
+        .map(|kw| {
+            kw.into_iter()
+                .map(|(k, v)| (k, FunctionInput::AttrOwn(v.into())))
+                .collect()
+        })
         .unwrap_or_default();
     FunctionCtx::from_arg_kwarg(args, kwargs)
 }

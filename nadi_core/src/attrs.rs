@@ -1,5 +1,6 @@
 use crate::eval::EvalErrorType;
 use crate::expressions::ExprResult;
+use crate::functions::FunctionInput;
 use crate::structs::NadiAttrType;
 use crate::tasks::{TaskContext, TaskCtxConsts, TaskMessage};
 use crate::template::Template;
@@ -280,13 +281,19 @@ impl std::fmt::Display for Attribute {
             Self::String(v) => write!(f, "{v:?}"),
             Self::Integer(v) => write!(f, "{v}"),
             // lower for nan and inf
-            Self::Float(v) => {
-                // if v.is_finite() {
-                //     write!(f, "{v}")
-                // } else {
-                write!(f, "{}", v.to_string().to_lowercase())
-                // }
-            }
+            Self::Float(v) => write!(f, "{}", format!("{:?}", v).to_lowercase()),
+            // // If we are not to depend on `{:?}`, then something like this:
+            // {
+            //     if v.is_finite() {
+            //         if v.fract() == 0.0 {
+            //             write!(f, "{v}.0")
+            //         } else {
+            //             write!(f, "{v}")
+            //         }
+            //     } else {
+            //         write!(f, "{}", v.to_string().to_lowercase())
+            //     }
+            // }
             Self::Date(v) => write!(f, "{v}"),
             Self::Time(v) => write!(f, "{v}"),
             Self::DateTime(v) => write!(f, "{v}"),
@@ -393,14 +400,6 @@ impl TaskContext {
 
     pub fn show_attr(&self, attr: &Attribute, depth: usize) -> String {
         match attr {
-            Attribute::Bool(v) => format!("{v}"),
-            Attribute::String(v) => format!("{v:?}"),
-            Attribute::Integer(v) => format!("{v}"),
-            // lower for nan and inf
-            Attribute::Float(v) => v.to_string().to_lowercase().to_string(),
-            Attribute::Date(v) => format!("{v}"),
-            Attribute::Time(v) => format!("{v}"),
-            Attribute::DateTime(v) => format!("{v}"),
             Attribute::Array(v) => {
                 let max_attrs_depth = TaskCtxConsts::max_attrs_depth(self);
                 if depth > max_attrs_depth {
@@ -444,6 +443,7 @@ impl TaskContext {
                     if prettify_map { "\n" } else { "" },
                 )
             }
+            a => a.to_string(),
         }
     }
 }
@@ -963,6 +963,19 @@ pub trait FromAttribute: Sized {
     }
 }
 
+pub trait FromAttributeRef<'a>: Sized {
+    fn from_attr_ref(value: &'a Attribute) -> Option<&'a Self>;
+    fn try_from_attr_ref(value: &'a Attribute) -> Result<&'a Self, String> {
+        FromAttributeRef::from_attr_ref(value).ok_or_else(|| {
+            format!(
+                "Incorrect Type: got {} instead of {}",
+                value.type_name(),
+                type_name::<Self>()
+            )
+        })
+    }
+}
+
 /// Trait to loosely convert [`Attribute`] into target type
 ///
 /// Loosely or Related here means that if it makes sense for the type
@@ -989,6 +1002,15 @@ macro_rules! impl_from_attr {
 		$x(value)
 	    }
 	}
+
+        impl<'a> FromAttributeRef<'a> for $t {
+            fn from_attr_ref(value: &'a Attribute) -> Option<&'a $t> {
+                match value {
+                    $x(v) => Some(v),
+                    _ => None,
+                }
+            }
+        }
 
         impl FromAttribute for $t {
             fn from_attr(value: &Attribute) -> Option<$t> {
@@ -1062,6 +1084,15 @@ impl_from_attr!(Time, Attribute::Time,);
 impl_from_attr!(DateTime, Attribute::DateTime,
 		Attribute::Date(v) => DateTime::new(v.clone(), Time::default(), None));
 impl_from_attr!(AttrMap, Attribute::Table,);
+
+// impl<'a> FromAttributeRef<'a> for str {
+//     fn from_attr_ref(value: &'a Attribute) -> Option<&'a str> {
+//         match value {
+//             Attribute::String(v) => Some(v.as_str()),
+//             _ => None,
+//         }
+//     }
+// }
 
 /// impl for tuples of different types
 macro_rules! tuple_impls {

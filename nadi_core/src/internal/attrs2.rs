@@ -4,10 +4,25 @@ use nadi_plugin::nadi_internal_plugin;
 mod attrs {
     use crate::attrs::TableOrArray;
     use crate::prelude::*;
-    use abi_stable::std_types::RString;
     use abi_stable::std_types::Tuple2;
+    use abi_stable::std_types::{RHashMap, RString};
     use nadi_plugin::{env_func, network_func, node_func};
+    use std::collections::HashMap;
     use std::str::FromStr;
+
+    /// None function that returns None
+    #[env_func]
+    fn none() {}
+
+    /// check for none value
+    ///
+    /// ```task
+    /// assert_eq(is_none(none()), true)
+    /// ```
+    #[env_func]
+    fn is_none(inp: Option<Attribute>) -> bool {
+        inp.is_none()
+    }
 
     /// Set node attributes
     ///
@@ -25,7 +40,7 @@ mod attrs {
     /// ```task
     /// network load_str("A -> B\n B -> D");
     /// nodes[A -> D] set_attrs(a2d = true)
-    ///     ```
+    /// ```
     /// This is equivalent to the following:
     /// ```task
     /// nodes[A->D].a2d = true;
@@ -35,10 +50,10 @@ mod attrs {
         node: &mut NodeInner,
         /// Key value pairs of the attributes to set
         #[kwargs]
-        attrs: &AttrMap,
+        attrs: RHashMap<&RString, Attribute>,
     ) -> Result<(), String> {
         for Tuple2(k, v) in attrs {
-            node.set_attr(k.as_str(), v.clone());
+            node.set_attr(k.as_str(), v);
         }
         Ok(())
     }
@@ -93,12 +108,8 @@ mod attrs {
         node: &NodeInner,
         /// Name of the attribute to get
         #[args]
-        attr_names: AttrSlice,
+        attr_names: Vec<String>,
     ) -> Option<Vec<Attribute>> {
-        let attr_names: Vec<&str> = attr_names
-            .iter()
-            .map(|a| a.get_string().map(|s| s.as_str()))
-            .collect::<Option<_>>()?;
         attr_names.iter().map(|a| node.attr(a).cloned()).collect()
     }
 
@@ -199,10 +210,9 @@ mod attrs {
         cond: bool,
         /// key = [val1, val2] where key is set as first if `cond` is true else second
         #[kwargs]
-        values: &AttrMap,
+        values: HashMap<&RString, (Attribute, Attribute)>,
     ) -> Result<(), String> {
-        for Tuple2(k, v) in values {
-            let (t, f) = FromAttribute::try_from_attr(v)?;
+        for (k, (t, f)) in values {
             let v = if cond { t } else { f };
             node.set_attr(k, v);
         }
@@ -224,10 +234,9 @@ mod attrs {
         node: &mut NodeInner,
         /// key value pair of attribute to set and the Template to render
         #[kwargs]
-        kwargs: &AttrMap,
+        values: HashMap<&RString, Template>,
     ) -> Result<(), String> {
-        for Tuple2(k, v) in kwargs {
-            let templ: Template = Template::try_from_attr(v)?;
+        for (k, templ) in values {
             let text = templ.render(node).map_err(|e| e.to_string())?;
             node.set_attr(k.as_str(), text.into());
         }
@@ -405,9 +414,9 @@ mod attrs {
         network: &mut Network,
         /// key value pair of attributes to set
         #[kwargs]
-        attrs: &AttrMap,
+        values: HashMap<&RString, Attribute>,
     ) -> Result<(), String> {
-        for Tuple2(k, v) in attrs {
+        for (k, v) in values {
             network.set_attr(k.as_str(), v.clone());
         }
         Ok(())
@@ -466,10 +475,9 @@ mod attrs {
         network: &mut Network,
         /// Kwargs of attr = String template to render
         #[kwargs]
-        kwargs: &AttrMap,
+        kwargs: HashMap<&RString, Template>,
     ) -> Result<(), String> {
-        for Tuple2(k, v) in kwargs {
-            let templ: Template = Template::try_from_attr(v)?;
+        for (k, templ) in kwargs {
             let text = templ.render(network).map_err(|e| e.to_string())?;
             network.set_attr(k.as_str(), text.into());
         }

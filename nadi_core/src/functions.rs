@@ -1,11 +1,12 @@
 #![allow(clippy::module_inception)]
 #![allow(non_local_definitions)] // warning from sabi_trait macro
-use crate::attrs::{AttrMap, AttrSlice};
+use crate::attrs::{AttrMap, Date, DateTime, FromAttribute, Time};
 use crate::expressions::ExprResult;
 use crate::plugins::{load_library_safe, NadiPlugin};
 use crate::prelude::*;
 use crate::table::{contents_2_md, ColumnAlign};
 use crate::tasks::FunctionType;
+use crate::timeseries::{FromSeries, Series, TimeSeries};
 use abi_stable::std_types::Tuple2;
 use abi_stable::{
     sabi_trait,
@@ -23,6 +24,221 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
+pub type FunctionArgs<'a> = &'a [FunctionInput<'a>];
+pub type FunctionKwArgs<'a> = &'a RHashMap<RString, FunctionInput<'a>>;
+
+#[repr(C)]
+#[derive(StableAbi, Default, Debug)]
+pub enum FunctionInput<'a> {
+    #[default]
+    None,
+    AttrOwn(Attribute),
+    SeriesOwn(Series),
+    TsOwn(TimeSeries),
+    Attr(&'a Attribute),
+    Series(&'a Series),
+    Ts(&'a TimeSeries),
+}
+
+impl From<Option<Attribute>> for FunctionInput<'_> {
+    fn from(value: Option<Attribute>) -> Self {
+        value.map(Self::AttrOwn).unwrap_or(Self::None)
+    }
+}
+
+impl<'a> From<Option<&'a Attribute>> for FunctionInput<'a> {
+    fn from(value: Option<&'a Attribute>) -> Self {
+        value.map(Self::Attr).unwrap_or(Self::None)
+    }
+}
+
+impl From<ROption<Attribute>> for FunctionInput<'_> {
+    fn from(value: ROption<Attribute>) -> Self {
+        value.map(Self::AttrOwn).unwrap_or(Self::None)
+    }
+}
+
+impl<'a> From<ROption<&'a Attribute>> for FunctionInput<'a> {
+    fn from(value: ROption<&'a Attribute>) -> Self {
+        value.map(Self::Attr).unwrap_or(Self::None)
+    }
+}
+
+impl<'a> From<&'a ROption<Attribute>> for FunctionInput<'a> {
+    fn from(value: &'a ROption<Attribute>) -> Self {
+        value.as_ref().map(Self::Attr).unwrap_or(Self::None)
+    }
+}
+
+impl From<Attribute> for FunctionInput<'_> {
+    fn from(value: Attribute) -> Self {
+        Self::AttrOwn(value)
+    }
+}
+
+impl<'a> From<&'a Attribute> for FunctionInput<'a> {
+    fn from(value: &'a Attribute) -> Self {
+        Self::Attr(value)
+    }
+}
+
+impl From<Series> for FunctionInput<'_> {
+    fn from(value: Series) -> Self {
+        Self::SeriesOwn(value)
+    }
+}
+
+impl From<TimeSeries> for FunctionInput<'_> {
+    fn from(value: TimeSeries) -> Self {
+        Self::TsOwn(value)
+    }
+}
+
+// idk if this is a good way to do it
+impl<'a> FunctionInput<'a> {
+    fn clone_as_ref(&'a self) -> Self {
+        match self {
+            Self::None => Self::None,
+            Self::Attr(a) => Self::Attr(a),
+            Self::AttrOwn(a) => Self::Attr(a),
+            Self::Series(s) => Self::Series(s),
+            Self::SeriesOwn(s) => Self::Series(s),
+            Self::Ts(ts) => Self::Ts(ts),
+            Self::TsOwn(ts) => Self::Ts(ts),
+        }
+    }
+}
+
+impl FunctionInput<'_> {
+    pub fn type_name(&self) -> String {
+        match self {
+            Self::None => "<None>".into(),
+            Self::Attr(a) => a.type_name().into(),
+            Self::AttrOwn(a) => a.type_name().into(),
+            Self::Series(s) => format!("Series<{}>", s.type_name()),
+            Self::SeriesOwn(s) => format!("Series<{}>", s.type_name()),
+            Self::Ts(ts) => format!("TimeSeries<{}>", ts.series().type_name()),
+            Self::TsOwn(ts) => format!("TimeSeries<{}>", ts.series().type_name()),
+        }
+    }
+
+    pub fn is_none(&self) -> bool {
+        matches!(self, FunctionInput::None)
+    }
+
+    pub fn attribute(&self) -> Result<Attribute, EvalError> {
+        match self {
+            Self::None => Err(EvalErrorType::EmptyValue(None).no_pos()),
+            Self::Attr(&ref a) => Ok(a.clone()),
+            Self::AttrOwn(a) => Ok(a.clone()),
+            _ => Err(EvalErrorType::EmptyValue(None).no_pos()),
+        }
+    }
+
+    pub fn attribute_ref<'a>(&'a self) -> Result<&'a Attribute, EvalError> {
+        match self {
+            Self::None => Err(EvalErrorType::EmptyValue(None).no_pos()),
+            Self::Attr(&ref a) => Ok(a),
+            Self::AttrOwn(a) => Ok(a),
+            _ => Err(EvalErrorType::EmptyValue(None).no_pos()),
+        }
+    }
+
+    pub fn attr_relaxed<P: FromAttributeRelaxed>(&self) -> Option<Result<P, String>> {
+        match self {
+            Self::None => None,
+            Self::Attr(arg) => Some(FromAttributeRelaxed::try_from_attr_relaxed(arg)),
+            Self::AttrOwn(arg) => Some(FromAttributeRelaxed::try_from_attr_relaxed(arg)),
+            _ => Some(Err(format!(
+                "can not be constructed from {}",
+                self.type_name()
+            ))),
+        }
+    }
+}
+
+pub trait ResolveFuncArg<'a>: Sized {
+    fn resolve_arg(val: &'a FunctionInput<'a>) -> Option<Self>;
+}
+
+impl<'a, T: FromAttribute> ResolveFuncArg<'a> for T {
+    fn resolve_arg(val: &FunctionInput<'a>) -> Option<Self> {
+        match val {
+            FunctionInput::Attr(a) => FromAttribute::from_attr(a),
+            FunctionInput::AttrOwn(a) => FromAttribute::from_attr(a),
+            _ => None,
+        }
+    }
+}
+
+macro_rules! attr_ref_types_impl {
+    ($t: tt, $x: path) => {
+        impl<'a> ResolveFuncArg<'a> for &'a $t {
+            fn resolve_arg(val: &'a FunctionInput<'a>) -> Option<Self> {
+                match val {
+                    FunctionInput::Attr($x(a)) => Some(a),
+                    FunctionInput::AttrOwn($x(a)) => Some(a),
+                    _ => None,
+                }
+            }
+        }
+
+        impl<'a> ResolveFuncArg<'a> for &'a [$t] {
+            fn resolve_arg(val: &'a FunctionInput<'a>) -> Option<Self> {
+                match val {
+                    FunctionInput::Series(a) => FromSeries::from_series(a),
+                    FunctionInput::SeriesOwn(a) => FromSeries::from_series(a),
+                    FunctionInput::Ts(a) => FromSeries::from_series(a.series()),
+                    FunctionInput::TsOwn(a) => FromSeries::from_series(a.series()),
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+attr_ref_types_impl!(bool, Attribute::Bool);
+attr_ref_types_impl!(RString, Attribute::String);
+attr_ref_types_impl!(i64, Attribute::Integer);
+attr_ref_types_impl!(f64, Attribute::Float);
+attr_ref_types_impl!(Date, Attribute::Date);
+attr_ref_types_impl!(Time, Attribute::Time);
+attr_ref_types_impl!(DateTime, Attribute::DateTime);
+
+impl<'a> ResolveFuncArg<'a> for &'a str {
+    fn resolve_arg(val: &'a FunctionInput<'a>) -> Option<Self> {
+        match val {
+            FunctionInput::Attr(Attribute::String(a)) => Some(a.as_str()),
+            FunctionInput::AttrOwn(Attribute::String(a)) => Some(a.as_str()),
+            _ => None,
+        }
+    }
+}
+
+impl<'a> ResolveFuncArg<'a> for &'a AttrMap {
+    fn resolve_arg(val: &'a FunctionInput<'a>) -> Option<Self> {
+        match val {
+            FunctionInput::Attr(Attribute::Table(a)) => Some(a),
+            FunctionInput::AttrOwn(Attribute::Table(a)) => Some(a),
+            _ => None,
+        }
+    }
+}
+
+impl<'a> ResolveFuncArg<'a> for &'a [Attribute] {
+    fn resolve_arg(val: &'a FunctionInput<'a>) -> Option<Self> {
+        match val {
+            FunctionInput::Attr(Attribute::Array(a)) => Some(a.as_slice()),
+            FunctionInput::AttrOwn(Attribute::Array(a)) => Some(a.as_slice()),
+            FunctionInput::Series(a) => FromSeries::from_series(a),
+            FunctionInput::SeriesOwn(a) => FromSeries::from_series(a),
+            FunctionInput::Ts(a) => FromSeries::from_series(a.series()),
+            FunctionInput::TsOwn(a) => FromSeries::from_series(a.series()),
+            _ => None,
+        }
+    }
+}
+
 /// Return values for Nadi Functions
 #[repr(C)]
 #[derive(StableAbi, Default)]
@@ -32,6 +248,8 @@ pub enum FunctionRet {
     #[default]
     None,
     Some(Attribute),
+    Series(Series),
+    Ts(TimeSeries),
     Error(RString),
     Image(RString),
     Images(RVec<RString>),
@@ -44,6 +262,8 @@ impl FunctionRet {
         match self {
             Self::None => Ok(ExprResult::None),
             Self::Some(a) => Ok(ExprResult::Val(a)),
+            Self::Series(a) => Ok(ExprResult::Series(a)),
+            Self::Ts(a) => Ok(ExprResult::TimeSeries(a)),
             Self::Image(a) => Ok(ExprResult::Image(a.to_string())),
             Self::Images(a) => Ok(ExprResult::Images(
                 a.into_iter().map(|v| v.to_string()).collect(),
@@ -67,6 +287,18 @@ where
 {
     fn from(value: T) -> Self {
         Self::Some(Attribute::from(value))
+    }
+}
+
+impl From<Series> for FunctionRet {
+    fn from(value: Series) -> Self {
+        Self::Series(value)
+    }
+}
+
+impl From<TimeSeries> for FunctionRet {
+    fn from(value: TimeSeries) -> Self {
+        Self::Ts(value)
     }
 }
 
@@ -741,14 +973,17 @@ impl NadiFunctions {
 }
 
 #[repr(C)]
-#[derive(StableAbi, Default, Debug, PartialEq)]
-pub struct FunctionCtx {
-    pub args: RVec<Attribute>,
-    pub kwargs: AttrMap,
+#[derive(StableAbi, Default)]
+pub struct FunctionCtx<'a> {
+    pub args: RVec<FunctionInput<'a>>,
+    pub kwargs: RHashMap<RString, FunctionInput<'a>>,
 }
 
-impl FunctionCtx {
-    pub fn from_arg_kwarg(args: Vec<Attribute>, kwargs: HashMap<String, Attribute>) -> Self {
+impl<'a> FunctionCtx<'a> {
+    pub fn from_arg_kwarg(
+        args: Vec<FunctionInput<'a>>,
+        kwargs: HashMap<String, FunctionInput<'a>>,
+    ) -> Self {
         let args = RVec::from(args);
         let kwargs = kwargs
             .into_iter()
@@ -757,61 +992,93 @@ impl FunctionCtx {
         Self { args, kwargs }
     }
 
-    pub fn args<'a>(&'a self) -> AttrSlice<'a> {
-        self.args.as_rslice()
+    pub fn args(&'a self) -> FunctionArgs<'a> {
+        self.args.as_slice()
     }
 
-    pub fn arg(&self, ind: usize) -> Option<&Attribute> {
+    /// Get args in any type
+    pub fn try_args<U: ResolveFuncArg<'a>, T: FromIterator<U>>(&'a self) -> Result<T, RString> {
+        self.args()
+            .iter()
+            .map(|v| {
+                ResolveFuncArg::resolve_arg(v)
+                    .ok_or(format!("Invalid Type: {}", v.type_name()).into())
+            })
+            .collect()
+    }
+
+    /// get kwargs in any type
+    pub fn try_kwargs<
+        T: From<&'a RString> + std::hash::Hash + std::cmp::Eq,
+        U: ResolveFuncArg<'a>,
+        V: FromIterator<(T, U)>,
+    >(
+        &'a self,
+    ) -> Result<V, RString> {
+        self.kwargs()
+            .iter()
+            .map(|Tuple2(k, v)| {
+                ResolveFuncArg::resolve_arg(v)
+                    .ok_or(format!("Invalid Type: {}", v.type_name()).into())
+                    .map(|x| (k.into(), x))
+            })
+            .collect()
+    }
+
+    pub fn arg(&'a self, ind: usize) -> Option<&'a FunctionInput<'a>> {
         self.args.get(ind)
     }
 
-    pub fn kwargs(&self) -> &AttrMap {
+    pub fn kwargs(&'a self) -> FunctionKwArgs<'a> {
         &self.kwargs
     }
 
-    pub fn kwarg(&self, name: &str) -> Option<&Attribute> {
+    pub fn kwarg(&self, name: &str) -> Option<&FunctionInput<'a>> {
         self.kwargs.get(name)
     }
 
-    pub fn just_kwarg<P: FromAttribute>(&self, name: &str) -> Option<Result<P, String>> {
-        self.kwarg(name)
-            .map(|arg| match FromAttribute::try_from_attr(arg) {
-                Ok(v) => Ok(v),
-                Err(e) => Err(format!(
-                    "Argument {} [{}]: {e}",
-                    name,
-                    nadi_core::attrs::type_name::<P>()
-                )),
-            })
+    pub fn just_kwarg<P: ResolveFuncArg<'a>>(&'a self, name: &str) -> Option<Result<P, String>> {
+        let arg = self.kwarg(name)?;
+        if arg.is_none() {
+            return None;
+        };
+        Some(match ResolveFuncArg::resolve_arg(arg) {
+            Some(v) => Ok(v),
+            None => Err(format!(
+                "Argument {}: type {} can not be obtained from type {}",
+                name,
+                nadi_core::attrs::type_name::<P>(),
+                arg.type_name()
+            )),
+        })
     }
 
     pub fn just_kwarg_relaxed<P: FromAttributeRelaxed>(
         &self,
         name: &str,
     ) -> Option<Result<P, String>> {
-        self.kwarg(name).map(
-            |arg| match FromAttributeRelaxed::try_from_attr_relaxed(arg) {
-                Ok(v) => Ok(v),
-                Err(e) => Err(format!(
-                    "Argument {} [{}]: {e}",
-                    name,
-                    nadi_core::attrs::type_name::<P>()
-                )),
-            },
-        )
+        Some(self.kwarg(name)?.attr_relaxed()?.map_err(|e| {
+            format!(
+                "Argument {} [{}]: {e}",
+                name,
+                nadi_core::attrs::type_name::<P>(),
+            )
+        }))
     }
 
     pub fn arg_kwarg<P: FromAttribute>(&self, ind: usize, name: &str) -> Option<Result<P, String>> {
-        self.kwarg(name).or_else(|| self.arg(ind)).map(|arg| {
-            match FromAttribute::try_from_attr(arg) {
-                Ok(v) => Ok(v),
-                Err(e) => Err(format!(
-                    "Argument {} ({} [{}]): {e}",
-                    ind + 1,
-                    name,
-                    nadi_core::attrs::type_name::<P>()
-                )),
-            }
+        let arg = self.kwarg(name).or_else(|| self.arg(ind))?;
+        if arg.is_none() {
+            return None;
+        };
+        Some(match ResolveFuncArg::resolve_arg(arg) {
+            Some(v) => Ok(v),
+            None => Err(format!(
+                "Argument {}: type {} can not be obtained from type {}",
+                name,
+                nadi_core::attrs::type_name::<P>(),
+                arg.type_name()
+            )),
         })
     }
 
@@ -820,17 +1087,14 @@ impl FunctionCtx {
         ind: usize,
         name: &str,
     ) -> Option<Result<P, String>> {
-        self.kwarg(name).or_else(|| self.arg(ind)).map(|arg| {
-            match FromAttributeRelaxed::try_from_attr_relaxed(arg) {
-                Ok(v) => Ok(v),
-                Err(e) => Err(format!(
-                    "Argument {} ({} [{}]): {e}",
-                    ind + 1,
-                    name,
-                    nadi_core::attrs::type_name::<P>()
-                )),
-            }
-        })
+        let res = self.kwarg(name).or_else(|| self.arg(ind))?;
+        Some(res.attr_relaxed()?.map_err(|e| {
+            format!(
+                "Argument {} [{}]: {e}",
+                name,
+                nadi_core::attrs::type_name::<P>(),
+            )
+        }))
     }
 }
 

@@ -2,7 +2,8 @@
 // without the macros. Any additional functions are recommended to be
 // written using the macros provided by nadi_plugin crate
 use crate::functions::{
-    FuncArg, FuncArgType, FunctionCtx, FunctionRet, NadiFunctions, NodeFunction, NodeFunction_TO,
+    FuncArg, FuncArgType, FunctionArgs, FunctionCtx, FunctionRet, NadiFunctions, NodeFunction,
+    NodeFunction_TO,
 };
 use crate::plugins::NadiPlugin;
 use crate::prelude::*;
@@ -170,10 +171,10 @@ The function will error if
 The attributes will be printed in `key=val` format.
 */
 #[node_func(name = false)]
-fn print_attrs(node: &NodeInner, #[args] attrs: AttrSlice, name: bool) -> FunctionRet {
+fn print_attrs(node: &NodeInner, #[args] attrs: FunctionArgs, name: bool) -> FunctionRet {
     let attrs = return_on_err!(attrs
         .iter()
-        .map(String::try_from_attr)
+        .map(|t| String::try_from_attr(&t.attribute().map_err(|e| e.to_string())?))
         .collect::<Result<Vec<String>, String>>());
 
     for a in attrs {
