@@ -1243,6 +1243,21 @@ macro_rules! impl_from_series {
             }
         }
 
+        impl<'a> FromSeries<'a> for ROption<$t> {
+            fn from_series(value: &Series) -> Option<&[ROption<$t>]> {
+                match value {
+                    Series::Masked(MaskedSeries::$x(v), _) => Some(v.as_slice()),
+                    _ => None,
+                }
+            }
+            fn from_series_mut(value: &mut Series) -> Option<&mut [ROption<$t>]> {
+                match value {
+                    Series::Masked(MaskedSeries::$x(v), _) => Some(v.as_mut_slice()),
+                    _ => None,
+                }
+            }
+        }
+
         impl From<&[$t]> for CompleteSeries {
             fn from(item: &[$t]) -> Self {
                 CompleteSeries::$x(item.into())

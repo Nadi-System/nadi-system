@@ -4,6 +4,7 @@ use nadi_plugin::nadi_internal_plugin;
 mod conn {
     use crate::parser::tokenizer::valid_variable_name;
     use crate::prelude::*;
+    use abi_stable::std_types::RString;
     use anyhow::Context;
     use nadi_plugin::{network_func, node_func};
     use std::fs::File;
@@ -96,7 +97,7 @@ mod conn {
     fn load_edges(
         net: &mut Network,
         /// String containing Network connections
-        edges: &[(String, String)],
+        edges: Vec<(RString, RString)>,
         /// Append the connections in the current network
         append: bool,
         /// Force overriding outputs if previous one is present
@@ -122,11 +123,11 @@ mod conn {
     #[network_func(keep = true)]
     fn subset(
         net: &mut Network,
-        filter: &[bool],
+        filter: Vec<bool>,
         /// Keep the selected nodes (false = removes the selected)
         keep: bool,
     ) -> Result<(), String> {
-        net.subset(filter, keep)
+        net.subset(&filter, keep)
     }
 
     /// Save the network into the given file

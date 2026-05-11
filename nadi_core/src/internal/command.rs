@@ -34,7 +34,7 @@ mod command {
     /// env.home = shell_env("HOME")
     /// ```
     #[env_func]
-    fn shell_env(var: String) -> Option<String> {
+    fn shell_env(var: &str) -> Option<String> {
         std::env::var(var).ok()
     }
 
@@ -45,7 +45,7 @@ mod command {
     /// env assert_eq(shell_env("testing"), "true")
     /// ```
     #[env_func]
-    fn set_shell_env(var: String, val: String) {
+    fn set_shell_env(var: &str, val: &str) {
         std::env::set_var(var, val)
     }
 
@@ -129,7 +129,7 @@ mod command {
     fn command(
         node: &mut NodeInner,
         /// String Command template to run
-        cmd: &Template,
+        cmd: Template,
         /// Show the rendered version of command, and other messages
         verbose: bool,
         /// Echo the stdout from the command
@@ -241,7 +241,7 @@ mod command {
     fn parallel(
         net: &mut Network,
         /// String Command template to run
-        cmd: &Template,
+        cmd: Template,
         /// Number of workers to run in parallel
         workers: i64,
         /// Print the command being run

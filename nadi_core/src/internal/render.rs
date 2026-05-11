@@ -32,7 +32,7 @@ mod render {
     #[env_func(safe = false)]
     fn render(
         /// String template to render
-        template: &Template,
+        template: Template,
         /// if render fails keep it as it is instead of exiting
         safe: bool,
         #[kwargs] keyval: HashMap<&RString, Attribute>,
@@ -62,7 +62,7 @@ mod render {
     fn render(
         node: &NodeInner,
         /// String template to render
-        template: &Template,
+        template: Template,
         /// if render fails keep it as it is instead of exiting
         safe: bool,
     ) -> Result<String, String> {
@@ -86,7 +86,7 @@ mod render {
     fn render(
         network: &Network,
         /// Path to the template file
-        template: &Template,
+        template: Template,
         /// if render fails keep it as it is instead of exiting
         safe: bool,
     ) -> Result<String, String> {
@@ -110,7 +110,7 @@ mod render {
     fn render_nodes(
         network: &Network,
         /// Path to the template file
-        template: &Template,
+        template: Template,
         /// if render fails keep it as it is instead of exiting
         safe: bool,
         /// String to join the render results

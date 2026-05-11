@@ -9,7 +9,7 @@ use proc_macro::TokenStream;
 use quote::{ToTokens, format_ident, quote, quote_spanned};
 use syn::{
     Attribute, DeriveInput, Expr, FnArg, Ident, ItemFn, ItemMod, Lit, MetaNameValue, Type,
-    TypeReference, parse_macro_input, punctuated::Punctuated, token::Comma,
+    parse_macro_input, punctuated::Punctuated, token::Comma,
 };
 
 #[derive(PartialEq)]
@@ -413,45 +413,6 @@ fn get_fn_arg(arg: &FnArg) -> (&Ident, &Type, FuncArgType) {
     }
 }
 
-// HACK ignoring the path and assuming anything::Option is Option
-/// Checks if a type is Option
-///
-/// Any type with the name Option as the type name before the generics
-/// is considered as an option type.
-fn type_is_opt(ty: &Type) -> bool {
-    // if let Type::Path(p) = ty {
-    //     p.path.is_ident("Option")
-    // } else {
-    //     false
-    // }
-    ty.to_token_stream()
-        .to_string()
-        .split('<')
-        .next()
-        .unwrap_or_default()
-        .split("::")
-        .last()
-        .unwrap_or_default()
-        .trim()
-        == "Option"
-}
-
-fn get_opt_type(ty: &Type) -> Option<&Type> {
-    if let Type::Path(p) = ty {
-        // if p.path.is_ident("Option") {
-        let op = p.path.segments.last().expect("should have path component");
-        if let syn::PathArguments::AngleBracketed(ag) = &op.arguments {
-            for a in &ag.args {
-                if let syn::GenericArgument::Type(t) = a {
-                    return Some(t);
-                }
-            }
-        }
-        // }
-    }
-    None
-}
-
 /// Register the plugin for NADI system. This should be on the top
 /// level of the `mod`, with access to all the functions so it can
 /// register them
@@ -659,45 +620,6 @@ fn get_name_func(item: &ItemFn) -> proc_macro2::TokenStream {
     }
 }
 
-fn generic_construct(ty: &Type) -> proc_macro2::TokenStream {
-    // if there are any generic parameters, then we need to have ::
-    // there to call its methods like `Vec::<String>::new()`
-    std::str::FromStr::from_str(&ty.to_token_stream().to_string().replace("<", "::<")).unwrap()
-}
-
-// returns the inner type, and if deref is required or not
-fn ref_type_inner(ty: &TypeReference, construct: bool) -> (proc_macro2::TokenStream, bool) {
-    // to provide slice we need to generate vec
-    let inner_ty = match ty.elem.as_ref() {
-        Type::Slice(i) => {
-            let i = &i.elem;
-            if construct {
-                quote!(Vec::<#i>)
-            } else {
-                quote!(Vec<#i>)
-            }
-        }
-        i => {
-            if construct {
-                generic_construct(i)
-            } else {
-                quote! {#i}
-            }
-        }
-    };
-    // similarly, str needs String, and Path needs PathBuf
-    match inner_ty
-        .to_token_stream()
-        .to_string()
-        .replace(" ", "")
-        .as_str()
-    {
-        "str" => (quote!(String), true),
-        "Path" | "std::path::Path" => (quote!(::std::path::PathBuf), false),
-        _ => (inner_ty, false),
-    }
-}
-
 fn get_code_func(item: &ItemFn) -> proc_macro2::TokenStream {
     let func_code = prettyplease::unparse(
         &syn::parse2(item.to_token_stream()).expect("code should be valid for prettyplease"),
@@ -768,40 +690,32 @@ fn get_call_func(
                 }
             };
             let def = if let Some(val) = defaults.get(arg) {
-                match ty {
+                let warn = match ty {
                     Type::Reference(r) => {
-                        let inner_ty = ref_type_inner(r, true).0;
-                        let warn = r.mutability.map(|m| {
-                            // mut reference on the network functions
-                            // are useless as they are one time
-                            // execution; in node function they might
-                            // have unexpected behaviour as the node
-                            // functions are supposed to be able to
-                            // run in parallel
+                        // mut reference on the network functions are
+                        // useless as they are one time execution; in
+                        // node function they might have unexpected
+                        // behaviour as the node functions are
+                        // supposed to be able to run in parallel
+                        r.mutability.map(|m| {
                             quote_spanned! {
                                 m.span=> compile_error!(
                                 "Mutable Reference not supported for nadi function args"
                                 );
                             }
-                        });
-                        defaults_expr.push(quote! {
-                            let #arg = #inner_ty :: from ( #val );
-                        });
-                        quote! {
+                        })
+                    }
+                    _ => None,
+                };
+                defaults_expr.push(quote! {
+                    let #arg : #ty = #val .into();
+                });
+                quote! {
                         #warn
-                        #inner_ty :: from ( #val )
-                        }
+                ::std::convert::Into::<#ty>::into(#val)
                     }
-                    _ => {
-                        let ty = generic_construct(ty);
-                        defaults_expr.push(quote! {
-                            let #arg = #ty :: from ( #val );
-                        });
-                        quote! {
-                        #ty :: from ( #val )
-                        }
-                    }
-                }
+            } else if type_is_opt(ty) {
+                quote!(None)
             } else {
                 quote! {
                         return #ret_err (
@@ -809,58 +723,16 @@ fn get_call_func(
                         );
                     }
             };
-            let isopt = type_is_opt(ty);
-            let patterns = if isopt {
-                quote! {
-                    Some(Ok(v)) => Some(v),
-                    Some(Err(e)) => return #ret_err (e.into()),
-                    None => None,
-                }
-            } else {
-                quote! {
-                    Some(Ok(v)) => v,
-                    Some(Err(e)) => return #ret_err (e.into()),
-                    None => {#def},
-                }
+            let patterns = quote! {
+                Some(Ok(v)) => v,
+                Some(Err(e)) => return #ret_err (e.into()),
+                None => {#def},
             };
-            match ty {
-                Type::Reference(r) => {
-                    let arg_o = format_ident!("{}_o", arg);
-                    let inner_ty = ref_type_inner(r, false).0;
-                    let m = r.mutability;
-                    quote! {
-                    let #m #arg_o : #inner_ty = match #arg_func_call {
-                        #patterns
-                    };
-                    let #arg : #ty = & #arg_o;
-                    }
-                }
-                _ => {
-                    if let Some(Type::Reference(r)) = get_opt_type(ty) {
-                        let arg_o = format_ident!("{}_o", arg);
-                        let (inner_ty, deref) = ref_type_inner(r, false);
-                        let m = r.mutability;
-                        // all this since deref doesn't happen automatically inside option like with & #arg_o above
-                        let asref = match (deref, m.is_some()) {
-                            (false, true) => quote!(std::option::Option::as_mut),
-                            (false, false) => quote!(std::option::Option::as_ref),
-                            (true, true) => quote!(std::option::Option::as_deref_mut),
-                            (true, false) => quote!(std::option::Option::as_deref),
-                        };
-                        quote! {
-                            let #m #arg_o : Option<#inner_ty> = match #arg_func_call {
-                            #patterns
-                            };
-                            let #arg : #ty = #asref (& #m #arg_o);
-                        }
-                    } else {
-                        quote! {
-                            let #arg : #ty = match #arg_func_call {
-                            #patterns
-                            };
-                        }
-                    }
-                }
+
+            quote! {
+                let #arg : #ty = match #arg_func_call {
+                #patterns
+                };
             }
         })
         .collect();
@@ -917,6 +789,30 @@ fn get_help_func(item: &ItemFn) -> proc_macro2::TokenStream {
     #docs .into()
         }
     }
+}
+
+// HACK ignoring the path and assuming anything::Option is Option
+// FIX: move the option logic to traits, so it is automatically handled while resolving arguments
+/// Checks if a type is Option
+///
+/// Any type with the name Option as the type name before the generics
+/// is considered as an option type.
+fn type_is_opt(ty: &Type) -> bool {
+    // if let Type::Path(p) = ty {
+    //     p.path.is_ident("Option")
+    // } else {
+    //     false
+    // }
+    let ty = ty.to_token_stream().to_string();
+    let tt = ty
+        .split('<')
+        .next()
+        .unwrap_or_default()
+        .split("::")
+        .last()
+        .unwrap_or_default()
+        .trim();
+    tt == "Option" || tt == "ROption"
 }
 
 fn get_signature_func(
@@ -1068,19 +964,6 @@ mod test {
     #[case(parse_quote!(std::core::Option<some_crate::CustomVec<i32>>), true)]
     fn test_type_is_opt(#[case] ty: Type, #[case] is_opt: bool) {
         assert_eq!(type_is_opt(&ty), is_opt);
-    }
-
-    #[rstest]
-    #[case(parse_quote!(Option<i32>), Some(parse_quote!(i32)))]
-    #[case(parse_quote!(i32), None)]
-    #[case(parse_quote!(OptionT), None)]
-    #[case(parse_quote!(std::core::Option<i32>), Some(parse_quote!(i32)))]
-    // this could be a type aliasil
-    #[case(parse_quote!(some_crate::Option), None)]
-    #[case(parse_quote!(Option<some_crate::CustomVec<i32>>), Some(parse_quote!(some_crate::CustomVec<i32>)))]
-    #[case(parse_quote!(std::core::Option<some_crate::CustomVec<i32>>), Some(parse_quote!(some_crate::CustomVec<i32>)))]
-    fn test_get_opt_type(#[case] ty: Type, #[case] inner: Option<Type>) {
-        assert_eq!(get_opt_type(&ty), inner.as_ref());
     }
 
     #[test]

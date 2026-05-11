@@ -17,7 +17,7 @@ mod table {
     fn save_csv(
         net: &Network,
         path: &Path,
-        fields: &[String],
+        fields: Vec<String>,
         filter: Option<Vec<bool>>,
     ) -> anyhow::Result<()> {
         let mut file = File::create(path)?;

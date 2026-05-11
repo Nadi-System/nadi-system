@@ -3,7 +3,6 @@ use nadi_plugin::nadi_internal_plugin;
 #[nadi_internal_plugin]
 mod debug {
     use crate::functions::{FunctionArgs, FunctionKwArgs};
-    use crate::prelude::*;
     use abi_stable::std_types::Tuple2;
     use colored::Colorize;
     use nadi_plugin::env_func;

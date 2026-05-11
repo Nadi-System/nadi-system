@@ -35,8 +35,7 @@ mod regex {
     /// ```
     #[env_func]
     fn str_match(
-        /// attribute to check for pattern
-        #[relaxed]
+        /// string to check for pattern
         attr: &str,
         /// Regex pattern to match
         pattern: Regex,
@@ -47,18 +46,16 @@ mod regex {
     /// Replace the occurances of the given match
     ///
     /// ```task
-    /// env assert_eq(str_replace("abc", "^a", 2), "2bc")
-    /// env assert_eq(str_replace("abc", "[abc]", 2), "222")
+    /// env assert_eq(str_replace("abc", "^a", "2"), "2bc")
+    /// env assert_eq(str_replace("abc", "[abc]", "2"), "222")
     /// ```
     #[env_func]
     fn str_replace(
         /// original string
-        #[relaxed]
         attr: &str,
         /// Regex pattern to match
         pattern: Regex,
         /// replacement string
-        #[relaxed]
         rep: &str,
     ) -> String {
         pattern.replace_all(attr, rep).to_string()
@@ -71,8 +68,7 @@ mod regex {
     /// ```
     #[env_func]
     fn str_find(
-        /// attribute to check for pattern
-        #[relaxed]
+        /// string to check for pattern
         attr: &str,
         /// Regex pattern to match
         pattern: Regex,
@@ -87,8 +83,7 @@ mod regex {
     /// ```
     #[env_func]
     fn str_find_all(
-        /// attribute to check for pattern
-        #[relaxed]
+        /// string to check for pattern
         attr: &str,
         /// Regex pattern to match
         pattern: Regex,
@@ -106,8 +101,7 @@ mod regex {
     /// ```
     #[env_func]
     fn str_count(
-        /// attribute to check for pattern
-        #[relaxed]
+        /// string to check for pattern
         attr: &str,
         /// Regex pattern to match
         pattern: Regex,

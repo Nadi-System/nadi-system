@@ -1,6 +1,5 @@
 use crate::eval::EvalErrorType;
 use crate::expressions::ExprResult;
-use crate::functions::FunctionInput;
 use crate::structs::NadiAttrType;
 use crate::tasks::{TaskContext, TaskCtxConsts, TaskMessage};
 use crate::template::Template;
@@ -1013,7 +1012,7 @@ macro_rules! impl_from_attr {
         }
 
         impl FromAttribute for $t {
-            fn from_attr(value: &Attribute) -> Option<$t> {
+            fn from_attr(value: &Attribute) -> Option<Self> {
                 match value {
                     $x(v) => Some(v.clone()),
                     _ => None,
@@ -1137,6 +1136,7 @@ macro_rules! tuple_impls {
 		}
             }
         }
+
 
         impl<$($gen: FromAttributeRelaxed),+> FromAttributeRelaxed for ($($gen,)+)
         {

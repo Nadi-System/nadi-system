@@ -90,7 +90,7 @@ mod visuals {
         net: &Network,
         /// Attribute values to use for size scaling
         #[relaxed]
-        attrs: &[f64],
+        attrs: Vec<f64>,
         /// minimum size of the node
         #[relaxed]
         minsize: f64,

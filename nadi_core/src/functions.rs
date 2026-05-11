@@ -214,6 +214,18 @@ macro_rules! attr_ref_types_impl {
                 }
             }
         }
+
+        impl<'a> ResolveFuncArg<'a> for &'a [ROption<$t>] {
+            fn resolve_arg(val: &'a FunctionInput<'a>) -> Option<Self> {
+                match val {
+                    FunctionInput::Series(a) => FromSeries::from_series(a),
+                    FunctionInput::SeriesOwn(a) => FromSeries::from_series(a),
+                    FunctionInput::Ts(a) => FromSeries::from_series(a.series()),
+                    FunctionInput::TsOwn(a) => FromSeries::from_series(a.series()),
+                    _ => None,
+                }
+            }
+        }
     };
 }
 
@@ -237,11 +249,31 @@ impl<'a> ResolveFuncArg<'a> for FunctionInput<'a> {
     }
 }
 
+impl<'a> ResolveFuncArg<'a> for &'a Attribute {
+    fn resolve_arg(val: &'a FunctionInput<'a>) -> Option<Self> {
+        match val {
+            FunctionInput::Attr(a) => Some(a),
+            FunctionInput::AttrOwn(a) => Some(a),
+            _ => None,
+        }
+    }
+}
+
 impl<'a> ResolveFuncArg<'a> for &'a str {
     fn resolve_arg(val: &'a FunctionInput<'a>) -> Option<Self> {
         match val {
             FunctionInput::Attr(Attribute::String(a)) => Some(a.as_str()),
             FunctionInput::AttrOwn(Attribute::String(a)) => Some(a.as_str()),
+            _ => None,
+        }
+    }
+}
+
+impl<'a> ResolveFuncArg<'a> for &'a Path {
+    fn resolve_arg(val: &'a FunctionInput<'a>) -> Option<Self> {
+        match val {
+            FunctionInput::Attr(Attribute::String(a)) => Some(a.as_str().as_ref()),
+            FunctionInput::AttrOwn(Attribute::String(a)) => Some(a.as_str().as_ref()),
             _ => None,
         }
     }
@@ -1071,9 +1103,6 @@ impl<'a> FunctionCtx<'a> {
 
     pub fn just_kwarg<P: ResolveFuncArg<'a>>(&'a self, name: &str) -> Option<Result<P, String>> {
         let arg = self.kwarg(name)?;
-        if arg.is_none() {
-            return None;
-        };
         Some(match ResolveFuncArg::resolve_arg(arg) {
             Some(v) => Ok(v),
             None => Err(format!(
@@ -1104,9 +1133,6 @@ impl<'a> FunctionCtx<'a> {
         name: &str,
     ) -> Option<Result<P, String>> {
         let arg = self.kwarg(name).or_else(|| self.arg(ind))?;
-        if arg.is_none() {
-            return None;
-        };
         Some(match ResolveFuncArg::resolve_arg(arg) {
             Some(v) => Ok(v),
             None => Err(format!(

@@ -46,8 +46,8 @@ mod gviz {
         outfile: &Path,
         name: &str,
         global_attrs: &str,
-        node_attr: Option<&Template>,
-        edge_attr: Option<&Template>,
+        node_attr: Option<Template>,
+        edge_attr: Option<Template>,
     ) -> FunctionRet {
         let mut file = return_on_err!(File::create(outfile));
         return_on_err!(writeln!(file, "digraph {} {{", name));

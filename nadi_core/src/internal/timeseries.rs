@@ -12,7 +12,7 @@ mod ts {
     use std::collections::HashSet;
     use std::fs::File;
     use std::io::{BufWriter, Write};
-    use std::path::PathBuf;
+    use std::path::Path;
 
     /// Number of timeseries in the node
     #[node_func]
@@ -100,7 +100,7 @@ mod ts {
     fn ts_print(
         node: &NodeInner,
         /// name of the timeseries
-        name: &String,
+        name: &str,
         /// show header
         header: bool,
         /// number of head rows to show (all by default)
@@ -138,13 +138,13 @@ mod ts {
     fn ts_print_csv(
         net: &Network,
         /// Name of the timeseries to save
-        name: String,
+        name: &str,
         /// number of head rows to show (all by default)
         head: Option<usize>,
         /// Include only these nodes (all by default)
         nodes: Option<HashSet<String>>,
         /// Show missing values as this string
-        missing: String,
+        missing: &str,
     ) -> anyhow::Result<()> {
         let mut ts_nodes = vec![];
         let mut values = vec![];
@@ -191,13 +191,13 @@ mod ts {
         net: &Network,
         filter: Vec<bool>,
         /// Path to the output csv
-        outfile: PathBuf,
+        outfile: &Path,
         /// list of attributes to write
         attrs: Vec<String>,
         /// list of series to write
         series: Vec<String>,
         /// Show missing values as this string
-        missing: String,
+        missing: &str,
     ) -> anyhow::Result<()> {
         let f = File::create(&outfile)?;
         let mut w = BufWriter::new(f);

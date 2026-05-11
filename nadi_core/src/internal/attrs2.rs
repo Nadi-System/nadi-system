@@ -3,6 +3,7 @@ use nadi_plugin::nadi_internal_plugin;
 #[nadi_internal_plugin]
 mod attrs {
     use crate::attrs::TableOrArray;
+    use crate::functions::FunctionInput;
     use crate::prelude::*;
     use abi_stable::std_types::Tuple2;
     use abi_stable::std_types::{RHashMap, RString};
@@ -20,7 +21,7 @@ mod attrs {
     /// assert_eq(is_none(none()), true)
     /// ```
     #[env_func]
-    fn is_none(inp: Option<Attribute>) -> bool {
+    fn is_none(inp: Option<FunctionInput>) -> bool {
         inp.is_none()
     }
 
@@ -146,12 +147,12 @@ mod attrs {
     fn first_attr(
         node: &NodeInner,
         /// attribute names
-        attrs: &[String],
+        attrs: Vec<RString>,
         /// Default value if not found
         default: Option<Attribute>,
     ) -> Option<Attribute> {
         for attr in attrs {
-            if let Ok(Some(v)) = node.attr_dot(attr) {
+            if let Ok(Some(v)) = node.attr_dot(attr.as_str()) {
                 return Some(v.clone());
             }
         }
@@ -170,13 +171,13 @@ mod attrs {
     fn strmap(
         /// Value to transform the attribute
         #[relaxed]
-        attr: &str,
+        attr: String,
         /// Dictionary of key=value to map the data to
         attrmap: &AttrMap,
         /// Default value if key not found in `attrmap`
         default: Option<Attribute>,
     ) -> Option<Attribute> {
-        attrmap.get(attr).cloned().or(default)
+        attrmap.get(attr.as_str()).cloned().or(default)
     }
 
     /// if else condition with multiple attributes
@@ -263,7 +264,7 @@ mod attrs {
     fn load_toml_render(
         node: &mut NodeInner,
         /// String template to render and load as toml string
-        toml: &Template,
+        toml: Template,
         /// Print the rendered toml or not
         echo: bool,
     ) -> anyhow::Result<()> {

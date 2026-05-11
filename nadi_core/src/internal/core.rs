@@ -37,8 +37,8 @@ mod core {
     /// env assert_eq(count([true, false, true, false]), 2)
     /// ```
     #[env_func]
-    fn count(vars: &[bool]) -> usize {
-        vars.iter().filter(|a| **a).count()
+    fn count(vars: Vec<bool>) -> usize {
+        vars.into_iter().filter(|a| *a).count()
     }
 
     /// Count the number of nodes in the network
@@ -558,8 +558,12 @@ mod core {
         match value {
             FunctionInput::Series(a) => Ok(a.len()),
             FunctionInput::Ts(a) => Ok(a.len()),
+            FunctionInput::SeriesOwn(a) => Ok(a.len()),
+            FunctionInput::TsOwn(a) => Ok(a.len()),
             FunctionInput::Attr(Attribute::Array(a)) => Ok(a.len()),
             FunctionInput::Attr(Attribute::Table(t)) => Ok(t.len()),
+            FunctionInput::AttrOwn(Attribute::Array(a)) => Ok(a.len()),
+            FunctionInput::AttrOwn(Attribute::Table(t)) => Ok(t.len()),
             _ => Err(format!("Type {} does not have a length", value.type_name())),
         }
     }
@@ -781,7 +785,7 @@ mod core {
     /// env assert_eq(max_num([1.0, 2, 3]), 3)
     /// env assert_eq(max_num([1, inf, 3], 0), inf)
     /// ```
-    #[env_func(start=-f64::INFINITY)]
+    #[env_func(start=Attribute::Float(-f64::INFINITY))]
     fn max_num(vars: Vec<Attribute>, start: Attribute) -> Attribute {
         let mut val = start;
         for r in vars {
@@ -1002,11 +1006,15 @@ mod core {
     /// Generate integer array, end is not included
     ///
     /// ```task
-    /// env assert_eq(range(1, 5), [1, 2, 3, 4])
+    /// env assert_eq(range(1, 5), [1, 2, 3, 4, 5])
+    /// env assert_eq(range(2), [1, 2])
     /// ```
     #[env_func]
-    fn range(start: i64, end: i64) -> Vec<i64> {
-        (start..end).collect()
+    fn range(start: i64, end: Option<i64>) -> Vec<i64> {
+        match end {
+            Some(e) => (start..=e).collect(),
+            None => (1..=start).collect(),
+        }
     }
 
     /// Assert the condition is true
