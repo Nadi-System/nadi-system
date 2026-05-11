@@ -2082,7 +2082,7 @@ impl<'a> FunctionCall<ResolvedExpr<'a>> {
         ctx: &TaskContext,
         ectx: &EvalCtx,
         loc: &mut AttrMap,
-    ) -> Result<FunctionCtx, EvalError> {
+    ) -> Result<FunctionCtx<'static>, EvalError> {
         let mut args = Vec::with_capacity(self.args.len());
         for a in &self.args {
             match &a.expr {

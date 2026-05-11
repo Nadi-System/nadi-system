@@ -161,6 +161,26 @@ pub trait ResolveFuncArg<'a>: Sized {
     fn resolve_arg(val: &'a FunctionInput<'a>) -> Option<Self>;
 }
 
+// This means we can directly try to get Option<T> instead of the proc
+// macro doing logistics to check if the user wants Option
+impl<'a, T: ResolveFuncArg<'a>> ResolveFuncArg<'a> for Option<T> {
+    fn resolve_arg(val: &'a FunctionInput<'a>) -> Option<Self> {
+        match val {
+            FunctionInput::None => Some(None),
+            _ => ResolveFuncArg::resolve_arg(val).map(Some),
+        }
+    }
+}
+
+impl<'a, T: ResolveFuncArg<'a>> ResolveFuncArg<'a> for ROption<T> {
+    fn resolve_arg(val: &'a FunctionInput<'a>) -> Option<Self> {
+        match val {
+            FunctionInput::None => Some(RNone),
+            _ => ResolveFuncArg::resolve_arg(val).map(RSome),
+        }
+    }
+}
+
 impl<'a, T: FromAttribute> ResolveFuncArg<'a> for T {
     fn resolve_arg(val: &FunctionInput<'a>) -> Option<Self> {
         match val {
