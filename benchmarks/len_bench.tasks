@@ -1,0 +1,8 @@
+env$ss = 1:10000
+
+start = now()
+for i in 1:100_000 {
+len(env$ss)
+}
+curr = now()
+timediff(start, curr)

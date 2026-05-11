@@ -3,6 +3,7 @@ use nadi_plugin::nadi_internal_plugin;
 #[nadi_internal_plugin]
 mod core {
     use crate::attrs::{Date, DateTime};
+    use crate::functions::FunctionInput;
     use crate::prelude::*;
     use abi_stable::std_types::{RNone, RSome, RString, Tuple2};
     use nadi_plugin::{env_func, network_func, node_func};
@@ -552,15 +553,14 @@ mod core {
     #[env_func]
     fn len(
         /// Array or a HashMap
-        value: &Attribute,
+        value: &FunctionInput,
     ) -> Result<usize, String> {
         match value {
-            Attribute::Array(a) => Ok(a.len()),
-            Attribute::Table(t) => Ok(t.len()),
-            _ => Err(format!(
-                "Got {} instead of array/attrmap",
-                value.type_name()
-            )),
+            FunctionInput::Series(a) => Ok(a.len()),
+            FunctionInput::Ts(a) => Ok(a.len()),
+            FunctionInput::Attr(Attribute::Array(a)) => Ok(a.len()),
+            FunctionInput::Attr(Attribute::Table(t)) => Ok(t.len()),
+            _ => Err(format!("Type {} does not have a length", value.type_name())),
         }
     }
 

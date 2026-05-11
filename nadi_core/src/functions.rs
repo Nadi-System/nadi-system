@@ -205,6 +205,18 @@ attr_ref_types_impl!(Date, Attribute::Date);
 attr_ref_types_impl!(Time, Attribute::Time);
 attr_ref_types_impl!(DateTime, Attribute::DateTime);
 
+impl<'a> ResolveFuncArg<'a> for &'a FunctionInput<'a> {
+    fn resolve_arg(val: &'a FunctionInput<'a>) -> Option<Self> {
+        Some(val)
+    }
+}
+
+impl<'a> ResolveFuncArg<'a> for FunctionInput<'a> {
+    fn resolve_arg(val: &'a FunctionInput<'a>) -> Option<Self> {
+        Some(val.clone_as_ref())
+    }
+}
+
 impl<'a> ResolveFuncArg<'a> for &'a str {
     fn resolve_arg(val: &'a FunctionInput<'a>) -> Option<Self> {
         match val {
@@ -1066,7 +1078,11 @@ impl<'a> FunctionCtx<'a> {
         }))
     }
 
-    pub fn arg_kwarg<P: FromAttribute>(&self, ind: usize, name: &str) -> Option<Result<P, String>> {
+    pub fn arg_kwarg<P: ResolveFuncArg<'a>>(
+        &'a self,
+        ind: usize,
+        name: &str,
+    ) -> Option<Result<P, String>> {
         let arg = self.kwarg(name).or_else(|| self.arg(ind))?;
         if arg.is_none() {
             return None;
