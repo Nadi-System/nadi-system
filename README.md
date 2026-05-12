@@ -103,33 +103,31 @@ Nadi GIS is available as a command line utility as well as a QGIS plugin.
 # Contributing
 You can contribute to NADI System even without coding experience in Rust by reporting bugs, suggesting features, and helping with documentation.
 
-Please refer to [CONTRIBUTING.md](./CONTRIBUTING.md) for further details on specific roles and tasks you can do.
+Please refer to [CONTRIBUTING.md](./CONTRIBUTING.md) for further details on specific roles and tasks you can do. For developers, refer to the Future Work section below for things I would appreciate help with (but please make an issue and tell me before you start).
 
 And please refer to [architecture.md](./architecture.md) file to read how the components of the NADI are arranged in this repository.
 
 # Future Work
-- [ ] Make a Return Type for Tasks, instead of result, it can have:
-  + Value,
-  + Value Changed,
-  + Image,
-  + File,
-  + None,
-  + Error, etc.
-- [X] Implement timeseries data types with gaps
-- [x] Add syntax to access timeseries data directly,
-  + `$` for series, and `$$` for timeseries might work, with `$` also
-    falling back to get series data without time from timeseries, if
-    there is no series with that name.
-  + Also means we have to add a generic data type for task system, enum of (Attribute, Series, Timeseries, etc)
-- [X] Only internal plugins can be run without dot syntax. All external plugins need the plugin name to access the functions.
-- [X] Add user defined functions. Maybe only environmental function for now? See if node/network function can be done easily.
-  - added env functions; must return values, need to make it also not return values
-- [x] Add for loop, for looping through Array and Table Keys.
-  - Added only loop for arrays, not for table keys.
-- [x] Implement `.0` type syntax for array member access like with attrmap member access.
+## Beginner work: More of these the better
+- Write more tests so we don't break anything important in future.
+- Write more plugin functions. Depends on users use cases.
+- Write example problems and solutions using NADI.
+
+## Easy work: Plugin function modifications
+- [ ] Convert many node/network functions to env function by taking the attribute/series etc directly now.
+- [ ] Convert any functions that take Vec<String> or similar that could use `*args` syntax now.
+
+## User Interface and Helper Tools
+- [ ] Write layout algorithm for the directed graph (not just trees), take algorithms from Graphviz and other papers.
+- [ ] Implement more functionality in the `jupyter kernel`.
 - [x] Write a `nadi-server` CLI tool, that opens a server. It opens up an API where users can send tasks to run, and it can return the output from that.
 - [ ] Server should have `mutable` and `immutable` option. In the immutable option users can only run immutable functions.
 - [ ] Write editor modes for nadi, maybe using `lsp` so users can expand it to their editors with minimal work.
   - Currently, besides the NADI IDE, there are some syntax highlight available for web (through highlight.js), and sublime syntax files in `extra/syntax-highlight` directory.
   - There is no intelligent analysis of scripts, you can only run it to get errors. Better error handling while parsing, and then 
-- [ ] Write UserFunction to return None value, maybe add None/Null type for attribute as well. The functions that do not return values can be made to return Null if we need a value, Null can be used to introduce Gaps in the Series values. This might complicate parsing by having to have different parsers for null accepted and null not accepted variations for the attributes (and everything that uses them). Could be solved by just adding null everywhere and then for attributes parsing (.toml) erroring out if Null is found in any steps (or we can diverse from TOML standard because it can't read all types of TOML strings anyway). We could just make sure the output TOML from NADI is compatible (not write null; but how to avoid that if nulls are nested in other attributes?).
+
+
+## Language Design work
+- [ ] Implement type check for series/timeseries and user defined functions. The type information is not used in the language itself, but just asserted once before assignment to avoid any errors.
+- [ ] Make Template and Timeline as other types the functions/expressions can take and return. Maybe add t"temp {x}" type syntax for template string. It gets passed as Template instead of normal strings. That saves the computation required to parse the template all the time from String. Same for Timeline. But the timeline is already messed up, so idk what to do with it.
+- [ ] Implement Structs, add Date and Time as structs, add structs to the expression result and function input as well. For function Input, the structs made in the same plugin can be used directly, otherwise it will be converted to AttrMap for compatibility. We need to think about how to implement that. Could be just struct with name and AttrMap for fields. Struct definitely needs types and default values.
