@@ -4,7 +4,7 @@ use crate::functions::{FunctionCtx, FunctionInput};
 use crate::network::Propagation;
 use crate::node::{Node, NodeInner};
 use crate::structs::NadiAttrType;
-use crate::tasks::{FunctionType, Task, TaskContext, TaskCtxConsts, TaskKeyword, TaskMessage};
+use crate::tasks::{FunctionType, TaskContext, TaskCtxConsts, TaskKeyword, TaskMessage};
 use crate::template::Template;
 use crate::timeseries::{
     CompleteSeries, HasSeries, HasTimeSeries, MaskedSeries, Series, TimeLine, TimeSeries,
@@ -1181,6 +1181,8 @@ impl Eval for ImportExpr {
         _ectx: &EvalCtx,
         loc: &mut AttrMap,
     ) -> Result<ExprResult, EvalError> {
+        use crate::tasks::Task;
+
         if let Some(path) = self.path() {
             let txt = std::fs::read_to_string(path).unwrap();
             let tokens = crate::parser::tokenizer::get_tokens(&txt);

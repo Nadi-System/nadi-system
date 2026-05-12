@@ -5,7 +5,6 @@ use crate::expressions::ExprResult;
 use crate::plugins::{load_library_safe, NadiPlugin};
 use crate::prelude::*;
 use crate::table::{contents_2_md, ColumnAlign};
-use crate::tasks::FunctionType;
 use crate::timeseries::{FromSeries, Series, TimeSeries};
 use abi_stable::std_types::Tuple2;
 use abi_stable::{
@@ -26,6 +25,9 @@ use std::path::Path;
 
 pub type FunctionArgs<'a> = &'a [FunctionInput<'a>];
 pub type FunctionKwArgs<'a> = &'a RHashMap<RString, FunctionInput<'a>>;
+
+#[cfg(feature = "functions")]
+use crate::tasks::FunctionType;
 
 #[repr(C)]
 #[derive(StableAbi, Default, Debug)]
