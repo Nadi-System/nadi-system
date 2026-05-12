@@ -305,6 +305,50 @@ impl<'a> ResolveFuncArg<'a> for &'a [Attribute] {
     }
 }
 
+impl<'a> ResolveFuncArg<'a> for Series {
+    fn resolve_arg(val: &'a FunctionInput<'a>) -> Option<Self> {
+        match val {
+            FunctionInput::Series(&ref a) => Some(a.clone()),
+            FunctionInput::SeriesOwn(a) => Some(a.clone()),
+            FunctionInput::Ts(a) => Some(a.series().clone()),
+            FunctionInput::TsOwn(a) => Some(a.series().clone()),
+            _ => None,
+        }
+    }
+}
+
+impl<'a> ResolveFuncArg<'a> for &'a Series {
+    fn resolve_arg(val: &'a FunctionInput<'a>) -> Option<Self> {
+        match val {
+            FunctionInput::Series(a) => Some(a),
+            FunctionInput::SeriesOwn(a) => Some(&a),
+            FunctionInput::Ts(a) => Some(a.series()),
+            FunctionInput::TsOwn(a) => Some(a.series()),
+            _ => None,
+        }
+    }
+}
+
+impl<'a> ResolveFuncArg<'a> for TimeSeries {
+    fn resolve_arg(val: &'a FunctionInput<'a>) -> Option<Self> {
+        match val {
+            FunctionInput::Ts(&ref a) => Some(a.clone()),
+            FunctionInput::TsOwn(a) => Some(a.clone()),
+            _ => None,
+        }
+    }
+}
+
+impl<'a> ResolveFuncArg<'a> for &'a TimeSeries {
+    fn resolve_arg(val: &'a FunctionInput<'a>) -> Option<Self> {
+        match val {
+            FunctionInput::Ts(a) => Some(a),
+            FunctionInput::TsOwn(a) => Some(&a),
+            _ => None,
+        }
+    }
+}
+
 /// Return values for Nadi Functions
 #[repr(C)]
 #[derive(StableAbi, Default)]

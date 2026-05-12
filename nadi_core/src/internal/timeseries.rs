@@ -4,15 +4,54 @@ use nadi_plugin::nadi_internal_plugin;
 mod ts {
 
     use crate::prelude::*;
+    use crate::timeseries::{CompleteSeries, Series, TimeLineInner, TimeSeries};
+    use abi_stable::external_types::RMutex;
     use abi_stable::std_types::{
+        RArc,
         ROption::{RNone, RSome},
         RString,
     };
-    use nadi_plugin::{network_func, node_func};
+    use chrono::NaiveDate;
+    use nadi_plugin::{env_func, network_func, node_func};
     use std::collections::HashSet;
     use std::fs::File;
     use std::io::{BufWriter, Write};
     use std::path::Path;
+
+    /// Get timeline of the timeseries as Series of strings
+    #[env_func]
+    fn ts_timeline(ts: TimeSeries) -> Series {
+        Series::Complete(CompleteSeries::strings(
+            ts.timeline()
+                .lock()
+                .str_values()
+                .map(RString::from)
+                .collect::<Vec<RString>>(),
+        ))
+    }
+
+    /// build timeseries from timeline and series
+    #[env_func(fmt = "%Y-%m-%d")]
+    fn timeseries(timeline: &[RString], series: Series, fmt: &str) -> anyhow::Result<TimeSeries> {
+        if timeline.len() < 2 {
+            return Err(anyhow::Error::msg("Timeline should be longer than 2"));
+        }
+        let start = NaiveDate::parse_from_str(timeline[0].as_str(), fmt)?;
+        let end = NaiveDate::parse_from_str(timeline[timeline.len() - 1].as_str(), fmt)?;
+        let st = start.to_epoch_days() * 24 * 60 * 60 * 100;
+        let en = end.to_epoch_days() * 24 * 60 * 60 * 100;
+        let step = (en - st) as i64 / (timeline.len() - 1) as i64;
+
+        let tl = RArc::new(RMutex::new(TimeLineInner::new(
+            st as i64,
+            en as i64,
+            step,
+            true,
+            timeline.to_vec(),
+            fmt,
+        )));
+        Ok(TimeSeries::new(tl, series))
+    }
 
     /// Number of timeseries in the node
     #[node_func]

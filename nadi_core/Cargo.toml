@@ -14,7 +14,7 @@ categories = ["data-structures", "science", "science::geo", "visualization"]
 [dependencies]
 abi_stable = "0.11.3"
 anyhow = "1.0.86"
-chrono = {version = "0.4.38", optional = true}
+chrono = {version = "0.4.44", optional = true}
 nom = {version = "7.1.3", optional = true}
 nadi_plugin = {version = "0.8.0", path="../nadi_plugin"}
 colored = "2.1.0"

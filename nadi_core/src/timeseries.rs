@@ -124,7 +124,7 @@ impl<'a> TimeLineInner {
         end: i64,
         step: i64,
         regular: bool,
-        str_values: Vec<String>,
+        str_values: Vec<RString>,
         datetimefmt: &str,
     ) -> Self {
         Self {
@@ -132,12 +132,8 @@ impl<'a> TimeLineInner {
             end,
             step,
             regular,
-            str_values: RVec::from(
-                str_values
-                    .into_iter()
-                    .map(RString::from)
-                    .collect::<Vec<RString>>(),
-            ),
+            str_values: str_values.into(),
+
             datetimefmt: RString::from(datetimefmt),
         }
     }
@@ -299,12 +295,14 @@ impl std::fmt::Display for Series {
 impl TaskContext {
     pub fn show_ts(&self, ts: &TimeSeries) -> String {
         let tl = ts.timeline.lock();
-        format!(
-            "TimeSeries(from: {}, to: {}, values: {})",
-            tl.start,
-            tl.end,
-            self.show_sr(&ts.values)
-        )
+        let tl = match tl.str_values.as_slice() {
+            [] => format!("[]"),
+            [a] => format!("[{a}]"),
+            [a, b] => format!("[{a}, {b}]"),
+            [a, b, c] => format!("[{a}, {b}, {c}]"),
+            [a, b, .., l] => format!("[{a}, {b}, ..., {l}]"),
+        };
+        format!("TimeSeries({tl}, values: {})", self.show_sr(ts.series()))
     }
 
     pub fn show_sr(&self, sr: &Series) -> String {
