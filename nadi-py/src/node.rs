@@ -1,7 +1,7 @@
 use crate::attrs::PyAttribute;
 use nadi_core::prelude::*;
 use nadi_core::template::Template;
-use pyo3::exceptions::PyAttributeError;
+use pyo3::exceptions::{PyAttributeError, PyRuntimeError};
 use pyo3::prelude::*;
 use std::collections::HashSet;
 use std::str::FromStr;
@@ -63,8 +63,11 @@ impl PyNode {
             .collect()
     }
 
-    fn move_aside(&mut self) {
-        self.0.lock().move_aside();
+    fn move_aside(&mut self) -> PyResult<()> {
+        self.0
+            .lock()
+            .move_aside()
+            .map_err(|e| PyRuntimeError::new_err(e))
     }
 
     // fn move_down(&mut self) {

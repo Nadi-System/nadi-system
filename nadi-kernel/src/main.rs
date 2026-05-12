@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+#![allow(unused_imports)]
 use anyhow::{Context as _, Result};
 use clap::Parser;
 use futures::StreamExt;
