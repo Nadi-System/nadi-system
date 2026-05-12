@@ -24,7 +24,7 @@ For developers the API documentation is on [docs.rs](https://docs.rs/nadi_core/l
 
 Video Demo: https://www.youtube.com/watch?v=qKsrigRrPKo
 Web User Manual: https://nadi-system.github.io
-PDF User Manual: https://nadi-system.github.io/data/nadi-book.pdf
+PDF User Manual: https://nadi-system.github.io/0.8.0/data/nadi-book.pdf
 Dev Reference: https://docs.rs/nadi_core/latest/nadi_core/
 
 # Installation
@@ -126,6 +126,17 @@ And please refer to [architecture.md](./architecture.md) file to read how the co
   - Currently, besides the NADI IDE, there are some syntax highlight available for web (through highlight.js), and sublime syntax files in `extra/syntax-highlight` directory.
   - There is no intelligent analysis of scripts, you can only run it to get errors. Better error handling while parsing, and then 
 
+## Nadi Python Library
+- [ ] Expose Series and TimeSeries to the nadi-py library
+- [ ] Write converters for Series <-> numpy and timeseries <-> pandas/polars
+- [ ] [OPT] Write a way to directly run a nadi repl from python
+
+Advanced:
+- [ ] Explore ways to make optional python plugin mechanism for nadi
+
+Nadi will run normally except will have a underlying python interpreter, that has the python plugins loaded in it. Anytime we need to call the functions from python plugin, nadi will use the python types to communicate with them and return the values.
+
+This mechanism will allow users to write simple python code in the nadi interface itself for faster prototyping compared to out current executable plugin mechanism. But we do need to consider if it is really worth the effort.
 
 ## Language Design work
 - [ ] Implement type check for series/timeseries and user defined functions. The type information is not used in the language itself, but just asserted once before assignment to avoid any errors.

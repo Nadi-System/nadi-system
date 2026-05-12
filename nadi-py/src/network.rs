@@ -88,6 +88,21 @@ impl PyNetwork {
         self.0.nodes().map(|n| PyNode(n.clone())).collect()
     }
 
+    #[getter]
+    fn root(&self) -> Option<PyNode> {
+        self.0.root().map(|n| PyNode(n.clone())).into()
+    }
+
+    #[getter]
+    fn roots(&self) -> Vec<PyNode> {
+        self.0.roots().map(|n| PyNode(n.clone())).collect()
+    }
+
+    #[getter]
+    fn leaves(&self) -> Vec<PyNode> {
+        self.0.leaves().map(|n| PyNode(n.clone())).collect()
+    }
+
     fn nodes_rev(&self) -> Vec<PyNode> {
         self.0.nodes_rev().map(|n| PyNode(n.clone())).collect()
     }

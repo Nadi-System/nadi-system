@@ -15,7 +15,7 @@ pub struct PyNode(pub Node);
 impl PyNode {
     #[getter]
     pub fn name(&self) -> String {
-        self.0.lock().name().to_string()
+        self.0.name().to_string()
     }
 
     #[getter]
@@ -34,6 +34,11 @@ impl PyNode {
     }
 
     #[getter]
+    fn input(&self) -> Option<PyNode> {
+        self.0.lock().input().map(|n| PyNode(n.clone())).into()
+    }
+
+    #[getter]
     pub fn inputs(&self) -> Vec<PyNode> {
         self.0
             .lock()
@@ -44,8 +49,38 @@ impl PyNode {
     }
 
     #[getter]
+    pub fn input_names(&self) -> Vec<String> {
+        self.0
+            .lock()
+            .inputs()
+            .iter()
+            .map(|n| n.name().to_string())
+            .collect()
+    }
+
+    #[getter]
     fn output(&self) -> Option<PyNode> {
         self.0.lock().output().map(|n| PyNode(n.clone())).into()
+    }
+
+    #[getter]
+    fn outputs(&self) -> Vec<PyNode> {
+        self.0
+            .lock()
+            .outputs()
+            .iter()
+            .map(|n| PyNode(n.clone()))
+            .collect()
+    }
+
+    #[getter]
+    pub fn output_names(&self) -> Vec<String> {
+        self.0
+            .lock()
+            .outputs()
+            .iter()
+            .map(|n| n.name().to_string())
+            .collect()
     }
 
     fn load_attr(&self, path: String) -> PyResult<()> {
