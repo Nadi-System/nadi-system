@@ -73,8 +73,11 @@ fn check_library(path: &Path) -> Result<(), LibraryError> {
 }
 
 fn print_library_err(err: LibraryError) {
+    eprintln!("Error: {err:#?}");
     match err {
-        LibraryError::OpenError { path, .. } => eprintln!("Couln't open library {path:?}"),
+        LibraryError::OpenError { path, .. } => {
+            eprintln!("Couln't open library {path:?}")
+        }
         LibraryError::GetSymbolError {
             library, symbol, ..
         } => eprintln!("Plugin invalid {library:?} {symbol:?}"),
