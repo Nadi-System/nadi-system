@@ -408,6 +408,7 @@ fn string(i: &str) -> TokenRes<'_> {
 fn lit_string(i: &str) -> TokenRes<'_> {
     let (rest, s) = context(
         "string",
+        // ' can't be escaped in this
         delimited(tag("'"), recognize(many0(is_not("'"))), tag("'")),
     )(i)?;
     Ok((

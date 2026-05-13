@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Nadi Tasks Editor</title>
+	<style>
+	 body {
+	     font-family: Arial, sans-serif;
+	     margin: 0;
+	     padding: 0;
+	     background-color: #f0f0f0;
+	 }
+	 
+	 #container {
+	     width: 100%;
+	     height: 100vh; /* take the whole viewport height */
+	     display: flex;
+	     flex-direction: row;
+	     justify-content: center;
+	     align-items: center;
+	     background-color: #fff;
+	     box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+	 }
+	 
+	 #button-container {
+	     display:inline;
+	     flex-direction: row;
+	     align-items: center;
+	 }
+	 
+	 #code-column, #result-column {
+	     width: 45%;
+	     margin: 20px;
+	     padding: 20px;
+	     border: 1px solid #ddd;
+	     border-radius: 5px;
+	     background-color: #f9f9f9;
+	     box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
+	 }
+	 
+	 #code-column {
+	     margin-right: 20px;
+	 }
+	 
+	 #source-code, #results {
+	     width: 100%;
+	     height: 80vh; /* take most of the height */
+	     padding: 10px;
+	     font-size: 14px;
+	     border: none;
+	     resize: vertical;
+	 }
+	 
+	 #run-button {
+	     margin-top: 10px;
+	     background-color: #4CAF50;
+	     color: #fff;
+	     padding: 10px 20px;
+	     border: none;
+	     border-radius: 5px;
+	     cursor: pointer;
+             float: right;
+	 }
+	 
+	 #run-button:hover {
+	     background-color: #3e8e41;
+	 }
+	</style>
+</head>
+<body>
+    <div id="container">
+	<div id="code-column">
+	    <div class="button-container">
+		<h2>Source Code: <button id="run-button" onclick="runTasks()">Run</button></h2> 
+	    </div>
+		<textarea id="source-code" rows="20" cols="60">
+		</textarea>
+	</div>
+	<div id="result-column">
+	    <h2>Results: <span id="status"></span></h2>
+	    <textarea id="results" rows="20" cols="60"></textarea>
+	</div>
+    </div>
+    
+<script>
+ function runTasks() {
+     fetch("/evaluate", {
+	 method: "POST",
+	 body: JSON.stringify({
+	     tasks: document.getElementById("source-code").value
+	 }),
+	 headers: {
+	     "Content-type": "application/json; charset=UTF-8"
+	 }
+     }).then((re) => {
+	 if (re.status == 200) {
+	     document.getElementById("status").innerHTML = "Success"
+	 } else {
+	     document.getElementById("status").innerHTML = "Failure"
+	 }
+	 return re.text();
+     }).then((txt) => {
+	 document.getElementById("results").value = txt;
+     })
+ }
+</script>
+</body>
+</html>
