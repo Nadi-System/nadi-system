@@ -1,7 +1,10 @@
 [package]
 name = "mdbook-nadi"
-version = "0.1.0"
+version = "0.8.1"
 edition = "2021"
+description = "mdbook plugin for nadi DSL"
+repository = "https://github.com/Nadi-System/nadi-system"
+license = "GPL-3.0-only"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -12,7 +15,7 @@ serde = "1.0.*"
 serde_json = "1.0.*"
 pulldown-cmark = "0.13.0"
 pulldown-cmark-to-cmark = "21.1.0"
-nadi_core = {version="0.8.0", path = "../nadi_core/", features=["parser", "functions"]}
+nadi_core = {version="0.8.1", path = "../nadi_core/", features=["parser", "functions"]}
 strip-ansi-escapes = "0.2.1"
 gag = "1.0.0"
 mdbook-preprocessor = "0.5.2"

@@ -1,11 +1,13 @@
 [package]
 name = "nadi-kernel"
-version = "0.1.0"
+version = "0.8.1"
 edition = "2024"
 description = "Jupyter Kernel Protocol for NADI"
+repository = "https://github.com/Nadi-System/nadi-system"
+license = "GPL-3.0-only"
 
 [dependencies]
-nadi_core = {path="../nadi_core/", version="0.8.0", features=["functions", "parser"]}
+nadi_core = {path="../nadi_core/", version="0.8.1", features=["functions", "parser"]}
 clap = { version = "4.6.1", features = ["derive"] }
 jupyter-protocol = "1.4.0"
 tokio = { version = "1.52.1", features = ["fs", "full"] }
