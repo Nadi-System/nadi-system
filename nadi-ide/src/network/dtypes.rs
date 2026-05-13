@@ -51,9 +51,9 @@ impl NodeData {
         }
     }
 
-    pub fn path(&self, pos: (f32, f32)) -> Path {
+    pub fn draw(&self, frame: &mut iced::widget::canvas::Frame, pos: (f32, f32), color: Color) {
         let size = self.size;
-        match self.shape {
+        let path = match self.shape {
             NodeShape::Square => {
                 let x = pos.0 - size;
                 let y = pos.1 - size;
@@ -121,7 +121,43 @@ impl NodeData {
                     b.close();
                 })
             }
-        }
+            NodeShape::Text(ref txt, angle) => {
+                frame.push_transform();
+                frame.translate(iced::Vector::new(pos.0, pos.1));
+                frame.rotate(angle as f32 / 180.0 * std::f32::consts::PI);
+                frame.translate(iced::Vector::new(-size, -size));
+                frame.fill_text(txt.to_string());
+                frame.pop_transform();
+                return;
+            }
+            NodeShape::Svg(ref svg) => {
+                let x = pos.0 - size;
+                let y = pos.1 - size;
+                let bounds = iced::Rectangle::new((x, y).into(), (2.0 * size, 2.0 * size).into());
+                let svg = format!("<svg>{svg}</svg>");
+                frame.draw_svg(
+                    bounds,
+                    iced_core::Svg::new(iced::widget::svg::Handle::from_memory(
+                        std::borrow::Cow::Borrowed(svg.as_bytes()).into_owned(),
+                    )),
+                );
+                return;
+            }
+            NodeShape::SvgPath(ref path) => {
+                let x = pos.0 - size;
+                let y = pos.1 - size;
+                let bounds = iced::Rectangle::new((x, y).into(), (2.0 * size, 2.0 * size).into());
+                let svg = format!("<svg><path d=\"{path}\" /></svg>");
+                frame.draw_svg(
+                    bounds,
+                    iced_core::Svg::new(iced::widget::svg::Handle::from_memory(
+                        std::borrow::Cow::Borrowed(svg.as_bytes()).into_owned(),
+                    )),
+                );
+                return;
+            }
+        };
+        frame.fill(&path, color);
     }
 }
 

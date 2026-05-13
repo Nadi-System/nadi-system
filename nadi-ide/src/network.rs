@@ -149,16 +149,12 @@ where
                     } else {
                         let index = y as usize;
                         self.data.network.nodes.get(index).map(|n| {
-                            let y = (y + 0.5) * conf.deltay * self.data.scale
-                                + conf.offsety * self.data.scale;
+                            let y = (y + 0.5) * conf.deltay + conf.offsety;
                             OverNode {
                                 index,
                                 name: n.name.to_string(),
                                 pos: (conf.offsetx, y),
-                                size: (
-                                    layout.bounds().width - conf.offsetx,
-                                    conf.deltay * self.data.scale,
-                                ),
+                                size: (layout.bounds().width - conf.offsetx, conf.deltay),
                             }
                         })
                     }
@@ -174,7 +170,7 @@ where
                     let y = (pt.y - conf.offsety * self.data.scale)
                         / (conf.deltay * self.data.scale)
                         - 0.5;
-                    if y < 0.0 || y > self.data.network.weight as f32 {
+                    if y < 0.0 {
                         break 'tree None;
                     }
                     self.data
@@ -183,18 +179,13 @@ where
                         .iter()
                         .find(|n| n.pos.0 == x && (n.pos.1 + 1.0) > y && n.pos.1 < y)
                         .map(|n| {
-                            let y1 = conf.offsety * self.data.scale
-                                + (n.pos.1 + 0.5) * conf.deltay * self.data.scale;
-                            let x1 = conf.offsetx * self.data.scale
-                                + (x + 0.5) * conf.deltax * self.data.scale;
+                            let y1 = conf.offsety + (n.pos.1 + 0.5) * conf.deltay;
+                            let x1 = conf.offsetx + (x + 0.5) * conf.deltax;
                             OverNode {
                                 index: n.index,
                                 name: n.name.to_string(),
                                 pos: (x1, y1),
-                                size: (
-                                    conf.deltax * self.data.scale,
-                                    conf.deltay * self.data.scale,
-                                ),
+                                size: (conf.deltax, conf.deltay),
                             }
                         })
                 }
@@ -290,8 +281,7 @@ where
             }
 
             for (node, pos) in self.data.network.nodes.iter().zip(coords) {
-                let npath = node.path(pos);
-                frame.fill(&npath, node.color.unwrap_or(style.node));
+                node.draw(frame, pos, node.color.unwrap_or(style.node));
                 if !self.data.network.hide_labels {
                     let mut txt = iced_graphics::geometry::Text::from(node.label.as_str());
                     txt.position = (

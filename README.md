@@ -2,28 +2,30 @@
 [![joss](https://joss.theoj.org/papers/dccad16648a06737cf6c33240943fd67/status.svg)](https://joss.theoj.org/papers/dccad16648a06737cf6c33240943fd67)
 [![zenodo](https://zenodo.org/badge/DOI/10.5281/zenodo.16956958.svg)](https://doi.org/10.5281/zenodo.16956958)
 
-Collection of Utilities to do Network Analysis and Data Integration. This is made targeting analysis of point data in a river system but it should work for any network analysis that work on directed tree network.
+Collection of Utilities to do Network Analysis and Data Integration. This is made targeting analysis of point data in a river system but it should work for any network analysis that work on directed graph/network.
 
 The main component of the NADI System is the DSL. It can be used for network based data analysis. The repo contains the tools for using nadi through Command Line Interface (CLI), Integrated Development Environment (IDE), `mdbook` (documentation writing tool), or as a python library.
 
-The overall NADI workflow is shown below. This repository contains the components for the Network Analysis part of the system.
+The overall NADI workflow in case of a river network is shown below. This repository contains the components for the Network Analysis part of the system.
 
 ![Nadi Workflow](nadi-workflow-simple.svg)
 
 ## Theory
+Directed graph is a common way to represent systems with dependencies where each edge connects the node with its input node that it depends on. In terms of rivers the output node gets its water from the input node. In version control (git), each edge is a commit that is applied on top of its input node. NADI provides a way to easily load such networks along with node attributes.
+
 The data associated with points in a river system is loaded as a network, and along side the functions loaded through the plugins, the Domain Specific Programming language (DSL) can be used to run different arithmetic, logical, or functional analysis on the metadata of the points.
 
 This allows us to do network based data analysis quickly, with intuitive syntax compared to using general purpose programming language like Python. But the general purpose languages have more flexibility, so a way to couple with them is provided through the plugin mechanism.
 
 ## Further Reading
-Please refer to the [NADI Book](https://nadi-system.github.io/) for details on the key concepts, the syntax of the language, and other components of the NADI System.
+Please refer to the [NADI Book](https://nadi-system.github.io/0.8.0/) for details on the key concepts, the syntax of the language, and other components of the NADI System.
 
 For developers the API documentation is on [docs.rs](https://docs.rs/nadi_core/latest/nadi_core/index.html).
 
 # Usage Instructions
 
 Video Demo: https://www.youtube.com/watch?v=qKsrigRrPKo
-Web User Manual: https://nadi-system.github.io
+Web User Manual: https://nadi-system.github.io/0.8.0/
 PDF User Manual: https://nadi-system.github.io/0.8.0/data/nadi-book.pdf
 Dev Reference: https://docs.rs/nadi_core/latest/nadi_core/
 
@@ -99,6 +101,18 @@ There are some plugins that are given by default called internal plugins. And so
 Geographic Information System (GIS) tool for nadi. It can help download stream lines (NHDPlus), USGS streamgages, basins, etc as well as run network detection algorithm for detecting network that is the backbone of nadi system.
 
 Nadi GIS is available as a command line utility as well as a QGIS plugin.
+
+## Nadi Kernel
+Nadi kernel is a custom kernel for jupyter. You can install this kernel and use NADI directly from Jupyter notebook. 
+
+To install use:
+```bash
+nadi-kernel --install
+```
+
+The screenshot below shows a sample run of NADI notebook. Note that it uses typst and cairo plugins, you can not reproduce it without them.
+
+![Screenshot of Jupyter Notebook](./images/nadi-kernel.png)
 
 # Contributing
 You can contribute to NADI System even without coding experience in Rust by reporting bugs, suggesting features, and helping with documentation.

@@ -1,5 +1,6 @@
 use crate::graphics::color::Color;
 use crate::prelude::*;
+use abi_stable::std_types::RString;
 use abi_stable::StableAbi;
 use std::str::FromStr;
 use svg::node::element::*;
@@ -43,21 +44,33 @@ pub enum NodeShape {
     Circle,
     Triangle,
     IsoTriangle(f64),
+    /// Ellipse with ratio of radii
     Ellipse(f64),
+    /// Custom path
+    SvgPath(RString),
+    /// Custom SVG code
+    Svg(RString),
+    /// Text with rotation
+    Text(RString, f64),
 }
 
 impl FromStr for NodeShape {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if let Some((t, r)) = s.split_once(':') {
-            let size: f64 = r
-                .parse()
-                .map_err(|e| format!("Invalid Node Size Ratio: {e}"))?;
             match t {
-                "rect" | "rectangle" => Ok(Self::Rectangle(size)),
-                "triangle" => Ok(Self::IsoTriangle(size)),
-                "ellipse" => Ok(Self::Ellipse(size)),
-                _ => Err(format!("Unknown shape {t} with size ratio {r}")),
+                "path" => return Ok(Self::SvgPath(r.to_string().into())),
+                "svg" => return Ok(Self::Svg(r.to_string().into())),
+                _ => (),
+            }
+            let par: f64 = r
+                .parse()
+                .map_err(|e| format!("Invalid node shape parameter: {e}"))?;
+            match t {
+                "rect" | "rectangle" => Ok(Self::Rectangle(par)),
+                "triangle" => Ok(Self::IsoTriangle(par)),
+                "ellipse" => Ok(Self::Ellipse(par)),
+                _ => Ok(Self::Text(t.to_string().into(), par)),
             }
         } else {
             match s {
@@ -66,7 +79,7 @@ impl FromStr for NodeShape {
                 "triangle" => Ok(Self::Triangle),
                 "circle" => Ok(Self::Circle),
                 "ellipse" => Ok(Self::Ellipse(DEFAULT_RATIO)),
-                _ => Err(format!("Unknown shape {s}")),
+                _ => Ok(Self::Text(s.to_string().into(), 0.0)),
             }
         }
     }
@@ -155,6 +168,21 @@ impl NodeShape {
                     .set("fill", color)
                     .into()
             }
+            NodeShape::Svg(svg) => SVG::new()
+                .set("viewbox", format!("0 0 {size} {size}"))
+                .set("fill", color)
+                .add(svg::node::Blob::new(svg.to_string()))
+                .into(),
+            NodeShape::SvgPath(pts) => Path::new()
+                .set("d", pts.as_str())
+                .set("transform", format!("scale({})", size / 10.0))
+                .set("fill", color)
+                .into(),
+            NodeShape::Text(txt, angle) => Text::new(txt.as_str())
+                .set("transform", format!("scale({})", size / 10.0))
+                .set("rotate", *angle)
+                .set("fill", color)
+                .into(),
         }
     }
 }

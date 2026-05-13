@@ -688,7 +688,14 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
                         .ok_or(EvalErrorType::NotAnArray.no_pos())?;
                 for val in parent {
                     local.insert(var.to_string().into(), val);
-                    expr.eval_mut(ctx, ectx, &mut local)?;
+                    match expr.eval_mut(ctx, ectx, &mut local) {
+                        Ok(_) => (),
+                        Err(e) => match *e.ty {
+                            EvalErrorType::InvalidBreak(b) => return Ok(b),
+                            EvalErrorType::InvalidContinue => continue,
+                            _ => return Err(e),
+                        },
+                    }
                 }
                 Ok(ExprResult::None)
             }
