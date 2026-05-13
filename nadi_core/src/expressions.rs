@@ -1652,9 +1652,9 @@ impl Eval for InputVar {
             ectx.expr_ctx.clone()
         };
         let attr = match expr_ctx.as_ref() {
-            ExprContext::Local => self.attr_nested(loc)?,
-            ExprContext::Env => self.attr_nested(&ctx.env)?,
-            ExprContext::Network => self.attr_nested(&ctx.network)?,
+            ExprContext::Local(_) => self.attr_nested(loc)?,
+            ExprContext::Env(_) => self.attr_nested(&ctx.env)?,
+            ExprContext::Network(_) => self.attr_nested(&ctx.network)?,
             ExprContext::Node(n) => {
                 let name = n.name().to_string();
                 let n = &n
@@ -1849,9 +1849,9 @@ impl VarType {
             |nds| Ok(ExprContext::Nodes(nds))
         };
         match (self, node) {
-            (VarType::Local, _) => Ok(ExprContext::Local),
-            (VarType::Env, _) => Ok(ExprContext::Env),
-            (VarType::Network, _) => Ok(ExprContext::Network),
+            (VarType::Local, _) => Ok(ExprContext::Local(node.cloned())),
+            (VarType::Env, _) => Ok(ExprContext::Env(node.cloned())),
+            (VarType::Network, _) => Ok(ExprContext::Network(node.cloned())),
             (VarType::Nodes(prop) | VarType::NodesMap(prop), _) => {
                 nodes_func(ctx.propagation(*prop.clone()).map_err(|e| *e.ty)?)
             }
@@ -2144,7 +2144,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
     ) -> Result<ExprResult, EvalError> {
         let ectx = self.get_eval_context(ctx, ectx)?;
         match &ectx.expr_ctx.as_ref() {
-            ExprContext::Local | ExprContext::Env => {
+            ExprContext::Local(_) | ExprContext::Env(_) => {
                 let func_ctx = self.function_ctx(ctx, &ectx, loc)?;
                 if let Some(func) = ctx.udf(&self.name).cloned() {
                     // priority for the locally defined function
@@ -2161,7 +2161,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                     .pos(self.position())),
                 }
             }
-            ExprContext::Network => {
+            ExprContext::Network(n) => {
                 let func_ctx = self.function_ctx(ctx, &ectx, loc)?;
                 if let Some(func) = ctx.udf(&self.name).cloned() {
                     // priority for the locally defined function
@@ -2172,7 +2172,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                         EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
                     }),
                     // if the function is not called by explicit type then also test environment function
-                    None if self.ty.is_none() => self.eval(ctx, &EvalCtx::env(), loc),
+                    None if self.ty.is_none() => self.eval(ctx, &EvalCtx::env(n.clone()), loc),
                     None => Err(EvalErrorType::FunctionNotFound(
                         Some(ectx.expr_ctx.as_ref().function_type().clone()),
                         self.name.to_string(),
@@ -2209,7 +2209,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                     }
                     // if the function is not called by explicit type then also test environment function
                     None if self.ty.is_none() => self
-                        .eval(ctx, &EvalCtx::env(), loc)
+                        .eval(ctx, &EvalCtx::env(Some(node.clone())), loc)
                         .map_err(|e| e.node(name.clone())),
                     None => Err(EvalErrorType::FunctionNotFound(
                         Some(ectx.expr_ctx.as_ref().function_type().clone()),
@@ -2247,7 +2247,9 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                                 })
                             }
                             // if the function is not called by explicit type then also test environment function
-                            None if self.ty.is_none() => self.eval(ctx, &EvalCtx::env(), loc),
+                            None if self.ty.is_none() => {
+                                self.eval(ctx, &EvalCtx::env(Some(n.clone())), loc)
+                            }
                             None => Err(EvalErrorType::FunctionNotFound(
                                 Some(ectx.expr_ctx.as_ref().function_type().clone()),
                                 self.name.to_string(),
@@ -2288,7 +2290,9 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                                 })
                             }
                             // if the function is not called by explicit type then also test environment function
-                            None if self.ty.is_none() => self.eval(ctx, &EvalCtx::env(), loc),
+                            None if self.ty.is_none() => {
+                                self.eval(ctx, &EvalCtx::env(Some(n.clone())), loc)
+                            }
                             None => Err(EvalErrorType::FunctionNotFound(
                                 Some(ectx.expr_ctx.as_ref().function_type().clone()),
                                 self.name.to_string(),
@@ -2311,7 +2315,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
     ) -> Result<ExprResult, EvalError> {
         let ectx = self.get_eval_context(ctx, ectx)?;
         match &ectx.expr_ctx.as_ref() {
-            ExprContext::Local | ExprContext::Env => {
+            ExprContext::Local(_) | ExprContext::Env(_) => {
                 let func_ctx = self.function_ctx(ctx, &ectx, loc)?;
                 ctx.mark_change();
                 if let Some(func) = ctx.udf(&self.name).cloned() {
@@ -2329,7 +2333,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                     .pos(self.position())),
                 }
             }
-            ExprContext::Network => {
+            ExprContext::Network(n) => {
                 let func_ctx = self.function_ctx(ctx, &ectx, loc)?;
                 ctx.mark_change();
                 if let Some(func) = ctx.udf(&self.name).cloned() {
@@ -2341,7 +2345,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                         EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
                     }),
                     // if the function is not called by explicit type then also test environment function
-                    None if self.ty.is_none() => self.eval_mut(ctx, &EvalCtx::env(), loc),
+                    None if self.ty.is_none() => self.eval_mut(ctx, &EvalCtx::env(n.clone()), loc),
                     None => Err(EvalErrorType::FunctionNotFound(
                         Some(ectx.expr_ctx.as_ref().function_type().clone()),
                         self.name.to_string(),
@@ -2375,7 +2379,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                     }
                     // if the function is not called by explicit type then also test environment function
                     None if self.ty.is_none() => self
-                        .eval_mut(ctx, &EvalCtx::env(), loc)
+                        .eval_mut(ctx, &EvalCtx::env(Some(node.clone())), loc)
                         .map_err(|e| e.node(name.clone())),
                     None => Err(EvalErrorType::FunctionNotFound(
                         Some(ectx.expr_ctx.as_ref().function_type().clone()),
@@ -2414,7 +2418,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                             }
                             // if the function is not called by explicit type then also test environment function
                             None if self.ty.is_none() => self
-                                .eval_mut(ctx, &EvalCtx::env(), loc)
+                                .eval_mut(ctx, &EvalCtx::env(Some(n.clone())), loc)
                                 .map_err(|e| e.node(name.clone())),
                             None => Err(EvalErrorType::FunctionNotFound(
                                 Some(ectx.expr_ctx.as_ref().function_type().clone()),
@@ -2458,7 +2462,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                             }
                             // if the function is not called by explicit type then also test environment function
                             None if self.ty.is_none() => self
-                                .eval_mut(ctx, &EvalCtx::env(), loc)
+                                .eval_mut(ctx, &EvalCtx::env(Some(n.clone())), loc)
                                 .map_err(|e| e.node(name.clone())),
                             None => Err(EvalErrorType::FunctionNotFound(
                                 Some(ectx.expr_ctx.as_ref().function_type().clone()),
@@ -2623,11 +2627,13 @@ impl Eval for GetSeries {
         };
         // TODO: take values out based on index
         match expr_ctx.as_ref() {
-            ExprContext::Local => {
+            ExprContext::Local(_) => {
                 Err(EvalErrorType::NotImplementedError("local series not supported").no_pos())
             }
-            ExprContext::Env => index.subset(get_series_or_ts(&ctx.env, &self.name, self.is_ts)?),
-            ExprContext::Network => {
+            ExprContext::Env(_) => {
+                index.subset(get_series_or_ts(&ctx.env, &self.name, self.is_ts)?)
+            }
+            ExprContext::Network(_) => {
                 index.subset(get_series_or_ts(&ctx.network, &self.name, self.is_ts)?)
             }
             ExprContext::Node(n) => {
@@ -2970,9 +2976,9 @@ fn resolve_set_series<'b>(
     let e = expr.ctx.as_ref().unwrap_or(ectx.expr_ctx.as_ref());
     let new_expr_ctx = expr.inp.get_expr_context(ctx, e.clone())?;
     let etc = match new_expr_ctx {
-        ExprContext::Local => EvalCtx::local(),
-        ExprContext::Env => EvalCtx::env(),
-        ExprContext::Network => EvalCtx::network(),
+        ExprContext::Local(n) => EvalCtx::local(n.clone()),
+        ExprContext::Env(n) => EvalCtx::env(n.clone()),
+        ExprContext::Network(n) => EvalCtx::network(n.clone()),
         ExprContext::Node(n) => EvalCtx::at_node(n),
         ExprContext::Nodes(nds) | ExprContext::NodesMap(nds) => {
             let exprs = nds
@@ -2997,7 +3003,7 @@ fn resolve_set_series<'b>(
             return Ok(ResolvedExpr {
                 position: expr.expr.position(),
                 expr: et,
-                context: EvalCtx::env(),
+                context: EvalCtx::env(None),
             });
         }
     };
@@ -3123,10 +3129,10 @@ impl<T: Eval> Eval for SetSeries<T> {
     ) -> Result<ExprResult, EvalError> {
         // get ectx based on resolved ctx
         match ectx.expr_ctx.as_ref() {
-            ExprContext::Local => {
+            ExprContext::Local(_) => {
                 Err(EvalErrorType::NotImplementedError("local series not supported").no_pos())
             }
-            ExprContext::Env | ExprContext::Network => {
+            ExprContext::Env(_) | ExprContext::Network(_) => {
                 // env and network can only be modified if the context is in mutable state
                 Err(EvalErrorType::InvalidVariableType.no_pos())
             }
@@ -3159,25 +3165,25 @@ impl<T: Eval> Eval for SetSeries<T> {
     ) -> Result<ExprResult, EvalError> {
         // get ectx based on resolved ctx
         match ectx.expr_ctx.as_ref() {
-            ExprContext::Local => {
+            ExprContext::Local(_) => {
                 Err(EvalErrorType::NotImplementedError("local series not supported").no_pos())
             }
-            ExprContext::Env => {
-                let val = eval_series(self.expr.as_ref(), ctx, &EvalCtx::env(), loc)?;
+            ExprContext::Env(_) => {
+                let val = eval_series(self.expr.as_ref(), ctx, ectx, loc)?;
                 // self.ty.validate_series(val)?;
                 val.set_to_any(&mut ctx.env, &self.inp.name, self.inp.is_ts)?;
                 ctx.mark_change();
                 Ok(ExprResult::None)
             }
-            ExprContext::Network => {
-                let val = eval_series(self.expr.as_ref(), ctx, &EvalCtx::network(), loc)?;
+            ExprContext::Network(_) => {
+                let val = eval_series(self.expr.as_ref(), ctx, ectx, loc)?;
                 // self.ty.validate_series(val)?;
                 val.set_to_any(&mut ctx.network, &self.inp.name, self.inp.is_ts)?;
                 ctx.mark_change();
                 Ok(ExprResult::None)
             }
             ExprContext::Node(n) => {
-                let val = eval_series(self.expr.as_ref(), ctx, &EvalCtx::at_node(n.clone()), loc)?;
+                let val = eval_series(self.expr.as_ref(), ctx, ectx, loc)?;
                 // self.ty.validate_series(val)?;
                 val.set_to_node(n, &self.inp.name, self.inp.is_ts)?;
                 ctx.mark_change();
@@ -3260,9 +3266,9 @@ impl Eval for ExprWithContext {
         let mut context = ectx.clone();
         context.expr_ctx = Cow::Owned(expr_ctx.clone());
         match expr_ctx {
-            ExprContext::Local => self.expr.eval(ctx, &EvalCtx::local(), loc),
-            ExprContext::Env => self.expr.eval(ctx, &EvalCtx::env(), loc),
-            ExprContext::Network => self.expr.eval(ctx, &EvalCtx::network(), loc),
+            ExprContext::Local(_) => self.expr.eval(ctx, &context, loc),
+            ExprContext::Env(_) => self.expr.eval(ctx, &context, loc),
+            ExprContext::Network(_) => self.expr.eval(ctx, &context, loc),
             ExprContext::Node(n) => self.expr.eval(ctx, &EvalCtx::at_node(n).to_owned(), loc),
             ExprContext::Nodes(nds) => {
                 if self.silent {
@@ -3317,9 +3323,9 @@ impl Eval for ExprWithContext {
         let mut context = ectx.clone();
         context.expr_ctx = Cow::Owned(expr_ctx.clone());
         match expr_ctx {
-            ExprContext::Local => self.expr.eval_mut(ctx, &EvalCtx::local(), loc),
-            ExprContext::Env => self.expr.eval_mut(ctx, &EvalCtx::env(), loc),
-            ExprContext::Network => self.expr.eval_mut(ctx, &EvalCtx::network(), loc),
+            ExprContext::Local(_) => self.expr.eval_mut(ctx, &context, loc),
+            ExprContext::Env(_) => self.expr.eval_mut(ctx, &context, loc),
+            ExprContext::Network(_) => self.expr.eval_mut(ctx, &context, loc),
             ExprContext::Node(n) => self
                 .expr
                 .eval_mut(ctx, &EvalCtx::at_node(n).to_owned(), loc),
@@ -3431,15 +3437,14 @@ impl ExprWithContext {
 /// The context for an expression to be evaluated in
 ///
 /// This is env by default, unless a keyword is used to change it
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub enum ExprContext {
     /// Local context
-    #[default]
-    Local,
+    Local(Option<Node>),
     /// Environmental context
-    Env,
+    Env(Option<Node>),
     /// Network Context
-    Network,
+    Network(Option<Node>),
     /// Node context like node, input, output, root
     Node(Node),
     /// Multiple nodes context like inputs, outputs, outlets, leaves
@@ -3448,20 +3453,28 @@ pub enum ExprContext {
     NodesMap(Vec<Node>),
 }
 
+impl Default for ExprContext {
+    fn default() -> Self {
+        Self::Local(None)
+    }
+}
+
 impl ExprContext {
     pub fn function_type(&self) -> &FunctionType {
         match self {
-            Self::Local | Self::Env => &FunctionType::Env,
-            Self::Network => &FunctionType::Network,
+            Self::Local(_) | Self::Env(_) => &FunctionType::Env,
+            Self::Network(_) => &FunctionType::Network,
             Self::Node(_) | Self::Nodes(_) | Self::NodesMap(_) => &FunctionType::Node,
         }
     }
 
     pub fn curr_node(&self) -> Option<&Node> {
-        if let ExprContext::Node(n) = self {
-            Some(n)
-        } else {
-            None
+        match self {
+            ExprContext::Node(n)
+            | ExprContext::Local(Some(n))
+            | ExprContext::Env(Some(n))
+            | ExprContext::Network(Some(n)) => Some(n),
+            _ => None,
         }
     }
 }
@@ -3469,9 +3482,12 @@ impl ExprContext {
 impl PartialEq for ExprContext {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Local, Self::Local) => true,
-            (Self::Env, Self::Env) => true,
-            (Self::Network, Self::Network) => true,
+            (Self::Local(None), Self::Local(None)) => true,
+            (Self::Local(Some(n1)), Self::Local(Some(n2))) => n1.name() == n2.name(),
+            (Self::Env(None), Self::Env(None)) => true,
+            (Self::Env(Some(n1)), Self::Env(Some(n2))) => n1.name() == n2.name(),
+            (Self::Network(None), Self::Network(None)) => true,
+            (Self::Network(Some(n1)), Self::Network(Some(n2))) => n1.name() == n2.name(),
             (Self::Node(n1), Self::Node(n2)) => n1.name() == n2.name(),
             // TODO
             (Self::Nodes(_nds1), Self::Nodes(_nds2)) => false,
@@ -3484,9 +3500,9 @@ impl PartialEq for ExprContext {
 impl std::fmt::Debug for ExprContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Local => write!(f, "local"),
-            Self::Env => write!(f, "env"),
-            Self::Network => write!(f, "network"),
+            Self::Local(_) => write!(f, "local"),
+            Self::Env(_) => write!(f, "env"),
+            Self::Network(_) => write!(f, "network"),
             Self::Node(n) => write!(f, "node[{:?}]", n.name()),
             Self::Nodes(_) => write!(f, "nodes[...]"),
             Self::NodesMap(_) => write!(f, "nodesmap[...]"),
@@ -3545,9 +3561,9 @@ fn resolve_set_variable<'b>(
     let e = expr.ctx.as_ref().unwrap_or(ectx.expr_ctx.as_ref());
     let new_expr_ctx = expr.var.get_expr_context(ctx, e.clone())?;
     let etc = match new_expr_ctx {
-        ExprContext::Local => EvalCtx::local(),
-        ExprContext::Env => EvalCtx::env(),
-        ExprContext::Network => EvalCtx::network(),
+        ExprContext::Local(n) => EvalCtx::local(n.clone()),
+        ExprContext::Env(n) => EvalCtx::env(n.clone()),
+        ExprContext::Network(n) => EvalCtx::network(n.clone()),
         ExprContext::Node(n) => EvalCtx::at_node(n),
         ExprContext::Nodes(nds) | ExprContext::NodesMap(nds) => {
             let exprs = nds
@@ -3573,7 +3589,7 @@ fn resolve_set_variable<'b>(
             return Ok(ResolvedExpr {
                 position: expr.expr.position(),
                 expr: et,
-                context: EvalCtx::env(),
+                context: EvalCtx::env(None),
             });
         }
     };
@@ -3622,14 +3638,14 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
         let new_expr_ctx = self.var.get_expr_context(ctx, e.clone())?;
 
         match new_expr_ctx {
-            ExprContext::Local => {
-                let val = self.expr.eval_value(ctx, &EvalCtx::local(), loc)?;
+            ExprContext::Local(n) => {
+                let val = self.expr.eval_value(ctx, &EvalCtx::local(n.clone()), loc)?;
                 self.assert_type(&val)?;
                 self.var.set_attr_nested(loc, val)?;
                 ctx.mark_change();
                 Ok(ExprResult::None)
             }
-            ExprContext::Env | ExprContext::Network => {
+            ExprContext::Env(_) | ExprContext::Network(_) => {
                 // env and network can only be modified if the context is in mutable state
                 Err(EvalErrorType::InvalidVariableType.no_pos())
             }
@@ -3675,22 +3691,24 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
         loc: &mut AttrMap,
     ) -> Result<ExprResult, EvalError> {
         match self.ctx.as_ref().unwrap_or(ectx.expr_ctx.as_ref()) {
-            ExprContext::Local => {
-                let val = self.expr.eval_value(ctx, &EvalCtx::local(), loc)?;
+            ExprContext::Local(n) => {
+                let val = self.expr.eval_value(ctx, &EvalCtx::local(n.clone()), loc)?;
                 self.assert_type(&val)?;
                 self.var.set_attr_nested(loc, val)?;
                 ctx.mark_change();
                 Ok(ExprResult::None)
             }
-            ExprContext::Env => {
-                let val = self.expr.eval_value(ctx, &EvalCtx::env(), loc)?;
+            ExprContext::Env(n) => {
+                let val = self.expr.eval_value(ctx, &EvalCtx::env(n.clone()), loc)?;
                 self.assert_type(&val)?;
                 self.var.set_attr_nested(ctx.env.attr_map_mut(), val)?;
                 ctx.mark_change();
                 Ok(ExprResult::None)
             }
-            ExprContext::Network => {
-                let val = self.expr.eval_value(ctx, &EvalCtx::network(), loc)?;
+            ExprContext::Network(n) => {
+                let val = self
+                    .expr
+                    .eval_value(ctx, &EvalCtx::network(n.clone()), loc)?;
                 self.assert_type(&val)?;
                 self.var.set_attr_nested(ctx.network.attr_map_mut(), val)?;
                 ctx.mark_change();

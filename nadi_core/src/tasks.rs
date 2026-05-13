@@ -442,8 +442,8 @@ impl FunctionType {
                 .ok_or(EvalErrorType::NotANodeContext)
                 .cloned()
                 .map(ExprContext::Node),
-            Self::Network => Ok(ExprContext::Network),
-            Self::Env => Ok(ExprContext::Env),
+            Self::Network => Ok(ExprContext::Network(node.cloned())),
+            Self::Env => Ok(ExprContext::Env(node.cloned())),
         }
     }
 }

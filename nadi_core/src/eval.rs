@@ -38,21 +38,21 @@ impl<'a> EvalCtx<'a> {
         }
     }
 
-    pub fn local() -> EvalCtx<'static> {
+    pub fn local(n: Option<Node>) -> EvalCtx<'static> {
         EvalCtx {
-            expr_ctx: Cow::Owned(ExprContext::Local),
+            expr_ctx: Cow::Owned(ExprContext::Local(n)),
         }
     }
 
-    pub fn env() -> EvalCtx<'static> {
+    pub fn env(n: Option<Node>) -> EvalCtx<'static> {
         EvalCtx {
-            expr_ctx: Cow::Owned(ExprContext::Env),
+            expr_ctx: Cow::Owned(ExprContext::Env(n)),
         }
     }
 
-    pub fn network() -> EvalCtx<'static> {
+    pub fn network(n: Option<Node>) -> EvalCtx<'static> {
         EvalCtx {
-            expr_ctx: Cow::Owned(ExprContext::Network),
+            expr_ctx: Cow::Owned(ExprContext::Network(n)),
         }
     }
 
@@ -73,9 +73,9 @@ impl Eval for Template {
             Err(e) => Err(EvalErrorType::RenderError(e.to_string()).no_pos()),
         };
         match ectx.expr_ctx.as_ref() {
-            ExprContext::Local => map_res(self.render(loc)),
-            ExprContext::Env => map_res(self.render(&ctx.env)),
-            ExprContext::Network => map_res(self.render(&ctx.network)),
+            ExprContext::Local(_) => map_res(self.render(loc)),
+            ExprContext::Env(_) => map_res(self.render(&ctx.env)),
+            ExprContext::Network(_) => map_res(self.render(&ctx.network)),
             ExprContext::Node(n) => map_res(self.render(&n.lock())),
             ExprContext::Nodes(nds) => nds
                 .iter()

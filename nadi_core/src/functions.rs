@@ -186,6 +186,8 @@ impl<'a, T: ResolveFuncArg<'a>> ResolveFuncArg<'a> for ROption<T> {
 impl<'a, T: FromAttribute> ResolveFuncArg<'a> for T {
     fn resolve_arg(val: &FunctionInput<'a>) -> Option<Self> {
         match val {
+            // Should use try_from_attr to preserve the errors, maybe
+            // add try_resolve_arg on the trait
             FunctionInput::Attr(a) => FromAttribute::from_attr(a),
             FunctionInput::AttrOwn(a) => FromAttribute::from_attr(a),
             _ => None,
