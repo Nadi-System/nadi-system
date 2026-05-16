@@ -3,7 +3,7 @@ use crate::expressions::{
     InputVar, MapFunction, MapSeries, Position, RawExpr, SetSeries, SetVariable, UniOperator,
     VarType,
 };
-use crate::network::{PropCondition, PropNodes, PropOrder};
+use crate::network::{PropOrder, SelectNodes};
 use crate::parser::{
     components::*,
     errors::{MatchErr, ParseErrorType},
@@ -556,40 +556,38 @@ pub fn multi_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprTy
 
 pub fn variable_type<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, VarType> {
     let (rest, (kw, prop)) = pair(keyword_val, propagation)(inp)?;
-    let node = match (&kw, &prop) {
+    match (&kw, &prop) {
         // make sure node variable type has only one node name instead
         // of any other propagation
         (TaskKeyword::Node, Some(p)) => {
-            if p.order != PropOrder::default() || p.condition != PropCondition::default() {
+            if p.order != PropOrder::default() {
                 return Err(nom::Err::Failure(
                     MatchErr::new(inp).ty(&ParseErrorType::InvalidPropagation),
                 ));
             };
             match &p.nodes {
-                PropNodes::All => None,
-                PropNodes::List(lst) => {
+                SelectNodes::All => Ok((rest, VarType::Node(None))),
+                SelectNodes::List(lst) => {
                     if let [n] = lst.as_slice() {
-                        Some(n.to_string())
+                        Ok((rest, VarType::Node(Some(n.to_string()))))
                     } else {
-                        return Err(nom::Err::Failure(
+                        Err(nom::Err::Failure(
                             MatchErr::new(inp).ty(&ParseErrorType::InvalidPropagation),
-                        ));
+                        ))
                     }
                 }
-                PropNodes::Path(_) => {
-                    return Err(nom::Err::Failure(
-                        MatchErr::new(inp).ty(&ParseErrorType::InvalidPropagation),
-                    ));
-                }
+                SelectNodes::Var(var) => Ok((rest, VarType::NodeVar(Box::new(var.clone())))),
+                _ => Err(nom::Err::Failure(
+                    MatchErr::new(inp).ty(&ParseErrorType::InvalidPropagation),
+                )),
             }
         }
-        _ => None,
-    };
-    match VarType::from_keyword(&kw, prop, node) {
-        Some(v) => Ok((rest, v)),
-        None => Err(nom::Err::Error(
-            MatchErr::new(inp).ty(&ParseErrorType::InvalidKeyword),
-        )),
+        _ => match VarType::from_keyword(&kw, prop, None) {
+            Some(v) => Ok((rest, v)),
+            None => Err(nom::Err::Error(
+                MatchErr::new(inp).ty(&ParseErrorType::InvalidKeyword),
+            )),
+        },
     }
 }
 

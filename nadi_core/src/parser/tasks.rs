@@ -1,14 +1,16 @@
 use crate::parser::{
     components::*,
     errors::MatchErr,
-    expressions::{complete_expression, function_def, maybe_silent_expression, raw_expr},
+    expressions::{
+        complete_expression, function_def, input_variable_only, maybe_silent_expression, raw_expr,
+    },
     network::{node_name, str_path},
     tokenizer::{RawToken, Token},
     ParseError, ParseErrorType,
 };
 use crate::{
     expressions::Position,
-    network::{PropCondition, PropNodes, PropOrder, Propagation},
+    network::{PropOrder, Propagation, SelectNodes},
     structs::{NadiAttrType, NadiStruct},
     tasks::{FunctionType, Task},
 };
@@ -49,31 +51,39 @@ pub fn node_list<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, RVec<RString>
     )(inp)
 }
 
-pub fn prop_nodes<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, PropNodes> {
+pub fn prop_nodes<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, SelectNodes> {
+    alt((prop_nodes_list, prop_nodes_expr))(inp)
+}
+
+pub fn prop_nodes_list<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, SelectNodes> {
     delimited(
         bracket_start,
         cut(alt((
-            map(maybe_newline(str_path), PropNodes::Path),
-            map(maybe_newline(node_list), PropNodes::List),
+            map(maybe_newline(str_path), SelectNodes::Path),
+            map(maybe_newline(node_list), SelectNodes::List),
+            map(
+                maybe_newline(preceded(star, input_variable_only)),
+                SelectNodes::Var,
+            ),
         ))),
         maybe_newline(cut(err_ctx(&ParseErrorType::Unclosed("]"), bracket_end))),
     )(inp)
 }
 
+pub fn prop_nodes_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, SelectNodes> {
+    delimited(
+        paren_start,
+        map(
+            maybe_newline(raw_expr(complete_expression)),
+            SelectNodes::Expr,
+        ),
+        maybe_newline(paren_end),
+    )(inp)
+}
+
 pub fn propagation<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Option<Propagation>> {
-    let (rest, (order, nodes, cond)) = tuple((
-        opt(prop_order),
-        opt(prop_nodes),
-        opt(map(
-            delimited(
-                paren_start,
-                maybe_newline(raw_expr(complete_expression)),
-                maybe_newline(paren_end),
-            ),
-            PropCondition::Expr,
-        )),
-    ))(inp)?;
-    if order.is_none() && nodes.is_none() && cond.is_none() {
+    let (rest, (order, nodes)) = tuple((opt(prop_order), opt(prop_nodes)))(inp)?;
+    if order.is_none() && nodes.is_none() {
         Ok((rest, None))
     } else {
         Ok((
@@ -81,7 +91,6 @@ pub fn propagation<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Option<Prop
             Some(Propagation {
                 order: order.unwrap_or_default(),
                 nodes: nodes.unwrap_or_default(),
-                condition: cond.unwrap_or_default(),
                 start: inp.position(),
             }),
         ))

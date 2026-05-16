@@ -1,6 +1,6 @@
 use crate::attrs::{AttrMap, HasAttributes};
 use crate::eval::EvalErrorType;
-use crate::expressions::RawExpr;
+use crate::expressions::{InputVar, RawExpr};
 use crate::node::Node;
 use crate::timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap};
 use abi_stable::std_types::{RDuration, Tuple2};
@@ -364,29 +364,30 @@ impl Network {
     pub fn nodes_select(
         &self,
         order: &PropOrder,
-        prop: &PropNodes,
+        nodes: &[RString],
     ) -> Result<Vec<Node>, EvalErrorType> {
-        match (prop, order) {
-            (PropNodes::All, o) => Ok(self.nodes_order(o)),
-            // preserve the list order if order not given explicitly
-            (PropNodes::List(lst), PropOrder::Auto) => {
-                let nodes: Vec<_> = lst.iter().map(|n| self.node_by_name(n.as_str())).collect();
-                if nodes.iter().any(Option::is_none) {
-                    let not_found: Vec<&str> = lst
+        match order {
+            PropOrder::Auto => {
+                let nds: Vec<_> = nodes
+                    .iter()
+                    .map(|n| self.node_by_name(n.as_str()))
+                    .collect();
+                if nds.iter().any(Option::is_none) {
+                    let not_found: Vec<&str> = nodes
                         .iter()
-                        .zip(nodes)
+                        .zip(nds)
                         .filter(|(_, o)| o.is_none())
                         .map(|(n, _)| n.as_str())
                         .collect();
                     Err(EvalErrorType::NodeNotFound(not_found.join(", ")))
                 } else {
-                    Ok(nodes.into_iter().filter_map(|o| o.cloned()).collect())
+                    Ok(nds.into_iter().filter_map(|o| o.cloned()).collect())
                 }
             }
-            (PropNodes::List(lst), o) => {
-                let mut sel_lst: HashSet<&str> = lst.iter().map(|n| n.as_str()).collect();
+            _ => {
+                let mut sel_lst: HashSet<&str> = nodes.iter().map(|n| n.as_str()).collect();
                 let res = self
-                    .nodes_order(o)
+                    .nodes_order(order)
                     .into_iter()
                     .filter(|n| sel_lst.remove(n.name()))
                     .collect();
@@ -398,7 +399,6 @@ impl Network {
                     ))
                 }
             }
-            (PropNodes::Path(p), o) => self.nodes_path(o, p),
         }
     }
 
@@ -1054,17 +1054,15 @@ impl StrPath {
 pub struct Propagation {
     /// order of the nodes
     pub order: PropOrder,
-    /// List or path of nodes
-    pub nodes: PropNodes,
-    /// Condition to evaluate for selection of nodes
-    pub condition: PropCondition,
+    /// selection criteria of nodes
+    pub nodes: SelectNodes,
     /// start position of the propagation
     pub start: (usize, usize),
 }
 
 impl std::fmt::Display for Propagation {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
-        write!(fmt, "{}{}{}", self.order, self.nodes, self.condition)
+        write!(fmt, "{}{}", self.order, self.nodes)
     }
 }
 
@@ -1096,9 +1094,9 @@ impl std::fmt::Display for PropOrder {
     }
 }
 
-/// List of nodes in a network
+/// Select a list of nodes in a network
 #[derive(Debug, Default, Clone, PartialEq)]
-pub enum PropNodes {
+pub enum SelectNodes {
     /// No selection (all nodes)
     #[default]
     All,
@@ -1106,9 +1104,13 @@ pub enum PropNodes {
     List(RVec<RString>),
     /// Path between two nodes by their name
     Path(StrPath),
+    /// Variable representing list of nodes
+    Var(InputVar),
+    /// Expression evaluating true or false
+    Expr(RawExpr),
 }
 
-impl std::fmt::Display for PropNodes {
+impl std::fmt::Display for SelectNodes {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
         match self {
             Self::All => Ok(()),
@@ -1121,27 +1123,7 @@ impl std::fmt::Display for PropNodes {
                     .join(", ")
             ),
             Self::Path(p) => write!(fmt, "[{}]", p),
-        }
-    }
-}
-
-/// Propagation condition for the nodes
-#[derive(Debug, Default, Clone, PartialEq)]
-pub enum PropCondition {
-    /// No condition (all nodes)
-    #[default]
-    All,
-    /// Expression to evaluate into a bool to check
-    Expr(RawExpr),
-    // TODO
-    // Head(usize),
-    // Tail(usize),
-}
-
-impl std::fmt::Display for PropCondition {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
-        match self {
-            Self::All => Ok(()),
+            Self::Var(var) => write!(fmt, "[*{}]", var),
             Self::Expr(expr) => write!(fmt, "({})", expr),
         }
     }

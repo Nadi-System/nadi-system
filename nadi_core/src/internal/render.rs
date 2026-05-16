@@ -167,7 +167,7 @@ mod render {
 }
 
 mod render_utils {
-    use crate::network::Propagation;
+    use crate::network::{Propagation, SelectNodes};
     use crate::prelude::*;
     use anyhow::{Context, Error};
     use number_range::NumberRangeOptions;
@@ -295,8 +295,13 @@ mod render_utils {
                     }
                     RenderFileContentsType::Literal(s) => output.push_str(s),
                     RenderFileContentsType::Snippet(templ, prop) => {
+                        let nodes = match &prop.nodes {
+                            SelectNodes::All => &net.nodes,
+                            SelectNodes::List(nds) => &nds,
+                            _ => return Err(anyhow::Error::msg("Propagation not supported")),
+                        };
                         for node in net
-                            .nodes_select(&prop.order, &prop.nodes)
+                            .nodes_select(&prop.order, nodes.as_slice())
                             .map_err(anyhow::Error::msg)?
                         {
                             let n: &NodeInner = &node.lock();

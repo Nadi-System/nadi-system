@@ -2,28 +2,15 @@ use crate::eval::{Eval, EvalCtx, EvalError, EvalErrorType};
 use crate::expressions::{ExprContext, RawExpr};
 
 use crate::functions::{FuncArg, FuncArgType, NadiFunctions};
-use crate::network::PropCondition;
+use crate::network::SelectNodes;
 use crate::prelude::*;
 use crate::structs::NadiStruct;
 use crate::timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap};
 use crate::udf::UserFunction;
+use abi_stable::std_types::RString;
 use std::collections::HashMap;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
-
-// /// Result of a Task when executed => move to expression result => move to function return
-// pub enum TaskResult {
-//     None,
-//     Value(Attribute),
-//     Update(Attribute, Attribute),
-//     Return(Attribute),
-//     OrderedTable(AttrMap, Vec<String>),
-//     Help(String),  // this can be formatted text
-//     Error(EvalError),
-//     Image(PathBuf),
-//     File(PathBuf),
-//     FormattedText(String),
-// }
 
 /// Some constants that are similar to system variables
 ///
@@ -371,20 +358,39 @@ impl TaskContext {
     }
 
     /// Get node propagation using the context (network and variables)
-    pub fn propagation(&self, prop: Propagation) -> Result<Vec<Node>, EvalError> {
-        let nodes = self.network.nodes_select(&prop.order, &prop.nodes)?;
-        match prop.condition {
-            PropCondition::All => Ok(nodes),
-            PropCondition::Expr(expr) => {
+    pub fn propagation(
+        &self,
+        prop: Propagation,
+        ectx: &EvalCtx,
+        local: &mut AttrMap,
+    ) -> Result<Vec<Node>, EvalError> {
+        match prop.nodes {
+            SelectNodes::All => Ok(self.network.nodes_order(&prop.order)),
+            SelectNodes::List(nds) => self
+                .network
+                .nodes_select(&prop.order, &nds)
+                .map_err(|e| e.pos(prop.start)),
+            SelectNodes::Var(inp) => {
+                let var = inp.eval_value(&self, ectx, local)?;
+                let parent = Vec::<RString>::try_from_attr(&var)
+                    .map_err(|e| EvalErrorType::AttributeError(e))?;
+                self.network
+                    .nodes_select(&prop.order, &parent)
+                    .map_err(|e| e.pos(prop.start))
+            }
+            SelectNodes::Path(p) => self
+                .network
+                .nodes_path(&prop.order, &p)
+                .map_err(|e| e.pos(prop.start)),
+            SelectNodes::Expr(expr) => {
                 let mut sel_nodes = Vec::with_capacity(self.network.nodes().count());
                 // expression is evaluated for each node
-                for n in nodes {
+                for n in self.network.nodes_order(&prop.order) {
                     let ectx = EvalCtx::at_node(n.clone());
-                    let res = expr.clone().resolve(self, ectx.clone())?.eval_value(
-                        self,
-                        &ectx,
-                        &mut AttrMap::new(),
-                    )?;
+                    let res = expr
+                        .clone()
+                        .resolve(self, ectx.clone())?
+                        .eval_value(self, &ectx, local)?;
                     match bool::try_from_attr(&res) {
                         Ok(true) => sel_nodes.push(n),
                         Ok(false) => (),

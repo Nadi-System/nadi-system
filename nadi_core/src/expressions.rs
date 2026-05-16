@@ -1624,11 +1624,12 @@ impl InputVar {
     fn get_expr_context(
         &self,
         ctx: &TaskContext,
-        ectx: ExprContext,
+        ectx: &EvalCtx,
+        loc: &mut AttrMap,
     ) -> Result<ExprContext, EvalErrorType> {
         match &self.ty {
-            Some(ty) => ty.get_expr_context(ctx, ectx.curr_node()),
-            None => Ok(ectx),
+            Some(ty) => ty.get_expr_context(ctx, ectx, loc),
+            None => Ok(ectx.expr_ctx.as_ref().clone()),
         }
     }
 }
@@ -1647,7 +1648,7 @@ impl Eval for InputVar {
             }
         }
         let expr_ctx = if let Some(s) = &self.ty {
-            Cow::Owned(s.get_expr_context(ctx, ectx.curr_node())?)
+            Cow::Owned(s.get_expr_context(ctx, ectx, loc)?)
         } else {
             ectx.expr_ctx.clone()
         };
@@ -1711,6 +1712,8 @@ pub enum VarType {
     Env,
     /// Node variable (only valid in a node function without explicit name)
     Node(Option<String>),
+    /// Node variable with variable to get the node name from
+    NodeVar(Box<InputVar>),
     /// Network variable
     Network,
     /// Single Input variable (only valid in a node function for a node with single input)
@@ -1785,7 +1788,7 @@ impl VarType {
     /// Convert to [`FunctionType`]
     pub fn to_functiontype(&self) -> &FunctionType {
         match self {
-            VarType::Node(_) => &FunctionType::Node,
+            VarType::Node(_) | VarType::NodeVar(_) => &FunctionType::Node,
             VarType::Network => &FunctionType::Network,
             VarType::Env | VarType::Local => &FunctionType::Env,
             VarType::Input
@@ -1812,6 +1815,7 @@ impl VarType {
     pub fn is_map(&self) -> bool {
         match self {
             VarType::Node(_)
+            | VarType::NodeVar(_)
             | VarType::Network
             | VarType::Env
             | VarType::Local
@@ -1841,20 +1845,24 @@ impl VarType {
     fn get_expr_context(
         &self,
         ctx: &TaskContext,
-        node: Option<&Node>,
+        ectx: &EvalCtx,
+        loc: &mut AttrMap,
     ) -> Result<ExprContext, EvalErrorType> {
         let nodes_func = if self.is_map() {
             |nds| Ok(ExprContext::NodesMap(nds))
         } else {
             |nds| Ok(ExprContext::Nodes(nds))
         };
+
+        let node: Option<&Node> = ectx.curr_node();
         match (self, node) {
             (VarType::Local, _) => Ok(ExprContext::Local(node.cloned())),
             (VarType::Env, _) => Ok(ExprContext::Env(node.cloned())),
             (VarType::Network, _) => Ok(ExprContext::Network(node.cloned())),
-            (VarType::Nodes(prop) | VarType::NodesMap(prop), _) => {
-                nodes_func(ctx.propagation(*prop.clone()).map_err(|e| *e.ty)?)
-            }
+            (VarType::Nodes(prop) | VarType::NodesMap(prop), _) => nodes_func(
+                ctx.propagation(*prop.clone(), ectx, loc)
+                    .map_err(|e| *e.ty)?,
+            ),
             (VarType::Roots | VarType::RootsMap, _) => {
                 nodes_func(ctx.network.roots().cloned().collect())
             }
@@ -1874,6 +1882,16 @@ impl VarType {
                 None => Err(EvalErrorType::NodeNotFound(n.to_string())),
             },
             (VarType::Node(None), Some(n)) => Ok(ExprContext::Node(n.clone())),
+            (VarType::NodeVar(var), _) => {
+                let val = var.eval_value(ctx, ectx, loc).map_err(|e| *e.ty)?;
+                let nd =
+                    String::try_from_attr(&val).map_err(|e| EvalErrorType::AttributeError(e))?;
+                let n = ctx
+                    .network
+                    .node_by_name(&nd)
+                    .ok_or(EvalErrorType::NodeNotFound(nd))?;
+                Ok(ExprContext::Node(n.clone()))
+            }
             (VarType::Input, Some(n)) => match n
                 .try_lock()
                 .ok_or(EvalErrorType::MutexError(file!(), line!()))?
@@ -1926,6 +1944,9 @@ impl std::fmt::Display for VarType {
             VarType::Node(None) => "node",
             VarType::Node(Some(n)) => {
                 return write!(f, "node[{n:?}]");
+            }
+            VarType::NodeVar(var) => {
+                return write!(f, "node[*{}]", var);
             }
             VarType::Network => "network",
             VarType::Env => "env",
@@ -2071,14 +2092,15 @@ impl<T> FunctionCall<T> {
         }
     }
 
-    fn get_eval_context<'a>(
+    fn get_eval_context<'a, 'b>(
         &self,
         ctx: &TaskContext,
         expr: &EvalCtx<'a>,
+        loc: &'b mut AttrMap,
     ) -> Result<EvalCtx<'a>, EvalErrorType> {
         match &self.ty {
             Some(ty) => ty
-                .get_expr_context(ctx, expr.curr_node())
+                .get_expr_context(ctx, expr, loc)
                 .map(|e| EvalCtx::expr_ctx(Cow::Owned(e))),
             None => Ok(expr.clone()),
         }
@@ -2142,7 +2164,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
         ectx: &EvalCtx,
         loc: &mut AttrMap,
     ) -> Result<ExprResult, EvalError> {
-        let ectx = self.get_eval_context(ctx, ectx)?;
+        let ectx = self.get_eval_context(ctx, ectx, loc)?;
         match &ectx.expr_ctx.as_ref() {
             ExprContext::Local(_) | ExprContext::Env(_) => {
                 let func_ctx = self.function_ctx(ctx, &ectx, loc)?;
@@ -2313,7 +2335,7 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
         ectx: &EvalCtx,
         loc: &mut AttrMap,
     ) -> Result<ExprResult, EvalError> {
-        let ectx = self.get_eval_context(ctx, ectx)?;
+        let ectx = self.get_eval_context(ctx, ectx, loc)?;
         match &ectx.expr_ctx.as_ref() {
             ExprContext::Local(_) | ExprContext::Env(_) => {
                 let func_ctx = self.function_ctx(ctx, &ectx, loc)?;
@@ -2546,11 +2568,12 @@ impl GetSeries {
     fn get_expr_context(
         &self,
         ctx: &TaskContext,
-        ectx: ExprContext,
+        ectx: &EvalCtx,
+        loc: &mut AttrMap,
     ) -> Result<ExprContext, EvalErrorType> {
         match &self.ty {
-            Some(ty) => ty.get_expr_context(ctx, ectx.curr_node()),
-            None => Ok(ectx),
+            Some(ty) => ty.get_expr_context(ctx, ectx, loc),
+            None => Ok(ectx.expr_ctx.as_ref().clone()),
         }
     }
 }
@@ -2598,7 +2621,7 @@ impl Eval for GetSeries {
         loc: &mut AttrMap,
     ) -> Result<ExprResult, EvalError> {
         let expr_ctx = if let Some(s) = &self.ty {
-            Cow::Owned(s.get_expr_context(ctx, ectx.curr_node())?)
+            Cow::Owned(s.get_expr_context(ctx, ectx, loc)?)
         } else {
             ectx.expr_ctx.clone()
         };
@@ -2974,7 +2997,12 @@ fn resolve_set_series<'b>(
     ectx: EvalCtx<'b>,
 ) -> Result<ResolvedExpr<'b>, EvalError> {
     let e = expr.ctx.as_ref().unwrap_or(ectx.expr_ctx.as_ref());
-    let new_expr_ctx = expr.inp.get_expr_context(ctx, e.clone())?;
+    let new_expr_ctx = expr.inp.get_expr_context(
+        ctx,
+        &EvalCtx::expr_ctx(Cow::Borrowed(e)),
+        // Same as before, you can't use local variables to set a series, but you can get it
+        &mut AttrMap::new(),
+    )?;
     let etc = match new_expr_ctx {
         ExprContext::Local(n) => EvalCtx::local(n.clone()),
         ExprContext::Env(n) => EvalCtx::env(n.clone()),
@@ -3261,7 +3289,7 @@ impl Eval for ExprWithContext {
     ) -> Result<ExprResult, EvalError> {
         let expr_ctx = self
             .ty
-            .get_expr_context(ctx, ectx.curr_node())
+            .get_expr_context(ctx, ectx, loc)
             .map_err(|e| e.no_pos())?;
         let mut context = ectx.clone();
         context.expr_ctx = Cow::Owned(expr_ctx.clone());
@@ -3318,7 +3346,7 @@ impl Eval for ExprWithContext {
     ) -> Result<ExprResult, EvalError> {
         let expr_ctx = self
             .ty
-            .get_expr_context(ctx, ectx.curr_node())
+            .get_expr_context(ctx, ectx, loc)
             .map_err(|e| e.no_pos())?;
         let mut context = ectx.clone();
         context.expr_ctx = Cow::Owned(expr_ctx.clone());
@@ -3559,7 +3587,12 @@ fn resolve_set_variable<'b>(
     ectx: EvalCtx<'b>,
 ) -> Result<ResolvedExpr<'b>, EvalError> {
     let e = expr.ctx.as_ref().unwrap_or(ectx.expr_ctx.as_ref());
-    let new_expr_ctx = expr.var.get_expr_context(ctx, e.clone())?;
+    let new_expr_ctx = expr.var.get_expr_context(
+        ctx,
+        &EvalCtx::expr_ctx(Cow::Borrowed(e)),
+        // TEST: HACK: Check if this is ok, without locals resolve might be incorrect, when is the resolve called?
+        &mut AttrMap::new(),
+    )?;
     let etc = match new_expr_ctx {
         ExprContext::Local(n) => EvalCtx::local(n.clone()),
         ExprContext::Env(n) => EvalCtx::env(n.clone()),
@@ -3635,7 +3668,9 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
     ) -> Result<ExprResult, EvalError> {
         // TODO: look into why this is setting in env context, we need to make it take the context from variable type we are setting.
         let e = self.ctx.as_ref().unwrap_or(ectx.expr_ctx.as_ref());
-        let new_expr_ctx = self.var.get_expr_context(ctx, e.clone())?;
+        let new_expr_ctx =
+            self.var
+                .get_expr_context(ctx, &EvalCtx::expr_ctx(Cow::Borrowed(e)), loc)?;
 
         match new_expr_ctx {
             ExprContext::Local(n) => {
