@@ -433,8 +433,14 @@ impl Editor {
                     Ok((path, contents)) => {
                         if let Some(p) = path.parent() {
                             let _ = std::env::set_current_dir(p);
+                            self.file = Some(PathBuf::from(
+                                path.file_name()
+                                    .map(|f| f.to_string_lossy().to_string())
+                                    .unwrap_or_default(),
+                            ));
+                        } else {
+                            self.file = Some(path);
                         }
-                        self.file = Some(path);
                         self.content = text_editor::Content::with_text(&contents);
                     }
                     Err(e) => {

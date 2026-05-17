@@ -69,8 +69,16 @@ mod random {
     }
 
     #[network_func(count = 10, max_inputs = 3)]
-    fn random_tree(net: &mut Network, count: i64, max_inputs: i64) -> Result<(), String> {
-        let mut rng: SmallRng = rand::make_rng();
+    fn random_tree(
+        net: &mut Network,
+        count: i64,
+        max_inputs: i64,
+        seed: Option<u64>,
+    ) -> Result<(), String> {
+        let mut rng: SmallRng = match seed {
+            Some(s) => SmallRng::seed_from_u64(s),
+            None => rand::make_rng(),
+        };
         let mut vert: Vec<i64> = (0..count).collect();
         vert.shuffle(&mut rng);
         let mut edges = Vec::<(String, String)>::new();
