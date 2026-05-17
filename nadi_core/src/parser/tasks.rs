@@ -251,6 +251,7 @@ mod tests {
     #[case("inputs.x")]
     #[case("env {(x + 1) != 5}")] //
     #[case("env {\"val\" in selected_vals}")]
+    #[case("env.x = []")]
     #[case("env.echo(x)")]
     #[case("network {load_file(test)}")]
     #[case("network.gis.load_file(12)")]
@@ -258,8 +259,8 @@ mod tests {
     #[case("node.some_func()")]
     #[case("nodes<inverse>.some_func()")]
     #[case("nodes<outputfirst>[a] {some_func()}")]
-    #[case("nodes<inputsfirst>[a](cond).some_func()")]
-    #[case("nodes[a](cond) {some_func()}")]
+    #[case("nodes<inputsfirst>(cond).some_func()")]
+    #[case("nodes[a] {some_func()}")]
     #[case("nodes(cond) {(some_func() + 12) > 12}")] //
     #[case("while (true) {\n\tenv {echo(x)}\n}")]
     #[case("if (true) {\n\tenv.echo(x)\n} else {\n\tenv.echo(y)\n}")]

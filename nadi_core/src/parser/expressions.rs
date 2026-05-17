@@ -146,11 +146,7 @@ pub fn expr_set_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprT
             task_dot_variable,
             opt(maybe_space(preceded(colon, maybe_space(attr_type)))),
             maybe_space(assignment),
-            maybe_space(raw_expr(alt((
-                complete_value_expression,
-                expression_group,
-                expression_block,
-            )))),
+            maybe_space(raw_expr(alt((expression_group, complete_value_expression)))),
             opt(semicolon),
         )),
         |(vt, (var, indices), ty, _, expr, silent)| {
