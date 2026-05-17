@@ -226,20 +226,26 @@ if (true) {
 
 # network load_file("path/to/file.network");
 
-# you can change visual properties of the nodes
-node.visual.textcolor = "red"
+# here we generate a random network for visualization
+net.random_tree()
+# for more functions goto the function help window
+
+# you can change visual properties of the nodes by keeping
+# a dictionary in `visual` attribute
+nodes.visual = {}
+nodes.visual.textcolor = "red"
 # as node functions are run at each node you can set them individually
-node[a,c].visual.nodecolor = "green";
-node(INDEX < 2).visual.nodesize = 8;
-node[b].visual.linewidth = 4;
-node[d].visual.linecolor = "red";
+nodes[1,2].visual.nodecolor = "green";
+nodes(INDEX < 2).visual.nodesize = 8;
+node[2].visual.linewidth = 4;
+node[4].visual.linecolor = "red";
 # try different shapes
-node.visual.nodeshape = "ellipse:0.5";
-node.visual.nodeshape = "circle";
-node.visual.nodeshape = "rectangle:0.5";
-node.visual.nodeshape = "box";
-node.visual.nodeshape = "triangle";
-node.visual.nodeshape = "triangle:2";
+nodes.visual.nodeshape = "ellipse:0.5";
+nodes.visual.nodeshape = "rectangle:0.5";
+nodes.visual.nodeshape = "box";
+nodes.visual.nodeshape = "triangle";
+nodes.visual.nodeshape = "triangle:2";
+nodes.visual.nodeshape = "circle";
 
 # Use the bottons on the top to open file and start coding;
 # Hope Nadi is useful for your research/learning experience :)

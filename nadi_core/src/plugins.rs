@@ -73,7 +73,9 @@ fn check_library(path: &Path) -> Result<(), LibraryError> {
 }
 
 fn print_library_err(err: LibraryError) {
-    eprintln!("Error: {err:#?}");
+    if std::env::var("NADI_PLUGIN_ERROR_FULL").is_ok() {
+        eprintln!("Error: {err:#?}");
+    }
     match err {
         LibraryError::OpenError { path, .. } => {
             eprintln!("Couln't open library {path:?}")
