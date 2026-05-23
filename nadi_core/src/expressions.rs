@@ -312,6 +312,12 @@ impl From<Option<Attribute>> for ExprResult {
     }
 }
 
+impl From<Series> for ExprResult {
+    fn from(val: Series) -> Self {
+        Self::Series(val)
+    }
+}
+
 impl<'a> ExprResult {
     fn to_function_input(self) -> Result<FunctionInput<'a>, EvalError> {
         match self {
@@ -2526,13 +2532,15 @@ pub struct GetSeries {
     name: String,
     index: Option<Box<RawExpr>>,
     pub(crate) check: bool,
+    /// shift the timeseries, can not occur along with index
+    shift: Option<(bool, Box<RawExpr>)>,
 }
 
 impl std::fmt::Display for GetSeries {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "{}{}{}{}{}",
+            "{}{}{}{}{}{}",
             self.ty
                 .as_ref()
                 .map(|t| format!("{}", t))
@@ -2544,6 +2552,11 @@ impl std::fmt::Display for GetSeries {
                 .map(|i| format!("{i}"))
                 .unwrap_or_default(),
             if self.check { "?" } else { "" },
+            if let Some((fd, s)) = &self.shift {
+                format!(" {} {s}", if *fd { ">>" } else { "<<" })
+            } else {
+                "".to_string()
+            }
         )
     }
 }
@@ -2555,6 +2568,7 @@ impl GetSeries {
         name: String,
         index: Option<RawExpr>,
         check: bool,
+        shift: Option<(bool, RawExpr)>,
     ) -> Self {
         Self {
             ty,
@@ -2562,6 +2576,7 @@ impl GetSeries {
             name,
             index: index.map(Box::new),
             check,
+            shift: shift.map(|(fd, s)| (fd, Box::new(s))),
         }
     }
 
@@ -2582,12 +2597,14 @@ enum SeriesIndex {
     None,
     One(usize),
     Multi(Vec<usize>),
+    Shift(i64),
 }
 
 impl SeriesIndex {
     fn subset(&self, sr: EvalSeriesRes) -> Result<ExprResult, EvalError> {
         match self {
             Self::None => Ok(sr.into()),
+            Self::Shift(i) => Ok(sr.series().shift(*i).into()),
             Self::One(i) => match sr.series().get_attribute(*i) {
                 Some(Some(a)) => Ok(ExprResult::Val(a)),
                 Some(None) => Ok(ExprResult::None),
@@ -2625,8 +2642,15 @@ impl Eval for GetSeries {
         } else {
             ectx.expr_ctx.clone()
         };
-        let index = match &self.index {
-            Some(i) => match i.eval_value(ctx, ectx, loc)? {
+        let index = match (&self.index, &self.shift) {
+            (None, None) => SeriesIndex::None,
+            (Some(_), Some(_)) => {
+                return Err(EvalErrorType::LogicalError(
+                    "Series should not have both index and shift",
+                )
+                .no_pos());
+            }
+            (Some(i), None) => match i.eval_value(ctx, ectx, loc)? {
                 Attribute::Array(ar) => {
                     let inds = ar
                         .iter()
@@ -2646,7 +2670,15 @@ impl Eval for GetSeries {
                     .no_pos());
                 }
             },
-            None => SeriesIndex::None,
+            (None, Some((fd, val))) => {
+                let res = val.eval_value(ctx, ectx, loc)?;
+                let sft = i64::from_attr(&res).ok_or(
+                    EvalErrorType::InvalidAttributeType(NadiAttrType::Integer, res.dtype())
+                        .no_pos(),
+                )?;
+                let sft = if *fd { sft } else { -sft };
+                SeriesIndex::Shift(sft)
+            }
         };
         // TODO: take values out based on index
         match expr_ctx.as_ref() {

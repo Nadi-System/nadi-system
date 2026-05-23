@@ -643,9 +643,23 @@ pub fn series_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, GetSeri
                 array_expr,
             )))),
             opt(question),
+            opt(pair(
+                maybe_space(alt((
+                    value(false, pair(angle_start, angle_start)),
+                    value(true, pair(angle_end, angle_end)),
+                ))),
+                maybe_space(raw_expr(value_expression)),
+            )),
         )),
-        |(vt, (_, ts, var), ind, q)| {
-            GetSeries::new(vt, ts.is_some(), var.content.to_string(), ind, q.is_some())
+        |(vt, (_, ts, var), ind, q, shift)| {
+            GetSeries::new(
+                vt,
+                ts.is_some(),
+                var.content.to_string(),
+                ind,
+                q.is_some(),
+                shift,
+            )
         },
     )(inp)
 }

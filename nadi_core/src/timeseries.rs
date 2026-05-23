@@ -436,6 +436,13 @@ impl Series {
         CompleteSeries::from_attr(vals, dtype).map(Self::Complete)
     }
 
+    pub fn shift(self, val: i64) -> Self {
+        match self {
+            Self::Masked(v, f) => Self::Masked(v.shift(val), f),
+            Self::Complete(v) => Self::Masked(v.shift(val), RNone),
+        }
+    }
+
     pub fn str_values<'b, 'a: 'b>(&'a self, na: &'b str) -> Box<dyn Iterator<Item = String> + 'b> {
         match self {
             Self::Masked(v, _) => v.str_values(na),
@@ -547,6 +554,19 @@ impl MaskedSeries {
     }
     pub fn attributes(v: Vec<ROption<Attribute>>) -> Self {
         Self::Attributes(v.into())
+    }
+
+    pub fn shift(self, val: i64) -> Self {
+        match self {
+            Self::Floats(v) => Self::Floats(shift_masked(v, val)),
+            Self::Integers(v) => Self::Integers(shift_masked(v, val)),
+            Self::Strings(v) => Self::Strings(shift_masked(v, val)),
+            Self::Booleans(v) => Self::Booleans(shift_masked(v, val)),
+            Self::Dates(v) => Self::Dates(shift_masked(v, val)),
+            Self::Times(v) => Self::Times(shift_masked(v, val)),
+            Self::DateTimes(v) => Self::DateTimes(shift_masked(v, val)),
+            Self::Attributes(v) => Self::Attributes(shift_masked(v, val)),
+        }
     }
 
     pub fn map_values(
@@ -932,6 +952,50 @@ pub enum CompleteSeries {
     Attributes(RVec<Attribute>),
 }
 
+fn shift<T>(vals: RVec<T>, s: i64) -> RVec<ROption<T>> {
+    let mut new_vals = RVec::with_capacity(vals.len());
+    if s > 0 {
+        for _ in 0..s {
+            new_vals.push(RNone);
+        }
+        let rest = vals.len() - s as usize;
+        for v in vals.into_iter().take(rest) {
+            new_vals.push(RSome(v));
+        }
+    } else {
+        let rest = (-s) as usize;
+        for v in vals.into_iter().skip(rest) {
+            new_vals.push(RSome(v));
+        }
+        for _ in 0..rest {
+            new_vals.push(RNone);
+        }
+    }
+    new_vals
+}
+
+fn shift_masked<T>(vals: RVec<ROption<T>>, s: i64) -> RVec<ROption<T>> {
+    let mut new_vals = RVec::with_capacity(vals.len());
+    if s > 0 {
+        for _ in 0..s {
+            new_vals.push(RNone);
+        }
+        let rest = vals.len() - s as usize;
+        for v in vals.into_iter().take(rest) {
+            new_vals.push(v);
+        }
+    } else {
+        let rest = (-s) as usize;
+        for v in vals.into_iter().skip(rest) {
+            new_vals.push(v);
+        }
+        for _ in 0..rest {
+            new_vals.push(RNone);
+        }
+    }
+    new_vals
+}
+
 impl CompleteSeries {
     pub fn floats(v: Vec<f64>) -> Self {
         Self::Floats(v.into())
@@ -973,6 +1037,19 @@ impl CompleteSeries {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    pub fn shift(self, val: i64) -> MaskedSeries {
+        match self {
+            Self::Floats(v) => MaskedSeries::Floats(shift(v, val)),
+            Self::Integers(v) => MaskedSeries::Integers(shift(v, val)),
+            Self::Strings(v) => MaskedSeries::Strings(shift(v, val)),
+            Self::Booleans(v) => MaskedSeries::Booleans(shift(v, val)),
+            Self::Dates(v) => MaskedSeries::Dates(shift(v, val)),
+            Self::Times(v) => MaskedSeries::Times(shift(v, val)),
+            Self::DateTimes(v) => MaskedSeries::DateTimes(shift(v, val)),
+            Self::Attributes(v) => MaskedSeries::Attributes(shift(v, val)),
+        }
     }
 
     pub fn str_values<'a>(&'a self) -> Box<dyn Iterator<Item = String> + 'a> {
