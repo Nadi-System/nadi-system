@@ -2874,8 +2874,7 @@ impl Eval for MapSeries {
                 // udf uses kwargs to support empty values; pointer doesn't
                 let func_call = |kwargs| {
                     let fctx = FunctionCtx::from_arg_kwarg(vec![], kwargs);
-                    // eval udf with node/network context
-                    udf.eval(ctx, &EvalCtx::default(), fctx)
+                    udf.eval(ctx, ectx, fctx)
                 };
                 let names = udf.arg_names();
                 let has_cum_arg = names.iter().skip(sr_lengths.len()).any(|n| n == &"LAST");
@@ -2955,7 +2954,7 @@ impl Eval for MapSeries {
                     let fctx = FunctionCtx::from_arg_kwarg(args, HashMap::new());
                     match ctx.udf(name).cloned() {
                         // priority for the locally defined function; evaluated in local context
-                        Some(func) => func.eval(ctx, &EvalCtx::default(), fctx),
+                        Some(func) => func.eval(ctx, ectx, fctx),
                         _ => match ctx.functions.env(name) {
                             Some(f) => f.call(&fctx).res().map_err(|e| {
                                 EvalErrorType::FunctionError(name.to_string(), e.to_string())
