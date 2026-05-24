@@ -2925,7 +2925,7 @@ impl Eval for MapSeries {
                 } else if self.accum {
                     Err(EvalErrorType::FunctionError(
                         udf.name().unwrap_or("series_accum").to_string(),
-                        "not enough arguments to accumulate values".into(),
+                        "argument called LAST is required to accumulate values".into(),
                     )
                     .no_pos())
                 } else {
