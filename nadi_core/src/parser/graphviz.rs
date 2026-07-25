@@ -51,7 +51,7 @@ pub fn gv_network<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<GvLine>>
 
 pub fn gv_node<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, (String, AttrMap)> {
     pair(
-        node_name,
+        map(node_name, String::from),
         delimited(
             maybe_space(bracket_start),
             map(

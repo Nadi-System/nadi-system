@@ -42,6 +42,15 @@ pub enum FunctionInput<'a> {
     Ts(&'a TimeSeries),
 }
 
+// /// Type name for nadi types, adding default implementation so we
+// /// don't need to do it for everything
+// pub trait NadiTypeName {
+//     fn nadi_tname() -> String {
+//         crate::attrs::type_name::<Self>()
+//  this or static string
+//     }
+// }
+
 impl From<Option<Attribute>> for FunctionInput<'_> {
     fn from(value: Option<Attribute>) -> Self {
         value.map(Self::AttrOwn).unwrap_or(Self::None)
@@ -161,6 +170,14 @@ impl FunctionInput<'_> {
 
 pub trait ResolveFuncArg<'a>: Sized {
     fn resolve_arg(val: &'a FunctionInput<'a>) -> Option<Self>;
+
+    fn try_resolve_arg(val: &'a FunctionInput<'a>) -> Result<Self, String> {
+        ResolveFuncArg::resolve_arg(val).ok_or(format!(
+            "Can not build {} from {}",
+            crate::attrs::type_name::<Self>(),
+            val.type_name()
+        ))
+    }
 }
 
 // This means we can directly try to get Option<T> instead of the proc

@@ -1,4 +1,5 @@
 use crate::attrs::{AttrMap, HasAttributes};
+use crate::edge::EdgeAttrMap;
 use crate::eval::EvalErrorType;
 use crate::expressions::{InputVar, RawExpr};
 use crate::node::Node;
@@ -90,6 +91,8 @@ pub struct Network {
     pub(crate) nodes_map: RHashMap<RString, Node>,
     /// Network Attributes
     pub(crate) attributes: AttrMap,
+    /// Edge Attributes
+    pub(crate) edge_attrs: EdgeAttrMap,
     /// Network Series
     pub(crate) series: SeriesMap,
     /// Network TimeSeries
@@ -218,26 +221,16 @@ impl Network {
                 self.ty = NetworkType::WithLoop;
                 // Maybe fix it after adding assertions
                 // return Err(format!("Node {:?} has itself as the output", start));
-                if !self.nodes_map.contains_key(*start) {
-                    self.insert_node_by_name(start);
-                }
-                let inp = self.node_by_name(start).expect("Input just inserted");
-                let out = inp.clone();
+                let inp = self.node_insert_or_get(RString::from(*start));
                 inp.try_lock()
                     .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
-                    .add_output(out.clone());
+                    .add_output(inp.clone());
                 inp.try_lock()
                     .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
-                    .add_input(out.clone());
+                    .add_input(inp.clone());
             } else {
-                if !self.nodes_map.contains_key(*start) {
-                    self.insert_node_by_name(start);
-                }
-                if !self.nodes_map.contains_key(*end) {
-                    self.insert_node_by_name(end);
-                }
-                let inp = self.node_by_name(start).expect("Input just inserted");
-                let out = self.node_by_name(end).expect("Output just inserted");
+                let inp = self.node_insert_or_get(RString::from(*start));
+                let out = self.node_insert_or_get(RString::from(*end));
                 inp.try_lock()
                     .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                     .add_output(out.clone());
@@ -271,6 +264,62 @@ impl Network {
         let mut network = Self::default();
         network.append_edges(edges, force)?;
         Ok(network)
+    }
+
+    /// Create a network with given edges
+    pub fn from_node_inps(nodes: &[NodeInput]) -> Result<Self, String> {
+        let mut network = Self::default();
+        for inp in nodes {
+            match inp {
+                NodeInput::Single(n) => {
+                    network.node_insert_or_get(n.clone());
+                }
+                NodeInput::Path(sp) => {
+                    let st = network.node_insert_or_get(sp.start.clone());
+                    let en = network.node_insert_or_get(sp.end.clone());
+                    let mut start =
+                        st.try_lock()
+                            .expect(&format!("mutex error: {:?} {}", file!(), line!()));
+                    let mut end =
+                        en.try_lock()
+                            .expect(&format!("mutex error: {:?} {}", file!(), line!()));
+                    start.add_output(en.clone());
+                    end.add_input(st.clone());
+                }
+                NodeInput::Group(st, en) => {
+                    for s in st {
+                        let st = network.node_insert_or_get(s.clone());
+                        let mut start = st.try_lock().expect(&format!(
+                            "mutex error: {:?} {}",
+                            file!(),
+                            line!()
+                        ));
+
+                        for e in en {
+                            let en = network.node_insert_or_get(e.clone());
+                            let mut end = en.try_lock().expect(&format!(
+                                "mutex error: {:?} {}",
+                                file!(),
+                                line!()
+                            ));
+                            start.add_output(en.clone());
+                            end.add_input(st.clone());
+                        }
+                    }
+                }
+            }
+        }
+        Ok(network)
+    }
+
+    fn node_insert_or_get(&mut self, node: RString) -> Node {
+        // take the cloned reference or make a new entry, this should
+        // help avoid all the checks during network construction
+        // self.nodes_map.entry()
+        if !self.nodes_map.contains_key(&node) {
+            self.insert_node_by_name(&node);
+        }
+        self.nodes_map[&node].clone()
     }
 
     /// Iterator of the edges with nodes' names
@@ -1017,6 +1066,55 @@ impl Network {
             })
             .collect()
     }
+
+    pub fn elastic_layout(&self) {
+        let mut positions: HashMap<&str, (f64, f64)> = self
+            .nodes_map
+            .iter()
+            .map(|Tuple2(name, nd)| (name.as_str(), nd.lock().pos()))
+            .collect();
+        let init_dist = 1.0;
+        let epsilon = 0.1;
+        let k = 50.0;
+
+        // doesn't work, needs work, look into org roam ui
+        for _ in 1..100 {
+            for Tuple2(name, nd) in self.nodes_map.iter() {
+                let (mut x, mut y) = positions[name.as_str()];
+                let edges: Vec<RString> = nd.lock().edge_names().cloned().collect();
+                for ed in edges {
+                    let dx = positions[ed.as_str()].0 - x;
+                    let dy = positions[ed.as_str()].1 - y;
+                    let distance = (dx * dx + dy * dy).sqrt();
+                    if distance > init_dist {
+                        x += epsilon * dx / k;
+                        y += epsilon * dy / k;
+                    }
+                }
+                for nd in self.nodes() {
+                    if nd.name() != name {
+                        let dx = positions[nd.name()].0 - x;
+                        let dy = positions[nd.name()].1 - y;
+                        let distance = (dx * dx + dy * dy).sqrt();
+                        if distance < init_dist {
+                            x += epsilon * (2.0 / 6.0) * (-dx / (distance * distance));
+                            y += epsilon * (2.0 / 6.0) * (-dy / (distance * distance));
+                        }
+                    }
+                }
+                positions.insert(name, (x, y));
+            }
+        }
+        for Tuple2(name, nd) in self.nodes_map.iter() {
+            nd.lock().set_pos(positions[name.as_str()]);
+        }
+    }
+}
+
+pub enum NodeInput {
+    Single(RString),
+    Path(StrPath),
+    Group(Vec<RString>, Vec<RString>),
 }
 
 /// Path with start and end node

@@ -42,6 +42,11 @@ mod visuals {
         }
     }
 
+    #[network_func]
+    fn elastic_layout(net: &mut Network) {
+        net.elastic_layout();
+    }
+
     #[node_func]
     fn set_xy(node: &mut NodeInner, #[relaxed] x: f64, #[relaxed] y: f64) {
         node.set_pos((x, y));

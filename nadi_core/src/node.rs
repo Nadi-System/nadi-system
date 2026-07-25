@@ -252,6 +252,10 @@ impl NodeInner {
         self.output_names.as_slice()
     }
 
+    pub fn edge_names(&self) -> impl Iterator<Item = &RString> {
+        self.input_names().iter().chain(self.output_names())
+    }
+
     pub fn refresh_input_names(&mut self) {
         self.input_names = self
             .inputs()

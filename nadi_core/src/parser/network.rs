@@ -3,22 +3,60 @@ use crate::parser::{
     errors::{ParseError, ParseErrorType},
     tokenizer::{RawToken, Token},
 };
-use nadi_core::network::StrPath;
-use nom::{branch::alt, combinator::map, sequence::separated_pair, Finish};
+use abi_stable::std_types::RString;
+use nadi_core::network::{NodeInput, StrPath};
+use nom::{
+    branch::alt,
+    combinator::map,
+    multi::separated_list1,
+    sequence::{delimited, separated_pair},
+    Finish,
+};
 
-pub fn node_name<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, String> {
+pub fn node_name<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, RString> {
     err_ctx(
         &ParseErrorType::ValueError("Invalid node name"),
         alt((
             // keywords are valid because they are like variables, but
             // can only be used as string in tasks
             map(alt((variable, integer, float, boolean, keyword)), |v| {
-                v.content.to_string()
+                RString::from(v.content)
             }),
-            string_val,
+            map(string_val, RString::from),
         )),
     )(inp)
 }
+
+pub fn node_group<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<RString>> {
+    delimited(
+        brace_start,
+        separated_list1(maybe_space(comma), maybe_space(node_name)),
+        maybe_space(brace_end),
+    )(inp)
+}
+
+pub fn node_input<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, NodeInput> {
+    alt((
+        map(str_path, NodeInput::Path),
+        map(group_path, |(a, b)| NodeInput::Group(a, b)),
+        // has to be after the path ones otherwise it will read just
+        // the first node
+        map(node_name, NodeInput::Single),
+    ))(inp)
+}
+
+// TODO: just make the multiple node connections as well
+
+// make a node or group, and then make single edge, or multiple edge
+
+// {a,b} -> c
+// c -> {a ,b}
+// {a, b} -> {c,d}
+// a -> b -> c
+
+// might also consider adding undirected network, it will have nodes, maybe add edges field to the nodes that is only present for undirected.
+// or edges enum, that is either undirected(edges) or directed(inp, out).
+// could be made easy with better error handling, where different errors can be converted to evalerror. maybe that is a good next step
 
 pub fn str_path<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, StrPath> {
     let (rest, (start, end)) = separated_pair(
@@ -26,7 +64,19 @@ pub fn str_path<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, StrPath> {
         err_ctx(&ParseErrorType::ExpectedPath, maybe_space(path_sep)),
         err_ctx(&ParseErrorType::IncompletePath, maybe_space(node_name)),
     )(inp)?;
-    Ok((rest, StrPath::new(start.into(), end.into())))
+    Ok((rest, StrPath::new(start, end)))
+}
+
+pub fn group_path<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, (Vec<RString>, Vec<RString>)> {
+    let (rest, (start, end)) = separated_pair(
+        alt((node_group, map(node_name, |n| vec![n]))),
+        err_ctx(&ParseErrorType::ExpectedPath, maybe_space(path_sep)),
+        err_ctx(
+            &ParseErrorType::IncompletePath,
+            maybe_space(alt((node_group, map(node_name, |n| vec![n])))),
+        ),
+    )(inp)?;
+    Ok((rest, (start, end)))
 }
 
 pub fn network<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<StrPath>> {

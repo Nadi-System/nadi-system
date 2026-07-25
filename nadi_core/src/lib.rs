@@ -1,6 +1,7 @@
 pub mod attrs;
 pub mod calc;
 pub mod datafill;
+pub mod edge;
 pub mod eval;
 pub mod expressions;
 pub mod functions;
