@@ -13,9 +13,6 @@ fn help_shows() -> Result<(), Error> {
     Ok(())
 }
 
-// TODO do these for simple tasks; then write functions to easily save
-// tasks in a file and check stdout. Maybe save the stdout in a file
-// as well.
 #[test]
 /// Show help and exit.
 fn run_tasks() -> Result<(), Error> {

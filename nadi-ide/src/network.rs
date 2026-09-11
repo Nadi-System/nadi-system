@@ -292,6 +292,14 @@ where
                     txt.align_y = iced_core::alignment::Vertical::Center;
                     txt.color = node.textcolor.unwrap_or(style.text);
                     frame.fill_text(txt);
+                } else if self.data.network.ty == NetworkViewType::Attribute {
+                    let mut txt = iced_graphics::geometry::Text::from(node.label.as_str());
+                    txt.position = (pos.0, pos.1).into();
+                    txt.align_y = iced_core::alignment::Vertical::Center;
+                    txt.align_x = iced_core::text::Alignment::Center;
+                    txt.color = node.textcolor.unwrap_or(style.text);
+                    txt.size = (16 as f32 / self.data.scale).into();
+                    frame.fill_text(txt);
                 }
             }
         });

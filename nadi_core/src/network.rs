@@ -458,6 +458,9 @@ impl Network {
         }
     }
 
+    // this just got way more complicated because of the support for
+    // all directed networks, might have to remove it except for tree
+    // networks.
     /// Get a list of nodes in the given path
     pub fn nodes_path(
         &self,
@@ -1240,10 +1243,12 @@ impl From<Node> for Network {
     fn from(node: Node) -> Self {
         let mut net = Self::default();
 
-        // todo: add the visited flag to avoid infinite loop here as well
-
         let mut nodes = vec![];
-        fn insert_node(n: &Node, nodes: &mut Vec<Node>) {
+        let mut visited = HashSet::<RString>::new();
+        fn insert_node(n: &Node, nodes: &mut Vec<Node>, visited: &mut HashSet<RString>) {
+            if visited.contains(n.name()) {
+                return;
+            }
             let ni = n
                 .try_lock_for(RDuration::from_secs(1))
                 .expect("Lock failed for node, maybe branched network");
@@ -1251,12 +1256,12 @@ impl From<Node> for Network {
                 nodes.push(n.clone());
             } else {
                 for i in ni.inputs() {
-                    insert_node(i, nodes);
+                    insert_node(i, nodes, visited);
                 }
                 nodes.push(n.clone());
             }
         }
-        insert_node(&node, &mut nodes);
+        insert_node(&node, &mut nodes, &mut visited);
         net.nodes_map = nodes
             .into_iter()
             .map(|n| (RString::from(n.name()), n))
@@ -1264,8 +1269,7 @@ impl From<Node> for Network {
             .into();
         net.nodes = net.nodes_map.keys().cloned().collect::<Vec<_>>().into();
         net.outlets = vec![node].into();
-        // net.reorder();
-        // net.set_levels();
+        net.flatten();
         net
     }
 }
