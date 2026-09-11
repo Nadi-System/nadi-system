@@ -266,17 +266,23 @@ impl Network {
         Ok(network)
     }
 
-    /// Create a network with given edges
-    pub fn from_node_inps(nodes: &[NodeInput]) -> Result<Self, String> {
+    /// Create a network with given node inputs
+    pub fn from_node_inps(inputs: &[NodeInput]) -> Result<Self, String> {
         let mut network = Self::default();
-        for inp in nodes {
+        network.append_paths(inputs, false)?;
+        Ok(network)
+    }
+
+    /// Append the paths to the network
+    pub fn append_paths(&mut self, paths: &[NodeInput], _force: bool) -> Result<(), String> {
+        for inp in paths {
             match inp {
                 NodeInput::Single(n) => {
-                    network.node_insert_or_get(n.clone());
+                    self.node_insert_or_get(n.clone());
                 }
                 NodeInput::Path(sp) => {
-                    let st = network.node_insert_or_get(sp.start.clone());
-                    let en = network.node_insert_or_get(sp.end.clone());
+                    let st = self.node_insert_or_get(sp.start.clone());
+                    let en = self.node_insert_or_get(sp.end.clone());
                     let mut start =
                         st.try_lock()
                             .expect(&format!("mutex error: {:?} {}", file!(), line!()));
@@ -288,7 +294,7 @@ impl Network {
                 }
                 NodeInput::Group(st, en) => {
                     for s in st {
-                        let st = network.node_insert_or_get(s.clone());
+                        let st = self.node_insert_or_get(s.clone());
                         let mut start = st.try_lock().expect(&format!(
                             "mutex error: {:?} {}",
                             file!(),
@@ -296,7 +302,7 @@ impl Network {
                         ));
 
                         for e in en {
-                            let en = network.node_insert_or_get(e.clone());
+                            let en = self.node_insert_or_get(e.clone());
                             let mut end = en.try_lock().expect(&format!(
                                 "mutex error: {:?} {}",
                                 file!(),
@@ -309,7 +315,8 @@ impl Network {
                 }
             }
         }
-        Ok(network)
+        self.flatten();
+        Ok(())
     }
 
     fn node_insert_or_get(&mut self, node: RString) -> Node {
@@ -1111,6 +1118,7 @@ impl Network {
     }
 }
 
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub enum NodeInput {
     Single(RString),
     Path(StrPath),

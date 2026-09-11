@@ -45,18 +45,9 @@ pub fn node_input<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, NodeInput> {
     ))(inp)
 }
 
-// TODO: just make the multiple node connections as well
-
-// make a node or group, and then make single edge, or multiple edge
-
-// {a,b} -> c
-// c -> {a ,b}
-// {a, b} -> {c,d}
-// a -> b -> c
-
-// might also consider adding undirected network, it will have nodes, maybe add edges field to the nodes that is only present for undirected.
-// or edges enum, that is either undirected(edges) or directed(inp, out).
-// could be made easy with better error handling, where different errors can be converted to evalerror. maybe that is a good next step
+pub fn network<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<NodeInput>> {
+    trailing_newlines(newline_separated(node_input))(inp)
+}
 
 pub fn str_path<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, StrPath> {
     let (rest, (start, end)) = separated_pair(
@@ -79,11 +70,7 @@ pub fn group_path<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, (Vec<RString
     Ok((rest, (start, end)))
 }
 
-pub fn network<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<StrPath>> {
-    trailing_newlines(newline_separated(str_path))(inp)
-}
-
-pub fn parse(tokens: Vec<RawToken>) -> Result<Vec<StrPath>, ParseError> {
+pub fn parse(tokens: Vec<RawToken>) -> Result<Vec<NodeInput>, ParseError> {
     let tokens = Token::validate(tokens)?;
     match network(&tokens).finish() {
         Ok((rest, paths)) => {
@@ -142,20 +129,37 @@ mod tests {
         assert_eq!(path2, path);
     }
 
+    macro_rules! path {
+        ($node:literal) => {
+            NodeInput::Single($node.into())
+        };
+        ($start:literal -> $end:literal) => {
+            NodeInput::Path(StrPath::new($start.into(), $end.into()))
+        };
+        ($($start:literal),+ -> $($end:literal),+) => {
+            NodeInput::Group(vec![$($start.into()),+], vec![$($end.into()),+])
+        };
+    }
+
     #[rstest]
-    #[case("12.23->name", vec![("12.23", "name")])]
-    #[case("12 -> \"12\"", vec![("12", "12")])]
-    #[case("012-> xyz_is_12", vec![("012", "xyz_is_12")])]
-    #[case("valid -> edge \nnode_name -> another", vec![("valid", "edge"), ("node_name", "another")])]
-    #[case("# test this \nnode_name -> another", vec![("node_name", "another")])]
-    pub fn parse_test(#[case] txt: &str, #[case] paths: Vec<(&str, &str)>) {
+    #[case("12.23->name", vec![path!("12.23" -> "name")])]
+    #[case("12 -> \"12\"", vec![path!("12" -> "12")])]
+    #[case("012-> xyz_is_12", vec![path!("012" -> "xyz_is_12")])]
+    #[case("valid -> edge \nnode_name -> another", vec![path!("valid" -> "edge"), path!("node_name" -> "another")])]
+    #[case("# test this \nnode_name -> another", vec![path!("node_name" -> "another")])]
+    #[case("12.23", vec![path!("12.23")])]
+    #[case("name", vec![path!("name")])]
+    #[case("{A, B} -> C", vec![path!("A", "B" -> "C")])]
+    #[case("{A, B, C} -> D", vec![path!("A", "B", "C" -> "D")])]
+    #[case("{A, B} -> {C, D}", vec![path!("A", "B" -> "C", "D")])]
+    #[case("A -> {B, C}", vec![path!("A" -> "B", "C")])]
+    #[case("A -> {\"B\", C}", vec![path!("A" -> "B", "C")])]
+    #[case("\"A\" -> {B, C}", vec![path!("A" -> "B", "C")])]
+    #[case("A -> \"{B, C}\"", vec![path!("A" -> "{B, C}")])]
+    pub fn parse_test(#[case] txt: &str, #[case] paths: Vec<NodeInput>) {
         let tokens = get_tokens(txt);
         let edges = parse(tokens).unwrap();
-        let paths2: Vec<_> = edges
-            .iter()
-            .map(|p| (p.start.as_str(), p.end.as_str()))
-            .collect();
-        assert_eq!(paths2, paths);
+        assert_eq!(edges, paths);
     }
 
     #[rstest]

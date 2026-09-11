@@ -31,11 +31,7 @@ mod conn {
                 std::fs::read_to_string(&file).context("Error while accessing the network file")?;
             let tokens = crate::parser::tokenizer::get_tokens(&contents);
             let paths = crate::parser::network::parse(tokens)?;
-            let edges: Vec<(&str, &str)> = paths
-                .iter()
-                .map(|p| (p.start.as_str(), p.end.as_str()))
-                .collect();
-            net.append_edges(&edges, force)
+            net.append_paths(&paths, force)
                 .map_err(anyhow::Error::msg)?;
         } else if force {
             return Err(anyhow::Error::msg(
@@ -69,11 +65,7 @@ mod conn {
         if append {
             let tokens = crate::parser::tokenizer::get_tokens(contents);
             let paths = crate::parser::network::parse(tokens).map_err(|e| e.to_string())?;
-            let edges: Vec<(&str, &str)> = paths
-                .iter()
-                .map(|p| (p.start.as_str(), p.end.as_str()))
-                .collect();
-            net.append_edges(&edges, force)?;
+            net.append_paths(&paths, force)?;
         } else if force {
             return Err(String::from(
                 "Parameter force not valid when append is false",

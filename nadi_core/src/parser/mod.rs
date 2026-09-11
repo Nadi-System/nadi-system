@@ -119,11 +119,7 @@ impl FromStr for Network {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let tokens = tokenizer::get_tokens(s);
         let paths = network::parse(tokens)?;
-        let edges: Vec<(&str, &str)> = paths
-            .iter()
-            .map(|p| (p.start.as_str(), p.end.as_str()))
-            .collect();
-        Self::from_edges(&edges, false)
+        Self::from_node_inps(&paths)
             .map_err(|e| ParseError::pos((0, 0), ParseErrorType::MultipleOutput(e)))
     }
 }
