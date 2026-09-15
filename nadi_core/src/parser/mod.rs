@@ -2,7 +2,7 @@ use crate::attrs::{Date, DateTime, Time};
 use crate::network::Propagation;
 use crate::prelude::*;
 use crate::table::Table;
-use abi_stable::std_types::Tuple2;
+use abi_stable::std_types::{RSome, Tuple2};
 use anyhow::Context;
 use std::path::Path;
 use std::str::FromStr;
@@ -143,6 +143,29 @@ impl Network {
             }
         })?;
         Ok(())
+    }
+
+    pub fn load_attrs_from_str(&mut self, attrs: String) -> anyhow::Result<()> {
+        let tokens = tokenizer::get_tokens(&attrs);
+        let mut attrs = attrs::parse(tokens)?;
+        if let RSome(netattr) = attrs.remove("network") {
+            if let Attribute::Table(am) = netattr {
+                self.attr_map_mut().extend(am);
+            }
+        }
+        for Tuple2(name, vals) in attrs {
+            if let Some(n) = self.node_by_name(&name) {
+                if let Attribute::Table(am) = vals {
+                    n.lock().attr_map_mut().extend(am);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn load_attrs_from_file<P: AsRef<Path>>(&mut self, attr_file: P) -> anyhow::Result<()> {
+        let contents = std::fs::read_to_string(attr_file)?;
+        self.load_attrs_from_str(contents)
     }
 }
 

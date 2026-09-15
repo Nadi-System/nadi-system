@@ -20,11 +20,13 @@ pub type CodeHandler = fn(&str, &str, &Path) -> Result<Vec<Event<'static>>, anyh
 // image/file, etc so that we can take that information.
 pub fn nadi_code_args(mark: &str) -> Option<(CodeHandler, String)> {
     // only run for ones with "run" in it
-    mark.split_once(" run").and_then(|(p, a)| match p.trim() {
-        "table" => Some((run_table as CodeHandler, a.to_string())),
-        "task" => Some((run_task as CodeHandler, a.to_string())),
-        "stp" | "string-template" => Some((run_template as CodeHandler, a.to_string())),
-        _ => None,
+    mark.split_once(" run").and_then(|(p, a)| {
+        match p.trim().split(',').next().unwrap_or_default() {
+            "table" => Some((run_table as CodeHandler, a.to_string())),
+            "task" => Some((run_task as CodeHandler, a.to_string())),
+            "stp" | "string-template" => Some((run_template as CodeHandler, a.to_string())),
+            _ => None,
+        }
     })
 }
 

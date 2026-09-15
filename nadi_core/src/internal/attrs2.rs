@@ -180,6 +180,24 @@ mod attrs {
         attrmap.get(attr.as_str()).cloned().or(default)
     }
 
+    /// Get the name of the node, equivalent to NAME attribute
+    ///
+    /// NAME attribute can be overwritten by the user, while this can
+    /// not.
+    #[node_func]
+    fn name(node: &mut NodeInner) -> String {
+        node.name().to_string()
+    }
+
+    /// Get the index of the node, equivalent to INDEX attribute
+    ///
+    /// INDEX attribute can be overwritten by the user, while this can
+    /// not.
+    #[node_func]
+    fn index(node: &mut NodeInner) -> usize {
+        node.index()
+    }
+
     /// if else condition with multiple attributes
     ///
     /// ```task
@@ -483,6 +501,12 @@ mod attrs {
             network.set_attr(k.as_str(), text.into());
         }
         Ok(())
+    }
+
+    /// Generate attribute map for the given attribute for the nodes
+    #[network_func]
+    fn load_attrs_from_str(net: &mut Network, content: String) -> anyhow::Result<()> {
+        net.load_attrs_from_str(content)
     }
 
     fn node_attr(n: &Node, attr: &str) -> (RString, Option<Attribute>) {

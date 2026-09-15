@@ -247,6 +247,7 @@ impl Network {
         todo!()
     }
 
+    // Flatten only works on RTG, it is different now
     pub fn flatten(&mut self) {
         self.reorder();
         self.set_levels();
@@ -254,7 +255,7 @@ impl Network {
             let mut n = n
                 .try_lock()
                 .expect(&format!("mutex error: {:?} {}", file!(), line!()));
-            let pos = (n.level() as f64, n.index() as f64);
+            let pos = (n.index() as f64, n.order() as f64);
             n.set_pos(pos)
         })
     }
@@ -282,15 +283,23 @@ impl Network {
                 }
                 NodeInput::Path(sp) => {
                     let st = self.node_insert_or_get(sp.start.clone());
-                    let en = self.node_insert_or_get(sp.end.clone());
-                    let mut start =
+                    let diff: bool = sp.start != sp.end;
+                    if diff {
+                        let en = self.node_insert_or_get(sp.end.clone());
                         st.try_lock()
-                            .expect(&format!("mutex error: {:?} {}", file!(), line!()));
-                    let mut end =
+                            .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                            .add_output(en.clone());
                         en.try_lock()
-                            .expect(&format!("mutex error: {:?} {}", file!(), line!()));
-                    start.add_output(en.clone());
-                    end.add_input(st.clone());
+                            .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                            .add_input(st.clone());
+                    } else {
+                        st.try_lock()
+                            .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                            .add_output(st.clone());
+                        st.try_lock()
+                            .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                            .add_input(st.clone());
+                    }
                 }
                 NodeInput::Group(st, en) => {
                     for s in st {
@@ -561,24 +570,51 @@ impl Network {
                     .expect(&format!("mutex error: {:?} {}", file!(), line!()))
                     .index(),
             );
-            let mut n =
+            fn add_weights(
+                node: Node,
+                mut visited: HashSet<usize>,
+                weights: &mut HashMap<RString, u64>,
+            ) -> bool {
+                let mut has_loop = false;
+                let mut start = Some(node);
+                while let Some(out) = start.take() {
+                    *weights.entry(out.name().into()).or_insert(1) += 1;
+                    let o = out
+                        .try_lock_for(RDuration::from_secs(1))
+                        .expect("Lock failed for node, maybe branched network");
+                    if visited.contains(&o.index()) {
+                        // looped back to the already visited node
+                        // this needs to be here to prevent infinite loop
+                        return true;
+                    }
+                    visited.insert(o.index());
+                    match o.outputs() {
+                        [] => break,
+                        [o, more @ ..] => {
+                            start = Some(o.clone());
+                            // this is still recursive but less of a
+                            // problem than earlier. It'd be better if
+                            // we could detect when they merge back to
+                            // one though. Right now there is
+                            // duplicate calculations
+                            for m in more {
+                                has_loop |= add_weights(m.clone(), visited.clone(), weights);
+                            }
+                        }
+                    }
+                }
+                has_loop
+            }
+
+            let outs =
                 n.1.try_lock_for(RDuration::from_secs(1))
                     .expect("Lock failed for node, maybe branched network")
-                    .output()
-                    .cloned();
-            while let RSome(out) = n {
-                *weights.entry(out.name().into()).or_insert(1) += 1;
-                let o = out
-                    .try_lock_for(RDuration::from_secs(1))
-                    .expect("Lock failed for node, maybe branched network");
-                if visited.contains(&o.index()) {
-                    // looped back to the already visited node
-                    // this needs to be here to prevent infinite loop
+                    .outputs()
+                    .to_vec();
+            for n in outs {
+                if add_weights(n, visited.clone(), &mut weights) {
                     self.ty = NetworkType::WithLoop;
-                    break;
                 }
-                visited.insert(o.index());
-                n = o.output().cloned();
             }
         });
 
@@ -640,6 +676,7 @@ impl Network {
             .into();
     }
 
+    // NOTE: this is broken as well
     /// Reorder the nodes in the network
     pub fn reorder(&mut self) {
         self.calc_weights();
@@ -916,6 +953,7 @@ impl Network {
     // TODO: rewrite to make sure subset works properly
     /// Subset the network into a new network by removing a bunch of nodes
     pub fn subset(&mut self, filter: &[bool], keep: bool) -> Result<(), String> {
+        return Ok(());
         let include_nodes: HashMap<String, Node> = self
             .nodes()
             .zip(self.node_names())

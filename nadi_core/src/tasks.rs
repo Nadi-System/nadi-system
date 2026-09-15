@@ -85,32 +85,63 @@ impl TaskMessage {
 pub struct TaskContextWrap {
     pub receiver: Receiver<TaskMessage>,
     pub context: TaskContext,
+    changed: bool,
 }
 
 impl TaskContextWrap {
     pub fn new(net: Option<Network>) -> Self {
         let (sender, receiver) = channel();
         let context = TaskContext::new(net, sender);
-        Self { receiver, context }
+        Self {
+            receiver,
+            context,
+            changed: false,
+        }
     }
 }
 
 impl TaskContextWrap {
     pub fn execute(&mut self, task: Task, loc: &mut AttrMap) -> Result<Option<String>, EvalError> {
-        let msg: Vec<String> = self
+        // flush previous messages
+        let mut msg: Vec<String> = self
             .receiver
             .try_recv()
             .into_iter()
             .filter_map(|m| match m {
                 TaskMessage::Info(i) | TaskMessage::Warning(i) => Some(i),
+                TaskMessage::Changed => {
+                    self.changed = true;
+                    None
+                }
                 _ => None,
             })
             .collect();
-        match self.context.execute(task, loc) {
-            Ok(Some(v)) => Ok(Some(format!("{v}\n{}", msg.join("\n")))),
-            Ok(None) => Ok(Some(msg.join("\n"))),
-            Err(e) => Err(e),
+        match self.context.execute(task, loc)? {
+            Some(v) => msg.push(v),
+            _ => (),
         }
+        // collect any new messages
+        self.receiver
+            .try_recv()
+            .into_iter()
+            .filter_map(|m| match m {
+                TaskMessage::Info(i) | TaskMessage::Warning(i) => Some(i),
+                TaskMessage::Changed => {
+                    self.changed = true;
+                    None
+                }
+                _ => None,
+            })
+            .for_each(|v| msg.push(v));
+        Ok(Some(msg.join("\n")))
+    }
+
+    pub fn reset_changed(&mut self) {
+        self.changed = false;
+    }
+
+    pub fn changed(&self) -> bool {
+        self.changed
     }
 }
 

@@ -5,11 +5,38 @@ use crate::parser::{
     tokenizer::{RawToken, Token},
 };
 use nom::{branch::alt, combinator::map, sequence::delimited, Finish};
+use nom::{multi::separated_list1, sequence::separated_pair};
+
+pub fn toml_dash_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, String> {
+    map(
+        separated_list1(
+            dash,
+            // keyword are meaningless in toml, but it'll be harder to access them in tasks context
+            map(alt((variable, keyword)), |v| v.content.to_string()),
+        ),
+        |v| v.join("-"),
+    )(inp)
+}
+
+pub fn toml_dot_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<String>> {
+    // string without dot syntax is a valid key here
+    separated_list1(dot, alt((toml_dash_variable, string_val)))(inp)
+}
+
+pub fn toml_key_val_dot<'a, 'b>(
+    inp: &'a [Token<'b>],
+) -> MatchRes<'a, 'b, (Vec<String>, Attribute)> {
+    separated_pair(
+        toml_dot_variable,
+        maybe_space(assignment),
+        maybe_space(attribute_inline),
+    )(inp)
+}
 
 pub fn attr_group<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<String>> {
     delimited(
         bracket_start,
-        maybe_space(dot_variable),
+        maybe_space(toml_dot_variable),
         maybe_space(bracket_end),
     )(inp)
 }
@@ -20,7 +47,10 @@ pub enum Line {
 }
 
 pub fn attr_file_line<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Line> {
-    alt((map(attr_group, Line::Group), map(key_val_dot, Line::KeyVal)))(inp)
+    alt((
+        map(attr_group, Line::Group),
+        map(toml_key_val_dot, Line::KeyVal),
+    ))(inp)
 }
 
 pub fn attr_file<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<Line>> {
@@ -51,7 +81,7 @@ pub fn parse(tokens: Vec<RawToken>) -> Result<AttrMap, ParseError> {
     for line in lines {
         match line {
             Line::Group(grp) => {
-                curr_var = move_in(&grp, curr_var)?;
+                curr_var = move_in(&grp, &mut attrmap)?;
             }
             Line::KeyVal((keys, val)) => {
                 let old = match keys.as_slice() {
@@ -109,6 +139,8 @@ mod tests {
     #[case("val = true\n[grp]\nval2 = \"sth\"", attr_map!(val => true, grp => attr_map!(val2 => "sth")))]
     #[case("val.sth = 12", attr_map!(val => attr_map!(sth => 12)))]
     #[case("[zzz]\nval.sth = 12", attr_map!(zzz => attr_map!(val => attr_map!(sth => 12))))]
+    #[case("[\"zzz\"]\nval.sth = 12", attr_map!(zzz => attr_map!(val => attr_map!(sth => 12))))]
+    #[case("[\"Point.1\"]\nVAL = 12", AttrMap::from_iter(vec![("Point.1".into(), attr_map!(VAL =>  12).into())]))]
     fn attr_test(#[case] txt: &str, #[case] attrs: AttrMap) {
         let tokens = get_tokens(txt);
         let am = parse(tokens).unwrap();
