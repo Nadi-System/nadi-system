@@ -604,13 +604,10 @@ pub trait NodeFunction: Debug + Clone + Send + Sync {
             .into()
     }
     fn code(&self) -> RString;
-    // write these by detecting the arguments from macro
-    // fn mutates(&self) -> bool;
-    // fn returns(&self) -> bool;
     fn call(&self, _obj: &NodeInner, _ctx: &FunctionCtx) -> FunctionRet {
         FunctionRet::Error(RString::from("Function mutates the node"))
     }
-    fn call_mut(&self, obj: &mut NodeInner, ctx: &FunctionCtx) -> FunctionRet {
+    fn call_mut(&self, obj: &mut NodeInner, ctx: &FunctionCtx, _mutates: &mut bool) -> FunctionRet {
         self.call(obj, ctx)
     }
 }
@@ -643,12 +640,10 @@ pub trait NetworkFunction: Debug + Clone + Send + Sync {
             .into()
     }
     fn code(&self) -> RString;
-    // fn mutates(&self) -> bool;
-    // fn returns(&self) -> bool;
     fn call(&self, _obj: &Network, _ctx: &FunctionCtx) -> FunctionRet {
         FunctionRet::Error(RString::from("Function mutates the network"))
     }
-    fn call_mut(&self, obj: &mut Network, ctx: &FunctionCtx) -> FunctionRet {
+    fn call_mut(&self, obj: &mut Network, ctx: &FunctionCtx, _mutates: &mut bool) -> FunctionRet {
         self.call(obj, ctx)
     }
 }

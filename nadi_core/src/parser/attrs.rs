@@ -36,7 +36,12 @@ pub fn toml_key_val_dot<'a, 'b>(
 pub fn attr_group<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<String>> {
     delimited(
         bracket_start,
-        maybe_space(toml_dot_variable),
+        maybe_space(alt((
+            toml_dot_variable,
+            map(alt((integer, float, boolean)), |v| {
+                vec![v.content.to_string()]
+            }),
+        ))),
         maybe_space(bracket_end),
     )(inp)
 }

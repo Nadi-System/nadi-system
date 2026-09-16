@@ -2345,9 +2345,9 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
         match &ectx.expr_ctx.as_ref() {
             ExprContext::Local(_) | ExprContext::Env(_) => {
                 let func_ctx = self.function_ctx(ctx, &ectx, loc)?;
-                ctx.mark_change();
                 if let Some(func) = ctx.udf(&self.name).cloned() {
-                    // priority for the locally defined function
+                    // priority for the locally defined function; assume mutability
+                    ctx.mark_change();
                     return func.eval_mut(ctx, &ectx, func_ctx);
                 }
                 match ctx.functions.env(&self.name) {
@@ -2365,13 +2365,22 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                 let func_ctx = self.function_ctx(ctx, &ectx, loc)?;
                 ctx.mark_change();
                 if let Some(func) = ctx.udf(&self.name).cloned() {
-                    // priority for the locally defined function
+                    // priority for the locally defined function; assume mutability
+                    ctx.mark_change();
                     return func.eval_mut(ctx, &ectx, func_ctx);
                 }
                 match ctx.functions.network(&self.name) {
-                    Some(f) => f.call_mut(&mut ctx.network, &func_ctx).res().map_err(|s| {
-                        EvalErrorType::FunctionError(self.name.to_string(), s).pos(self.position())
-                    }),
+                    Some(f) => {
+                        let mut changes: bool = false;
+                        let res = f.call_mut(&mut ctx.network, &func_ctx, &mut changes).res();
+                        if changes {
+                            ctx.mark_change();
+                        }
+                        res.map_err(|s| {
+                            EvalErrorType::FunctionError(self.name.to_string(), s)
+                                .pos(self.position())
+                        })
+                    }
                     // if the function is not called by explicit type then also test environment function
                     None if self.ty.is_none() => self.eval_mut(ctx, &EvalCtx::env(n.clone()), loc),
                     None => Err(EvalErrorType::FunctionNotFound(
@@ -2389,7 +2398,8 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                     .map_err(|e| e.node(name.clone()))?;
                 ctx.mark_change();
                 if let Some(func) = ctx.udf(&self.name).cloned() {
-                    // priority for the locally defined function
+                    // priority for the locally defined function; assume mutability
+                    ctx.mark_change();
                     return func
                         .eval_mut(ctx, &etc, func_ctx)
                         .map_err(|e| e.node(name.clone()));
@@ -2399,7 +2409,12 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                         let n = &mut node.try_lock().ok_or(
                             EvalErrorType::MutexError(file!(), line!()).pos(self.position()),
                         )?;
-                        f.call_mut(n, &func_ctx).res().map_err(|s| {
+                        let mut changes: bool = false;
+                        let res = f.call_mut(n, &func_ctx, &mut changes).res();
+                        if changes {
+                            ctx.mark_change();
+                        }
+                        res.map_err(|s| {
                             EvalErrorType::FunctionError(self.name.to_string(), s)
                                 .pos(self.position())
                                 .node(name.clone())
@@ -2426,7 +2441,8 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                             .function_ctx(ctx, &etc, loc)
                             .map_err(|e| e.node(name.clone()))?;
                         if let Some(func) = ctx.udf(&self.name).cloned() {
-                            // priority for the locally defined function
+                            // priority for the locally defined function; assume mutability
+                            ctx.mark_change();
                             return func
                                 .eval_mut(ctx, &etc, func_ctx)
                                 .map_err(|e| e.node(name.clone()));
@@ -2438,7 +2454,12 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                                     EvalErrorType::MutexError(file!(), line!())
                                         .pos(self.position()),
                                 )?;
-                                f.call_mut(n, &func_ctx).res().map_err(|s| {
+                                let mut changes: bool = false;
+                                let res = f.call_mut(n, &func_ctx, &mut changes).res();
+                                if changes {
+                                    ctx.mark_change();
+                                }
+                                res.map_err(|s| {
                                     EvalErrorType::FunctionError(self.name.to_string(), s)
                                         .pos(self.position())
                                         .node(name.clone())
@@ -2456,7 +2477,6 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                         }
                     })
                     .collect::<Result<Vec<_>, _>>()?;
-                ctx.mark_change();
                 Ok(ExprResult::Arr(res))
             }
             ExprContext::NodesMap(nds) => {
@@ -2482,7 +2502,12 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                                     EvalErrorType::MutexError(file!(), line!())
                                         .pos(self.position()),
                                 )?;
-                                f.call_mut(n, &func_ctx).res().map_err(|s| {
+                                let mut changes: bool = false;
+                                let res = f.call_mut(n, &func_ctx, &mut changes).res();
+                                if changes {
+                                    ctx.mark_change();
+                                }
+                                res.map_err(|s| {
                                     EvalErrorType::FunctionError(self.name.to_string(), s)
                                         .pos(self.position())
                                         .node(name.clone())
@@ -2501,7 +2526,6 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
                         .map(|v| (name, v))
                     })
                     .collect::<Result<Vec<_>, _>>()?;
-                ctx.mark_change();
                 Ok(ExprResult::Map(res))
             }
         }

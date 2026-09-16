@@ -311,6 +311,7 @@ impl TaskContext {
                 let res = expr
                     .eval_mut(self, &ectx, loc)
                     .map(|a| self.show_res(&a, 0));
+                // reset sends the message if it exists
                 self.reset_change();
                 res
             }

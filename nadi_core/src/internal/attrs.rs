@@ -89,7 +89,11 @@ The function will error out in following conditions:
         .into()
     }
 
-    fn call_mut(&self, node: &mut NodeInner, ctx: &FunctionCtx) -> FunctionRet {
+    fn call_mut(&self, node: &mut NodeInner, ctx: &FunctionCtx, mutates: &mut bool) -> FunctionRet {
+        // mutates will be hidden inside macro and will be set
+        // automatically based on whether the node/network reference
+        // is mut or not
+        *mutates = true;
         let templ: Template = match ctx.arg_kwarg(0, "filename") {
             Some(Ok(a)) => a,
             Some(Err(e)) => return FunctionRet::Error(e.into()),
