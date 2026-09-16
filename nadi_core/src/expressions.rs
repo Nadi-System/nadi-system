@@ -1460,11 +1460,19 @@ impl InputVarIndex {
     pub fn index_mut<'b>(
         &self,
         val: &'b mut Attribute,
+        insert: bool,
     ) -> Result<&'b mut Attribute, EvalErrorType> {
         match (self, val) {
-            (Self::Str(s), Attribute::Table(am)) => am
-                .attr_mut(s)
-                .ok_or(EvalErrorType::AttributeError(format!("Key {s} not found"))),
+            (Self::Str(s), Attribute::Table(am)) => {
+                if insert {
+                    Ok(am
+                        .entry(s.clone().into())
+                        .or_insert(Attribute::Table(AttrMap::new())))
+                } else {
+                    am.attr_mut(s)
+                        .ok_or(EvalErrorType::AttributeError(format!("Key {s} not found")))
+                }
+            }
             (Self::Int(i), Attribute::Array(ar)) => ar.get_mut(*i).ok_or(EvalErrorType::IndexError),
             (Self::Str(_), a) => Err(EvalErrorType::InvalidAttributeType(
                 NadiAttrType::Table,
@@ -1598,14 +1606,27 @@ impl InputVar {
                     .insert(self.name.to_string().into(), val);
             }
             [pref @ .., last] => {
-                let mut at = attrmap
-                    .attr_mut(&self.name)
-                    .ok_or(EvalErrorType::AttributeError(format!(
-                        "Attribute {} not found",
-                        self.name
-                    )))?;
-                for ind in pref {
-                    at = ind.index_mut(at)?;
+                let insert = if pref.len() > 0 {
+                    matches!(pref[0], InputVarIndex::Str(_))
+                } else {
+                    matches!(last, InputVarIndex::Str(_))
+                };
+                let mut at = if insert {
+                    attrmap
+                        .attr_map_mut()
+                        .entry(self.name.clone().into())
+                        .or_insert(Attribute::Table(AttrMap::new()))
+                } else {
+                    attrmap
+                        .attr_mut(&self.name)
+                        .ok_or(EvalErrorType::AttributeError(format!(
+                            "Attribute {} not found",
+                            self.name
+                        )))?
+                };
+                for (ind, next) in pref.iter().zip(self.indices.iter().skip(1)) {
+                    // if next index is string, and it's empty then make an empty dictionary
+                    at = ind.index_mut(at, matches!(next, InputVarIndex::Str(_)))?;
                 }
                 match (at, last) {
                     (Attribute::Table(tb), InputVarIndex::Str(s)) => {
