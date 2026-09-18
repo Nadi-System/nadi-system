@@ -370,9 +370,19 @@ impl TaskContext {
                 }
                 let max_attr_len = TaskCtxConsts::max_attrs_length(self);
                 let trunc = v.len() > max_attr_len;
+                let indent = if prettify_map {
+                    std::iter::repeat("  ")
+                        .take(depth + 1)
+                        .collect::<Vec<&str>>()
+                        .join("")
+                } else {
+                    " ".to_string()
+                };
+                let separator = format!(",{}{indent}", if prettify_map { "\n" } else { "" });
                 format!(
-                    "{{{}{}{}{}}}",
-                    if prettify_map { "\n  " } else { "" },
+                    "{{{}{}{}{}{}}}",
+                    if prettify_map { "\n" } else { "" },
+                    indent,
                     v.iter()
                         .take(max_attr_len)
                         .map(|a| {
@@ -386,9 +396,49 @@ impl TaskContext {
                             }
                         })
                         .collect::<Vec<String>>()
-                        .join(if prettify_map { ",\n  " } else { ", " }),
+                        .join(&separator),
                     if trunc { ", ... " } else { "" },
                     if prettify_map { "\n" } else { "" },
+                )
+            }
+            ExprResult::EdgeMap(v) => {
+                let max_attrs_depth = TaskCtxConsts::max_attrs_depth(self);
+                let prettify_map = TaskCtxConsts::prettify_map(self);
+                if depth > max_attrs_depth {
+                    return Some("{...}".to_string());
+                }
+                let max_attr_len = TaskCtxConsts::max_attrs_length(self);
+                let trunc = v.len() > max_attr_len;
+                let indent = if prettify_map {
+                    std::iter::repeat("  ")
+                        .take(depth + 1)
+                        .collect::<Vec<&str>>()
+                        .join("")
+                } else {
+                    " ".to_string()
+                };
+                let separator = format!(",{}{indent}", if prettify_map { "\n" } else { "" });
+                format!(
+                    "{{{}{}{}{}{}}}",
+                    if prettify_map { "\n" } else { "" },
+                    indent,
+                    v.iter()
+                        .take(max_attr_len)
+                        .map(|a| {
+                            let val = self
+                                .show_res(&a.2, depth + 1)
+                                .unwrap_or(crate::expressions::NONE_VALUE.into());
+                            match (valid_var(&a.0), valid_var(&a.1)) {
+                                (true, true) => format!("{} -> {} = {}", a.0, a.1, val),
+                                (false, true) => format!("{:?} -> {} = {}", a.0, a.1, val),
+                                (true, false) => format!("{} -> {:?} = {}", a.0, a.1, val),
+                                (false, false) => format!("{:?} -> {:?} = {}", a.0, a.1, val),
+                            }
+                        })
+                        .collect::<Vec<String>>()
+                        .join(&separator),
+                    if trunc { ", ... " } else { "" },
+                    if prettify_map { "\n" } else { " " },
                 )
             }
             ExprResult::Series(s) => self.show_sr(s),

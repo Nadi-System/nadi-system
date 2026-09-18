@@ -4,13 +4,13 @@ use crate::parser::{
     expressions::{
         complete_expression, function_def, input_variable_only, maybe_silent_expression, raw_expr,
     },
-    network::{node_name, str_path},
+    network::node_name,
     tokenizer::{RawToken, Token},
     ParseError, ParseErrorType,
 };
 use crate::{
     expressions::Position,
-    network::{PropOrder, Propagation, SelectNodes},
+    network::{PropOrder, Propagation, SelectEdgeFromTo, SelectEdges, SelectNodes},
     structs::{NadiAttrType, NadiStruct},
     tasks::{FunctionType, Task},
 };
@@ -19,7 +19,7 @@ use nom::{
     branch::alt,
     combinator::{cut, map, opt, value},
     multi::{separated_list0, separated_list1},
-    sequence::{delimited, pair, preceded, tuple},
+    sequence::{delimited, pair, preceded, separated_pair, tuple},
     Finish,
 };
 use std::str::FromStr;
@@ -59,7 +59,6 @@ pub fn prop_nodes_list<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, SelectN
     delimited(
         bracket_start,
         cut(alt((
-            map(maybe_newline(str_path), SelectNodes::Path),
             map(maybe_newline(node_list), SelectNodes::List),
             map(
                 maybe_newline(preceded(star, input_variable_only)),
@@ -68,6 +67,53 @@ pub fn prop_nodes_list<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, SelectN
         ))),
         maybe_newline(cut(err_ctx(&ParseErrorType::Unclosed("]"), bracket_end))),
     )(inp)
+}
+
+pub fn select_edge_node<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, SelectEdgeFromTo> {
+    alt((
+        value(SelectEdgeFromTo::NodeCtx, maybe_newline(kw_node)),
+        map(maybe_newline(node_name), |n| {
+            SelectEdgeFromTo::Node(n.to_string())
+        }),
+        map(
+            maybe_newline(separated_list1(
+                maybe_newline(comma),
+                maybe_newline(map(node_name, |s| s.to_string())),
+            )),
+            |n| SelectEdgeFromTo::Nodes(n),
+        ),
+    ))(inp)
+}
+
+pub fn select_edges<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, SelectEdges> {
+    alt((
+        delimited(
+            bracket_start,
+            cut(alt((
+                map(
+                    maybe_newline(separated_pair(
+                        maybe_space(opt(select_edge_node)),
+                        maybe_space(path_sep),
+                        maybe_space(opt(select_edge_node)),
+                    )),
+                    |(a, b)| SelectEdges::One(a.unwrap_or_default(), b.unwrap_or_default()),
+                ),
+                map(
+                    maybe_newline(preceded(star, input_variable_only)),
+                    SelectEdges::Var,
+                ),
+            ))),
+            maybe_newline(cut(err_ctx(&ParseErrorType::Unclosed("]"), bracket_end))),
+        ),
+        delimited(
+            paren_start,
+            map(
+                maybe_newline(raw_expr(complete_expression)),
+                SelectEdges::Expr,
+            ),
+            maybe_newline(cut(err_ctx(&ParseErrorType::Unclosed(")"), paren_end))),
+        ),
+    ))(inp)
 }
 
 pub fn prop_nodes_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, SelectNodes> {
@@ -260,6 +306,8 @@ mod tests {
     #[case("nodes<inverse>.some_func()")]
     #[case("nodes<outputfirst>[a] {some_func()}")]
     #[case("nodes<inputsfirst>(cond).some_func()")]
+    #[case("edges[a -> b] {some_func()}")]
+    #[case("edges(cond).some_func()")]
     #[case("nodes[a] {some_func()}")]
     #[case("nodes(cond) {(some_func() + 12) > 12}")] //
     #[case("while (true) {\n\tenv {echo(x)}\n}")]

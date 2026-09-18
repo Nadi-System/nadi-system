@@ -1,4 +1,5 @@
 use crate::attrs::{AttrMap, Attribute};
+use crate::edge::Edge;
 use crate::expressions::{ExprContext, ExprResult, Position};
 use crate::node::Node;
 use crate::structs::NadiAttrType;
@@ -35,6 +36,12 @@ impl<'a> EvalCtx<'a> {
     pub fn at_node(node: Node) -> EvalCtx<'static> {
         EvalCtx {
             expr_ctx: Cow::Owned(ExprContext::Node(node)),
+        }
+    }
+
+    pub fn at_edge(node1: Node, node2: Node) -> EvalCtx<'static> {
+        EvalCtx {
+            expr_ctx: Cow::Owned(ExprContext::Edge(node1, node2)),
         }
     }
 
@@ -103,6 +110,36 @@ impl Eval for Template {
                 })
                 .collect::<Result<Vec<(String, ExprResult)>, _>>()
                 .map(ExprResult::Map),
+            ExprContext::Edge(n1, n2) => {
+                let edge = Edge::new(n1.name(), n2.name());
+                let am =
+                    ctx.network.edge_attrs.get(&edge).ok_or(
+                        EvalErrorType::EdgeNotFound(Edge::new(n1.name(), n2.name())).no_pos(),
+                    )?;
+                map_res(self.render(am))
+            }
+            ExprContext::Edges(eds) => eds
+                .iter()
+                .map(|(n1, n2)| {
+                    let edge = Edge::new(n1.name(), n2.name());
+                    let am = ctx.network.edge_attrs.get(&edge).ok_or(
+                        EvalErrorType::EdgeNotFound(Edge::new(n1.name(), n2.name())).no_pos(),
+                    )?;
+                    map_res(self.render(am))
+                })
+                .collect::<Result<Vec<ExprResult>, _>>()
+                .map(ExprResult::Arr),
+            ExprContext::EdgesMap(eds) => eds
+                .iter()
+                .map(|(n1, n2)| {
+                    let edge = Edge::new(n1.name(), n2.name());
+                    let am = ctx.network.edge_attrs.get(&edge).ok_or(
+                        EvalErrorType::EdgeNotFound(Edge::new(n1.name(), n2.name())).no_pos(),
+                    )?;
+                    map_res(self.render(am)).map(|v| (edge.from.into(), edge.to.into(), v))
+                })
+                .collect::<Result<Vec<(String, String, ExprResult)>, _>>()
+                .map(ExprResult::EdgeMap),
         }
     }
 }
@@ -177,6 +214,11 @@ impl EvalError {
 
     pub fn node(mut self, name: String) -> EvalError {
         self.node.replace(name);
+        self
+    }
+
+    pub fn edge(mut self, n1: &Node, n2: &Node) -> EvalError {
+        self.node.replace(format!("{} -> {}", n1.name(), n2.name()));
         self
     }
 }
@@ -268,6 +310,8 @@ pub enum EvalErrorType {
     InvalidContinue,
     /// Node with the name doesn't exit
     NodeNotFound(String),
+    /// Edge with the given nodes doesn't exit
+    EdgeNotFound(Edge),
     /// Node functions run on a non-node context
     NotANodeContext,
     /// Given Nodes are not connected with a path
@@ -357,6 +401,7 @@ impl EvalErrorType {
             Self::InvalidBreak(_) => "InvalidBreakError",
             Self::InvalidContinue => "InvalidContinueError",
             Self::NodeNotFound(_) => "NodeNotFoundError",
+            Self::EdgeNotFound(_) => "EdgeNotFoundError",
             Self::NotANodeContext => "NotANodeContextError",
             Self::PathNotFound(..) => "PathNotFoundError",
             Self::AttributeNotFound => "AttributeNotFoundError",
@@ -409,6 +454,7 @@ impl EvalErrorType {
             Self::InvalidBreak(_) => "Break statement outside of loop",
             Self::InvalidContinue => "Continue statement outside of loop",
             Self::NodeNotFound(n) => return format!("Node {n:?} not found"),
+            Self::EdgeNotFound(Edge{from, to}) => return format!("Edge [{from:?} -> {to:?}] not found"),
             Self::NotANodeContext => "currently not inside a node context",
             Self::PathNotFound(s, e, t) => {
                 return format!("No path found between Nodes {s:?} and {t:?}, path ends at {e:?}");

@@ -1,8 +1,7 @@
 use crate::eval::{Eval, EvalCtx, EvalError, EvalErrorType};
 use crate::expressions::{ExprContext, RawExpr};
-
 use crate::functions::{FuncArg, FuncArgType, NadiFunctions};
-use crate::network::SelectNodes;
+use crate::network::{SelectEdgeFromTo, SelectEdges, SelectNodes};
 use crate::prelude::*;
 use crate::structs::NadiStruct;
 use crate::timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap};
@@ -410,10 +409,6 @@ impl TaskContext {
                     .nodes_select(&prop.order, &parent)
                     .map_err(|e| e.pos(prop.start))
             }
-            SelectNodes::Path(p) => self
-                .network
-                .nodes_path(&prop.order, &p)
-                .map_err(|e| e.pos(prop.start)),
             SelectNodes::Expr(expr) => {
                 let mut sel_nodes = Vec::with_capacity(self.network.nodes().count());
                 // expression is evaluated for each node
@@ -433,6 +428,187 @@ impl TaskContext {
                     }
                 }
                 Ok(sel_nodes)
+            }
+        }
+    }
+
+    /// Get node propagation using the context (network and variables)
+    pub fn select_edges_node(
+        &self,
+        select: SelectEdgeFromTo,
+        ectx: &EvalCtx,
+    ) -> Result<Vec<Node>, EvalError> {
+        // NOTE: we have to match both, because if first is empty we want all the input nodes -> given second node(s) and vice versa
+        match (select, ectx.curr_node()) {
+            (SelectEdgeFromTo::Empty, _) => Ok(vec![]),
+            (SelectEdgeFromTo::NodeCtx, None) => Err(EvalErrorType::NotANodeContext.no_pos()),
+            (SelectEdgeFromTo::NodeCtx, Some(n)) => Ok(vec![n.clone()]),
+            (SelectEdgeFromTo::Node(name), _) => self
+                .network
+                .node_by_name(&name)
+                .map(|n| vec![n.clone()])
+                .ok_or(EvalErrorType::LogicalError("tasks 451").no_pos()),
+            (SelectEdgeFromTo::Nodes(nds), _) => nds
+                .iter()
+                .map(|n| {
+                    self.network
+                        .node_by_name(n)
+                        .map(|n| n.clone())
+                        .ok_or(EvalErrorType::NodeNotFound(n.to_string()).no_pos())
+                })
+                .collect(),
+        }
+    }
+
+    /// Get node propagation using the context (network and variables)
+    pub fn select_edges(
+        &self,
+        select: SelectEdges,
+        ectx: &EvalCtx,
+        local: &mut AttrMap,
+    ) -> Result<Vec<(Node, Node)>, EvalError> {
+        fn node_all_edges(n: &Node) -> Result<Vec<(Node, Node)>, EvalError> {
+            let node = &n
+                .try_lock()
+                .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?;
+            Ok(node
+                .inputs()
+                .iter()
+                .map(|i| (i.clone(), n.clone()))
+                .chain(node.outputs().iter().map(|o| (n.clone(), o.clone())))
+                .collect())
+        }
+        match select {
+            SelectEdges::All => {
+                if let Some(n) = ectx.curr_node() {
+                    node_all_edges(n)
+                } else {
+                    Ok(self
+                        .network
+                        .edges()
+                        .map(|(n1, n2)| (n1.clone(), n2.clone()))
+                        .collect())
+                }
+            }
+            SelectEdges::One(from, to) => {
+                let from = self.select_edges_node(from, ectx)?;
+                let to = self.select_edges_node(to, ectx)?;
+                match (from.as_slice(), to.as_slice()) {
+                    ([], []) => {
+                        if let Some(n) = ectx.curr_node() {
+                            node_all_edges(n)
+                        } else {
+                            Ok(self
+                                .network
+                                .edges()
+                                .map(|(n1, n2)| (n1.clone(), n2.clone()))
+                                .collect())
+                        }
+                    }
+                    ([..], []) => Ok(from
+                        .iter()
+                        .map(|n| {
+                            let node = &n
+                                .try_lock()
+                                .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?;
+                            Ok(node
+                                .outputs()
+                                .iter()
+                                .map(|o| (n.clone(), o.clone()))
+                                .collect())
+                        })
+                        .collect::<Result<Vec<Vec<(Node, Node)>>, EvalError>>()?
+                        .into_iter()
+                        .flatten()
+                        .collect()),
+                    ([], [..]) => Ok(to
+                        .iter()
+                        .map(|n| {
+                            let node = &n
+                                .try_lock()
+                                .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())?;
+                            Ok(node
+                                .inputs()
+                                .iter()
+                                .map(|i| (i.clone(), n.clone()))
+                                .collect())
+                        })
+                        .collect::<Result<Vec<Vec<(Node, Node)>>, EvalError>>()?
+                        .into_iter()
+                        .flatten()
+                        .collect()),
+                    ([..], [..]) => {
+                        let mut edges = Vec::with_capacity(from.len() * to.len());
+                        for f in &from {
+                            for t in &to {
+                                edges.push((f.clone(), t.clone()));
+                            }
+                        }
+                        Ok(edges)
+                    }
+                }
+            }
+            SelectEdges::Var(inp) => {
+                // should support two kinds of variables, based on
+                // whether the keyword is edge or edges/em, but for
+                // now both types are supported for all keywords
+                let var = inp.eval_value(&self, ectx, local)?;
+                // either a variable with a single edge
+                let edge = <(RString, RString)>::try_from_attr(&var);
+                if let Ok((n1, n2)) = edge {
+                    return Ok(vec![(
+                        self.network
+                            .node_by_name(&n1)
+                            .ok_or(EvalErrorType::NodeNotFound(n1.to_string()))?
+                            .clone(),
+                        self.network
+                            .node_by_name(&n2)
+                            .ok_or(EvalErrorType::NodeNotFound(n2.to_string()))?
+                            .clone(),
+                    )]);
+                }
+                // or a variable with multiple edges
+                let parent = Vec::<(RString, RString)>::try_from_attr(&var)
+                    .map_err(|e| EvalErrorType::AttributeError(e))?;
+                parent
+                    .into_iter()
+                    .map(|(n1, n2)| {
+                        Ok((
+                            self.network
+                                .node_by_name(&n1)
+                                .ok_or(EvalErrorType::NodeNotFound(n1.to_string()))?
+                                .clone(),
+                            self.network
+                                .node_by_name(&n2)
+                                .ok_or(EvalErrorType::NodeNotFound(n2.to_string()))?
+                                .clone(),
+                        ))
+                    })
+                    .collect::<Result<Vec<(Node, Node)>, EvalErrorType>>()
+                    .map_err(|e| e.no_pos())
+            }
+            SelectEdges::Expr(expr) => {
+                let mut sel_edges = Vec::with_capacity(self.network.edges().count());
+                // expression is evaluated for each node
+                for (n1, n2) in self.network.edges() {
+                    let ectx = EvalCtx::at_edge(n1.clone(), n2.clone());
+                    let res = expr
+                        .clone()
+                        .resolve(self, ectx.clone())?
+                        .eval_value(self, &ectx, local)?;
+                    match bool::try_from_attr(&res) {
+                        Ok(true) => sel_edges.push((n1.clone(), n2.clone())),
+                        Ok(false) => (),
+                        Err(e) => {
+                            return Err(EvalErrorType::NodeAttributeError(
+                                n1.name().to_string(),
+                                e,
+                            )
+                            .no_pos());
+                        }
+                    }
+                }
+                Ok(sel_edges)
             }
         }
     }

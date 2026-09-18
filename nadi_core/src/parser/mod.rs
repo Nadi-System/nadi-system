@@ -1,4 +1,5 @@
 use crate::attrs::{Date, DateTime, Time};
+use crate::edge::Edge;
 use crate::network::Propagation;
 use crate::prelude::*;
 use crate::table::Table;
@@ -157,6 +158,28 @@ impl Network {
             if let Some(n) = self.node_by_name(&name) {
                 if let Attribute::Table(am) = vals {
                     n.lock().attr_map_mut().extend(am);
+                }
+            } else {
+                // ignore nodes that are not in the network
+            }
+        }
+        Ok(())
+    }
+
+    pub fn load_edge_attrs_from_str(&mut self, attrs: String) -> anyhow::Result<()> {
+        let tokens = tokenizer::get_tokens(&attrs);
+        let attrs = attrs::parse(tokens)?;
+        for Tuple2(name1, vals) in attrs {
+            if let Attribute::Table(outer) = vals {
+                for Tuple2(name2, inner) in outer {
+                    let edge = Edge::new(&name1, &name2);
+                    if let Some(edge_map) = self.edge_attrs.get_mut(&edge) {
+                        if let Attribute::Table(am) = inner {
+                            edge_map.extend(am);
+                        }
+                    } else {
+                        // ignore unmatched edges
+                    }
                 }
             }
         }

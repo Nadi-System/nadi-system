@@ -64,6 +64,62 @@ pub fn keyword_val<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, TaskKeyword
     }
 }
 
+pub fn edge_keywords<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, TaskKeyword> {
+    if let [first, rest @ ..] = inp {
+        match &first.ty {
+            TaskToken::Keyword(s) => match s {
+                TaskKeyword::Edge | TaskKeyword::Edges | TaskKeyword::EdgesMap => {
+                    Ok((rest, s.clone()))
+                }
+                _ => Err(nom::Err::Error(
+                    MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch),
+                )),
+            },
+            _ => Err(nom::Err::Error(
+                MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch),
+            )),
+        }
+    } else {
+        Err(nom::Err::Error(
+            MatchErr::new(inp).ty(&ParseErrorType::Incomplete),
+        ))
+    }
+}
+
+pub fn node_keywords<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, TaskKeyword> {
+    if let [first, rest @ ..] = inp {
+        match &first.ty {
+            TaskToken::Keyword(s) => match s {
+                TaskKeyword::Node
+                | TaskKeyword::Nodes
+                | TaskKeyword::NodesMap
+                | TaskKeyword::Input
+                | TaskKeyword::Inputs
+                | TaskKeyword::InputsMap
+                | TaskKeyword::Output
+                | TaskKeyword::Outputs
+                | TaskKeyword::OutputsMap
+                | TaskKeyword::Root
+                | TaskKeyword::Roots
+                | TaskKeyword::RootsMap
+                | TaskKeyword::Leaf
+                | TaskKeyword::Leaves
+                | TaskKeyword::LeavesMap => Ok((rest, s.clone())),
+                _ => Err(nom::Err::Error(
+                    MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch),
+                )),
+            },
+            _ => Err(nom::Err::Error(
+                MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch),
+            )),
+        }
+    } else {
+        Err(nom::Err::Error(
+            MatchErr::new(inp).ty(&ParseErrorType::Incomplete),
+        ))
+    }
+}
+
 pub fn variable_name<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, String> {
     if let [first, rest @ ..] = inp {
         match &first.ty {

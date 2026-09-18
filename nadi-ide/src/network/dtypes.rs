@@ -197,8 +197,8 @@ impl Default for NetworkDataView {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum NetworkViewType {
-    Attribute,
     #[default]
+    Attribute,
     Flat,
     Tree,
 }

@@ -1,7 +1,8 @@
 use crate::attrs::{AttrMap, Attribute, FromAttribute, HasAttributes};
+use crate::edge::Edge;
 use crate::eval::{Eval, EvalCtx, EvalError, EvalErrorType};
 use crate::functions::{FunctionCtx, FunctionInput};
-use crate::network::Propagation;
+use crate::network::{Propagation, SelectEdges};
 use crate::node::{Node, NodeInner};
 use crate::structs::NadiAttrType;
 use crate::tasks::{FunctionType, TaskContext, TaskCtxConsts, TaskKeyword, TaskMessage};
@@ -10,6 +11,7 @@ use crate::timeseries::{
     CompleteSeries, HasSeries, HasTimeSeries, MaskedSeries, Series, TimeLine, TimeSeries,
 };
 use crate::udf::UserFunction;
+use crate::valid_var;
 use abi_stable::std_types::{RNone, ROption, RSome, RString, Tuple2};
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -301,6 +303,8 @@ pub enum ExprResult {
     Arr(Vec<ExprResult>),
     /// Map of results
     Map(Vec<(String, ExprResult)>),
+    /// Map of results for edges
+    EdgeMap(Vec<(String, String, ExprResult)>),
 }
 
 impl From<Option<Attribute>> for ExprResult {
@@ -357,7 +361,31 @@ impl std::fmt::Display for ExprResult {
                 f,
                 "{{{}}}",
                 am.iter()
-                    .map(|(k, v)| format!("{k} = {v}"))
+                    .map(|(k, v)| if valid_var(k) {
+                        format!("{k} = {v}")
+                    } else {
+                        format!("{k:?} = {v}")
+                    })
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            Self::EdgeMap(am) => write!(
+                f,
+                "{{{}}}",
+                am.iter()
+                    .map(|(k1, k2, v)| format!(
+                        "{} -> {} = {v}",
+                        if valid_var(k1) {
+                            k1.to_string()
+                        } else {
+                            format!("{k1:?}")
+                        },
+                        if valid_var(k2) {
+                            k2.to_string()
+                        } else {
+                            format!("{k2:?}")
+                        }
+                    ))
                     .collect::<Vec<String>>()
                     .join(", ")
             ),
@@ -390,6 +418,21 @@ impl ExprResult {
                 .map(|(k, a)| a.to_attribute().map(|a| (k.into(), a)))
                 .collect::<Option<HashMap<RString, Attribute>>>()
                 .map(|a| Attribute::Table(a.into())),
+            Self::EdgeMap(am) => am
+                .into_iter()
+                .map(|(k1, k2, a)| a.to_attribute().map(|a| (k1.into(), k2.into(), a)))
+                .collect::<Option<Vec<(RString, RString, Attribute)>>>()
+                .map(|results| {
+                    let mut resmap = HashMap::new();
+                    for (k1, k2, a) in results {
+                        resmap.entry(k1).or_insert(HashMap::new()).insert(k2, a);
+                    }
+                    let resmap: AttrMap = resmap
+                        .into_iter()
+                        .map(|(k, v)| (k, Attribute::Table(v.into())))
+                        .collect();
+                    Attribute::Table(resmap)
+                }),
         }
     }
 
@@ -1718,6 +1761,42 @@ impl Eval for InputVar {
                     .collect::<Result<_, EvalError>>()?;
                 return Ok(ExprResult::Map(res));
             }
+            ExprContext::Edge(n1, n2) => {
+                let am = ctx
+                    .network
+                    .edge_attr_map(n1, n2)
+                    .ok_or(EvalErrorType::EdgeNotFound(Edge::new(n1.name(), n2.name())).no_pos())?;
+                self.attr_nested(am)
+                    .map_err(|e| e.pos(self.position()).edge(n1, n2))?
+            }
+            ExprContext::Edges(eds) => {
+                let mut vars = Vec::<ExprResult>::with_capacity(eds.len());
+                for (n1, n2) in eds {
+                    let am = ctx.network.edge_attr_map(n1, n2).ok_or(
+                        EvalErrorType::EdgeNotFound(Edge::new(n1.name(), n2.name())).no_pos(),
+                    )?;
+                    let a = self.attr_nested(am);
+                    vars.push(a.map_err(|e| e.pos(self.position()).edge(n1, n2))?.into());
+                }
+                return Ok(ExprResult::Arr(vars));
+            }
+            ExprContext::EdgesMap(eds) => {
+                let res: Vec<(String, String, ExprResult)> = eds
+                    .iter()
+                    .map(|(n1, n2)| {
+                        let am = ctx.network.edge_attr_map(n1, n2).ok_or(
+                            EvalErrorType::EdgeNotFound(Edge::new(n1.name(), n2.name())).no_pos(),
+                        )?;
+                        let a = self.attr_nested(am);
+                        Ok((
+                            n1.name().to_string(),
+                            n2.name().to_string(),
+                            ExprResult::from(a.map_err(|e| e.pos(self.position()))?),
+                        ))
+                    })
+                    .collect::<Result<_, EvalError>>()?;
+                return Ok(ExprResult::EdgeMap(res));
+            }
         };
 
         match attr {
@@ -1756,11 +1835,11 @@ pub enum VarType {
     /// Outputs variable in map format (only valid in a node function)
     OutputsMap,
     /// Edges variable (only valid in a node function for a node with single input or output, i.e. leaf and root)
-    Edge,
+    Edge(Box<SelectEdges>),
     /// Edges variable (only valid in a node function)
-    Edges,
+    Edges(Box<SelectEdges>),
     /// Edges variable in map format (only valid in a node function)
-    EdgesMap,
+    EdgesMap(Box<SelectEdges>),
     /// Nodes variable (array of variable from each node)
     Nodes(Box<Propagation>),
     /// Nodes variable (map of variable from each node and its name)
@@ -1784,6 +1863,7 @@ impl VarType {
     pub fn from_keyword(
         kw: &TaskKeyword,
         prop: Option<Propagation>,
+        edge_select: Option<SelectEdges>,
         node: Option<String>,
     ) -> Option<Self> {
         match kw {
@@ -1797,9 +1877,11 @@ impl VarType {
             TaskKeyword::Output => Some(VarType::Output),
             TaskKeyword::Outputs => Some(VarType::Outputs),
             TaskKeyword::OutputsMap => Some(VarType::OutputsMap),
-            TaskKeyword::Edge => Some(VarType::Edge),
-            TaskKeyword::Edges => Some(VarType::Edges),
-            TaskKeyword::EdgesMap => Some(VarType::EdgesMap),
+            TaskKeyword::Edge => Some(VarType::Edge(Box::new(edge_select.unwrap_or_default()))),
+            TaskKeyword::Edges => Some(VarType::Edges(Box::new(edge_select.unwrap_or_default()))),
+            TaskKeyword::EdgesMap => {
+                Some(VarType::EdgesMap(Box::new(edge_select.unwrap_or_default())))
+            }
             TaskKeyword::Nodes => Some(VarType::Nodes(Box::new(prop.unwrap_or_default()))),
             TaskKeyword::NodesMap => Some(VarType::NodesMap(Box::new(prop.unwrap_or_default()))),
             TaskKeyword::Root => Some(VarType::Root),
@@ -1817,16 +1899,17 @@ impl VarType {
         match self {
             VarType::Node(_) | VarType::NodeVar(_) => &FunctionType::Node,
             VarType::Network => &FunctionType::Network,
-            VarType::Env | VarType::Local => &FunctionType::Env,
+            VarType::Env
+            | VarType::Local
+            | VarType::Edge(_)
+            | VarType::Edges(_)
+            | VarType::EdgesMap(_) => &FunctionType::Env,
             VarType::Input
             | VarType::Inputs
             | VarType::InputsMap
             | VarType::Output
             | VarType::Outputs
             | VarType::OutputsMap
-            | VarType::Edge
-            | VarType::Edges
-            | VarType::EdgesMap
             | VarType::Nodes(_)
             | VarType::NodesMap(_)
             | VarType::Root
@@ -1850,8 +1933,8 @@ impl VarType {
             | VarType::Inputs
             | VarType::Output
             | VarType::Outputs
-            | VarType::Edge
-            | VarType::Edges
+            | VarType::Edge(_)
+            | VarType::Edges(_)
             | VarType::Nodes(_)
             | VarType::Root
             | VarType::Roots
@@ -1859,7 +1942,7 @@ impl VarType {
             | VarType::Leaves => false,
             VarType::NodesMap(_)
             | VarType::OutputsMap
-            | VarType::EdgesMap
+            | VarType::EdgesMap(_)
             | VarType::RootsMap
             | VarType::InputsMap
             | VarType::LeavesMap => true,
@@ -1879,6 +1962,11 @@ impl VarType {
             |nds| Ok(ExprContext::NodesMap(nds))
         } else {
             |nds| Ok(ExprContext::Nodes(nds))
+        };
+        let edges_func = if self.is_map() {
+            |eds| Ok(ExprContext::EdgesMap(eds))
+        } else {
+            |eds| Ok(ExprContext::Edges(eds))
         };
 
         let node: Option<&Node> = ectx.curr_node();
@@ -1935,14 +2023,6 @@ impl VarType {
                 RSome(r) => Ok(ExprContext::Node(r.clone())),
                 RNone => Err(EvalErrorType::NoOutputNode),
             },
-            (VarType::Edge, Some(n)) => match n
-                .try_lock()
-                .ok_or(EvalErrorType::MutexError(file!(), line!()))?
-                .edge()
-            {
-                Some(r) => Ok(ExprContext::Node(r.clone())),
-                None => Err(EvalErrorType::NoEdgeNode),
-            },
             (VarType::Inputs | VarType::InputsMap, Some(n)) => nodes_func(
                 n.try_lock()
                     .ok_or(EvalErrorType::MutexError(file!(), line!()))?
@@ -1955,10 +2035,20 @@ impl VarType {
                     .outputs()
                     .to_vec(),
             ),
-            (VarType::Edges | VarType::EdgesMap, Some(n)) => nodes_func(
-                n.try_lock()
-                    .ok_or(EvalErrorType::MutexError(file!(), line!()))?
-                    .edges(),
+            (VarType::Edge(select), _) => {
+                let edges = ctx
+                    .select_edges(*select.clone(), ectx, loc)
+                    .map_err(|e| *e.ty)?;
+                match edges.as_slice() {
+                    [(n1, n2)] => Ok(ExprContext::Edge(n1.clone(), n2.clone())),
+                    _ => Err(EvalErrorType::InvalidContext(
+                        "Zero or multiple edges found",
+                    )),
+                }
+            }
+            (VarType::Edges(select) | VarType::EdgesMap(select), _) => edges_func(
+                ctx.select_edges(*select.clone(), ectx, loc)
+                    .map_err(|e| *e.ty)?,
             ),
             (_, None) => Err(EvalErrorType::NotANodeContext),
         }
@@ -1984,9 +2074,9 @@ impl std::fmt::Display for VarType {
             VarType::Output => "output",
             VarType::Outputs => "outputs",
             VarType::OutputsMap => "outputsmap",
-            VarType::Edge => "edge",
-            VarType::Edges => "edges",
-            VarType::EdgesMap => "edgesmap",
+            VarType::Edge(s) => return write!(f, "edge{s}"),
+            VarType::Edges(s) => return write!(f, "edges{s}"),
+            VarType::EdgesMap(s) => return write!(f, "edgesmap{s}"),
             VarType::Nodes(p) => {
                 return write!(f, "nodes{p}");
             }
@@ -2193,7 +2283,11 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
     ) -> Result<ExprResult, EvalError> {
         let ectx = self.get_eval_context(ctx, ectx, loc)?;
         match &ectx.expr_ctx.as_ref() {
-            ExprContext::Local(_) | ExprContext::Env(_) => {
+            ExprContext::Local(_)
+            | ExprContext::Env(_)
+            | ExprContext::Edge(_, _)
+            | ExprContext::Edges(_)
+            | ExprContext::EdgesMap(_) => {
                 let func_ctx = self.function_ctx(ctx, &ectx, loc)?;
                 if let Some(func) = ctx.udf(&self.name).cloned() {
                     // priority for the locally defined function
@@ -2364,7 +2458,12 @@ impl Eval for FunctionCall<ResolvedExpr<'_>> {
     ) -> Result<ExprResult, EvalError> {
         let ectx = self.get_eval_context(ctx, ectx, loc)?;
         match &ectx.expr_ctx.as_ref() {
-            ExprContext::Local(_) | ExprContext::Env(_) => {
+            // we just call env function for edges, the context should correctly resolve variables
+            ExprContext::Local(_)
+            | ExprContext::Env(_)
+            | ExprContext::Edge(_, _)
+            | ExprContext::Edges(_)
+            | ExprContext::EdgesMap(_) => {
                 let func_ctx = self.function_ctx(ctx, &ectx, loc)?;
                 if let Some(func) = ctx.udf(&self.name).cloned() {
                     // priority for the locally defined function; assume mutability
@@ -2727,9 +2826,13 @@ impl Eval for GetSeries {
         };
         // TODO: take values out based on index
         match expr_ctx.as_ref() {
-            ExprContext::Local(_) => {
-                Err(EvalErrorType::NotImplementedError("local series not supported").no_pos())
-            }
+            ExprContext::Local(_)
+            | ExprContext::Edge(_, _)
+            | ExprContext::Edges(_)
+            | ExprContext::EdgesMap(_) => Err(EvalErrorType::NotImplementedError(
+                "local and edge series not supported",
+            )
+            .no_pos()),
             ExprContext::Env(_) => {
                 index.subset(get_series_or_ts(&ctx.env, &self.name, self.is_ts)?)
             }
@@ -3110,6 +3213,8 @@ fn resolve_set_series<'b>(
                 context: EvalCtx::env(None),
             });
         }
+        ExprContext::Edge(n1, n2) => EvalCtx::at_edge(n1, n2),
+        ExprContext::Edges(_nds) | ExprContext::EdgesMap(_nds) => todo!(),
     };
 
     Ok(ResolvedExpr {
@@ -3236,8 +3341,12 @@ impl<T: Eval> Eval for SetSeries<T> {
             ExprContext::Local(_) => {
                 Err(EvalErrorType::NotImplementedError("local series not supported").no_pos())
             }
-            ExprContext::Env(_) | ExprContext::Network(_) => {
-                // env and network can only be modified if the context is in mutable state
+            ExprContext::Env(_)
+            | ExprContext::Network(_)
+            | ExprContext::Edge(_, _)
+            | ExprContext::Edges(_)
+            | ExprContext::EdgesMap(_) => {
+                // these can only be modified if the context is in mutable state
                 Err(EvalErrorType::InvalidVariableType.no_pos())
             }
             ExprContext::Node(n) => {
@@ -3269,9 +3378,13 @@ impl<T: Eval> Eval for SetSeries<T> {
     ) -> Result<ExprResult, EvalError> {
         // get ectx based on resolved ctx
         match ectx.expr_ctx.as_ref() {
-            ExprContext::Local(_) => {
-                Err(EvalErrorType::NotImplementedError("local series not supported").no_pos())
-            }
+            ExprContext::Local(_)
+            | ExprContext::Edge(_, _)
+            | ExprContext::Edges(_)
+            | ExprContext::EdgesMap(_) => Err(EvalErrorType::NotImplementedError(
+                "local and edge series not supported",
+            )
+            .no_pos()),
             ExprContext::Env(_) => {
                 let val = eval_series(self.expr.as_ref(), ctx, ectx, loc)?;
                 // self.ty.validate_series(val)?;
@@ -3411,6 +3524,53 @@ impl Eval for ExprWithContext {
                     Ok(ExprResult::Map(exprs))
                 }
             }
+            ExprContext::Edge(n1, n2) => {
+                self.expr
+                    .eval(ctx, &EvalCtx::at_edge(n1, n2).to_owned(), loc)
+            }
+            ExprContext::Edges(eds) => {
+                if self.silent {
+                    // let parallel = TaskCtxConsts::parallize_nodes(ctx);
+                    // if parallel | self.parallel {
+                    //     run_nodes_in_parallel(nds, &ctx, &self.expr)
+                    // } else {
+                    eds.into_iter().try_for_each(|(n1, n2)| {
+                        self.expr
+                            .eval(ctx, &EvalCtx::at_edge(n1, n2).to_owned(), loc)
+                            .map(|_| ())
+                    })?;
+
+                    Ok(ExprResult::None)
+                    // }
+                } else {
+                    let exprs = eds
+                        .into_iter()
+                        .map(|(n1, n2)| {
+                            self.expr
+                                .eval(ctx, &EvalCtx::at_edge(n1, n2).to_owned(), loc)
+                        })
+                        .collect::<Result<Vec<ExprResult>, EvalError>>()?;
+                    Ok(ExprResult::Arr(exprs))
+                }
+            }
+            ExprContext::EdgesMap(eds) => {
+                let exprs = eds
+                    .into_iter()
+                    .map(|(n1, n2)| {
+                        let name1 = n1.name().to_string();
+                        let name2 = n2.name().to_string();
+                        let expr =
+                            self.expr
+                                .eval(ctx, &EvalCtx::at_edge(n1, n2).to_owned(), loc)?;
+                        Ok((name1, name2, expr))
+                    })
+                    .collect::<Result<Vec<(String, String, ExprResult)>, EvalError>>()?;
+                if self.silent {
+                    Ok(ExprResult::None)
+                } else {
+                    Ok(ExprResult::EdgeMap(exprs))
+                }
+            }
         }
     }
 
@@ -3472,6 +3632,53 @@ impl Eval for ExprWithContext {
                     Ok(ExprResult::None)
                 } else {
                     Ok(ExprResult::Map(exprs))
+                }
+            }
+            ExprContext::Edge(n1, n2) => {
+                self.expr
+                    .eval_mut(ctx, &EvalCtx::at_edge(n1, n2).to_owned(), loc)
+            }
+            ExprContext::Edges(eds) => {
+                if self.silent {
+                    // let parallel = TaskCtxConsts::parallize_nodes(ctx);
+                    // if parallel | self.parallel {
+                    //     run_nodes_in_parallel(nds, &ctx, &self.expr)
+                    // } else {
+                    eds.into_iter().try_for_each(|(n1, n2)| {
+                        self.expr
+                            .eval_mut(ctx, &EvalCtx::at_edge(n1, n2).to_owned(), loc)
+                            .map(|_| ())
+                    })?;
+
+                    Ok(ExprResult::None)
+                    // }
+                } else {
+                    let exprs = eds
+                        .into_iter()
+                        .map(|(n1, n2)| {
+                            self.expr
+                                .eval_mut(ctx, &EvalCtx::at_edge(n1, n2).to_owned(), loc)
+                        })
+                        .collect::<Result<Vec<ExprResult>, EvalError>>()?;
+                    Ok(ExprResult::Arr(exprs))
+                }
+            }
+            ExprContext::EdgesMap(eds) => {
+                let exprs = eds
+                    .into_iter()
+                    .map(|(n1, n2)| {
+                        let name1 = n1.name().to_string();
+                        let name2 = n2.name().to_string();
+                        let expr =
+                            self.expr
+                                .eval_mut(ctx, &EvalCtx::at_edge(n1, n2).to_owned(), loc)?;
+                        Ok((name1, name2, expr))
+                    })
+                    .collect::<Result<Vec<(String, String, ExprResult)>, EvalError>>()?;
+                if self.silent {
+                    Ok(ExprResult::None)
+                } else {
+                    Ok(ExprResult::EdgeMap(exprs))
                 }
             }
         }
@@ -3555,6 +3762,12 @@ pub enum ExprContext {
     Nodes(Vec<Node>),
     /// Multiple nodes context with their names
     NodesMap(Vec<Node>),
+    /// Edge context with 2 nodes, you can use input, output keyword
+    Edge(Node, Node),
+    /// Multiple edges context you can use edge, inputs, outputs
+    Edges(Vec<(Node, Node)>),
+    /// Multiple edges context with node names making a nested map
+    EdgesMap(Vec<(Node, Node)>),
 }
 
 impl Default for ExprContext {
@@ -3569,6 +3782,7 @@ impl ExprContext {
             Self::Local(_) | Self::Env(_) => &FunctionType::Env,
             Self::Network(_) => &FunctionType::Network,
             Self::Node(_) | Self::Nodes(_) | Self::NodesMap(_) => &FunctionType::Node,
+            Self::Edge(_, _) | Self::Edges(_) | Self::EdgesMap(_) => &FunctionType::Env,
         }
     }
 
@@ -3610,6 +3824,9 @@ impl std::fmt::Debug for ExprContext {
             Self::Node(n) => write!(f, "node[{:?}]", n.name()),
             Self::Nodes(_) => write!(f, "nodes[...]"),
             Self::NodesMap(_) => write!(f, "nodesmap[...]"),
+            Self::Edge(n1, n2) => write!(f, "edge[{:?}, {:?}]", n1.name(), n2.name()),
+            Self::Edges(_) => write!(f, "edges[...]"),
+            Self::EdgesMap(_) => write!(f, "edgesmap[...]"),
         }
     }
 }
@@ -3674,6 +3891,7 @@ fn resolve_set_variable<'b>(
         ExprContext::Env(n) => EvalCtx::env(n.clone()),
         ExprContext::Network(n) => EvalCtx::network(n.clone()),
         ExprContext::Node(n) => EvalCtx::at_node(n),
+        ExprContext::Edge(n1, n2) => EvalCtx::at_edge(n1, n2),
         ExprContext::Nodes(nds) | ExprContext::NodesMap(nds) => {
             let exprs = nds
                 .into_iter()
@@ -3681,6 +3899,35 @@ fn resolve_set_variable<'b>(
                     let context = EvalCtx::at_node(n.clone()).to_owned();
                     let mut vt = expr.var.clone();
                     _ = vt.ty.replace(VarType::Node(None));
+                    Ok(ResolvedExpr {
+                        expr: ExprType::SetVar(SetVariable::new(
+                            vt,
+                            expr.ty.clone(),
+                            expr.expr.clone().resolve(ctx, context.clone())?,
+                            expr.silent,
+                        )),
+                        position: expr.expr.position(),
+                        context,
+                    })
+                })
+                .collect::<Result<Vec<ResolvedExpr>, EvalError>>()?;
+            // FIX: how to know whether the user is looking for array or statement?
+            let et = ExprType::Multi(exprs, true);
+            return Ok(ResolvedExpr {
+                position: expr.expr.position(),
+                expr: et,
+                context: EvalCtx::env(None),
+            });
+        }
+        ExprContext::Edges(eds) | ExprContext::EdgesMap(eds) => {
+            let exprs = eds
+                .into_iter()
+                .map(|(n1, n2)| {
+                    let context = EvalCtx::at_edge(n1.clone(), n2.clone()).to_owned();
+                    let mut vt = expr.var.clone();
+                    _ = vt
+                        .ty
+                        .replace(VarType::Edge(Box::new(SelectEdges::default())));
                     Ok(ResolvedExpr {
                         expr: ExprType::SetVar(SetVariable::new(
                             vt,
@@ -3756,8 +4003,12 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
                 ctx.mark_change();
                 Ok(ExprResult::None)
             }
-            ExprContext::Env(_) | ExprContext::Network(_) => {
-                // env and network can only be modified if the context is in mutable state
+            ExprContext::Env(_)
+            | ExprContext::Network(_)
+            | ExprContext::Edge(..)
+            | ExprContext::Edges(..)
+            | ExprContext::EdgesMap(..) => {
+                // these can only be modified if the context is in mutable state
                 Err(EvalErrorType::InvalidVariableType.no_pos())
             }
             ExprContext::Node(n) => {
@@ -3856,7 +4107,43 @@ impl<T: Clone + Eval> Eval for SetVariable<T> {
 
                 Ok(ExprResult::None)
             }
+            ExprContext::Edge(n1, n2) => {
+                let val =
+                    self.expr
+                        .eval_value(ctx, &EvalCtx::at_edge(n1.clone(), n2.clone()), loc)?;
+                self.assert_type(&val)?;
+                let edge = Edge::new(n1.name(), n2.name());
+                let am = ctx
+                    .network
+                    .edge_attrs
+                    .get_mut(&edge)
+                    .ok_or(EvalErrorType::EdgeNotFound(edge).no_pos())?;
+                self.var.set_attr_nested(am, val)?;
+                ctx.mark_change();
+                Ok(ExprResult::None)
+            }
+            ExprContext::Edges(eds) => {
+                for (n1, n2) in eds {
+                    let val = self.expr.eval_value(
+                        ctx,
+                        &EvalCtx::at_edge(n1.clone(), n2.clone()),
+                        loc,
+                    )?;
+                    self.assert_type(&val)?;
+                    let edge = Edge::new(n1.name(), n2.name());
+                    let am = ctx
+                        .network
+                        .edge_attrs
+                        .get_mut(&edge)
+                        .ok_or(EvalErrorType::EdgeNotFound(edge).no_pos())?;
+                    self.var.set_attr_nested(am, val)?;
+                }
+                ctx.mark_change();
+
+                Ok(ExprResult::None)
+            }
             ExprContext::NodesMap(_) => Err(EvalErrorType::InvalidVariableType.no_pos()),
+            ExprContext::EdgesMap(_) => Err(EvalErrorType::InvalidVariableType.no_pos()),
         }
     }
 }

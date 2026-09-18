@@ -40,11 +40,11 @@ mod attrs {
     ///
     /// ```task
     /// network load_str("A -> B\n B -> D");
-    /// nodes[A -> D] set_attrs(a2d = true)
+    /// nodes[A,B,D] set_attrs(a2d = true)
     /// ```
     /// This is equivalent to the following:
     /// ```task
-    /// nodes[A->D].a2d = true;
+    /// nodes[A,B,D].a2d = true;
     /// ```
     #[node_func]
     fn set_attrs(
@@ -507,6 +507,12 @@ mod attrs {
     #[network_func]
     fn load_attrs_from_str(net: &mut Network, content: String) -> anyhow::Result<()> {
         net.load_attrs_from_str(content)
+    }
+
+    /// Generate attribute map for the given attribute for the edges
+    #[network_func]
+    fn load_edge_attrs_from_str(net: &mut Network, content: String) -> anyhow::Result<()> {
+        net.load_edge_attrs_from_str(content)
     }
 
     fn node_attr(n: &Node, attr: &str) -> (RString, Option<Attribute>) {

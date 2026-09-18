@@ -17,9 +17,9 @@ pub fn node_name<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, RString> {
     err_ctx(
         &ParseErrorType::ValueError("Invalid node name"),
         alt((
-            // keywords are valid because they are like variables, but
-            // can only be used as string in tasks
-            map(alt((variable, integer, float, boolean, keyword)), |v| {
+            // keywords should be valid because they are like variables, but
+            // because this function is universal we don't support that
+            map(alt((variable, integer, float, boolean)), |v| {
                 RString::from(v.content)
             }),
             map(string_val, RString::from),
@@ -145,7 +145,7 @@ mod tests {
     #[case("12.23->name", vec![path!("12.23" -> "name")])]
     #[case("12 -> \"12\"", vec![path!("12" -> "12")])]
     #[case("012-> xyz_is_12", vec![path!("012" -> "xyz_is_12")])]
-    #[case("valid -> edge \nnode_name -> another", vec![path!("valid" -> "edge"), path!("node_name" -> "another")])]
+    #[case("valid -> edge1 \nnode_name -> another", vec![path!("valid" -> "edge1"), path!("node_name" -> "another")])]
     #[case("# test this \nnode_name -> another", vec![path!("node_name" -> "another")])]
     #[case("12.23", vec![path!("12.23")])]
     #[case("name", vec![path!("name")])]
@@ -164,7 +164,9 @@ mod tests {
 
     #[rstest]
     #[case("0_node_name -> name", 1)]
-    #[case("valid -> edge \nnode-name -> another", 2)]
+    // node name can not be a keyword ('edge' here)
+    #[case("valid -> edge \nnode-name -> another", 1)]
+    #[case("valid -> edge1 \nnode-name -> another", 2)]
     #[case("# test this \nnode-name -> another", 2)]
     #[should_panic]
     #[case("012-> xyz_is_12", 1)]

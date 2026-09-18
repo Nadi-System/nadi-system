@@ -1,9 +1,10 @@
 use crate::attrs::{AttrMap, HasAttributes};
-use crate::edge::EdgeAttrMap;
+use crate::edge::{Edge, EdgeAttrMap};
 use crate::eval::EvalErrorType;
 use crate::expressions::{InputVar, RawExpr};
 use crate::node::Node;
 use crate::timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap};
+use crate::valid_var;
 use abi_stable::std_types::{RDuration, Tuple2};
 use abi_stable::{
     std_types::{
@@ -165,6 +166,18 @@ impl Network {
         })
     }
 
+    /// Iterator for the edges of the network
+    pub fn edge_attr_map(&self, node1: &Node, node2: &Node) -> Option<&AttrMap> {
+        let edge = Edge::new(node1.name(), node2.name());
+        self.edge_attrs.get(&edge)
+    }
+
+    /// Iterator for the edges of the network
+    pub fn edge_attr_map_mut(&mut self, node1: &Node, node2: &Node) -> Option<&mut AttrMap> {
+        let edge = Edge::new(node1.name(), node2.name());
+        self.edge_attrs.get_mut(&edge)
+    }
+
     /// Leaf of the network (single node with no inputs)
     pub fn leaf(&self) -> Option<&Node> {
         let mut leaves = self.leaves();
@@ -238,6 +251,12 @@ impl Network {
                     .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                     .add_input(inp.clone());
             }
+            let em = self
+                .edge_attrs
+                .entry(Edge::new(start, end))
+                .or_insert(AttrMap::new());
+            em.insert(RString::from("FROM"), start.to_string().into());
+            em.insert(RString::from("TO"), end.to_string().into());
         }
         self.flatten();
         Ok(())
@@ -300,6 +319,12 @@ impl Network {
                             .expect(&format!("mutex error: {:?} {}", file!(), line!()))
                             .add_input(st.clone());
                     }
+                    let em = self
+                        .edge_attrs
+                        .entry(Edge::new(&sp.start, &sp.end))
+                        .or_insert(AttrMap::new());
+                    em.insert(RString::from("FROM"), sp.start.to_string().into());
+                    em.insert(RString::from("TO"), sp.end.to_string().into());
                 }
                 NodeInput::Group(st, en) => {
                     for s in st {
@@ -319,6 +344,12 @@ impl Network {
                             ));
                             start.add_output(en.clone());
                             end.add_input(st.clone());
+                            let em = self
+                                .edge_attrs
+                                .entry(Edge::new(s, e))
+                                .or_insert(AttrMap::new());
+                            em.insert(RString::from("FROM"), s.to_string().into());
+                            em.insert(RString::from("TO"), e.to_string().into());
                         }
                     }
                 }
@@ -1241,6 +1272,92 @@ impl std::fmt::Display for PropOrder {
     }
 }
 
+// /// Type of node
+// #[derive(PartialEq, Debug, Clone)]
+// pub enum NodeType {
+//     Node,
+//     Input,
+//     Output,
+//     Root,
+//     Leaf
+// }
+
+// /// type of node variable
+// #[derive(PartialEq, Debug, Clone)]
+// pub enum NodeVarType {
+//     Single,
+//     List,
+//     Map,
+// }
+
+// /// Node variable,
+// #[derive(PartialEq, Debug, Clone)]
+// pub struct NodeVar {
+//     var: NodeVarType,
+//     node: NodeType,
+// }
+
+/// Select a list of edges in a network
+#[derive(Debug, Default, Clone, PartialEq)]
+pub enum SelectEdgeFromTo {
+    #[default]
+    Empty,
+    NodeCtx,
+    Node(String),
+    Nodes(Vec<String>),
+    // if we implement the above one then we can use NodeVar
+}
+
+impl std::fmt::Display for SelectEdgeFromTo {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        match self {
+            Self::Empty => Ok(()),
+            Self::NodeCtx => write!(fmt, "node",),
+            Self::Node(var) if valid_var(var) => write!(fmt, "{var}"),
+            Self::Node(var) => write!(fmt, "{var:?}"),
+            Self::Nodes(nds) => {
+                write!(
+                    fmt,
+                    "{}",
+                    nds.iter()
+                        .map(|s| if valid_var(s) {
+                            format!("{s}")
+                        } else {
+                            format!("{s:?}")
+                        })
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                )
+            }
+        }
+    }
+}
+
+/// Select a list of edges in a network
+#[derive(Debug, Default, Clone, PartialEq)]
+pub enum SelectEdges {
+    /// No selection (all edges)
+    #[default]
+    All,
+    /// List of nodes by their name
+    One(SelectEdgeFromTo, SelectEdgeFromTo),
+    /// Variable representing list of edges
+    Var(InputVar),
+    /// Expression evaluating true or false on edge expressions
+    Expr(RawExpr),
+}
+
+impl std::fmt::Display for SelectEdges {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        match self {
+            Self::All => Ok(()),
+            Self::One(a, b) => write!(fmt, "[{a} -> {b}]",),
+            Self::Var(var) => write!(fmt, "[*{}]", var),
+            Self::Expr(expr) => write!(fmt, "({})", expr),
+        }
+    }
+}
+
 /// Select a list of nodes in a network
 #[derive(Debug, Default, Clone, PartialEq)]
 pub enum SelectNodes {
@@ -1249,8 +1366,6 @@ pub enum SelectNodes {
     All,
     /// List of nodes by their name
     List(RVec<RString>),
-    /// Path between two nodes by their name
-    Path(StrPath),
     /// Variable representing list of nodes
     Var(InputVar),
     /// Expression evaluating true or false
@@ -1265,11 +1380,14 @@ impl std::fmt::Display for SelectNodes {
                 fmt,
                 "[{}]",
                 v.iter()
-                    .map(|a| a.as_str())
-                    .collect::<Vec<&str>>()
+                    .map(|a| if valid_var(a) {
+                        a.to_string()
+                    } else {
+                        format!("{a:?}")
+                    })
+                    .collect::<Vec<String>>()
                     .join(", ")
             ),
-            Self::Path(p) => write!(fmt, "[{}]", p),
             Self::Var(var) => write!(fmt, "[*{}]", var),
             Self::Expr(expr) => write!(fmt, "({})", expr),
         }

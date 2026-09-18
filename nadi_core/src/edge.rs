@@ -1,4 +1,5 @@
 use crate::attrs::AttrMap;
+use crate::network::Network;
 use crate::node::NodeInner;
 use abi_stable::{
     std_types::{RHashMap, RString},
@@ -7,13 +8,23 @@ use abi_stable::{
 
 /// Edge object to save attributes
 #[repr(C)]
-#[derive(Clone, StableAbi, Hash, Eq, PartialEq)]
+#[derive(Debug, Clone, StableAbi, Hash, Eq, PartialEq)]
 pub struct Edge {
-    from: RString,
-    to: RString,
+    pub(crate) from: RString,
+    pub(crate) to: RString,
+}
+
+impl Edge {
+    pub fn new(n1: &str, n2: &str) -> Self {
+        Self {
+            from: n1.to_string().into(),
+            to: n2.to_string().into(),
+        }
+    }
 }
 
 pub type EdgeAttrMap = RHashMap<Edge, AttrMap>;
+// pub type EdgeAttrMap = RHashMap<RString, RHashMap<RString, AttrMap>>;
 
 impl NodeInner {
     // implement methods to list out edges, as well as get edge attr
@@ -26,3 +37,21 @@ impl NodeInner {
 
     // I also think we should remove node path as a way to select nodes. Or maybe keep it only for tree networks.
 }
+
+impl Network {
+    // should we save all edges in network or per node? network makes sense, but then we don't have access to edge attributes from nodes... unless we use context as well, I guess we can do that.
+}
+
+// Syntax:
+
+// edge[x -> y]
+// edges[ -> y]
+// edges[x -> ]
+// edges[node -> ]
+// edges[ -> node]
+// edgesmap
+// edges[*x -> *y]
+
+// Basically: match pattern, empty means all, node name means that node, `node` keyword means current node in context, `*x` means the node in the variable x. IDK if we want list of nodes, we can prob do comma separated list of nodes. Except for *x type syntax. We can prob make *x be a list by default, yeah, that works.
+
+// IT's a good design, i don't think we need edges keyword for node edges anyway, and this is gr

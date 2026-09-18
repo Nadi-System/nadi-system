@@ -61,7 +61,7 @@ impl PyNodeFunction {
         kwargs: Option<PyAttrMap>,
     ) -> PyResult<Option<PyAttribute>> {
         let ctx = py_args_kwargs_to_ctx(args, kwargs);
-        handle_func_output(self.func.call_mut(&mut node.0.lock(), &ctx))
+        handle_func_output(self.func.call_mut(&mut node.0.lock(), &ctx, &mut false))
     }
 
     #[getter]
@@ -111,7 +111,7 @@ impl PyNetworkFunction {
         kwargs: Option<PyAttrMap>,
     ) -> PyResult<Option<PyAttribute>> {
         let ctx = py_args_kwargs_to_ctx(args, kwargs);
-        handle_func_output(self.func.call_mut(&mut network.0, &ctx))
+        handle_func_output(self.func.call_mut(&mut network.0, &ctx, &mut false))
     }
 
     #[getter]
@@ -221,7 +221,7 @@ impl PyNadiFunctions {
                 )));
             }
         };
-        handle_func_output(func.call_mut(&mut node.0.lock(), &ctx))
+        handle_func_output(func.call_mut(&mut node.0.lock(), &ctx, &mut false))
     }
 
     #[pyo3(signature = (function, network, *args, **kwargs))]
@@ -242,7 +242,7 @@ impl PyNadiFunctions {
                 )));
             }
         };
-        handle_func_output(func.call_mut(&mut network.0, &ctx))
+        handle_func_output(func.call_mut(&mut network.0, &ctx, &mut false))
     }
 
     #[pyo3(signature = (function, *args, **kwargs))]

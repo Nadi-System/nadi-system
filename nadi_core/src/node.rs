@@ -3,13 +3,13 @@ use crate::{
     timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap},
 };
 use abi_stable::{
-    external_types::{parking_lot::mutex::RMutexGuard, RMutex},
+    StableAbi,
+    external_types::{RMutex, parking_lot::mutex::RMutexGuard},
     std_types::{
         RArc, RDuration,
         ROption::{self, RNone, RSome},
         RString, RVec,
     },
-    StableAbi,
 };
 
 /// Wrapper around thread safe Mutex of [`NodeInner`]
@@ -379,23 +379,6 @@ impl NodeInner {
                 .unwrap()
         });
         self.refresh_output_names();
-    }
-
-    /// single edge node of the node, None if no edges or multiple edges
-    pub fn edge(&self) -> Option<Node> {
-        match self.edges().as_slice() {
-            [n] => Some(n.clone()),
-            _ => None,
-        }
-    }
-
-    /// Edges of the node
-    pub fn edges(&self) -> Vec<Node> {
-        self.inputs()
-            .iter()
-            .chain(self.outputs())
-            .cloned()
-            .collect()
     }
 
     /// Move the node to the side (move the inputs to its output)

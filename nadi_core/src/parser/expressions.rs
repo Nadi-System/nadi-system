@@ -7,7 +7,7 @@ use crate::network::{PropOrder, SelectNodes};
 use crate::parser::{
     components::*,
     errors::{MatchErr, ParseErrorType},
-    tasks::{attr_type, propagation},
+    tasks::{attr_type, propagation, select_edges},
     tokenizer::Token,
 };
 use crate::structs::NadiStructExpr;
@@ -551,7 +551,15 @@ pub fn multi_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprTy
 }
 
 pub fn variable_type<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, VarType> {
-    let (rest, (kw, prop)) = pair(keyword_val, propagation)(inp)?;
+    let (rest, (kw, prop, edges)) = alt((
+        map(tuple((node_keywords, propagation)), |(kw, prop)| {
+            (kw, prop, None)
+        }),
+        map(tuple((edge_keywords, opt(select_edges))), |(kw, eds)| {
+            (kw, None, eds)
+        }),
+        map(keyword_val, |kw| (kw, None, None)),
+    ))(inp)?;
     match (&kw, &prop) {
         // make sure node variable type has only one node name instead
         // of any other propagation
@@ -578,7 +586,7 @@ pub fn variable_type<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, VarType> 
                 )),
             }
         }
-        _ => match VarType::from_keyword(&kw, prop, None) {
+        _ => match VarType::from_keyword(&kw, prop, edges, None) {
             Some(v) => Ok((rest, v)),
             None => Err(nom::Err::Error(
                 MatchErr::new(inp).ty(&ParseErrorType::InvalidKeyword),

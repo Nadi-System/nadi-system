@@ -33,6 +33,7 @@ impl From<EvalError> for PyErr {
 
             EvalErrorType::FunctionNotFound(_, _) => PyKeyError::new_err(err),
             EvalErrorType::NodeNotFound(_) => PyKeyError::new_err(err),
+            EvalErrorType::EdgeNotFound(_) => PyKeyError::new_err(err),
 
             EvalErrorType::FunctionError(_, _) => PyRuntimeError::new_err(err),
             EvalErrorType::UserError(_) => PyRuntimeError::new_err(err),
