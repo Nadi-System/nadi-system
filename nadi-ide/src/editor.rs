@@ -894,33 +894,7 @@ async fn get_completion_for(text: String, mark: Position) -> Option<String> {
 }
 
 async fn func_at_mark(text: String, mark: Position) -> Option<(FunctionType, String)> {
-    let line = mark.line;
-    // if the current line can be parsed into a proper task, use that
-    let task_str = text.lines().nth(line)?;
-    let tokens_v = tokenizer::get_tokens(task_str);
-    let mut tokens = tokens_v.iter().peekable();
-    let mut ty = None;
-    let mut name = None;
-    let mut col = 0;
-    // let mut ind = 0;
-    while col < mark.column {
-        let tk = match tokens.next() {
-            Some(t) => t,
-            None => break,
-        };
-        col += tk.content.len();
-
-        match &tk.ty {
-            TaskToken::Function => {
-                name = Some(tk.content.to_string());
-            }
-            TaskToken::Keyword(kw) if ty.is_none() => {
-                ty = FunctionType::from_keyword(kw);
-            }
-            _ => (),
-        }
-    }
-    name.map(|n| (ty.unwrap_or_default(), n))
+    nadi_core::parser::tasks::get_current_function_context(&text, mark.line, mark.column)
 }
 
 fn toggle_comment(selection: &str) -> String {

@@ -42,6 +42,11 @@ mod visuals {
         }
     }
 
+    #[network_func(log = true)]
+    fn circular_layout(net: &mut Network, log: bool) {
+        net.circular_layout(log);
+    }
+
     #[network_func]
     fn elastic_layout(net: &mut Network) {
         net.elastic_layout();

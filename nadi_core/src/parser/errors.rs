@@ -1,4 +1,5 @@
 use crate::parser::tokenizer::{RawToken, TaskToken, Token};
+use crate::tasks::FunctionType;
 use crate::template::TemplateError;
 use colored::Colorize;
 use nom::error::ErrorKind;
@@ -161,6 +162,7 @@ pub enum ParseErrorType {
     InvalidLineStart,
     Unclosed(&'static str),
     Incomplete,
+    IncompleteFunction(Option<FunctionType>, String),
     IncompletePath,
     IncompleteExpression,
     InvalidExpression(&'static str),
@@ -177,7 +179,7 @@ pub enum ParseErrorType {
     ExpectedPath,
     InvalidToken,
     InvalidTemplate(TemplateError),
-    TokenMismatch,
+    TokenMismatch(Option<TaskToken>, TaskToken),
     MultipleOutput(String),
     Custom(String),
 }
@@ -192,6 +194,10 @@ impl ParseErrorType {
             Self::InvalidLineStart => "Lines should start with a keyword",
             Self::Unclosed(s) => return format!("Missing closing token {s:?}"),
             Self::Incomplete => "Incomplete Input",
+            Self::IncompleteFunction(Some(ty), v) => {
+                return format!("Incomplete Function: {ty}.{v}");
+            }
+            Self::IncompleteFunction(None, v) => return format!("Incomplete Function: {v}"),
             Self::IncompletePath => "Incomplete Path; expected node here",
             Self::IncompleteExpression => "Incomplete Expression",
             Self::InvalidExpression(v) => return format!("Invalid Expression: {v}"),
@@ -207,7 +213,10 @@ impl ParseErrorType {
             Self::ExpectedPath => "Expected Path symbol here",
             Self::InvalidToken => "Unsupported Token",
             Self::InvalidTemplate(err) => return format!("Invalid Template: {}", err),
-            Self::TokenMismatch => "Unexpected Token",
+            Self::TokenMismatch(Some(r), g) => {
+                return format!("Unexpected Token: {g:?} (required: {})", r.name());
+            }
+            Self::TokenMismatch(None, g) => return format!("Unexpected Token: {g:?}"),
             Self::MultipleOutput(msg) => return format!("Multiple output not supported: {msg}"),
             Self::Custom(msg) => msg.as_str(),
         }
@@ -240,6 +249,11 @@ impl<'a, 'b> MatchErr<'a, 'b> {
         self.ty = ty.clone();
         self
     }
+
+    pub fn with_ty(mut self, ty: ParseErrorType) -> Self {
+        self.ty = ty;
+        self
+    }
 }
 
 impl<'a, 'b> nom::error::ParseError<&'a [Token<'b>]> for MatchErr<'a, 'b> {
@@ -252,6 +266,7 @@ impl<'a, 'b> nom::error::ParseError<&'a [Token<'b>]> for MatchErr<'a, 'b> {
     // what does it do?
     fn append(input: &'a [Token<'b>], kind: ErrorKind, other: Self) -> Self {
         MatchErr {
+            // TODO find a way to get matcherror info from current location as well
             ty: other.ty,
             internal: nom::error::Error::<&'a [Token<'b>]>::append(input, kind, other.internal),
         }
@@ -266,7 +281,12 @@ impl<'a, 'b> nom::error::ParseError<&'a [Token<'b>]> for MatchErr<'a, 'b> {
     }
     fn or(self, other: Self) -> Self {
         MatchErr {
-            ty: self.ty,
+            // HACK TODO: keep the incomplete function error as a priority
+            ty: if matches!(other.ty, ParseErrorType::IncompleteFunction(..)) {
+                other.ty
+            } else {
+                self.ty
+            },
             internal: nom::error::Error::<&'a [Token<'b>]>::or(other.internal, self.internal),
         }
     }

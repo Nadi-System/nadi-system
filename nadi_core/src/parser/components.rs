@@ -21,9 +21,12 @@ pub fn string_val<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, String> {
     if let [first, rest @ ..] = inp {
         match &first.ty {
             TaskToken::String(s) => Ok((rest, s.clone())),
-            _ => Err(nom::Err::Error(
-                MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch),
-            )),
+            _ => Err(nom::Err::Error(MatchErr::new(inp).ty(
+                &ParseErrorType::TokenMismatch(
+                    Some(TaskToken::String("".into())),
+                    first.ty.clone(),
+                ),
+            ))),
         }
     } else {
         Err(nom::Err::Error(
@@ -38,9 +41,12 @@ pub fn template_val<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Template> 
             TaskToken::Template(s) => Template::from_str(s).map(|t| (rest, t)).map_err(|e| {
                 nom::Err::Error(MatchErr::new(inp).ty(&ParseErrorType::InvalidTemplate(e)))
             }),
-            _ => Err(nom::Err::Error(
-                MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch),
-            )),
+            _ => Err(nom::Err::Error(MatchErr::new(inp).ty(
+                &ParseErrorType::TokenMismatch(
+                    Some(TaskToken::Template("".into())),
+                    first.ty.clone(),
+                ),
+            ))),
         }
     } else {
         Err(nom::Err::Error(
@@ -54,7 +60,7 @@ pub fn keyword_val<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, TaskKeyword
         match &first.ty {
             TaskToken::Keyword(s) => Ok((rest, s.clone())),
             _ => Err(nom::Err::Error(
-                MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch),
+                MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch(None, first.ty.clone())),
             )),
         }
     } else {
@@ -72,12 +78,15 @@ pub fn edge_keywords<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, TaskKeywo
                     Ok((rest, s.clone()))
                 }
                 _ => Err(nom::Err::Error(
-                    MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch),
+                    MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch(None, first.ty.clone())),
                 )),
             },
-            _ => Err(nom::Err::Error(
-                MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch),
-            )),
+            _ => Err(nom::Err::Error(MatchErr::new(inp).ty(
+                &ParseErrorType::TokenMismatch(
+                    Some(TaskToken::Keyword(TaskKeyword::Clear)),
+                    first.ty.clone(),
+                ),
+            ))),
         }
     } else {
         Err(nom::Err::Error(
@@ -106,12 +115,15 @@ pub fn node_keywords<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, TaskKeywo
                 | TaskKeyword::Leaves
                 | TaskKeyword::LeavesMap => Ok((rest, s.clone())),
                 _ => Err(nom::Err::Error(
-                    MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch),
+                    MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch(None, first.ty.clone())),
                 )),
             },
-            _ => Err(nom::Err::Error(
-                MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch),
-            )),
+            _ => Err(nom::Err::Error(MatchErr::new(inp).ty(
+                &ParseErrorType::TokenMismatch(
+                    Some(TaskToken::Keyword(TaskKeyword::Clear)),
+                    first.ty.clone(),
+                ),
+            ))),
         }
     } else {
         Err(nom::Err::Error(
@@ -124,9 +136,9 @@ pub fn variable_name<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, String> {
     if let [first, rest @ ..] = inp {
         match &first.ty {
             TaskToken::Variable => Ok((rest, first.content.to_string())),
-            _ => Err(nom::Err::Error(
-                MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch),
-            )),
+            _ => Err(nom::Err::Error(MatchErr::new(inp).ty(
+                &ParseErrorType::TokenMismatch(Some(TaskToken::Variable), first.ty.clone()),
+            ))),
         }
     } else {
         Err(nom::Err::Error(
@@ -136,14 +148,14 @@ pub fn variable_name<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, String> {
 }
 
 macro_rules! one_token {
-    ($name:ident, $ty:pat) => {
+    ($name:ident, $ty:pat, $val:expr) => {
         pub fn $name<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, &'a Token<'b>> {
             match inp {
                 [first, rest @ ..] => match first.ty {
                     $ty => Ok((rest, first)),
-                    _ => Err(nom::Err::Error(
-                        MatchErr::new(inp).ty(&ParseErrorType::TokenMismatch),
-                    )),
+                    _ => Err(nom::Err::Error(MatchErr::new(inp).ty(
+                        &ParseErrorType::TokenMismatch(Some($val), first.ty.clone()),
+                    ))),
                 },
                 [] => Err(nom::Err::Error(
                     MatchErr::new(inp).ty(&ParseErrorType::Incomplete),
@@ -153,79 +165,211 @@ macro_rules! one_token {
     };
 }
 
-one_token!(none, TaskToken::None);
-one_token!(infinity, TaskToken::Infinity);
-one_token!(nan, TaskToken::NaN);
-one_token!(float, TaskToken::Float);
-one_token!(integer, TaskToken::Integer);
-one_token!(boolean, TaskToken::Bool);
-one_token!(string, TaskToken::String(_));
-one_token!(template, TaskToken::Template(_));
-one_token!(datetime, TaskToken::DateTime);
-one_token!(newline, TaskToken::NewLine);
-one_token!(space, TaskToken::WhiteSpace);
-one_token!(comment, TaskToken::Comment);
-one_token!(keyword, TaskToken::Keyword(_));
-one_token!(variable, TaskToken::Variable);
-one_token!(function, TaskToken::Function);
-one_token!(angle_start, TaskToken::AngleStart);
-one_token!(paren_start, TaskToken::ParenStart);
-one_token!(brace_start, TaskToken::BraceStart);
-one_token!(bracket_start, TaskToken::BracketStart);
-one_token!(path_sep, TaskToken::PathSep);
-one_token!(comma, TaskToken::Comma);
-one_token!(caret, TaskToken::Caret);
-one_token!(dash, TaskToken::Dash);
-one_token!(plus, TaskToken::Plus);
-one_token!(star, TaskToken::Star);
-one_token!(slash, TaskToken::Slash);
-one_token!(percentage, TaskToken::Percentage);
-one_token!(question, TaskToken::Question);
-one_token!(colon, TaskToken::Colon);
-one_token!(semicolon, TaskToken::Semicolon);
-one_token!(dot, TaskToken::Dot);
-one_token!(and, TaskToken::And);
-one_token!(or, TaskToken::Or);
-one_token!(not, TaskToken::Not);
-one_token!(angle_end, TaskToken::AngleEnd);
-one_token!(paren_end, TaskToken::ParenEnd);
-one_token!(brace_end, TaskToken::BraceEnd);
-one_token!(bracket_end, TaskToken::BracketEnd);
-one_token!(assignment, TaskToken::Assignment);
-one_token!(at, TaskToken::At);
-one_token!(dollar, TaskToken::Dollar);
-one_token!(invalid, TaskToken::Invalid(_));
+one_token!(none, TaskToken::None, TaskToken::None);
+one_token!(infinity, TaskToken::Infinity, TaskToken::Infinity);
+one_token!(nan, TaskToken::NaN, TaskToken::NaN);
+one_token!(float, TaskToken::Float, TaskToken::Float);
+one_token!(integer, TaskToken::Integer, TaskToken::Integer);
+one_token!(boolean, TaskToken::Bool, TaskToken::Bool);
+one_token!(string, TaskToken::String(_), TaskToken::String("".into()));
+one_token!(
+    template,
+    TaskToken::Template(_),
+    TaskToken::Template("".into())
+);
+one_token!(datetime, TaskToken::DateTime, TaskToken::DateTime);
+one_token!(newline, TaskToken::NewLine, TaskToken::NewLine);
+one_token!(space, TaskToken::WhiteSpace, TaskToken::WhiteSpace);
+one_token!(comment, TaskToken::Comment, TaskToken::Comment);
+one_token!(
+    keyword,
+    TaskToken::Keyword(_),
+    TaskToken::Keyword(TaskKeyword::Clear)
+);
+one_token!(variable, TaskToken::Variable, TaskToken::Variable);
+one_token!(function, TaskToken::Function, TaskToken::Function);
+one_token!(angle_start, TaskToken::AngleStart, TaskToken::AngleStart);
+one_token!(paren_start, TaskToken::ParenStart, TaskToken::ParenStart);
+one_token!(brace_start, TaskToken::BraceStart, TaskToken::BraceStart);
+one_token!(
+    bracket_start,
+    TaskToken::BracketStart,
+    TaskToken::BracketStart
+);
+one_token!(path_sep, TaskToken::PathSep, TaskToken::PathSep);
+one_token!(comma, TaskToken::Comma, TaskToken::Comma);
+one_token!(caret, TaskToken::Caret, TaskToken::Caret);
+one_token!(dash, TaskToken::Dash, TaskToken::Dash);
+one_token!(plus, TaskToken::Plus, TaskToken::Plus);
+one_token!(star, TaskToken::Star, TaskToken::Star);
+one_token!(slash, TaskToken::Slash, TaskToken::Slash);
+one_token!(percentage, TaskToken::Percentage, TaskToken::Percentage);
+one_token!(question, TaskToken::Question, TaskToken::Question);
+one_token!(colon, TaskToken::Colon, TaskToken::Colon);
+one_token!(semicolon, TaskToken::Semicolon, TaskToken::Semicolon);
+one_token!(dot, TaskToken::Dot, TaskToken::Dot);
+one_token!(and, TaskToken::And, TaskToken::And);
+one_token!(or, TaskToken::Or, TaskToken::Or);
+one_token!(not, TaskToken::Not, TaskToken::Not);
+one_token!(angle_end, TaskToken::AngleEnd, TaskToken::AngleEnd);
+one_token!(paren_end, TaskToken::ParenEnd, TaskToken::ParenEnd);
+one_token!(brace_end, TaskToken::BraceEnd, TaskToken::BraceEnd);
+one_token!(bracket_end, TaskToken::BracketEnd, TaskToken::BracketEnd);
+one_token!(assignment, TaskToken::Assignment, TaskToken::Assignment);
+one_token!(at, TaskToken::At, TaskToken::At);
+one_token!(dollar, TaskToken::Dollar, TaskToken::Dollar);
+one_token!(invalid, TaskToken::Invalid(_), TaskToken::Invalid('.'));
 
-one_token!(kw_network, TaskToken::Keyword(TaskKeyword::Network));
-one_token!(kw_node, TaskToken::Keyword(TaskKeyword::Node));
-one_token!(kw_env, TaskToken::Keyword(TaskKeyword::Env));
-one_token!(kw_import, TaskToken::Keyword(TaskKeyword::Import));
-one_token!(kw_exec, TaskToken::Keyword(TaskKeyword::Exec));
-one_token!(kw_from, TaskToken::Keyword(TaskKeyword::From));
-one_token!(kw_if, TaskToken::Keyword(TaskKeyword::If));
-one_token!(kw_else, TaskToken::Keyword(TaskKeyword::Else));
-one_token!(kw_while, TaskToken::Keyword(TaskKeyword::While));
-one_token!(kw_for, TaskToken::Keyword(TaskKeyword::For));
-one_token!(kw_try, TaskToken::Keyword(TaskKeyword::Try));
-one_token!(kw_catch, TaskToken::Keyword(TaskKeyword::Catch));
-one_token!(kw_func, TaskToken::Keyword(TaskKeyword::Function));
-one_token!(kw_struct, TaskToken::Keyword(TaskKeyword::Struct));
-one_token!(kw_error, TaskToken::Keyword(TaskKeyword::Error));
-one_token!(kw_in, TaskToken::Keyword(TaskKeyword::In));
-one_token!(kw_match, TaskToken::Keyword(TaskKeyword::Match));
-one_token!(kw_hook, TaskToken::Keyword(TaskKeyword::Hook));
-one_token!(kw_help, TaskToken::Keyword(TaskKeyword::Help));
-one_token!(kw_end, TaskToken::Keyword(TaskKeyword::End));
-one_token!(kw_clear, TaskToken::Keyword(TaskKeyword::Clear));
-one_token!(kw_exit, TaskToken::Keyword(TaskKeyword::Exit));
-one_token!(kw_return, TaskToken::Keyword(TaskKeyword::Return));
-one_token!(kw_break, TaskToken::Keyword(TaskKeyword::Break));
-one_token!(kw_continue, TaskToken::Keyword(TaskKeyword::Continue));
-one_token!(kw_loop, TaskToken::Keyword(TaskKeyword::Loop));
-one_token!(kw_progress, TaskToken::Keyword(TaskKeyword::Progress));
-one_token!(kw_do, TaskToken::Keyword(TaskKeyword::Do));
-one_token!(kw_dopar, TaskToken::Keyword(TaskKeyword::DoPar));
-one_token!(kw_par, TaskToken::Keyword(TaskKeyword::Par));
+one_token!(
+    kw_network,
+    TaskToken::Keyword(TaskKeyword::Network),
+    TaskToken::Keyword(TaskKeyword::Network)
+);
+one_token!(
+    kw_node,
+    TaskToken::Keyword(TaskKeyword::Node),
+    TaskToken::Keyword(TaskKeyword::Node)
+);
+one_token!(
+    kw_env,
+    TaskToken::Keyword(TaskKeyword::Env),
+    TaskToken::Keyword(TaskKeyword::Env)
+);
+one_token!(
+    kw_import,
+    TaskToken::Keyword(TaskKeyword::Import),
+    TaskToken::Keyword(TaskKeyword::Import)
+);
+one_token!(
+    kw_exec,
+    TaskToken::Keyword(TaskKeyword::Exec),
+    TaskToken::Keyword(TaskKeyword::Exec)
+);
+one_token!(
+    kw_from,
+    TaskToken::Keyword(TaskKeyword::From),
+    TaskToken::Keyword(TaskKeyword::From)
+);
+one_token!(
+    kw_if,
+    TaskToken::Keyword(TaskKeyword::If),
+    TaskToken::Keyword(TaskKeyword::If)
+);
+one_token!(
+    kw_else,
+    TaskToken::Keyword(TaskKeyword::Else),
+    TaskToken::Keyword(TaskKeyword::Else)
+);
+one_token!(
+    kw_while,
+    TaskToken::Keyword(TaskKeyword::While),
+    TaskToken::Keyword(TaskKeyword::While)
+);
+one_token!(
+    kw_for,
+    TaskToken::Keyword(TaskKeyword::For),
+    TaskToken::Keyword(TaskKeyword::For)
+);
+one_token!(
+    kw_try,
+    TaskToken::Keyword(TaskKeyword::Try),
+    TaskToken::Keyword(TaskKeyword::Try)
+);
+one_token!(
+    kw_catch,
+    TaskToken::Keyword(TaskKeyword::Catch),
+    TaskToken::Keyword(TaskKeyword::Catch)
+);
+one_token!(
+    kw_func,
+    TaskToken::Keyword(TaskKeyword::Function),
+    TaskToken::Keyword(TaskKeyword::Function)
+);
+one_token!(
+    kw_struct,
+    TaskToken::Keyword(TaskKeyword::Struct),
+    TaskToken::Keyword(TaskKeyword::Struct)
+);
+one_token!(
+    kw_error,
+    TaskToken::Keyword(TaskKeyword::Error),
+    TaskToken::Keyword(TaskKeyword::Error)
+);
+one_token!(
+    kw_in,
+    TaskToken::Keyword(TaskKeyword::In),
+    TaskToken::Keyword(TaskKeyword::In)
+);
+one_token!(
+    kw_match,
+    TaskToken::Keyword(TaskKeyword::Match),
+    TaskToken::Keyword(TaskKeyword::Match)
+);
+one_token!(
+    kw_hook,
+    TaskToken::Keyword(TaskKeyword::Hook),
+    TaskToken::Keyword(TaskKeyword::Hook)
+);
+one_token!(
+    kw_help,
+    TaskToken::Keyword(TaskKeyword::Help),
+    TaskToken::Keyword(TaskKeyword::Help)
+);
+one_token!(
+    kw_end,
+    TaskToken::Keyword(TaskKeyword::End),
+    TaskToken::Keyword(TaskKeyword::End)
+);
+one_token!(
+    kw_clear,
+    TaskToken::Keyword(TaskKeyword::Clear),
+    TaskToken::Keyword(TaskKeyword::Clear)
+);
+one_token!(
+    kw_exit,
+    TaskToken::Keyword(TaskKeyword::Exit),
+    TaskToken::Keyword(TaskKeyword::Exit)
+);
+one_token!(
+    kw_return,
+    TaskToken::Keyword(TaskKeyword::Return),
+    TaskToken::Keyword(TaskKeyword::Return)
+);
+one_token!(
+    kw_break,
+    TaskToken::Keyword(TaskKeyword::Break),
+    TaskToken::Keyword(TaskKeyword::Break)
+);
+one_token!(
+    kw_continue,
+    TaskToken::Keyword(TaskKeyword::Continue),
+    TaskToken::Keyword(TaskKeyword::Continue)
+);
+one_token!(
+    kw_loop,
+    TaskToken::Keyword(TaskKeyword::Loop),
+    TaskToken::Keyword(TaskKeyword::Loop)
+);
+one_token!(
+    kw_progress,
+    TaskToken::Keyword(TaskKeyword::Progress),
+    TaskToken::Keyword(TaskKeyword::Progress)
+);
+one_token!(
+    kw_do,
+    TaskToken::Keyword(TaskKeyword::Do),
+    TaskToken::Keyword(TaskKeyword::Do)
+);
+one_token!(
+    kw_dopar,
+    TaskToken::Keyword(TaskKeyword::DoPar),
+    TaskToken::Keyword(TaskKeyword::DoPar)
+);
+one_token!(
+    kw_par,
+    TaskToken::Keyword(TaskKeyword::Par),
+    TaskToken::Keyword(TaskKeyword::Par)
+);
 
 /// Matches the next one that might have spaces before it
 pub fn err_ctx<'a, 'b: 'a, O, F>(

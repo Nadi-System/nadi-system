@@ -3,13 +3,13 @@ use crate::{
     timeseries::{HasSeries, HasTimeSeries, SeriesMap, TsMap},
 };
 use abi_stable::{
-    StableAbi,
-    external_types::{RMutex, parking_lot::mutex::RMutexGuard},
+    external_types::{parking_lot::mutex::RMutexGuard, RMutex},
     std_types::{
         RArc, RDuration,
         ROption::{self, RNone, RSome},
         RString, RVec,
     },
+    StableAbi,
 };
 
 /// Wrapper around thread safe Mutex of [`NodeInner`]

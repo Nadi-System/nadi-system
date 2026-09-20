@@ -167,6 +167,11 @@ impl Network {
     }
 
     /// Iterator for the edges of the network
+    pub fn edge_attrs(&self) -> &RHashMap<Edge, AttrMap> {
+        &self.edge_attrs
+    }
+
+    /// Iterator for the edges of the network
     pub fn edge_attr_map(&self, node1: &Node, node2: &Node) -> Option<&AttrMap> {
         let edge = Edge::new(node1.name(), node2.name());
         self.edge_attrs.get(&edge)
@@ -1144,6 +1149,27 @@ impl Network {
                 line
             })
             .collect()
+    }
+
+    pub fn circular_layout(&self, log: bool) {
+        let t = 2.0 * std::f64::consts::PI / self.nodes_count() as f64;
+        let mut wt_max = self.roots().map(|n| n.lock().weight()).max().unwrap_or(1) as f64;
+        if log {
+            wt_max = wt_max.log10();
+        }
+        self.nodes().for_each(|nd| {
+            let mut n = nd.lock();
+            let r = 100.0
+                * (1.0
+                    - if log {
+                        (n.weight() as f64).log10()
+                    } else {
+                        n.weight() as f64
+                    } / wt_max);
+            let x = (t * n.index() as f64).cos() * r;
+            let y = (t * n.index() as f64).sin() * r;
+            n.set_pos((x, y));
+        });
     }
 
     pub fn elastic_layout(&self) {

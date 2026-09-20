@@ -265,7 +265,6 @@ pub fn parse(tokens: Vec<RawToken>) -> Result<Vec<Task>, ParseError> {
             } else {
                 match trailing_newlines(maybe_newline(task))(rest).finish() {
                     Ok((rest, _)) => {
-                        eprintln!("{rest:?}");
                         Err(ParseError::new(&tokens, rest, ParseErrorType::SyntaxError))
                     }
                     Err(err) => Err(ParseError::new(&tokens, err.internal.input, err.ty)),
@@ -273,6 +272,66 @@ pub fn parse(tokens: Vec<RawToken>) -> Result<Vec<Task>, ParseError> {
             }
         }
         Err(e) => Err(ParseError::new(&tokens, e.internal.input, e.ty)),
+    }
+}
+
+/// get function at the given position
+///
+/// not super accurate about the context though
+pub fn get_function_at(tasks: &str, line: usize, column: usize) -> Option<(FunctionType, String)> {
+    // if the current line can be parsed into a proper task, use that
+    let task_str = tasks.lines().nth(line)?;
+    let tokens_v = crate::parser::tokenizer::get_tokens(task_str);
+    let mut tokens = tokens_v.iter().peekable();
+    let mut ty = None;
+    let mut name = None;
+    let mut col = 0;
+    // let mut ind = 0;
+    while col <= column {
+        let tk = match tokens.next() {
+            Some(t) => t,
+            None => break,
+        };
+        col += tk.content.len();
+        use crate::parser::tokenizer::TaskToken;
+        match &tk.ty {
+            TaskToken::Function if col >= column => {
+                name = Some(tk.content.to_string());
+            }
+            TaskToken::Keyword(kw) if ty.is_none() => {
+                ty = FunctionType::from_keyword(kw);
+            }
+            _ => (),
+        }
+    }
+    name.map(|n| (ty.unwrap_or_default(), n))
+}
+
+/// Get the function detail if we're currently inside its context
+///
+/// Not super accurate about the type if it's derived from context
+pub fn get_current_function_context(
+    tasks: &str,
+    line: usize,
+    column: usize,
+) -> Option<(FunctionType, String)> {
+    // discard everything till our mark
+    let mut lines = Vec::with_capacity(line + 1);
+    for line in tasks.lines().take(line) {
+        lines.push(line);
+    }
+    lines.push(&tasks.lines().nth(line)?[..column]);
+    let mut tasks = lines.join("\n");
+    let mut tokens = crate::parser::tokenizer::get_tokens(&tasks);
+    if Token::validate(tokens.clone()).is_err() {
+        // in cases where we're in middle of a string and that makes it invalid
+        tasks.push('"');
+        tokens = crate::parser::tokenizer::get_tokens(&tasks)
+    }
+    let err = parse(tokens).err()?;
+    match err.ty {
+        ParseErrorType::IncompleteFunction(ty, f) => Some((ty.unwrap_or_default(), f)),
+        _ => None,
     }
 }
 
@@ -354,5 +413,50 @@ mod tests {
     pub fn parse_valid_mdbook_test(#[case] txt: &str) {
         let tokens = get_tokens(txt);
         parse(tokens).unwrap();
+    }
+
+    #[rstest]
+    #[case("  s🇮ome()", Some("some"))]
+    #[case("som🇮e()", Some("some"))]
+    #[case("🇮some()", Some("some"))]
+    #[case("some(🇮)", None)]
+    #[case("some()\n🇮", None)]
+    #[case("\nsom🇮e()", Some("some"))]
+    #[case("#some()\n🇮what()", Some("what"))]
+    #[case("#some()\nnet.w🇮hat()", Some("what"))]
+    #[case("#some()\nnetwork.🇮what()", Some("what"))]
+    pub fn get_current_function_test(#[case] txt: &str, #[case] name: Option<&str>) {
+        let (pre, post) = txt.split_once("🇮").unwrap();
+        let line = pre.split('\n').count() - 1;
+        let col = pre.split('\n').last().map(|l| l.len()).unwrap_or(0);
+        let tasks = format!("{pre}{post}");
+        let res = get_function_at(&tasks, line, col);
+        let fname = res.as_ref().map(|(_, n)| n.as_str());
+        assert_eq!(fname, name);
+    }
+
+    #[rstest]
+    #[case("  🇮some()\nother()", None)]
+    #[case(" som🇮e()\nother()", None)]
+    #[case(" some()\nother(🇮)", Some("other"))]
+    #[case(" some()\n#other(🇮)", None)]
+    #[case("some(🇮)\nother()", Some("some"))]
+    #[case("\nsome(🇮value)\nother()", Some("some"))]
+    #[case("\nwhat.some(value🇮)\nother()", Some("what.some"))]
+    #[case("\nnode.what.some(value🇮)\nother()", Some("what.some"))]
+    #[case("load_str(🇮)", Some("load_str"))]
+    #[case("load_str(\"a -> b\"🇮)", Some("load_str"))]
+    #[case("load_str(\"a -> b🇮\n b -> d\n c -> d\")", Some("load_str"))]
+    #[case("net.load_str(🇮)", Some("load_str"))]
+    #[case("net.load_str(\"a -> b\"🇮)", Some("load_str"))]
+    #[case("net.load_str(\"a -> b🇮\n b -> d\n c -> d\")", Some("load_str"))]
+    pub fn get_current_function_context_test(#[case] txt: &str, #[case] name: Option<&str>) {
+        let (pre, post) = txt.split_once("🇮").unwrap();
+        let line = pre.split('\n').count() - 1;
+        let col = pre.split('\n').last().map(|l| l.len()).unwrap_or(0);
+        let tasks = format!("{pre}{post}");
+        let res = get_current_function_context(&tasks, line, col);
+        let fname = res.as_ref().map(|(_, n)| n.as_str());
+        assert_eq!(fname, name);
     }
 }

@@ -829,11 +829,26 @@ pub fn func_args<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FuncCallArgKw
 }
 
 pub fn function_call<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionCall<RawExpr>> {
-    let (rest, (ty, name, (args, kwargs))) = tuple((
-        opt(terminated(variable_type, dot)),
-        function,
-        cut(func_args),
-    ))(inp)?;
+    let (args, (ty, name)) = tuple((opt(terminated(variable_type, dot)), function))(inp)?;
+    let (rest, (args, kwargs)) = match cut(func_args)(args) {
+        Ok((r, v)) => (r, v),
+        Err(e) => {
+            match &e {
+                // for nested function error take the innermost
+                nom::Err::Error(i) | nom::Err::Failure(i) => match &i.ty {
+                    ParseErrorType::IncompleteFunction(_, _) => return Err(e),
+                    _ => (),
+                },
+                _ => (),
+            }
+            return Err(e.map(|e| {
+                e.with_ty(ParseErrorType::IncompleteFunction(
+                    ty.map(|vt| vt.to_functiontype().clone()),
+                    name.content.to_string(),
+                ))
+            }));
+        }
+    };
     Ok((
         rest,
         FunctionCall::new(
@@ -951,6 +966,7 @@ mod tests {
     #[case("sth.sth(2.12, y=12, y2=43 + values * 1.23)")]
     #[should_panic]
     #[case("sth.sth(2.12, y=12, 43)")]
+    #[case("network.load_str(\"a -> b\")")]
     pub fn function_call_valid_test(#[case] txt: &str) {
         let tokens = Token::validate(get_tokens(txt)).unwrap();
         let (rest, _) = function_call(&tokens).unwrap();

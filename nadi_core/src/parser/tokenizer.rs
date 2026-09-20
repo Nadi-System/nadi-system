@@ -186,7 +186,7 @@ pub enum TaskToken {
     Assignment,
     None, // <None>
     Bool,
-    String(String), // might need new value instead of slice (think escape seq)
+    String(String),
     Template(String),
     Integer,
     Float,
@@ -197,6 +197,53 @@ pub enum TaskToken {
 }
 
 impl TaskToken {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::NewLine => "NewLine",
+            Self::WhiteSpace => "WhiteSpace",
+            Self::Comment => "Comment",
+            Self::Keyword(_) => "Keyword",
+            Self::AngleStart => "AngleStart",
+            Self::ParenStart => "ParenStart",
+            Self::BraceStart => "BraceStart",
+            Self::BracketStart => "BracketStart",
+            Self::PathSep => "PathSep",
+            Self::Comma => "Comma",
+            Self::Caret => "Caret",
+            Self::Dash => "Dash",
+            Self::Plus => "Plus",
+            Self::Star => "Star",
+            Self::Slash => "Slash",
+            Self::Percentage => "Percentage",
+            Self::Question => "Question",
+            Self::Colon => "Colon",
+            Self::Semicolon => "Semicolon",
+            Self::Dot => "Dot",
+            Self::And => "And",
+            Self::Or => "Or",
+            Self::Not => "Not",
+            Self::AngleEnd => "AngleEnd",
+            Self::ParenEnd => "ParenEnd",
+            Self::BraceEnd => "BraceEnd",
+            Self::BracketEnd => "BracketEnd",
+            Self::At => "At",
+            Self::Dollar => "Dollar",
+            Self::Variable => "Variable",
+            Self::Function => "Function",
+            Self::Assignment => "Assignment",
+            Self::None => "None",
+            Self::Bool => "Bool",
+            Self::String(_) => "String",
+            Self::Template(_) => "Template",
+            Self::Integer => "Integer",
+            Self::Float => "Float",
+            Self::DateTime => "DateTime",
+            Self::NaN => "NaN",
+            Self::Infinity => "Infinity",
+            Self::Invalid(_) => "Invalid",
+        }
+    }
+
     pub fn is_valid(&self) -> bool {
         match self {
             Self::Invalid(_) => false,
