@@ -99,10 +99,7 @@ impl PyNode {
     }
 
     fn move_aside(&mut self) -> PyResult<()> {
-        self.0
-            .lock()
-            .move_aside()
-            .map_err(|e| PyRuntimeError::new_err(e))
+        self.0.lock().move_aside().map_err(PyRuntimeError::new_err)
     }
 
     // fn move_down(&mut self) {

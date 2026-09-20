@@ -311,22 +311,9 @@ impl NetworkData {
                     )
                 };
                 // lock should be free because of self loop
-                let outs: Vec<Node> = n
-                    .try_lock()
-                    .expect("mutex error")
-                    .outputs()
-                    .iter()
-                    .cloned()
-                    .collect();
+                let outs: Vec<Node> = n.try_lock().expect("mutex error").outputs().to_vec();
                 outs.iter()
-                    .map(|o| {
-                        (
-                            ind,
-                            o.try_lock().expect("mutex error").index(),
-                            lc.clone(),
-                            lw,
-                        )
-                    })
+                    .map(|o| (ind, o.try_lock().expect("mutex error").index(), lc, lw))
                     .collect::<Vec<_>>()
             })
             .collect();

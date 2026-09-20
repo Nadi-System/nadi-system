@@ -90,7 +90,7 @@ impl PyNetwork {
 
     #[getter]
     fn root(&self) -> Option<PyNode> {
-        self.0.root().map(|n| PyNode(n.clone())).into()
+        self.0.root().map(|n| PyNode(n.clone()))
     }
 
     #[getter]

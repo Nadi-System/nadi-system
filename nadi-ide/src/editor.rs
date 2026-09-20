@@ -14,11 +14,7 @@ use iced::widget::{
 use iced::{Element, Fill, Font, Subscription, Task, Theme};
 use nadi_core::{
     functions::{FuncArg, FuncArgType, NadiFunctions},
-    parser::{
-        ParseError,
-        highlight::NadiFileType,
-        tokenizer::{self, TaskToken},
-    },
+    parser::{ParseError, highlight::NadiFileType},
     tasks::FunctionType,
 };
 
@@ -456,10 +452,10 @@ impl Editor {
                     self.is_loading = true;
 
                     let mut text = self.content.text();
-                    if let Some(ending) = self.content.line_ending() {
-                        if !text.ends_with(ending.as_str()) {
-                            text.push_str(ending.as_str());
-                        }
+                    if let Some(ending) = self.content.line_ending()
+                        && !text.ends_with(ending.as_str())
+                    {
+                        text.push_str(ending.as_str());
                     }
                     Task::perform(save_file(self.file.clone(), text), Message::FileSaved)
                 }

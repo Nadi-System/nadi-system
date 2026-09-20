@@ -145,12 +145,12 @@ impl SvgView {
             icons::action(
                 icons::left_icon(),
                 "Previous Image",
-                (self.curr_ind > 0).then(|| Message::PrevImage)
+                (self.curr_ind > 0).then_some(Message::PrevImage)
             ),
             icons::action(
                 icons::right_icon(),
                 "Next Image",
-                ((self.curr_ind + 1) < self.files.len()).then(|| Message::NextImage)
+                ((self.curr_ind + 1) < self.files.len()).then_some(Message::NextImage)
             ),
         ]
         .spacing(10)

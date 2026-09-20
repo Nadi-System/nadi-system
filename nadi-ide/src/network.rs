@@ -298,7 +298,7 @@ where
                     txt.align_y = iced_core::alignment::Vertical::Center;
                     txt.align_x = iced_core::text::Alignment::Center;
                     txt.color = node.textcolor.unwrap_or(style.text);
-                    txt.size = (16 as f32 / self.data.scale).into();
+                    txt.size = (16_f32 / self.data.scale).into();
                     frame.fill_text(txt);
                 }
             }
