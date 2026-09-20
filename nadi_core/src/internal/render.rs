@@ -297,7 +297,7 @@ mod render_utils {
                     RenderFileContentsType::Snippet(templ, prop) => {
                         let nodes = match &prop.nodes {
                             SelectNodes::All => &net.nodes,
-                            SelectNodes::List(nds) => &nds,
+                            SelectNodes::List(nds) => nds,
                             _ => return Err(anyhow::Error::msg("Propagation not supported")),
                         };
                         for node in net

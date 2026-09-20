@@ -146,7 +146,7 @@ impl FunctionInput<'_> {
         }
     }
 
-    pub fn attribute_ref<'a>(&'a self) -> Result<&'a Attribute, EvalError> {
+    pub fn attribute_ref(&self) -> Result<&Attribute, EvalError> {
         match self {
             Self::None => Err(EvalErrorType::EmptyValue(None).no_pos()),
             Self::Attr(&ref a) => Ok(a),
@@ -362,7 +362,7 @@ impl<'a> ResolveFuncArg<'a> for &'a TimeSeries {
     fn resolve_arg(val: &'a FunctionInput<'a>) -> Option<Self> {
         match val {
             FunctionInput::Ts(a) => Some(a),
-            FunctionInput::TsOwn(a) => Some(&a),
+            FunctionInput::TsOwn(a) => Some(a),
             _ => None,
         }
     }

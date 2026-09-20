@@ -1649,7 +1649,7 @@ impl InputVar {
                     .insert(self.name.to_string().into(), val);
             }
             [pref @ .., last] => {
-                let insert = if pref.len() > 0 {
+                let insert = if !pref.is_empty() {
                     matches!(pref[0], InputVarIndex::Str(_))
                 } else {
                     matches!(last, InputVarIndex::Str(_))
@@ -1999,8 +1999,7 @@ impl VarType {
             (VarType::Node(None), Some(n)) => Ok(ExprContext::Node(n.clone())),
             (VarType::NodeVar(var), _) => {
                 let val = var.eval_value(ctx, ectx, loc).map_err(|e| *e.ty)?;
-                let nd =
-                    String::try_from_attr(&val).map_err(|e| EvalErrorType::AttributeError(e))?;
+                let nd = String::try_from_attr(&val).map_err(EvalErrorType::AttributeError)?;
                 let n = ctx
                     .network
                     .node_by_name(&nd)
@@ -2209,11 +2208,11 @@ impl<T> FunctionCall<T> {
         }
     }
 
-    fn get_eval_context<'a, 'b>(
+    fn get_eval_context<'a>(
         &self,
         ctx: &TaskContext,
         expr: &EvalCtx<'a>,
-        loc: &'b mut AttrMap,
+        loc: &mut AttrMap,
     ) -> Result<EvalCtx<'a>, EvalErrorType> {
         match &self.ty {
             Some(ty) => ty
@@ -3491,7 +3490,7 @@ impl Eval for ExprWithContext {
                 if self.silent {
                     let parallel = TaskCtxConsts::parallize_nodes(ctx);
                     if parallel | self.parallel {
-                        run_nodes_in_parallel(nds, &ctx, &self.expr)
+                        run_nodes_in_parallel(nds, ctx, &self.expr)
                     } else {
                         nds.into_iter().try_for_each(|n| {
                             self.expr
@@ -3597,7 +3596,7 @@ impl Eval for ExprWithContext {
                 if self.silent {
                     let parallel = TaskCtxConsts::parallize_nodes(ctx);
                     if parallel | self.parallel {
-                        run_nodes_in_parallel(nds, &ctx, &self.expr)
+                        run_nodes_in_parallel(nds, ctx, &self.expr)
                     } else {
                         nds.into_iter().try_for_each(|n| {
                             self.expr
@@ -3925,9 +3924,7 @@ fn resolve_set_variable<'b>(
                 .map(|(n1, n2)| {
                     let context = EvalCtx::at_edge(n1.clone(), n2.clone()).to_owned();
                     let mut vt = expr.var.clone();
-                    _ = vt
-                        .ty
-                        .replace(VarType::Edge(Box::new(SelectEdges::default())));
+                    _ = vt.ty.replace(VarType::Edge(Box::default()));
                     Ok(ResolvedExpr {
                         expr: ExprType::SetVar(SetVariable::new(
                             vt,

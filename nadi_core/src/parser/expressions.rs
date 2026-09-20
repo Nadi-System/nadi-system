@@ -835,10 +835,11 @@ pub fn function_call<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, FunctionC
         Err(e) => {
             match &e {
                 // for nested function error take the innermost
-                nom::Err::Error(i) | nom::Err::Failure(i) => match &i.ty {
-                    ParseErrorType::IncompleteFunction(_, _) => return Err(e),
-                    _ => (),
-                },
+                nom::Err::Error(i) | nom::Err::Failure(i) => {
+                    if let ParseErrorType::IncompleteFunction(_, _) = &i.ty {
+                        return Err(e);
+                    }
+                }
                 _ => (),
             }
             return Err(e.map(|e| {

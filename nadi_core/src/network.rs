@@ -201,7 +201,7 @@ impl Network {
             .filter(|n| {
                 self.nodes_map[n.as_str()]
                     .try_lock()
-                    .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                    .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                     .is_leaf()
             })
             .map(|n| &self.nodes_map[n])
@@ -226,7 +226,7 @@ impl Network {
             .filter(|n| {
                 self.nodes_map[n.as_str()]
                     .try_lock()
-                    .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                    .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                     .is_root()
             })
             .map(|n| &self.nodes_map[n])
@@ -278,7 +278,7 @@ impl Network {
         self.nodes_map.values().for_each(|n| {
             let mut n = n
                 .try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()));
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()));
             let pos = (n.index() as f64, n.order() as f64);
             n.set_pos(pos)
         })
@@ -311,17 +311,17 @@ impl Network {
                     if diff {
                         let en = self.node_insert_or_get(sp.end.clone());
                         st.try_lock()
-                            .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                            .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                             .add_output(en.clone());
                         en.try_lock()
-                            .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                            .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                             .add_input(st.clone());
                     } else {
                         st.try_lock()
-                            .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                            .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                             .add_output(st.clone());
                         st.try_lock()
-                            .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                            .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                             .add_input(st.clone());
                     }
                     let em = self
@@ -334,19 +334,15 @@ impl Network {
                 NodeInput::Group(st, en) => {
                     for s in st {
                         let st = self.node_insert_or_get(s.clone());
-                        let mut start = st.try_lock().expect(&format!(
-                            "mutex error: {:?} {}",
-                            file!(),
-                            line!()
-                        ));
+                        let mut start = st
+                            .try_lock()
+                            .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()));
 
                         for e in en {
                             let en = self.node_insert_or_get(e.clone());
-                            let mut end = en.try_lock().expect(&format!(
-                                "mutex error: {:?} {}",
-                                file!(),
-                                line!()
-                            ));
+                            let mut end = en.try_lock().unwrap_or_else(|| {
+                                panic!("mutex error: {:?} {}", file!(), line!())
+                            });
                             start.add_output(en.clone());
                             end.add_input(st.clone());
                             let em = self
@@ -385,12 +381,12 @@ impl Network {
         self.nodes().filter_map(|n| {
             let n = n
                 .try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()));
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()));
             match n.output() {
                 RSome(o) => Some((
                     n.index(),
                     o.try_lock()
-                        .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                        .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                         .index(),
                 )),
                 RNone => None,
@@ -523,7 +519,7 @@ impl Network {
         // indices are closer to outlet; and resuffle the nodes
         let (start, end, flipped) = if start
             .try_lock()
-            .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+            .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
             .index()
             > end.lock().index()
         {
@@ -535,12 +531,12 @@ impl Network {
         let mut path_nodes = vec![];
         let start_name = self.nodes[start
             .try_lock()
-            .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+            .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
             .index()]
         .as_str();
         let end_name = self.nodes[end
             .try_lock()
-            .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+            .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
             .index()]
         .as_str();
         loop {
@@ -550,7 +546,7 @@ impl Network {
             }
             let tmp = if let RSome(o) = curr
                 .try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                 .output()
             {
                 o.clone()
@@ -577,7 +573,7 @@ impl Network {
     pub fn leaf_nodes(&self) -> impl Iterator<Item = &Node> {
         self.nodes_map.iter().map(|n| n.1).filter(|n| {
             n.try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                 .inputs()
                 .is_empty()
         })
@@ -594,7 +590,7 @@ impl Network {
         self.nodes_map.iter().for_each(|n| {
             if n.1
                 .try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                 .inputs()
                 .is_empty()
             {
@@ -603,7 +599,7 @@ impl Network {
             let mut visited = HashSet::new();
             visited.insert(
                 n.1.try_lock()
-                    .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                    .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                     .index(),
             );
             fn add_weights(
@@ -657,7 +653,7 @@ impl Network {
         for (node, ord) in weights {
             self.nodes_map[&node]
                 .try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                 .set_weight(ord);
         }
     }
@@ -669,7 +665,7 @@ impl Network {
     pub fn calc_order(&mut self) {
         self.nodes_map.values().for_each(|n| {
             n.try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                 .set_order(1)
         });
 
@@ -678,7 +674,7 @@ impl Network {
             let nobj = &self.nodes_map[n];
             let inputs: Vec<Node> = nobj
                 .try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                 .inputs()
                 .to_vec();
             let ord = inputs
@@ -686,13 +682,13 @@ impl Network {
                 // nodes that have some node loop back to them will have one (unset) value as order from them
                 .map(|i| {
                     i.try_lock()
-                        .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                        .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                         .order()
                 })
                 .max()
                 .unwrap_or(0);
             nobj.try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                 .set_order(ord + 1);
             nodes_ord_map.insert(i, ord + 1);
         });
@@ -723,7 +719,7 @@ impl Network {
                 (
                     n.0.as_str(),
                     n.1.try_lock()
-                        .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                        .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                         .weight(),
                 )
             })
@@ -734,7 +730,7 @@ impl Network {
                 .iter()
                 .filter(|Tuple2(_, n)| {
                     n.try_lock()
-                        .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                        .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                         .is_root()
                 })
                 .map(|Tuple2(n, _)| n.as_str())
@@ -762,7 +758,7 @@ impl Network {
             visited.insert(curr.clone());
             let inputs: Vec<Node> = self.nodes_map[curr.as_str()]
                 .try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                 .inputs()
                 .to_vec();
             let mut inps: Vec<String> = inputs.iter().map(|i| i.name().to_string()).collect();
@@ -775,7 +771,7 @@ impl Network {
             // this just reorders the inputs, we don't change the input nodes
             self.nodes_map[curr.as_str()]
                 .try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                 .inputs = inps
                 .iter()
                 .map(|i| self.nodes_map[i.as_str()].clone())
@@ -814,7 +810,7 @@ impl Network {
                     .values()
                     .map(|n| {
                         n.try_lock()
-                            .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                            .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                             .inputs()
                             .len()
                     })
@@ -825,7 +821,7 @@ impl Network {
                     .values()
                     .map(|n| {
                         n.try_lock()
-                            .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                            .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                             .outputs()
                             .len()
                     })
@@ -849,7 +845,7 @@ impl Network {
     pub fn reindex(&self) {
         for (i, n) in self.nodes().enumerate() {
             n.try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                 .set_index(i);
         }
     }
@@ -860,7 +856,7 @@ impl Network {
         fn recc_set(node: &Node, level: u64, visited: &mut HashSet<usize>) {
             let ind = node
                 .try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                 .index();
             if visited.contains(&ind) {
                 // this will protect from infinite loop; not sure if
@@ -870,11 +866,11 @@ impl Network {
             }
             visited.insert(ind);
             node.try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                 .set_level(level);
             let inputs = node
                 .try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                 .inputs()
                 .to_vec();
             match &inputs[..] {
@@ -906,7 +902,7 @@ impl Network {
         let (ind, outputs): (usize, Vec<Node>) = {
             let n = node
                 .try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()));
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()));
             let ind = n.index();
             self.nodes.remove(ind);
             self.nodes_map.remove(n.name());
@@ -918,24 +914,24 @@ impl Network {
         for out in &outputs {
             let pos = out
                 .try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                 .inputs()
                 .iter()
                 .position(|i| {
                     i.try_lock()
-                        .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                        .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                         .index()
                         == ind
                 })
                 .expect("Node should be in input list of output");
             out.try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                 .inputs_mut()
                 .remove(pos);
         }
         let inputs: Vec<Node> = node
             .try_lock()
-            .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+            .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
             .inputs()
             .to_vec();
 
@@ -943,18 +939,18 @@ impl Network {
         for inp in &inputs {
             let pos = inp
                 .try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                 .outputs()
                 .iter()
                 .position(|i| {
                     i.try_lock()
-                        .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                        .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                         .index()
                         == ind
                 })
                 .expect("Node should be in input list of output");
             inp.try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                 .outputs_mut()
                 .remove(pos);
         }
@@ -963,10 +959,10 @@ impl Network {
         for inp in inputs {
             for out in &outputs {
                 inp.try_lock()
-                    .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                    .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                     .add_output(out.clone());
                 out.try_lock()
-                    .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                    .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                     .add_input(inp.clone());
             }
         }
@@ -999,7 +995,7 @@ impl Network {
             .collect();
         include_nodes.values().for_each(|n| {
             n.try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                 .unset_inputs();
         });
         for node in include_nodes.values() {
@@ -1007,29 +1003,27 @@ impl Network {
             loop {
                 let out = start
                     .try_lock()
-                    .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                    .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                     .output()
                     .cloned();
                 match out {
                     RNone => {
                         node.try_lock()
-                            .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                            .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                             .unset_outputs();
                         break;
                     }
                     RSome(o) => {
                         if include_nodes.contains_key(o.name()) {
-                            let mut op = o.try_lock().expect(&format!(
-                                "mutex error: {:?} {}",
-                                file!(),
-                                line!()
-                            ));
+                            let mut op = o.try_lock().unwrap_or_else(|| {
+                                panic!("mutex error: {:?} {}", file!(), line!())
+                            });
                             op.add_input(node.clone());
                             node.try_lock()
-                                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                                 .unset_outputs();
                             node.try_lock()
-                                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                                 .add_output(o.clone());
                             break;
                         } else {
@@ -1051,7 +1045,7 @@ impl Network {
 
     pub fn new_root(&mut self, node: Node) {
         node.try_lock()
-            .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+            .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
             .unset_outputs();
         let mut nodes = Vec::with_capacity(self.nodes.len());
         let mut nodes_map = HashMap::with_capacity(self.nodes.len());
@@ -1061,7 +1055,7 @@ impl Network {
             nmp.insert(nm, n.clone());
             for i in n
                 .try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                 .inputs()
             {
                 register(i, nds, nmp)
@@ -1079,15 +1073,15 @@ impl Network {
     pub fn connections_utf8(&self) -> Vec<String> {
         self.nodes()
             .map(|node| {
-                let node =
-                    node.try_lock()
-                        .expect(&format!("mutex error: {:?} {}", file!(), line!()));
+                let node = node
+                    .try_lock()
+                    .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()));
                 let level = node.level();
                 let par_level = node
                     .output()
                     .map(|n| {
                         n.try_lock()
-                            .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                            .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                             .level()
                     })
                     .unwrap_or(level);
@@ -1120,15 +1114,15 @@ impl Network {
     pub fn connections_ascii(&self) -> Vec<String> {
         self.nodes()
             .map(|node| {
-                let node =
-                    node.try_lock()
-                        .expect(&format!("mutex error: {:?} {}", file!(), line!()));
+                let node = node
+                    .try_lock()
+                    .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()));
                 let level = node.level();
                 let par_level = node
                     .output()
                     .map(|n| {
                         n.try_lock()
-                            .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                            .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                             .level()
                     })
                     .unwrap_or(level);

@@ -410,8 +410,7 @@ impl TaskContext {
                 let max_attr_len = TaskCtxConsts::max_attrs_length(self);
                 let trunc = v.len() > max_attr_len;
                 let indent = if prettify_map {
-                    std::iter::repeat("  ")
-                        .take(depth + 1)
+                    std::iter::repeat_n("  ", depth + 1)
                         .collect::<Vec<&str>>()
                         .join("")
                 } else {

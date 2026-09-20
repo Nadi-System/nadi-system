@@ -301,11 +301,11 @@ impl NodeInner {
     pub fn order_inputs(&mut self) {
         self.inputs.sort_by(|a, b| {
             b.try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                 .order
                 .partial_cmp(
                     &a.try_lock()
-                        .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                        .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                         .order,
                 )
                 .unwrap()
@@ -356,7 +356,7 @@ impl NodeInner {
             // should make sure no output nodes are locked at this time
             .filter(|n| {
                 n.try_lock()
-                    .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                    .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                     .name()
                     != output
             })
@@ -369,11 +369,11 @@ impl NodeInner {
     pub fn order_outputs(&mut self) {
         self.outputs.sort_by(|a, b| {
             b.try_lock()
-                .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                 .order
                 .partial_cmp(
                     &a.try_lock()
-                        .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                        .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                         .order,
                 )
                 .unwrap()
@@ -386,18 +386,18 @@ impl NodeInner {
         match self.outputs.as_slice() {
             [] => self.inputs().iter().for_each(|i| {
                 i.try_lock()
-                    .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                    .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                     .unset_outputs();
             }),
             [o] => self.inputs().iter().for_each(|i| {
                 o.try_lock()
-                    .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                    .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                     .add_input(i.clone());
                 i.try_lock()
-                    .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                    .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                     .unset_outputs();
                 i.try_lock()
-                    .expect(&format!("mutex error: {:?} {}", file!(), line!()))
+                    .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                     .add_output(o.clone());
             }),
             // if multiple outputs how do we move inputs and outputs?

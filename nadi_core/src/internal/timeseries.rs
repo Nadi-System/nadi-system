@@ -196,7 +196,7 @@ mod ts {
                 }
             }
             // ignoring the nodes without the given timeseries
-            if let Some(ts) = node.ts(&name) {
+            if let Some(ts) = node.ts(name) {
                 if let Some(tl) = &timeline {
                     if !ts.is_timeline(tl) {
                         return Err(anyhow::Error::msg("Different Timelines"));
@@ -205,7 +205,7 @@ mod ts {
                     timeline = Some(ts.timeline().clone());
                 }
                 ts_nodes.push(node.name().to_string());
-                values.push(ts.str_values(&missing).collect::<Vec<String>>());
+                values.push(ts.str_values(missing).collect::<Vec<String>>());
             }
         }
         // export to CSV
@@ -238,7 +238,7 @@ mod ts {
         /// Show missing values as this string
         missing: &str,
     ) -> anyhow::Result<()> {
-        let f = File::create(&outfile)?;
+        let f = File::create(outfile)?;
         let mut w = BufWriter::new(f);
         let middle = !attrs.is_empty() && !series.is_empty();
         // headers for the csv
@@ -259,7 +259,7 @@ mod ts {
                 .iter()
                 .map(|a| {
                     node.series(a)
-                        .map(|s| s.str_values(&missing).collect())
+                        .map(|s| s.str_values(missing).collect())
                         .unwrap_or_default()
                 })
                 .collect();

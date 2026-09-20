@@ -47,7 +47,7 @@ pub fn prop_order<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, PropOrder> {
 pub fn node_list<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, RVec<RString>> {
     map(
         separated_list1(maybe_newline(comma), maybe_newline(node_name)),
-        |v| v.into_iter().map(RString::from).collect(),
+        |v| v.into_iter().collect(),
     )(inp)
 }
 
@@ -80,7 +80,7 @@ pub fn select_edge_node<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Select
                 maybe_newline(comma),
                 maybe_newline(map(node_name, |s| s.to_string())),
             )),
-            |n| SelectEdgeFromTo::Nodes(n),
+            SelectEdgeFromTo::Nodes,
         ),
     ))(inp)
 }
@@ -428,7 +428,7 @@ mod tests {
     pub fn get_current_function_test(#[case] txt: &str, #[case] name: Option<&str>) {
         let (pre, post) = txt.split_once("🇮").unwrap();
         let line = pre.split('\n').count() - 1;
-        let col = pre.split('\n').last().map(|l| l.len()).unwrap_or(0);
+        let col = pre.split('\n').next_back().map(|l| l.len()).unwrap_or(0);
         let tasks = format!("{pre}{post}");
         let res = get_function_at(&tasks, line, col);
         let fname = res.as_ref().map(|(_, n)| n.as_str());
@@ -453,7 +453,7 @@ mod tests {
     pub fn get_current_function_context_test(#[case] txt: &str, #[case] name: Option<&str>) {
         let (pre, post) = txt.split_once("🇮").unwrap();
         let line = pre.split('\n').count() - 1;
-        let col = pre.split('\n').last().map(|l| l.len()).unwrap_or(0);
+        let col = pre.split('\n').next_back().map(|l| l.len()).unwrap_or(0);
         let tasks = format!("{pre}{post}");
         let res = get_current_function_context(&tasks, line, col);
         let fname = res.as_ref().map(|(_, n)| n.as_str());

@@ -296,7 +296,7 @@ impl TaskContext {
     pub fn show_ts(&self, ts: &TimeSeries) -> String {
         let tl = ts.timeline.lock();
         let tl = match tl.str_values.as_slice() {
-            [] => format!("[]"),
+            [] => "[]".to_string(),
             [a] => format!("[{a}]"),
             [a, b] => format!("[{a}, {b}]"),
             [a, b, c] => format!("[{a}, {b}, {c}]"),

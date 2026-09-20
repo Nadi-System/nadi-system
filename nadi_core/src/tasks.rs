@@ -115,9 +115,8 @@ impl TaskContextWrap {
                 _ => None,
             })
             .collect();
-        match self.context.execute(task, loc)? {
-            Some(v) => msg.push(v),
-            _ => (),
+        if let Some(v) = self.context.execute(task, loc)? {
+            msg.push(v);
         }
         // collect any new messages
         self.receiver
@@ -402,9 +401,9 @@ impl TaskContext {
                 .nodes_select(&prop.order, &nds)
                 .map_err(|e| e.pos(prop.start)),
             SelectNodes::Var(inp) => {
-                let var = inp.eval_value(&self, ectx, local)?;
-                let parent = Vec::<RString>::try_from_attr(&var)
-                    .map_err(|e| EvalErrorType::AttributeError(e))?;
+                let var = inp.eval_value(self, ectx, local)?;
+                let parent =
+                    Vec::<RString>::try_from_attr(&var).map_err(EvalErrorType::AttributeError)?;
                 self.network
                     .nodes_select(&prop.order, &parent)
                     .map_err(|e| e.pos(prop.start))
@@ -453,7 +452,7 @@ impl TaskContext {
                 .map(|n| {
                     self.network
                         .node_by_name(n)
-                        .map(|n| n.clone())
+                        .cloned()
                         .ok_or(EvalErrorType::NodeNotFound(n.to_string()).no_pos())
                 })
                 .collect(),
@@ -552,7 +551,7 @@ impl TaskContext {
                 // should support two kinds of variables, based on
                 // whether the keyword is edge or edges/em, but for
                 // now both types are supported for all keywords
-                let var = inp.eval_value(&self, ectx, local)?;
+                let var = inp.eval_value(self, ectx, local)?;
                 // either a variable with a single edge
                 let edge = <(RString, RString)>::try_from_attr(&var);
                 if let Ok((n1, n2)) = edge {
@@ -569,7 +568,7 @@ impl TaskContext {
                 }
                 // or a variable with multiple edges
                 let parent = Vec::<(RString, RString)>::try_from_attr(&var)
-                    .map_err(|e| EvalErrorType::AttributeError(e))?;
+                    .map_err(EvalErrorType::AttributeError)?;
                 parent
                     .into_iter()
                     .map(|(n1, n2)| {

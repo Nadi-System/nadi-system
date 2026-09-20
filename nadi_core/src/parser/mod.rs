@@ -149,10 +149,8 @@ impl Network {
     pub fn load_attrs_from_str(&mut self, attrs: String) -> anyhow::Result<()> {
         let tokens = tokenizer::get_tokens(&attrs);
         let mut attrs = attrs::parse(tokens)?;
-        if let RSome(netattr) = attrs.remove("network") {
-            if let Attribute::Table(am) = netattr {
-                self.attr_map_mut().extend(am);
-            }
+        if let RSome(Attribute::Table(am)) = attrs.remove("network") {
+            self.attr_map_mut().extend(am);
         }
         for Tuple2(name, vals) in attrs {
             if let Some(n) = self.node_by_name(&name) {
