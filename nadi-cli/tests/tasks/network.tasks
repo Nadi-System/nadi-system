@@ -1,0 +1,10 @@
+net.load_str("
+a -> {b, c, d}
+{c,d} -> e
+e -> {f,g}
+")
+
+"b" in roots.NAME
+"e" in roots.NAME
+"f" in roots.NAME
+
