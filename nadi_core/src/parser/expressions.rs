@@ -68,6 +68,8 @@ pub fn value_expression<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprTy
         for_each_expr,
         while_expr,
         loop_expr,
+        // This has to be last, otherwise it'll take the variable/function type/context from other expression
+        map(variable_type, ExprType::Object),
     ))(inp)
 }
 
@@ -146,7 +148,11 @@ pub fn expr_set_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprT
             task_dot_variable,
             opt(maybe_space(preceded(colon, maybe_space(attr_type)))),
             maybe_space(assignment),
-            maybe_space(raw_expr(alt((expression_group, complete_value_expression)))),
+            maybe_space(raw_expr(alt((
+                expression_block,
+                expression_group,
+                complete_value_expression,
+            )))),
             opt(semicolon),
         )),
         |(vt, (var, indices), ty, _, expr, silent)| {
@@ -204,7 +210,11 @@ pub fn array_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<Raw
         alt((
             map(
                 tuple((
-                    maybe_newline(raw_expr(alt((expression_block, value_expression)))),
+                    maybe_newline(raw_expr(alt((
+                        expression_block,
+                        expression_group,
+                        value_expression,
+                    )))),
                     delimited(
                         maybe_space(kw_for),
                         after_space(map(variable, |v| v.content.to_string())),

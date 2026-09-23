@@ -16,13 +16,29 @@ use abi_stable::{
 #[repr(C)]
 #[derive(Clone, StableAbi)]
 pub struct Node {
-    /// Name of the node, can not be changed
+    /// Name of the node, can not be changed and must be unique
     name: RString,
     /// Actual node data
     inner: RArc<RMutex<NodeInner>>,
 }
 
+impl PartialEq for Node {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
 impl std::fmt::Display for Node {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        if crate::valid_var(&self.name) {
+            write!(f, "node[{}]", self.name)
+        } else {
+            write!(f, "node[{:?}]", self.name)
+        }
+    }
+}
+
+impl std::fmt::Debug for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "<Node {:?}>", self.name)
     }

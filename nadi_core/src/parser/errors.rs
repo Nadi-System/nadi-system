@@ -213,10 +213,7 @@ impl ParseErrorType {
             Self::ExpectedPath => "Expected Path symbol here",
             Self::InvalidToken => "Unsupported Token",
             Self::InvalidTemplate(err) => return format!("Invalid Template: {}", err),
-            Self::TokenMismatch(Some(r), g) => {
-                return format!("Unexpected Token: {g:?} (required: {})", r.name());
-            }
-            Self::TokenMismatch(None, g) => return format!("Unexpected Token: {g:?}"),
+            Self::TokenMismatch(_, g) => return format!("Unexpected Token: {g:?}"),
             Self::MultipleOutput(msg) => return format!("Multiple output not supported: {msg}"),
             Self::Custom(msg) => msg.as_str(),
         }

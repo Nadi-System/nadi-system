@@ -186,6 +186,8 @@ impl RawExpr {
             ExprType::Series(s) => ExprType::Series(s),
             ExprType::MapSeries(s) => ExprType::MapSeries(s),
             ExprType::SetSeries(ss) => return resolve_set_series(ss, ctx, ectx.clone()),
+            // we should look at if the node exists here instead of in eval
+            ExprType::Object(n) => ExprType::Object(n),
             // _ => {
             //     return Err(EvalErrorType::NotImplementedError(
             //         "resolving logic not implemented yet for these",
@@ -571,6 +573,8 @@ pub enum ExprType<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq> {
     SetSeries(SetSeries<T>),
     /// Series mapped by a function
     MapSeries(MapSeries),
+    /// Object reference, node and network are the only valid ones for now
+    Object(VarType),
 }
 
 impl<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq + Eval> std::fmt::Display
@@ -701,6 +705,7 @@ impl<T: std::fmt::Display + std::fmt::Debug + Clone + PartialEq + Eval> std::fmt
             Self::Series(s) => std::fmt::Display::fmt(s, f),
             Self::SetSeries(s) => std::fmt::Display::fmt(s, f),
             Self::MapSeries(s) => std::fmt::Display::fmt(s, f),
+            Self::Object(n) => std::fmt::Display::fmt(n, f),
         }
     }
 }
@@ -918,7 +923,8 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
             | Self::Continue
             | Self::Range(..)
             | Self::Series(_)
-            | Self::MapSeries(_) => self.eval(ctx, ectx, loc),
+            | Self::MapSeries(_)
+            | Self::Object(_) => self.eval(ctx, ectx, loc),
         }
     }
 
@@ -1153,6 +1159,78 @@ impl Eval for ExprType<ResolvedExpr<'_>> {
             Self::Series(s) => s.eval(ctx, ectx, loc),
             Self::SetSeries(s) => s.eval(ctx, ectx, loc),
             Self::MapSeries(s) => s.eval(ctx, ectx, loc),
+            Self::Object(vt) => match vt.get_expr_context(ctx, ectx, loc)? {
+                ExprContext::Local(_) => Ok(ExprResult::Val(loc.clone().into())),
+                ExprContext::Env(_) => Ok(ExprResult::Val(ctx.env.attr_map().clone().into())),
+                ExprContext::Network(_) => {
+                    Ok(ExprResult::Val(ctx.network.attr_map().clone().into()))
+                }
+                ExprContext::Node(n) => n
+                    .try_lock()
+                    .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())
+                    .map(|n| ExprResult::Val(n.attr_map().clone().into())),
+                ExprContext::Nodes(nds) => nds
+                    .into_iter()
+                    .map(|n| {
+                        n.try_lock()
+                            .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())
+                            .map(|n| ExprResult::Val(n.attr_map().clone().into()))
+                    })
+                    .collect::<Result<Vec<ExprResult>, _>>()
+                    .map(ExprResult::Arr),
+                ExprContext::NodesMap(nds) => nds
+                    .into_iter()
+                    .map(|n| {
+                        n.try_lock()
+                            .ok_or(EvalErrorType::MutexError(file!(), line!()).no_pos())
+                            .map(|n| {
+                                (
+                                    n.name().to_string(),
+                                    ExprResult::Val(n.attr_map().clone().into()),
+                                )
+                            })
+                    })
+                    .collect::<Result<Vec<(String, ExprResult)>, _>>()
+                    .map(ExprResult::Map),
+                ExprContext::Edge(n1, n2) => {
+                    let edge = Edge::new(n1.name(), n2.name());
+                    ctx.network
+                        .edge_attrs()
+                        .get(&edge)
+                        .ok_or(EvalErrorType::EdgeNotFound(edge).no_pos())
+                        .map(|v| ExprResult::Val(v.clone().into()))
+                }
+                ExprContext::Edges(eds) => eds
+                    .into_iter()
+                    .map(|(n1, n2)| {
+                        let edge = Edge::new(n1.name(), n2.name());
+                        ctx.network
+                            .edge_attrs()
+                            .get(&edge)
+                            .ok_or(EvalErrorType::EdgeNotFound(edge).no_pos())
+                            .map(|v| ExprResult::Val(v.clone().into()))
+                    })
+                    .collect::<Result<Vec<ExprResult>, _>>()
+                    .map(ExprResult::Arr),
+                ExprContext::EdgesMap(eds) => eds
+                    .into_iter()
+                    .map(|(n1, n2)| {
+                        let edge = Edge::new(n1.name(), n2.name());
+                        ctx.network
+                            .edge_attrs()
+                            .get(&edge)
+                            .ok_or(EvalErrorType::EdgeNotFound(edge).no_pos())
+                            .map(|v| {
+                                (
+                                    n1.name().to_string(),
+                                    n2.name().to_string(),
+                                    ExprResult::Val(v.clone().into()),
+                                )
+                            })
+                    })
+                    .collect::<Result<Vec<(String, String, ExprResult)>, _>>()
+                    .map(ExprResult::EdgeMap),
+            },
             _ => Err(
                 EvalErrorType::NotImplementedError("this expression is not implemented").no_pos(),
             ),

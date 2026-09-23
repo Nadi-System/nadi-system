@@ -763,11 +763,7 @@ impl Network {
                 .to_vec();
             let mut inps: Vec<String> = inputs.iter().map(|i| i.name().to_string()).collect();
 
-            inps.sort_by(|n1, n2| {
-                weights[n2.as_str()]
-                    .partial_cmp(&weights[n1.as_str()])
-                    .unwrap()
-            });
+            inps.sort_by(|n1, n2| weights[n1.as_str()].cmp(&weights[n2.as_str()]));
             // this just reorders the inputs, we don't change the input nodes
             self.nodes_map[curr.as_str()]
                 .try_lock()
@@ -1325,6 +1321,7 @@ pub enum SelectEdgeFromTo {
     NodeCtx,
     Node(String),
     Nodes(Vec<String>),
+    // TODO: add variable here as well so people can use from and to both/any as variable
     // if we implement the above one then we can use NodeVar
 }
 
@@ -1447,5 +1444,38 @@ impl From<Node> for Network {
         net.outlets = vec![node].into();
         net.flatten();
         net
+    }
+}
+
+#[macro_export]
+macro_rules! network {
+    ($($a:ident -> $b:ident),*) => {
+	Network::from_edges(&[
+	    $((stringify!($a), stringify!($b))),*
+	], false).unwrap()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    macro_rules! list {
+    ($($a:ident),*) => {
+	&[
+	    $(stringify!($a)),*
+	]
+    }
+}
+
+    #[rstest]
+    #[case(network!(a -> b), list!(b, a))]
+    #[case(network!(a -> b, b -> c), list!(c, b, a))]
+    #[case(network!(a -> b, a -> c, b -> c), list!(c, b, a))]
+    #[case(network!(a -> b,b -> c,c -> d,d -> e,c -> e), list!(e,d,c,b,a))]
+    fn network_indexing(#[case] net: Network, #[case] nodes: &[&str]) {
+        let names: Vec<_> = net.node_names().collect();
+        assert_eq!(names, nodes);
     }
 }
