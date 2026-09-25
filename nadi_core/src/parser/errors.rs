@@ -23,7 +23,8 @@ impl ParseError {
     }
     pub fn new(tokens: &[Token<'_>], rest: &[Token<'_>], ty: ParseErrorType) -> Self {
         let tokens = &tokens[..(tokens.len() - rest.len())];
-        let mut line = 1;
+        // need to get correct position passed to this function ??
+        let mut line = tokens[0].start.0;
         let mut lstart = 0;
         for (i, t) in tokens.iter().enumerate() {
             if t.ty == TaskToken::NewLine {
@@ -49,9 +50,14 @@ impl ParseError {
             linestr,
         }
     }
-    pub fn raw(tokens: &[RawToken<'_>], rest: &[RawToken<'_>], ty: ParseErrorType) -> Self {
+    pub fn raw(
+        tokens: &[RawToken<'_>],
+        rest: &[RawToken<'_>],
+        ty: ParseErrorType,
+        mut line: usize,
+    ) -> Self {
         let tokens = &tokens[..(tokens.len() - rest.len())];
-        let mut line = 1;
+        // need to get correct position passed to this function ??
         let mut lstart = 0;
         for (i, t) in tokens.iter().enumerate() {
             if t.ty == TaskToken::NewLine {

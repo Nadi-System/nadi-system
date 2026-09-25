@@ -62,6 +62,7 @@ impl<'a> Token<'a> {
                 &tokens,
                 &tokens[valid.len()..],
                 ParseErrorType::InvalidToken,
+                line,
             ));
         }
         let tokens = tokens
