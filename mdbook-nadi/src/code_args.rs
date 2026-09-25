@@ -64,7 +64,7 @@ pub fn run_task(task: &str, args: &str, pwd: &Path) -> anyhow::Result<Vec<Event<
     tasks.push('\n');
 
     let tokens = get_tokens(&tasks);
-    let tasks = match tasks::parse(tokens) {
+    let tasks = match tasks::parse(tokens, 1, 1) {
         Ok(t) => t,
         Err(e) => {
             return Ok(output_verbose(
@@ -186,7 +186,7 @@ pub fn run_table(table: &str, args: &str, pwd: &Path) -> anyhow::Result<Vec<Even
     tasks.push_str(")\n");
 
     let tokens = get_tokens(&tasks);
-    let tasks = tasks::parse(tokens)?;
+    let tasks = tasks::parse(tokens, 1, 1)?;
 
     clear_context();
 

@@ -161,10 +161,11 @@ pub enum Message {
     EditorAction(text_editor::Action),
     SaveHistory,
     Run(String),
+    ParseError(nadi_core::parser::errors::ParseError),
     ClearContent,
     ClearCommand,
     ExecCommand,
-    RunTasks(String),
+    RunTasks(String, Option<(usize, usize)>),
     TaskChain(usize, Vec<NadiTask>),
     CommandChange(String),
     History(String),
@@ -316,7 +317,7 @@ impl Terminal {
                 let _ = self.sender.send(TaskCtxRequest::Run(Box::new(task)));
                 return Task::perform(async { tasks }, move |t| Message::TaskChain(done + 1, t));
             }
-            Message::RunTasks(tasks) => {
+            Message::RunTasks(tasks, pos) => {
                 self.append_term(tasks.trim(), true, false);
                 let tasks = if self.residue.is_empty() {
                     tasks
@@ -324,7 +325,8 @@ impl Terminal {
                     format!("{}\n{}", self.residue, tasks)
                 };
                 let tokens = nadi_core::parser::tokenizer::get_tokens(&tasks);
-                match nadi_core::parser::tokenizer::Token::validate(tokens.clone()) {
+                let (line, col) = pos.unwrap_or((1, 1));
+                match nadi_core::parser::tokenizer::Token::validate(tokens.clone(), line, col) {
                     Ok(tkns) => {
                         use nadi_core::parser::tokenizer::ParenCheck;
                         match ParenCheck::scan(&tkns) {
@@ -342,15 +344,16 @@ impl Terminal {
                             // ParenCheck::Paired
                             // Easier to just get the error from task parsing even if we know the pairs are incorrect (for now)
                             _ => {
-                                let tasks_vec = match nadi_core::parser::tasks::parse(tokens) {
-                                    Ok(t) => t,
-                                    Err(e) => {
-                                        self.residue.clear();
-                                        self.status = e.to_string();
-                                        self.append_term(&e.user_msg(None), false, true);
-                                        return Task::none();
-                                    }
-                                };
+                                let tasks_vec =
+                                    match nadi_core::parser::tasks::parse(tokens, line, col) {
+                                        Ok(t) => t,
+                                        Err(e) => {
+                                            self.residue.clear();
+                                            self.status = e.to_string();
+                                            self.append_term(&e.user_msg(None), false, true);
+                                            return Task::none();
+                                        }
+                                    };
                                 self.residue.clear();
                                 self.append_history(tasks);
                                 return Task::perform(
@@ -366,6 +369,12 @@ impl Terminal {
                         self.append_term(&e.user_msg(None), false, true);
                     }
                 }
+                return Task::none();
+            }
+            Message::ParseError(e) => {
+                self.residue.clear();
+                self.status = e.to_string();
+                self.append_term(&e.user_msg(None), false, true);
                 return Task::none();
             }
             Message::NodeClicked(None) => {
@@ -443,7 +452,7 @@ impl Terminal {
                     _ => (),
                 };
                 self.running_msg = Some("Executing Command".to_string());
-                return Task::perform(async { task }, Message::RunTasks);
+                return Task::perform(async { task }, |t| Message::RunTasks(t, None));
             }
             Message::GotoTop => {
                 self.content.perform(text_editor::Action::Move(

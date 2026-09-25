@@ -16,7 +16,7 @@ mod gviz {
     fn load_positions(net: &Network, gv_file: &Path, factor: f64) -> Result<(), String> {
         let contents = std::fs::read_to_string(gv_file).map_err(|e| e.to_string())?;
         let tokens = crate::parser::tokenizer::get_tokens(&contents);
-        let gvnet = crate::parser::graphviz::parse(tokens).map_err(|e| e.to_string())?;
+        let gvnet = crate::parser::graphviz::parse(tokens, 1, 1).map_err(|e| e.to_string())?;
         for Tuple2(name, node) in &net.nodes_map {
             let attrs = gvnet
                 .nodes

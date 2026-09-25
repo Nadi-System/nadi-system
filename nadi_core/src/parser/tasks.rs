@@ -19,7 +19,7 @@ use nom::{
     branch::alt,
     combinator::{cut, map, opt, value},
     multi::{separated_list0, separated_list1},
-    sequence::{delimited, pair, preceded, separated_pair, tuple},
+    sequence::{delimited, pair, preceded, separated_pair, terminated, tuple},
     Finish,
 };
 use std::str::FromStr;
@@ -71,17 +71,16 @@ pub fn prop_nodes_list<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, SelectN
 
 pub fn select_edge_node<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, SelectEdgeFromTo> {
     alt((
-        value(SelectEdgeFromTo::NodeCtx, maybe_newline(kw_node)),
-        map(maybe_newline(node_name), |n| {
-            SelectEdgeFromTo::Node(n.to_string())
-        }),
+        value(SelectEdgeFromTo::NodeCtx, kw_node),
+        map(node_name, |n| SelectEdgeFromTo::Node(n.to_string())),
         map(
-            maybe_newline(separated_list1(
+            separated_list1(
                 maybe_newline(comma),
                 maybe_newline(map(node_name, |s| s.to_string())),
-            )),
+            ),
             SelectEdgeFromTo::Nodes,
         ),
+        map(preceded(star, input_variable_only), SelectEdgeFromTo::Var),
     ))(inp)
 }
 
@@ -89,21 +88,21 @@ pub fn select_edges<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, SelectEdge
     alt((
         delimited(
             bracket_start,
-            cut(alt((
+            maybe_newline(cut(alt((
                 map(
-                    maybe_newline(separated_pair(
-                        maybe_space(opt(select_edge_node)),
-                        maybe_space(path_sep),
-                        maybe_space(opt(select_edge_node)),
-                    )),
+                    separated_pair(
+                        opt(select_edge_node),
+                        maybe_newline(path_sep),
+                        maybe_newline(opt(select_edge_node)),
+                    ),
                     |(a, b)| SelectEdges::One(a.unwrap_or_default(), b.unwrap_or_default()),
                 ),
-                map(
-                    maybe_newline(preceded(star, input_variable_only)),
-                    SelectEdges::Var,
-                ),
-            ))),
-            maybe_newline(cut(err_ctx(&ParseErrorType::Unclosed("]"), bracket_end))),
+                map(preceded(star, input_variable_only), SelectEdges::Var),
+            )))),
+            cut(err_ctx(
+                &ParseErrorType::Unclosed("]"),
+                maybe_newline(bracket_end),
+            )),
         ),
         delimited(
             paren_start,
@@ -256,8 +255,39 @@ pub fn tasks_block<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<Task>> 
     delimited(brace_start, maybe_newline(tasks), maybe_newline(brace_end))(inp)
 }
 
-pub fn parse(tokens: Vec<RawToken>) -> Result<Vec<Task>, ParseError> {
-    let tokens = Token::validate(tokens)?;
+/// Gets exactly one task at the given location, then returns the position for the next
+pub fn get_one_task_at(
+    all_tasks: &str,
+    line: usize,
+    col: usize,
+) -> Result<(Task, Option<(usize, usize)>), ParseError> {
+    let task_from = all_tasks.splitn(line, '\n').last().unwrap_or_default();
+    let tokens = crate::parser::tokenizer::get_tokens(&task_from);
+    let tokens = Token::validate(tokens, line, col)?;
+    // we want to make sure it ends in a newline and consume any lines
+    // and comments at the end
+    let res = terminated(maybe_newline(task), many1_newlines)(&tokens);
+    match res {
+        Ok((rest, task)) => {
+            if rest.is_empty() {
+                Ok((task, None))
+            } else {
+                Ok((task, Some(rest[0].start)))
+            }
+        }
+        Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
+            Err(ParseError::new(&tokens, e.internal.input, e.ty))
+        }
+        Err(nom::Err::Incomplete(_)) => Err(ParseError::new(
+            &tokens,
+            &tokens,
+            ParseErrorType::Incomplete,
+        )),
+    }
+}
+
+pub fn parse(tokens: Vec<RawToken>, line: usize, col: usize) -> Result<Vec<Task>, ParseError> {
+    let tokens = Token::validate(tokens, line, col)?;
     match tasks(&tokens).finish() {
         Ok((rest, tasks)) => {
             if rest.is_empty() {
@@ -323,12 +353,12 @@ pub fn get_current_function_context(
     lines.push(&tasks.lines().nth(line)?[..column]);
     let mut tasks = lines.join("\n");
     let mut tokens = crate::parser::tokenizer::get_tokens(&tasks);
-    if Token::validate(tokens.clone()).is_err() {
+    if Token::validate(tokens.clone(), 1, 1).is_err() {
         // in cases where we're in middle of a string and that makes it invalid
         tasks.push('"');
         tokens = crate::parser::tokenizer::get_tokens(&tasks)
     }
-    let err = parse(tokens).err()?;
+    let err = parse(tokens, 1, 1).err()?;
     match err.ty {
         ParseErrorType::IncompleteFunction(ty, f) => Some((ty.unwrap_or_default(), f)),
         _ => None,
@@ -374,7 +404,7 @@ mod tests {
     #[case("while (true) {\n\tenv.echo(x)\n}")]
     #[case("struct HiThere {\nval: Integer = 0\n}")]
     pub fn task_valid_test(#[case] txt: &str) {
-        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let tokens = Token::validate(get_tokens(txt), 1, 1).unwrap();
         let (rest, tasks) = task(&tokens).unwrap();
         assert_eq!(rest, vec![]);
         let tsk = tasks.to_string().replace([' ', '\n', '\t'], "");
@@ -385,7 +415,7 @@ mod tests {
     #[rstest]
     #[case("struct HiThere {\nval: Integer = 0\n}")]
     pub fn struct_def_test(#[case] txt: &str) {
-        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let tokens = Token::validate(get_tokens(txt), 1, 1).unwrap();
         let (rest, tasks) = nadi_struct_def(&tokens).unwrap();
         assert_eq!(rest, vec![]);
         let tsk = tasks.to_string().replace([' ', '\n', '\t'], "");
@@ -402,7 +432,7 @@ mod tests {
     #[case("env.x")]
     pub fn parse_valid_test(#[case] txt: &str) {
         let tokens = get_tokens(txt);
-        parse(tokens).unwrap();
+        parse(tokens, 1, 1).unwrap();
     }
 
     /// Testing the codes in mdbook
@@ -412,7 +442,7 @@ mod tests {
     )]
     pub fn parse_valid_mdbook_test(#[case] txt: &str) {
         let tokens = get_tokens(txt);
-        parse(tokens).unwrap();
+        parse(tokens, 1, 1).unwrap();
     }
 
     #[rstest]

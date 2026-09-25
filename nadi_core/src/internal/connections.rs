@@ -6,7 +6,7 @@ mod conn {
     use crate::prelude::*;
     use abi_stable::std_types::RString;
     use anyhow::Context;
-    use nadi_plugin::network_func;
+    use nadi_plugin::{network_func, node_func};
     use std::fs::File;
     use std::io::{BufWriter, Write};
     use std::path::PathBuf;
@@ -28,7 +28,7 @@ mod conn {
             let contents =
                 std::fs::read_to_string(&file).context("Error while accessing the network file")?;
             let tokens = crate::parser::tokenizer::get_tokens(&contents);
-            let paths = crate::parser::network::parse(tokens)?;
+            let paths = crate::parser::network::parse(tokens, 1, 1)?;
             net.append_paths(&paths, false)
                 .map_err(anyhow::Error::msg)?;
         } else {
@@ -56,7 +56,7 @@ mod conn {
     ) -> Result<(), String> {
         if append {
             let tokens = crate::parser::tokenizer::get_tokens(contents);
-            let paths = crate::parser::network::parse(tokens).map_err(|e| e.to_string())?;
+            let paths = crate::parser::network::parse(tokens, 1, 1).map_err(|e| e.to_string())?;
             net.append_paths(&paths, false)?;
         } else {
             *net = Network::from_str(contents).map_err(|e| e.user_msg(None))?;
@@ -90,24 +90,23 @@ mod conn {
         Ok(())
     }
 
-    // // Subset is currently unavailable due to change in network condition
-    // /// Take a subset of network by only including the selected nodes
-    // /// ```task
-    // /// network load_str("a -> b\n b->c");
-    // /// nodes[a, b].sth = true;
-    // /// node[c].sth = false;
-    // /// network subset(nodes.sth);
-    // /// env assert_eq(nodes.NAME, ["b", "a"])
-    // /// ```
-    // #[network_func(keep = true)]
-    // fn subset(
-    //     net: &mut Network,
-    //     filter: Vec<bool>,
-    //     /// Keep the selected nodes (false = removes the selected)
-    //     keep: bool,
-    // ) -> Result<(), String> {
-    //     net.subset(&filter, keep)
-    // }
+    /// Take a subset of network by only including the selected nodes
+    /// ```task
+    /// network load_str("a -> b\n b->c");
+    /// nodes[a, b].sth = true;
+    /// node[c].sth = false;
+    /// network subset(nodes.sth);
+    /// env assert_eq(nodes.NAME, ["b", "a"])
+    /// ```
+    #[network_func(keep = true)]
+    fn subset(
+        net: &mut Network,
+        filter: Vec<bool>,
+        /// Keep the selected nodes (false = removes the selected)
+        keep: bool,
+    ) -> Result<(), String> {
+        net.subset(&filter, keep)
+    }
 
     /// Save the network into the given file
     ///
@@ -151,82 +150,78 @@ mod conn {
         Ok(())
     }
 
-    // // All subset functions are currently unavailable
-    // /// Take a subset of network by taking the given node as a new outlet
-    // ///
-    // /// ```task
-    // /// network load_str("a -> b\n b->c\n x -> y");
-    // /// network subset_from("b")
-    // /// env assert_eq(nodes.NAME, ["b", "a"])
-    // /// ```
-    // #[network_func]
-    // fn subset_from(net: &mut Network, new_root: &str) -> Result<(), String> {
-    //     let node = net
-    //         .node_by_name(new_root)
-    //         .ok_or(format!("Node {new_root} not found in the network"))?
-    //         .clone();
-    //     net.new_root(node);
-    //     Ok(())
-    // }
+    /// Take a subset of network by taking the given node as a new outlet
+    ///
+    /// ```task
+    /// network load_str("a -> b\n b->c\n x -> y");
+    /// network subset_from("b")
+    /// env assert_eq(nodes.NAME, ["b", "a"])
+    /// ```
+    #[network_func]
+    fn subset_from(net: &mut Network, new_root: &str) -> Result<(), String> {
+        let node = net
+            .node_by_name(new_root)
+            .ok_or(format!("Node {new_root} not found in the network"))?
+            .clone();
+        net.new_root(node);
+        Ok(())
+    }
 
-    // /// Take a subset of network by only including the largest blob of connected nodes
-    // ///
-    // /// When you load a network that have disconnected nodes, this
-    // /// function allows you to filter out all the nodes except the one
-    // /// belonging to the largest connected network (number of
-    // /// nodes). Alternatively, you can also use ORDER and other logic
-    // /// in the task system to do that.
-    // ///
-    // /// If your network has a root node, and no parent node is given,
-    // /// then it'll just keep the network as it is.
-    // ///
-    // /// ```task
-    // /// network load_str("a -> b\n b->c\n x -> y");
-    // /// network subset_largest()
-    // /// env assert_eq(nodes.NAME, ["c", "b", "a"])
-    // /// ```
-    // #[network_func]
-    // fn subset_largest(net: &mut Network, parent: Option<String>) -> Result<(), String> {
-    //     let node = match parent {
-    //         Some(par) => {
-    //             let par = net
-    //                 .node_by_name(&par)
-    //                 .ok_or(format!("Node {par} not found in the network"))?
-    //                 .clone();
+    /// Take a subset of network by only including the largest root node
+    ///
+    /// When you load a network that have disconnected nodes, this
+    /// function allows you to filter out all the nodes except the one
+    /// belonging to the largest connected network (number of
+    /// nodes). Alternatively, you can also use ORDER and other logic
+    /// in the task system to do that.
+    ///
+    /// If your network has a root node, and no parent node is given,
+    /// then it'll just keep the network as it is.
+    ///
+    /// ```task
+    /// network load_str("a -> b\n b->c\n x -> y");
+    /// network subset_largest()
+    /// env assert_eq(nodes.NAME, ["c", "b", "a"])
+    /// ```
+    #[network_func]
+    fn subset_largest(net: &mut Network, parent: Option<String>) -> Result<(), String> {
+        let candidates = match parent {
+            Some(par) => net
+                .node_by_name(&par)
+                .ok_or(format!("Node {par} not found in the network"))?
+                .try_lock()
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
+                .inputs()
+                .to_vec(),
+            None => net.roots().cloned().collect(),
+        };
+        let mut outlet: Option<Node> = None;
+        for i in candidates {
+            let mut replace = outlet.is_none();
+            if let Some(ref o) = outlet {
+                if o.lock().order() < i.lock().order() {
+                    replace = true;
+                }
+            }
+            if replace {
+                outlet = Some(i.clone());
+            }
+        }
+        if let Some(n) = outlet {
+            net.new_root(n);
+        }
+        Ok(())
+    }
 
-    //             let mut outlet: Option<Node> = None;
-    //             for i in par.lock().inputs() {
-    //                 let mut replace = outlet.is_none();
-    //                 if let Some(ref o) = outlet {
-    //                     if o.lock().order() < i.lock().order() {
-    //                         replace = true;
-    //                     }
-    //                 }
-    //                 if replace {
-    //                     outlet = Some(i.clone());
-    //                 }
-    //             }
-    //             outlet.unwrap_or(par)
-    //         }
-    //         None => match net.roots().next() {
-    //             Some(v) => v.clone(),
-    //             None => return Ok(()),
-    //         },
-    //     };
-    //     net.new_root(node);
-    //     Ok(())
-    // }
+    /// Move the node to the side so that its inputs go to the output
+    #[node_func]
+    fn move_aside(node: &mut NodeInner) -> Result<(), String> {
+        node.move_aside().map_err(String::from)
+    }
 
-    // Network modification is turned off for now
-    // /// Move the node to the side so that its inputs go to the output
-    // #[node_func]
-    // fn move_aside(node: &mut NodeInner) -> Result<(), String> {
-    //     node.move_aside().map_err(String::from)
-    // }
-
-    // /// Move the node down so that it swaps the place with the output
-    // #[node_func]
-    // fn move_down(node: &mut NodeInner) {
-    //     node.move_down()
-    // }
+    /// Move the node down so that it swaps the place with the output
+    #[node_func]
+    fn move_down(node: &mut NodeInner) -> Result<(), String> {
+        node.move_down().map_err(String::from)
+    }
 }

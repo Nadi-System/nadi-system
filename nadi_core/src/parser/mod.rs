@@ -25,8 +25,8 @@ pub use errors::{ParseError, ParseErrorType};
 impl std::str::FromStr for Attribute {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let tokens =
-            tokenizer::Token::validate(tokenizer::get_tokens(s)).map_err(|e| e.to_string())?;
+        let tokens = tokenizer::Token::validate(tokenizer::get_tokens(s), 1, 1)
+            .map_err(|e| e.to_string())?;
         let (rest, val) = components::attribute(&tokens).map_err(|e| e.to_string())?;
         if !rest.is_empty() {
             Err(ParseError::new(&tokens, rest, ParseErrorType::InvalidToken).to_string())
@@ -119,7 +119,7 @@ impl FromStr for Network {
     type Err = ParseError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let tokens = tokenizer::get_tokens(s);
-        let paths = network::parse(tokens)?;
+        let paths = network::parse(tokens, 1, 1)?;
         Self::from_node_inps(&paths)
             .map_err(|e| ParseError::pos((0, 0), ParseErrorType::MultipleOutput(e)))
     }

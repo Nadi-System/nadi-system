@@ -63,7 +63,7 @@ pub fn attr_file<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, Vec<Line>> {
 }
 
 pub fn parse(tokens: Vec<RawToken>) -> Result<AttrMap, ParseError> {
-    let tokens = Token::validate(tokens)?;
+    let tokens = Token::validate(tokens, 1, 1)?;
     let lines = match attr_file(&tokens).finish() {
         Ok((rest, lines)) => {
             if rest.is_empty() {

@@ -551,6 +551,8 @@ impl Editor {
                     let cont = self.content.text();
                     self.error = nadi_core::parser::tasks::parse(
                         nadi_core::parser::tokenizer::get_tokens(&cont),
+                        1,
+                        1,
                     )
                     .err();
                 }

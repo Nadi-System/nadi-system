@@ -242,7 +242,7 @@ impl NadiKernel {
             _ => return Err(anyhow::anyhow!("Invalid message type for execution")),
         };
         let tokens = nadi_core::parser::tokenizer::get_tokens(&code);
-        let tasks = match nadi_core::parser::tasks::parse(tokens) {
+        let tasks = match nadi_core::parser::tasks::parse(tokens, 1, 1) {
             Ok(t) => t,
             Err(e) => return Err(anyhow::Error::msg(e.user_msg_color(None))),
         };

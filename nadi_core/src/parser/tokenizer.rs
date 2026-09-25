@@ -50,7 +50,11 @@ impl<'a> Token<'a> {
             start,
         }
     }
-    pub fn validate(tokens: Vec<RawToken<'a>>) -> Result<Vec<Self>, TaskParseError> {
+    pub fn validate(
+        tokens: Vec<RawToken<'a>>,
+        mut line: usize,
+        mut col: usize,
+    ) -> Result<Vec<Self>, TaskParseError> {
         let mut data = tokens.split(|t| !t.ty.is_valid());
         let valid = data.next().unwrap();
         if data.next().is_some() {
@@ -60,8 +64,6 @@ impl<'a> Token<'a> {
                 ParseErrorType::InvalidToken,
             ));
         }
-        let mut line = 1;
-        let mut col = 1;
         let tokens = tokens
             .into_iter()
             .map(|t| {
@@ -543,7 +545,7 @@ mod tests {
     fn parencheck_paired_test(
         #[values(" ", "()", "{}", "[]", "[{()}]", "{[]}", "([], {})")] txt: &str,
     ) {
-        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let tokens = Token::validate(get_tokens(txt), 1, 1).unwrap();
         let check = ParenCheck::scan(&tokens);
         assert!(matches!(check, ParenCheck::Paired))
     }
@@ -552,21 +554,21 @@ mod tests {
     fn parencheck_extra_test(
         #[values(" )", "())", "{}]", "[])", "[{()}])", "{[]}}", "([], {})}")] txt: &str,
     ) {
-        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let tokens = Token::validate(get_tokens(txt), 1, 1).unwrap();
         let check = ParenCheck::scan(&tokens);
         assert!(matches!(check, ParenCheck::Extra(_)))
     }
 
     #[rstest] // whitespace
     fn parencheck_invalid_test(#[values(" (]", "({)", "[{}]()[}")] txt: &str) {
-        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let tokens = Token::validate(get_tokens(txt), 1, 1).unwrap();
         let check = ParenCheck::scan(&tokens);
         assert!(matches!(check, ParenCheck::Invalid(_, _)))
     }
 
     #[rstest] // whitespace
     fn parencheck_unpaired_test(#[values(" (", "({", "[{}]()[")] txt: &str) {
-        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let tokens = Token::validate(get_tokens(txt), 1, 1).unwrap();
         let check = ParenCheck::scan(&tokens);
         assert!(matches!(check, ParenCheck::Unpaired(_)))
     }

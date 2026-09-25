@@ -62,7 +62,7 @@ mod tests {
 
     fn test_plugin_function(txt: &str, ctx: &mut TaskContext) -> Result<(), String> {
         let tokens = nadi_core::parser::tokenizer::get_tokens(txt);
-        let tasks = match nadi_core::parser::tasks::parse(tokens) {
+        let tasks = match nadi_core::parser::tasks::parse(tokens, 1, 1) {
             Ok(t) => t,
             Err(e) => return Err(e.user_msg_color(None)),
         };

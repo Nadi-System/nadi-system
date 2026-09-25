@@ -190,14 +190,14 @@ fn repl(mut ctx: TaskContext, loc: &mut AttrMap) {
         match std::io::stdin().read_line(&mut input) {
             Ok(_) => {
                 let tokens = nadi_core::parser::tokenizer::get_tokens(&input);
-                if let Ok(tkns) = Token::validate(tokens.clone()) {
+                if let Ok(tkns) = Token::validate(tokens.clone(), 1, 1) {
                     if let ParenCheck::Unpaired(_) = ParenCheck::scan(&tkns) {
                         residue = true;
                         continue;
                     }
                 }
 
-                let tasks = match nadi_core::parser::tasks::parse(tokens) {
+                let tasks = match nadi_core::parser::tasks::parse(tokens, 1, 1) {
                     Ok(t) => t,
                     Err(e) => {
                         println!("{}", e.user_msg_color(None));
@@ -328,7 +328,7 @@ fn show_tasks(filename: &Path) {
         }
     }
     println!("\n----Parsing Tasks----");
-    match nadi_core::parser::tasks::parse(tokens) {
+    match nadi_core::parser::tasks::parse(tokens, 1, 1) {
         Ok(tasks) => {
             for task in tasks {
                 // println!("{task:?}");
@@ -349,7 +349,7 @@ fn execute_tasks(
     loc: &mut AttrMap,
 ) -> anyhow::Result<()> {
     let tokens = nadi_core::parser::tokenizer::get_tokens(txt);
-    let tasks = match nadi_core::parser::tasks::parse(tokens) {
+    let tasks = match nadi_core::parser::tasks::parse(tokens, 1, 1) {
         Ok(t) => t,
         Err(e) => return Err(anyhow::Error::msg(e.user_msg_color(None))),
     };

@@ -70,8 +70,8 @@ pub fn group_path<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, (Vec<RString
     Ok((rest, (start, end)))
 }
 
-pub fn parse(tokens: Vec<RawToken>) -> Result<Vec<NodeInput>, ParseError> {
-    let tokens = Token::validate(tokens)?;
+pub fn parse(tokens: Vec<RawToken>, line: usize, col: usize) -> Result<Vec<NodeInput>, ParseError> {
+    let tokens = Token::validate(tokens, line, col)?;
     match network(&tokens).finish() {
         Ok((rest, paths)) => {
             if rest.is_empty() {
@@ -106,7 +106,7 @@ mod tests {
     #[should_panic]
     #[case("node-name")]
     pub fn node_name_test(#[case] txt: &str) {
-        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let tokens = Token::validate(get_tokens(txt), 1, 1).unwrap();
         let (rest, name) = node_name(&tokens).unwrap();
         assert!(rest.is_empty());
         assert_eq!(name, txt);
@@ -122,7 +122,7 @@ mod tests {
     #[should_panic]
     #[case("node-name -> another", ("node-name", "another"))]
     pub fn str_path_test(#[case] txt: &str, #[case] path: (&str, &str)) {
-        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let tokens = Token::validate(get_tokens(txt), 1, 1).unwrap();
         let (rest, p) = str_path(&tokens).unwrap();
         let path2 = (p.start.as_str(), p.end.as_str());
         assert!(rest.is_empty());
@@ -158,7 +158,7 @@ mod tests {
     #[case("A -> \"{B, C}\"", vec![path!("A" -> "{B, C}")])]
     pub fn parse_test(#[case] txt: &str, #[case] paths: Vec<NodeInput>) {
         let tokens = get_tokens(txt);
-        let edges = parse(tokens).unwrap();
+        let edges = parse(tokens, 1, 1).unwrap();
         assert_eq!(edges, paths);
     }
 
@@ -172,7 +172,7 @@ mod tests {
     #[case("012-> xyz_is_12", 1)]
     pub fn parse_error_test(#[case] txt: &str, #[case] line: usize) {
         let tokens = get_tokens(txt);
-        let err = parse(tokens).err().unwrap();
+        let err = parse(tokens, 1, 1).err().unwrap();
         assert_eq!(err.line, line);
     }
 }

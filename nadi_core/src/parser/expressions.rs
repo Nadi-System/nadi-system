@@ -149,9 +149,9 @@ pub fn expr_set_variable<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprT
             opt(maybe_space(preceded(colon, maybe_space(attr_type)))),
             maybe_space(assignment),
             maybe_space(raw_expr(alt((
-                expression_block,
                 expression_group,
                 complete_value_expression,
+                expression_block,
             )))),
             opt(semicolon),
         )),
@@ -211,9 +211,9 @@ pub fn array_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<Raw
             map(
                 tuple((
                     maybe_newline(raw_expr(alt((
-                        expression_block,
                         expression_group,
                         value_expression,
+                        expression_block,
                     )))),
                     delimited(
                         maybe_space(kw_for),
@@ -245,9 +245,9 @@ pub fn table_expr<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, ExprType<Raw
         alt((
             map(
                 tuple((
-                    maybe_newline(raw_expr(alt((expression_block, value_expression)))),
+                    maybe_newline(raw_expr(alt((value_expression, expression_block)))),
                     maybe_space(assignment),
-                    maybe_newline(raw_expr(alt((expression_block, value_expression)))),
+                    maybe_newline(raw_expr(alt((value_expression, expression_block)))),
                     delimited(
                         maybe_space(kw_for),
                         after_space(separated_pair(
@@ -943,7 +943,7 @@ mod tests {
     #[case("!(xyz)")]
     #[case("!(-xyz)")]
     pub fn expression_valid_test(#[case] txt: &str) {
-        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let tokens = Token::validate(get_tokens(txt), 1, 1).unwrap();
         let (rest, _) = expression(&tokens).unwrap();
         assert_eq!(rest, vec![]);
     }
@@ -962,7 +962,7 @@ mod tests {
     #[should_panic]
     #[case("(xyz |* yzx) * (12 + true)")]
     pub fn compl_expr_valid_test(#[case] txt: &str) {
-        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let tokens = Token::validate(get_tokens(txt), 1, 1).unwrap();
         let (rest, _) = complete_expression(&tokens).unwrap();
         assert_eq!(rest, vec![]);
     }
@@ -979,7 +979,7 @@ mod tests {
     #[case("sth.sth(2.12, y=12, 43)")]
     #[case("network.load_str(\"a -> b\")")]
     pub fn function_call_valid_test(#[case] txt: &str) {
-        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let tokens = Token::validate(get_tokens(txt), 1, 1).unwrap();
         let (rest, _) = function_call(&tokens).unwrap();
         assert_eq!(rest, vec![]);
     }
@@ -991,7 +991,7 @@ mod tests {
     #[case("($x, inputs$y) -> @sth.sth")]
     #[case("($x, $y) -> func(x, y) {x + y}")]
     pub fn map_series_valid_test(#[case] txt: &str) {
-        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let tokens = Token::validate(get_tokens(txt), 1, 1).unwrap();
         let (rest, _) = map_series(&tokens).unwrap();
         assert_eq!(rest, vec![]);
     }
@@ -1005,7 +1005,7 @@ mod tests {
     #[case("nodes$xyz = ($x, inputs$y) -> @sth.sth")]
     #[case("nodes$xy = ($x, $y) -> func(x, y) {x + y}")]
     pub fn set_series_valid_test(#[case] txt: &str) {
-        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let tokens = Token::validate(get_tokens(txt), 1, 1).unwrap();
         let (rest, _) = expr_set_series(&tokens).unwrap();
         assert_eq!(rest, vec![]);
     }
@@ -1035,7 +1035,7 @@ mod tests {
     #[case("(2 - 1)  + 1", 2.into())]
     #[case("10 // 5 + 2", 4.into())]
     pub fn compl_expr_eval_test(context: TaskContext, #[case] txt: &str, #[case] val: Attribute) {
-        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let tokens = Token::validate(get_tokens(txt), 1, 1).unwrap();
         let (rest, expr) = raw_expr(complete_expression)(&tokens).unwrap();
         assert_eq!(rest, vec![]);
         let ectx = EvalCtx::default();
@@ -1109,7 +1109,7 @@ mod tests {
     #[case("!(true & false)", true.into())]
     #[case("!!(false & true)", false.into())]
     pub fn compl_expr_eval_test_2(context: TaskContext, #[case] txt: &str, #[case] val: Attribute) {
-        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let tokens = Token::validate(get_tokens(txt), 1, 1).unwrap();
         let (rest, expr) = raw_expr(complete_expression)(&tokens).unwrap();
         assert_eq!(rest, vec![]);
         let ectx = EvalCtx::default();
@@ -1135,7 +1135,7 @@ mod tests {
     pub fn compl_expr_simplify_test(context: TaskContext, #[case] txt: &str, #[case] simpl: &str) {
         // let context = task_context();
 
-        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let tokens = Token::validate(get_tokens(txt), 1, 1).unwrap();
         let (rest, expr) = raw_expr(complete_expression)(&tokens).unwrap();
         assert_eq!(rest, vec![]);
         let ectx = EvalCtx::default();
@@ -1143,7 +1143,7 @@ mod tests {
         loc.set_attr("xyz", 12.into());
         let res1 = expr.eval_value(&context, &ectx, &mut loc).unwrap();
 
-        let tokens = Token::validate(get_tokens(simpl)).unwrap();
+        let tokens = Token::validate(get_tokens(simpl), 1, 1).unwrap();
         let (rest, expr) = raw_expr(complete_expression)(&tokens).unwrap();
         assert_eq!(rest, vec![]);
         let ectx = EvalCtx::default();
@@ -1166,7 +1166,7 @@ mod tests {
         #[case] txt: &str,
         #[case] err: EvalErrorType,
     ) {
-        let tokens = Token::validate(get_tokens(txt)).unwrap();
+        let tokens = Token::validate(get_tokens(txt), 1, 1).unwrap();
         let (rest, expr) = raw_expr(complete_expression)(&tokens).unwrap();
         assert_eq!(rest, vec![]);
         let ectx = EvalCtx::default();

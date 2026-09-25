@@ -41,7 +41,7 @@ impl PyTaskContext {
     /// Execute the given tasks in the context
     fn execute(&mut self, tasks: String) -> PyResult<Option<String>> {
         let tokens = tokenizer::get_tokens(&tasks);
-        let tasks = tasks::parse(tokens)?;
+        let tasks = tasks::parse(tokens, 1, 1)?;
         let mut locals = AttrMap::new();
         let responses: Result<Vec<Option<String>>, EvalError> = tasks
             .into_iter()

@@ -1320,7 +1320,7 @@ impl Eval for ImportExpr {
         if let Some(path) = self.path() {
             let txt = std::fs::read_to_string(path).unwrap();
             let tokens = crate::parser::tokenizer::get_tokens(&txt);
-            let tasks = crate::parser::tasks::parse(tokens)
+            let tasks = crate::parser::tasks::parse(tokens, 1, 1)
                 .map_err(|e| EvalErrorType::ParseError(e.to_string()).no_pos())?;
             if self.tasks {
                 for fc in tasks {

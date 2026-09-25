@@ -122,27 +122,48 @@ impl MainWindow {
                     editor::Message::RunAllTask => {
                         let buf = self.editor.content.text();
                         self.spawn_pane_maybe(Some(PaneType::Terminal));
-                        Task::perform(async { buf }, terminal::Message::RunTasks)
+                        Task::perform(async { buf }, move |b| terminal::Message::RunTasks(b, None))
                             .map(Message::Terminal)
                     }
                     editor::Message::RunTask => {
+                        let pos = self.editor.content.cursor().position;
                         let tasks = match self.editor.content.selection() {
-                            Some(sel) => sel,
+                            Some(sel) => Task::perform(async { sel }, move |t| {
+                                terminal::Message::RunTasks(t, Some((pos.line, pos.column)))
+                            })
+                            .map(Message::Terminal),
                             None => {
-                                let line = self.editor.content.cursor().position.line;
-                                self.editor
-                                    .content
-                                    .perform(text_editor::Action::Move(text_editor::Motion::Down));
-                                self.editor
-                                    .content
-                                    .line(line)
-                                    .map(|l| l.text.to_string())
-                                    .unwrap_or_default()
+                                match nadi_core::parser::tasks::get_one_task_at(
+                                    &self.editor.content.text(),
+                                    // content uses zero based indexing, nadi uses 1 based for this
+                                    pos.line + 1,
+                                    pos.column + 1,
+                                ) {
+                                    Ok((task, end)) => {
+                                        if let Some((line, column)) = end {
+                                            let cur = text_editor::Cursor {
+                                                position: text_editor::Position {
+                                                    line: line - 1,
+                                                    column: column - 1,
+                                                },
+                                                selection: None,
+                                            };
+                                            self.editor.content.move_to(cur);
+                                        }
+                                        Task::perform(async { task }, move |t| {
+                                            terminal::Message::TaskChain(0, vec![t])
+                                        })
+                                        .map(Message::Terminal)
+                                    }
+                                    Err(e) => {
+                                        Task::perform(async { e }, terminal::Message::ParseError)
+                                            .map(Message::Terminal)
+                                    }
+                                }
                             }
                         };
                         self.spawn_pane_maybe(Some(PaneType::Terminal));
-                        Task::perform(async { tasks }, terminal::Message::RunTasks)
-                            .map(Message::Terminal)
+                        tasks
                     }
                     editor::Message::SearchHelp => {
                         if let Some(sel) = self.editor.content.selection() {

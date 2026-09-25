@@ -436,6 +436,7 @@ impl TaskContext {
         &self,
         select: SelectEdgeFromTo,
         ectx: &EvalCtx,
+        local: &mut AttrMap,
     ) -> Result<Vec<Node>, EvalError> {
         // NOTE: we have to match both, because if first is empty we want all the input nodes -> given second node(s) and vice versa
         match (select, ectx.curr_node()) {
@@ -456,6 +457,32 @@ impl TaskContext {
                         .ok_or(EvalErrorType::NodeNotFound(n.to_string()).no_pos())
                 })
                 .collect(),
+            (SelectEdgeFromTo::Var(inp), _) => {
+                // should support two kinds of variables Single vs multiple nodes
+                let var = inp.eval_value(self, ectx, local)?;
+                let node = RString::try_from_attr(&var);
+                if let Ok(nd) = node {
+                    return Ok(vec![self
+                        .network
+                        .node_by_name(&nd)
+                        .ok_or(EvalErrorType::NodeNotFound(nd.to_string()))?
+                        .clone()]);
+                }
+                // or a variable with multiple edges
+                let parent =
+                    Vec::<RString>::try_from_attr(&var).map_err(EvalErrorType::AttributeError)?;
+                parent
+                    .into_iter()
+                    .map(|nd| {
+                        Ok(self
+                            .network
+                            .node_by_name(&nd)
+                            .ok_or(EvalErrorType::NodeNotFound(nd.to_string()))?
+                            .clone())
+                    })
+                    .collect::<Result<Vec<Node>, EvalErrorType>>()
+                    .map_err(|e| e.no_pos())
+            }
         }
     }
 
@@ -490,8 +517,8 @@ impl TaskContext {
                 }
             }
             SelectEdges::One(from, to) => {
-                let from = self.select_edges_node(from, ectx)?;
-                let to = self.select_edges_node(to, ectx)?;
+                let from = self.select_edges_node(from, ectx, local)?;
+                let to = self.select_edges_node(to, ectx, local)?;
                 match (from.as_slice(), to.as_slice()) {
                     ([], []) => {
                         if let Some(n) = ectx.curr_node() {

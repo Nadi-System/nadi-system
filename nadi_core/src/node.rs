@@ -428,29 +428,42 @@ impl NodeInner {
         Ok(())
     }
 
-    // FIX: this might have to be removed, or added with EvalError for
-    // when there are multiple output to the node
-    // /// Move the network down one step, (swap places with its output)
-    // pub fn move_down(&mut self) {
-    //     let outs = self.unset_outputs();
-    //     match outs.as_slice() {
-    //         // no outputs means no moving down
-    //         [] => (),
-    //         [o] => {
-    //             let i = o
-    //                 .try_lock().expect("mutex error")
-    //                 .inputs()
-    //                 .iter()
-    //                 // HACK current node will fail to lock
-    //                 .position(|c| c.try_lock().is_none())
-    //                 .unwrap();
-    //             let new_out = o.try_lock().expect("mutex error").inputs.remove(i);
-    //             self.output = o.try_lock().expect("mutex error").output().clone();
-    //             o.try_lock().expect("mutex error").set_output(new_out);
-    //             self.add_input(o.clone());
-    //         }
-    //         // if multiple outputs how do we move it down?
-    //         outs => todo!(),
-    //     }
-    // }
+    /// Move the network down one step, (swap places with its output)
+    pub fn move_down(&mut self) -> Result<(), &'static str> {
+        let outs = self.unset_outputs();
+        match outs.as_slice() {
+            // no outputs means no moving down
+            [] => Err("node does not have output nodes; can not move down"),
+            [o] => {
+                let i = o
+                    .try_lock()
+                    .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
+                    .inputs()
+                    .iter()
+                    // HACK current node will fail to lock
+                    .position(|c| c.try_lock().is_none())
+                    .unwrap();
+                let new_out = o
+                    .try_lock()
+                    .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
+                    .inputs
+                    .remove(i);
+                self.outputs = o
+                    .try_lock()
+                    .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
+                    .outputs()
+                    .to_vec()
+                    .into();
+                let mut prev_out = o
+                    .try_lock()
+                    .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()));
+                prev_out.unset_outputs();
+                prev_out.add_output(new_out);
+                self.add_input(o.clone());
+                Ok(())
+            }
+            // if multiple outputs how do we move it down?
+            _outs => Err("node has multiple outputs; can not move down"),
+        }
+    }
 }

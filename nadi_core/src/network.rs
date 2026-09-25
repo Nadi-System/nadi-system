@@ -744,41 +744,50 @@ impl Network {
 
         let mut visited: HashSet<String> = HashSet::new();
         let mut nodes_queue: Vec<String> = Vec::with_capacity(self.nodes.len());
-        let mut new_nodes: Vec<String> = Vec::with_capacity(self.nodes.len());
-        for o in self.outlets.iter().rev() {
+        let mut new_nodes: Vec<Vec<String>> = Vec::with_capacity(self.outlets.len());
+
+        for o in self.outlets.iter() {
+            let mut curr_nodes: Vec<String> = Vec::with_capacity(self.nodes.len());
             nodes_queue.push(o.name().to_string());
-        }
+            while let Some(curr) = nodes_queue.pop() {
+                if visited.contains(&curr) {
+                    // basically to stop infinite loop, need to look
+                    // further how it impacts the values
+                    continue;
+                    // when a single node has branches and they end up in
+                    // multiple roots, then it stops here while coming
+                    // from one of the roots, which stops the layout,
+                    // because each root is laid out separately, the
+                    // branch ends up coming way above the current nodes
+                }
+                visited.insert(curr.clone());
+                let inputs: Vec<Node> = self.nodes_map[curr.as_str()]
+                    .try_lock()
+                    .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
+                    .inputs()
+                    .to_vec();
+                let mut inps: Vec<String> = inputs.iter().map(|i| i.name().to_string()).collect();
 
-        while let Some(curr) = nodes_queue.pop() {
-            if visited.contains(&curr) {
-                // basically to stop infinite loop, need to look
-                // further how it impacts the values
-                continue;
+                inps.sort_by(|n1, n2| weights[n1.as_str()].cmp(&weights[n2.as_str()]));
+                // this just reorders the inputs, we don't change the input nodes
+                self.nodes_map[curr.as_str()]
+                    .try_lock()
+                    .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
+                    .inputs = inps
+                    .iter()
+                    .map(|i| self.nodes_map[i.as_str()].clone())
+                    .collect();
+                for c in inps {
+                    nodes_queue.push(c.clone());
+                }
+                curr_nodes.push(curr);
             }
-            visited.insert(curr.clone());
-            let inputs: Vec<Node> = self.nodes_map[curr.as_str()]
-                .try_lock()
-                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
-                .inputs()
-                .to_vec();
-            let mut inps: Vec<String> = inputs.iter().map(|i| i.name().to_string()).collect();
-
-            inps.sort_by(|n1, n2| weights[n1.as_str()].cmp(&weights[n2.as_str()]));
-            // this just reorders the inputs, we don't change the input nodes
-            self.nodes_map[curr.as_str()]
-                .try_lock()
-                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
-                .inputs = inps
-                .iter()
-                .map(|i| self.nodes_map[i.as_str()].clone())
-                .collect();
-            for c in inps {
-                nodes_queue.push(c.clone());
-            }
-            new_nodes.push(curr);
+            new_nodes.push(curr_nodes);
         }
         let new_nodes: Vec<Node> = new_nodes
             .iter()
+            .rev()
+            .flatten()
             .map(|n| self.nodes_map[n.as_str()].clone())
             .collect();
         if new_nodes.len() < self.nodes.len() {
@@ -908,6 +917,8 @@ impl Network {
 
         // remove node from its output
         for out in &outputs {
+            let edge = Edge::new(node.name(), out.name());
+            _ = self.edge_attrs.remove(&edge);
             let pos = out
                 .try_lock()
                 .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
@@ -933,6 +944,8 @@ impl Network {
 
         // remove node from its inputs
         for inp in &inputs {
+            let edge = Edge::new(inp.name(), node.name());
+            _ = self.edge_attrs.remove(&edge);
             let pos = inp
                 .try_lock()
                 .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
@@ -960,6 +973,10 @@ impl Network {
                 out.try_lock()
                     .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
                     .add_input(inp.clone());
+                let edge = Edge::new(inp.name(), out.name());
+                let am = self.edge_attrs.entry(edge).or_insert(AttrMap::new());
+                am.insert(RString::from("FROM"), inp.name().to_string().into());
+                am.insert(RString::from("TO"), out.name().to_string().into());
             }
         }
         self.reindex();
@@ -978,10 +995,8 @@ impl Network {
         // self.set_levels();
     }
 
-    // TODO: rewrite to make sure subset works properly
     /// Subset the network into a new network by removing a bunch of nodes
     pub fn subset(&mut self, filter: &[bool], keep: bool) -> Result<(), String> {
-        return Ok(());
         let include_nodes: HashMap<String, Node> = self
             .nodes()
             .zip(self.node_names())
@@ -989,50 +1004,56 @@ impl Network {
             .filter(|(_, &f)| !(f ^ keep))
             .map(|((n, name), _)| (name.to_string(), n.clone()))
             .collect();
-        include_nodes.values().for_each(|n| {
-            n.try_lock()
-                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
-                .unset_inputs();
-        });
-        for node in include_nodes.values() {
-            let mut start = node.clone();
-            loop {
-                let out = start
-                    .try_lock()
-                    .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
-                    .output()
-                    .cloned();
-                match out {
-                    RNone => {
-                        node.try_lock()
-                            .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
-                            .unset_outputs();
-                        break;
-                    }
-                    RSome(o) => {
-                        if include_nodes.contains_key(o.name()) {
-                            let mut op = o.try_lock().unwrap_or_else(|| {
-                                panic!("mutex error: {:?} {}", file!(), line!())
-                            });
-                            op.add_input(node.clone());
-                            node.try_lock()
-                                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
-                                .unset_outputs();
-                            node.try_lock()
-                                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
-                                .add_output(o.clone());
-                            break;
-                        } else {
-                            start = o.clone();
-                        }
-                    }
-                }
+        let mut all_edges: Vec<_> = self.edges().map(|(a, b)| (a.clone(), b.clone())).collect();
+        let mut new_edges = Vec::with_capacity(all_edges.len() * 3 / 2);
+
+        while let Some((n1, n2)) = all_edges.pop() {
+            if !include_nodes.contains_key(n1.name()) {
+                continue;
             }
+            if include_nodes.contains_key(n2.name()) {
+                new_edges.push((n1, n2));
+                continue;
+            }
+            let outs: Vec<Node> = n2
+                .try_lock()
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
+                .outputs()
+                .to_vec();
+            for o in outs {
+                all_edges.push((n1.clone(), o));
+            }
+        }
+        for n in include_nodes.values() {
+            let mut n = n
+                .try_lock()
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()));
+            n.unset_inputs();
+            n.unset_outputs();
+        }
+        for (n1, n2) in &new_edges {
+            n1.try_lock()
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
+                .add_output(n2.clone());
+            n2.try_lock()
+                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
+                .add_input(n1.clone());
         }
         self.nodes = include_nodes.keys().map(|n| n.to_string().into()).collect();
         self.nodes_map = include_nodes
             .into_iter()
             .map(|(n, o)| (n.into(), o))
+            .collect();
+        let mut eattrs: RHashMap<Edge, AttrMap> = self.edge_attrs.drain().collect();
+        self.edge_attrs = new_edges
+            .into_iter()
+            .map(|(n1, n2)| {
+                let edge = Edge::new(n1.name(), n2.name());
+                let mut am = eattrs.remove(&edge).unwrap_or_default();
+                am.insert(RString::from("FROM"), n1.name().to_string().into());
+                am.insert(RString::from("TO"), n2.name().to_string().into());
+                (edge, am)
+            })
             .collect();
         self.reorder();
         self.set_levels();
@@ -1061,6 +1082,13 @@ impl Network {
         self.nodes = nodes.into();
         self.nodes_map = nodes_map.into();
         self.outlets = vec![node].into();
+        self.edge_attrs = self
+            .edge_attrs
+            .drain()
+            .filter(|Tuple2(edge, _)| {
+                self.nodes_map.contains_key(&edge.from) & self.nodes_map.contains_key(&edge.to)
+            })
+            .collect();
         // self.reorder();
         // self.set_levels();
     }
@@ -1321,6 +1349,7 @@ pub enum SelectEdgeFromTo {
     NodeCtx,
     Node(String),
     Nodes(Vec<String>),
+    Var(InputVar),
     // TODO: add variable here as well so people can use from and to both/any as variable
     // if we implement the above one then we can use NodeVar
 }
@@ -1346,6 +1375,7 @@ impl std::fmt::Display for SelectEdgeFromTo {
                         .join(", ")
                 )
             }
+            Self::Var(var) => write!(fmt, "{var}"),
         }
     }
 }
@@ -1474,6 +1504,8 @@ mod tests {
     #[case(network!(a -> b, b -> c), list!(c, b, a))]
     #[case(network!(a -> b, a -> c, b -> c), list!(c, b, a))]
     #[case(network!(a -> b,b -> c,c -> d,d -> e,c -> e), list!(e,d,c,b,a))]
+    // it can't handle it well when two roots come from the same network
+    #[case(network!(a->b,a->c,c->e,e->g), list!(b,g,e,c,a))]
     fn network_indexing(#[case] net: Network, #[case] nodes: &[&str]) {
         let names: Vec<_> = net.node_names().collect();
         assert_eq!(names, nodes);

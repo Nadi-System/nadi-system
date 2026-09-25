@@ -77,8 +77,8 @@ pub fn gv_edge<'a, 'b>(inp: &'a [Token<'b>]) -> MatchRes<'a, 'b, (StrPath, AttrM
     )(inp)
 }
 
-pub fn parse(tokens: Vec<RawToken>) -> Result<GvNetwork, ParseError> {
-    let tokens = Token::validate(tokens)?;
+pub fn parse(tokens: Vec<RawToken>, line: usize, col: usize) -> Result<GvNetwork, ParseError> {
+    let tokens = Token::validate(tokens, line, col)?;
     match gv_file(&tokens).finish() {
         Ok((rest, paths)) => {
             if rest.is_empty() {

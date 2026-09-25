@@ -38,7 +38,7 @@ impl ReqTasks {
             None
         };
         let tokens = nadi_core::parser::tokenizer::get_tokens(&data.tasks);
-        let tasks = match nadi_core::parser::tasks::parse(tokens) {
+        let tasks = match nadi_core::parser::tasks::parse(tokens, 1, 1) {
             Ok(t) => t,
             Err(e) => return Err(e.user_msg(None)),
         };
