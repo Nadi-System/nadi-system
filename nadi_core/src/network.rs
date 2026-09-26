@@ -15,6 +15,7 @@ use abi_stable::{
     StableAbi,
 };
 use colored::Colorize;
+use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 
@@ -663,49 +664,36 @@ impl Network {
     /// Value of order signifies the number of all nodes (recursively)
     /// that are on the input side of the node
     pub fn calc_order(&mut self) {
-        self.nodes_map.values().for_each(|n| {
-            n.try_lock()
-                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
-                .set_order(1)
-        });
-
-        let mut nodes_ord_map = HashMap::new();
-        self.nodes.iter().enumerate().rev().for_each(|(i, n)| {
-            let nobj = &self.nodes_map[n];
-            let inputs: Vec<Node> = nobj
-                .try_lock()
-                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
-                .inputs()
-                .to_vec();
-            let ord = inputs
-                .iter()
-                // nodes that have some node loop back to them will have one (unset) value as order from them
-                .map(|i| {
-                    i.try_lock()
+        let weights: HashMap<_, _> = self
+            .nodes_map
+            .iter()
+            .map(|n| {
+                (
+                    n.0.as_str(),
+                    n.1.try_lock()
                         .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
-                        .order()
-                })
-                .max()
-                .unwrap_or(0);
-            nobj.try_lock()
-                .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
-                .set_order(ord + 1);
-            nodes_ord_map.insert(i, ord + 1);
-        });
-
-        let max_ord = *nodes_ord_map.values().max().unwrap_or(&0);
-        let mut nodes_ord: Vec<RVec<RString>> = (0..=max_ord).map(|_| RVec::new()).collect();
-        for (i, o) in nodes_ord_map {
-            nodes_ord
-                .get_mut(o as usize)
-                .expect("max taken")
-                .push(self.nodes[i].clone());
-        }
-        self.nodes_ord = nodes_ord
+                        .weight(),
+                )
+            })
+            .collect();
+        // we'll sort by weights and assign order in that way instead
+        // of looking at inputs/output nodes locally
+        let mut weights_map: Vec<(u64, RVec<RString>)> = weights
+            .keys()
+            .chunk_by(|k| weights[*k])
             .into_iter()
-            .filter(|o| !o.is_empty())
-            .collect::<Vec<_>>()
-            .into();
+            .map(|(w, nds)| (w, nds.map(|n| RString::from(*n)).collect()))
+            .collect();
+        weights_map.sort_by(|a, b| a.0.cmp(&b.0));
+        for (i, (_, nds)) in weights_map.iter().enumerate() {
+            for n in nds {
+                self.nodes_map[n]
+                    .try_lock()
+                    .unwrap_or_else(|| panic!("mutex error: {:?} {}", file!(), line!()))
+                    .set_order(i as u64 + 1);
+            }
+        }
+        self.nodes_ord = weights_map.into_iter().map(|v| v.1).collect();
     }
 
     // NOTE: this is broken as well
