@@ -664,7 +664,7 @@ impl Network {
     /// Value of order signifies the number of all nodes (recursively)
     /// that are on the input side of the node
     pub fn calc_order(&mut self) {
-        let weights: HashMap<_, _> = self
+        let mut weights: Vec<(_, _)> = self
             .nodes_map
             .iter()
             .map(|n| {
@@ -677,14 +677,14 @@ impl Network {
             })
             .collect();
         // we'll sort by weights and assign order in that way instead
-        // of looking at inputs/output nodes locally
-        let mut weights_map: Vec<(u64, RVec<RString>)> = weights
-            .keys()
-            .chunk_by(|k| weights[*k])
+        // of looking at inputs/output nodes locally, chunk_by needs it sorted
+        weights.sort_by(|a, b| a.1.cmp(&b.1));
+        let weights_map: Vec<(u64, RVec<RString>)> = weights
             .into_iter()
-            .map(|(w, nds)| (w, nds.map(|n| RString::from(*n)).collect()))
+            .chunk_by(|(_, w)| *w)
+            .into_iter()
+            .map(|(w, nds)| (w, nds.map(|n| RString::from(n.0)).collect()))
             .collect();
-        weights_map.sort_by(|a, b| a.0.cmp(&b.0));
         for (i, (_, nds)) in weights_map.iter().enumerate() {
             for n in nds {
                 self.nodes_map[n]

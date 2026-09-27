@@ -3570,13 +3570,23 @@ impl Eval for ExprWithContext {
                     if parallel | self.parallel {
                         run_nodes_in_parallel(nds, ctx, &self.expr)
                     } else {
-                        nds.into_iter().try_for_each(|n| {
-                            self.expr
-                                .eval(ctx, &EvalCtx::at_node(n).to_owned(), loc)
-                                .map(|_| ())
-                        })?;
-
-                        Ok(ExprResult::None)
+                        let res = nds.into_iter().try_for_each(|n| {
+                            match self.expr.eval(ctx, &EvalCtx::at_node(n).to_owned(), loc) {
+                                Ok(_) => (),
+                                Err(e) => match e.ty.as_ref() {
+                                    EvalErrorType::InvalidContinue => (),
+                                    _ => return Err(e),
+                                },
+                            }
+                            Ok(())
+                        });
+                        match res {
+                            Ok(_) => Ok(ExprResult::None),
+                            Err(e) => match e.ty.as_ref() {
+                                EvalErrorType::InvalidBreak(_) => Ok(ExprResult::None),
+                                _ => Err(e),
+                            },
+                        }
                     }
                 } else {
                     let exprs = nds
@@ -3607,17 +3617,26 @@ impl Eval for ExprWithContext {
             }
             ExprContext::Edges(eds) => {
                 if self.silent {
-                    // let parallel = TaskCtxConsts::parallize_nodes(ctx);
-                    // if parallel | self.parallel {
-                    //     run_nodes_in_parallel(nds, &ctx, &self.expr)
-                    // } else {
-                    eds.into_iter().try_for_each(|(n1, n2)| {
-                        self.expr
+                    let res = eds.into_iter().try_for_each(|(n1, n2)| {
+                        match self
+                            .expr
                             .eval(ctx, &EvalCtx::at_edge(n1, n2).to_owned(), loc)
-                            .map(|_| ())
-                    })?;
-
-                    Ok(ExprResult::None)
+                        {
+                            Ok(_) => (),
+                            Err(e) => match e.ty.as_ref() {
+                                EvalErrorType::InvalidContinue => (),
+                                _ => return Err(e),
+                            },
+                        }
+                        Ok(())
+                    });
+                    match res {
+                        Ok(_) => Ok(ExprResult::None),
+                        Err(e) => match e.ty.as_ref() {
+                            EvalErrorType::InvalidBreak(_) => Ok(ExprResult::None),
+                            _ => Err(e),
+                        },
+                    }
                     // }
                 } else {
                     let exprs = eds
@@ -3643,6 +3662,7 @@ impl Eval for ExprWithContext {
                     })
                     .collect::<Result<Vec<(String, String, ExprResult)>, EvalError>>()?;
                 if self.silent {
+                    // should not use do on map keywords, but letting them do this anyway; but break/continue will fail
                     Ok(ExprResult::None)
                 } else {
                     Ok(ExprResult::EdgeMap(exprs))
